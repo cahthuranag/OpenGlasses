@@ -2,9 +2,8 @@ import Foundation
 
 /// Manages downloadable language packs for on-demand localization.
 ///
-/// Bundled languages (en, fr, es, es-MX, de, ja, pl, ru, zh-Hans, zh-Hant, uk) are built into
-/// the app via Localizable.xcstrings. Additional languages can be downloaded from
-/// GitHub and cached locally.
+/// Bundled languages ship in Localizable.xcstrings. Additional languages can be downloaded
+/// from GitHub and cached locally.
 @MainActor
 final class LocalizationManager: ObservableObject {
 
@@ -37,7 +36,8 @@ final class LocalizationManager: ObservableObject {
 
     /// Bundled language codes — these ship with the app in Localizable.xcstrings.
     static let bundledLanguages: Set<String> = [
-        "en", "fr", "es", "es-MX", "de", "ja", "pl", "ru", "zh-Hans", "zh-Hant", "uk"
+        "en", "fr", "fr-CA", "es", "es-MX", "de", "it", "hu", "ko", "ja", "ar", "pt-BR", "nl",
+        "pl", "ru", "zh-Hans", "zh-Hant", "uk"
     ]
 
     /// Base URL for downloading translation JSON files from GitHub.
@@ -51,23 +51,16 @@ final class LocalizationManager: ObservableObject {
 
     /// All available downloadable languages with display metadata.
     private static let availableLanguages: [(code: String, name: String, nativeName: String, stringCount: Int)] = [
-        ("ar", "Arabic", "العربية", 137),
         ("ca", "Catalan", "Català", 28),
         ("cs", "Czech", "Čeština", 137),
         ("da", "Danish", "Dansk", 34),
         ("el", "Greek", "Ελληνικά", 34),
         ("fi", "Finnish", "Suomi", 35),
-        ("fr-CA", "French (Canada)", "Français (Canada)", 58),
         ("hi", "Hindi", "हिन्दी", 58),
         ("hr", "Croatian", "Hrvatski", 28),
-        ("hu", "Hungarian", "Magyar", 29),
         ("id", "Indonesian", "Bahasa Indonesia", 28),
-        ("it", "Italian", "Italiano", 137),
-        ("ko", "Korean", "한국어", 137),
         ("ms", "Malay", "Bahasa Melayu", 28),
         ("nb", "Norwegian", "Norsk bokmål", 34),
-        ("nl", "Dutch", "Nederlands", 137),
-        ("pt-BR", "Portuguese (Brazil)", "Português (Brasil)", 137),
         ("pt-PT", "Portuguese (Portugal)", "Português (Portugal)", 34),
         ("ro", "Romanian", "Română", 29),
         ("sk", "Slovak", "Slovenčina", 28),
@@ -81,10 +74,17 @@ final class LocalizationManager: ObservableObject {
     static let bundledLanguageInfo: [(code: String, name: String, nativeName: String)] = [
         ("en", "English", "English"),
         ("fr", "French", "Français"),
+        ("fr-CA", "French (Canada)", "Français (Canada)"),
         ("es", "Spanish", "Español"),
         ("es-MX", "Spanish (Mexico)", "Español (México)"),
         ("de", "German", "Deutsch"),
+        ("it", "Italian", "Italiano"),
+        ("hu", "Hungarian", "Magyar"),
+        ("ko", "Korean", "한국어"),
         ("ja", "Japanese", "日本語"),
+        ("ar", "Arabic", "العربية"),
+        ("pt-BR", "Portuguese (Brazil)", "Português (Brasil)"),
+        ("nl", "Dutch", "Nederlands"),
         ("pl", "Polish", "Polski"),
         ("ru", "Russian", "Русский"),
         ("zh-Hans", "Chinese (Simplified)", "简体中文"),

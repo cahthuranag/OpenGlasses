@@ -20,8 +20,18 @@ final class LocalizationCatalogGuardTests: XCTestCase {
 
     /// Languages whose catalog is filled end to end, with the plural categories each requires.
     private static let completeLanguages: [String: Set<String>] = [
+        "ar": ["zero", "one", "two", "few", "many", "other"],
         "es-MX": ["one", "many", "other"],
+        "fr-CA": ["one", "many", "other"],
+        "hu": ["one", "other"],
+        "it": ["one", "many", "other"],
+        "ja": ["other"],
+        "ko": ["other"],
+        "nl": ["one", "other"],
+        "pt-BR": ["one", "many", "other"],
         "ru": ["one", "few", "many", "other"],
+        "zh-Hans": ["other"],
+        "zh-Hant": ["other"],
     ]
 
     /// The share of translatable keys each complete language must carry (Plan EC P2).
@@ -186,6 +196,44 @@ final class LocalizationCatalogGuardTests: XCTestCase {
         }
     }
 
+    func testCompleteLanguagesKeepVariantsForTranslatedCountedStrings() throws {
+        let strings = try Self.loadStrings()
+        let countedKeys = strings.filter { _, entry in
+            let localizations = entry["localizations"] as? [String: [String: Any]] ?? [:]
+            return localizations.values.contains {
+                ($0["variations"] as? [String: Any])?["plural"] != nil
+            }
+        }.keys
+        XCTAssertFalse(countedKeys.isEmpty)
+        for language in Self.completeLanguages.keys.sorted() {
+            for key in countedKeys {
+                let localizations = strings[key]?["localizations"] as? [String: [String: Any]]
+                guard let localization = localizations?[language] else { continue }
+                let variations = localization["variations"] as? [String: Any]
+                XCTAssertNotNil(variations?["plural"],
+                                "\(language) \"\(key)\" is missing its count variants")
+            }
+        }
+    }
+
+    func testCompleteLanguagesHaveNoEmptyValuesOrTranslationTokens() throws {
+        let strings = try Self.loadStrings()
+        for language in Self.completeLanguages.keys.sorted() {
+            for (key, entry) in strings where Self.needsTranslation(key, entry: entry) {
+                guard let localization = (entry["localizations"] as? [String: Any])?[language] as? [String: Any]
+                else { continue } // The coverage test reports missing translations.
+                let values = Self.values(of: localization)
+                XCTAssertFalse(values.isEmpty, "\(language) \"\(key)\" has no translated values")
+                for (label, value) in values {
+                    XCTAssertFalse(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                                   "\(language) \"\(key)\"\(label) is empty")
+                    XCTAssertFalse(value.contains("ZXQKEEP") || value.contains("QXZ") || value.contains("OGROW"),
+                                   "\(language) \"\(key)\"\(label) contains a translation token")
+                }
+            }
+        }
+    }
+
     @MainActor
     func testCompleteLanguagesAreOfferedAsBundled() {
         for language in Self.completeLanguages.keys {
@@ -194,6 +242,9 @@ final class LocalizationCatalogGuardTests: XCTestCase {
             XCTAssertTrue(LocalizationManager.bundledLanguageInfo.contains { $0.code == language },
                           "\(language) has no display name in the Languages screen")
         }
+        let downloadable = Set(LocalizationManager.shared.downloadableLanguages.map(\.code))
+        XCTAssertTrue(downloadable.isDisjoint(with: LocalizationManager.bundledLanguages),
+                      "Bundled languages must not also be offered as downloads")
     }
 
     // MARK: - The checker itself

@@ -157,9 +157,8 @@ enum AssistantIdentity {
         "The user is talking to you hands-free \(device.phrase) while going about their day."
     }
 
-    /// The shipped default prompt's context line before Plan FY F3, when it assumed glasses. A
-    /// stored built-in default still carries it; `Config` treats it as the same shipped sentence
-    /// so that preset keeps being recomposed rather than frozen on the old wording.
+    /// The default prompt's context line before Plan FY F3, when it assumed glasses. Retained
+    /// for upgrade fixtures that verify older stored defaults follow today's complete template.
     static let legacyContextLine =
         "The user is wearing smart glasses and talking to you hands-free while going about their day."
 

@@ -210,17 +210,61 @@ final class AssistantDisplayNameTests: XCTestCase {
         XCTAssertTrue(Config.systemPrompt.hasPrefix("You are Aria, a voice assistant on the user's phone."))
     }
 
-    /// The recompose is for shipped text alone, and only where the identity is the single
-    /// difference. A stored built-in whose *body* has moved on — a language change, an older
-    /// version's wording — is left as it is rather than quietly replaced with different words.
-    func testABuiltInWhoseBodyDiffersIsLeftAlone() {
-        let drifted = PromptPreset(id: "preset-concise", name: "Concise",
+    /// Earlier versions and languages carry older bodies too. The built-in ownership flag
+    /// identifies untouched defaults, so they follow the complete current template on read.
+    func testAnOlderBuiltInWithDifferentWordingFollowsTheCurrentTemplate() throws {
+        let drifted = PromptPreset(id: "preset-concise", name: "Old concise label",
                                    prompt: "You are OpenGlasses, a voice assistant.\nOld wording.",
-                                   isBuiltIn: true)
+                                   isBuiltIn: true, icon: "old.icon", cameraBehavior: "always")
         Config.setSavedPresets([drifted])
-        Config.setActivePresetId("preset-concise")
+        Config.setActivePresetId(drifted.id)
         Config.setAssistantDisplayName("Aria")
-        XCTAssertEqual(Config.systemPrompt, drifted.prompt)
+        let stored = UserDefaults.standard.data(forKey: presetsKey)
+
+        for device in AssistantIdentity.Device.allCases {
+            let current = try XCTUnwrap(Config.builtInPresets(device: device).first { $0.id == drifted.id })
+            XCTAssertEqual(Config.savedPresets(device: device), [current])
+            XCTAssertEqual(Config.systemPrompt(device: device), current.prompt)
+            XCTAssertTrue(current.prompt.hasPrefix("You are Aria,"))
+        }
+        XCTAssertEqual(Config.activePresetId, drifted.id)
+        XCTAssertEqual(UserDefaults.standard.data(forKey: presetsKey), stored,
+                       "refreshing defaults must not rewrite stored user data")
+    }
+
+    func testAnOlderDefaultInAnotherLanguageFollowsTheCurrentTemplate() throws {
+        let oldDefault = PromptPreset(id: "preset-default", name: "旧默认",
+                                      prompt: "你是旧助手。\n旧版默认指令。", isBuiltIn: true)
+        Config.setSavedPresets([oldDefault])
+        Config.setActivePresetId(oldDefault.id)
+
+        XCTAssertEqual(Config.systemPrompt, Config.defaultSystemPrompt)
+        XCTAssertEqual(Config.savedPresets.first?.name,
+                       Config.builtInPresets().first { $0.id == oldDefault.id }?.name)
+    }
+
+    func testEveryKnownBuiltInRefreshesFromOlderWording() {
+        let current = Config.builtInPresets()
+        let old = current.map { preset -> PromptPreset in
+            var saved = preset
+            saved.prompt = "Older shipped instructions for \(preset.id)."
+            return saved
+        }
+        Config.setSavedPresets(old)
+        XCTAssertEqual(Config.savedPresets, current)
+    }
+
+    func testAnUnknownBuiltInIDIsRetainedAlongsideRefreshedDefaults() {
+        let unknown = PromptPreset(id: "preset-unknown", name: "Unknown",
+                                   prompt: "Keep these instructions.", isBuiltIn: true)
+        let oldDefault = PromptPreset(id: "preset-default", name: "Default",
+                                      prompt: "Old default wording.", isBuiltIn: true)
+        Config.setSavedPresets([unknown, oldDefault])
+        Config.setActivePresetId(unknown.id)
+
+        XCTAssertEqual(Config.savedPresets.first, unknown)
+        XCTAssertEqual(Config.systemPrompt, unknown.prompt)
+        XCTAssertEqual(Config.savedPresets.last?.prompt, Config.defaultSystemPrompt)
     }
 
     // MARK: - Where it must not reach
@@ -236,6 +280,25 @@ final class AssistantDisplayNameTests: XCTestCase {
         XCTAssertEqual(Config.systemPrompt, custom, "a user-owned prompt is returned unchanged")
         XCTAssertEqual(Array(Config.systemPrompt.utf8), Array(custom.utf8))
         XCTAssertFalse(Config.systemPrompt.contains("Aria"))
+    }
+
+    /// An edited built-in keeps its original ID and may still use the former product name.
+    /// Its user-owned flag protects every field, even while other defaults are refreshed.
+    func testAnEditedDefaultKeepsItsFormerNameAndCustomWording() {
+        let edited = PromptPreset(id: "preset-default", name: "My default",
+                                  prompt: "You are OpenGlasses.\nUse my custom instructions exactly.  ",
+                                  isBuiltIn: false, icon: "my.icon", cameraBehavior: "always")
+        let oldBuiltIn = PromptPreset(id: "preset-concise", name: "Concise",
+                                     prompt: "Older shipped wording.", isBuiltIn: true)
+        Config.setSavedPresets([edited, oldBuiltIn])
+        Config.setActivePresetId(edited.id)
+        let stored = UserDefaults.standard.data(forKey: presetsKey)
+
+        for device in AssistantIdentity.Device.allCases {
+            XCTAssertEqual(Config.savedPresets(device: device).first, edited)
+            XCTAssertEqual(Array(Config.systemPrompt(device: device).utf8), Array(edited.prompt.utf8))
+        }
+        XCTAssertEqual(UserDefaults.standard.data(forKey: presetsKey), stored)
     }
 
     /// The legacy single-prompt install (no presets, a `customSystemPrompt` key) is the same rule.

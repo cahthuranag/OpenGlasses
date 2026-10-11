@@ -116,6 +116,11 @@ enum RealtimeTransportError: LocalizedError {
 struct RealtimeAudioPacketizer {
     let packetBytes: Int
     private var remainder = Data()
+
+    init(packetBytes: Int) {
+        self.packetBytes = packetBytes
+    }
+
     mutating func append(_ data: Data) -> [Data] {
         remainder.append(data)
         var packets: [Data] = []

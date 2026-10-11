@@ -1,0 +1,62 @@
+[
+  {
+    "type": "session.created",
+    "session": {
+      "id": "fixture-session"
+    }
+  },
+  {
+    "type": "conversation.item.input_audio_transcription.started",
+    "item_id": "fixture-input"
+  },
+  {
+    "type": "conversation.item.input_audio_transcription.delta",
+    "delta": "你好"
+  },
+  {
+    "type": "conversation.item.input_audio_transcription.completed",
+    "transcript": "你好"
+  },
+  {
+    "type": "response.output_text.delta",
+    "question_id": "fixture-question",
+    "response_id": "fixture-reply",
+    "delta": "你好"
+  },
+  {
+    "type": "response.output_audio.started",
+    "question_id": "fixture-question",
+    "response_id": "fixture-reply"
+  },
+  {
+    "type": "response.output_audio.delta",
+    "question_id": "fixture-question",
+    "response_id": "fixture-reply",
+    "delta": "AAABAA=="
+  },
+  {
+    "type": "response.output_audio.done",
+    "status_code": "20000000"
+  },
+  {
+    "type": "response.function_call_arguments.done",
+    "items": [
+      {
+        "call_id": "fixture-a",
+        "name": "fixture_tool",
+        "arguments": "{}"
+      },
+      {
+        "call_id": "fixture-b",
+        "name": "fixture_tool",
+        "arguments": "{}"
+      }
+    ]
+  },
+  {
+    "type": "response.done"
+  },
+  {
+    "type": "session.closed"
+  }
+]

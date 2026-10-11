@@ -25,11 +25,13 @@ enum BlindAssistantLaunchPolicy {
     enum Provider: String, Equatable, CaseIterable {
         case gemini
         case openAIRealtime
+        case openAICompatibleRealtime
 
         var displayName: String {
             switch self {
             case .gemini: return "Gemini"
             case .openAIRealtime: return "OpenAI"
+            case .openAICompatibleRealtime: return "OpenAI-compatible Realtime"
             }
         }
     }
@@ -118,6 +120,9 @@ enum BlindAssistantLaunchPolicy {
             case .speechPermissionOff:
                 return "Speech recognition permission is off. Turn it on in iOS Settings, under Avenkin."
             case .providerNotConfigured(let provider):
+                if provider == .openAICompatibleRealtime {
+                    return "Set up OpenAI-compatible Realtime in Settings → AI & Personality."
+                }
                 return "There's no \(provider.displayName) API key yet. Add one in Avenkin settings."
             }
         }
@@ -145,6 +150,9 @@ enum BlindAssistantLaunchPolicy {
             case .speechPermissionOff:
                 return "speech recognition permission is off. Turn it on in iOS Settings, under Avenkin."
             case .providerNotConfigured(let provider):
+                if provider == .openAICompatibleRealtime {
+                    return "OpenAI-compatible Realtime needs an endpoint, API key and model in Avenkin settings."
+                }
                 return "there's no \(provider.displayName) API key yet. Add one in Avenkin settings."
             }
         }

@@ -70,7 +70,7 @@ extension AppState {
             let seed = LiveModeHandoffPlanner.resumeContext(phoneTurns: turns)
             switch mode {
             case .geminiLive: geminiLiveSession.pendingResumeContext = seed
-            case .openaiRealtime: openAIRealtimeSession.pendingResumeContext = seed
+            case .openaiRealtime, .openaiCompatibleRealtime: openAIRealtimeSession.pendingResumeContext = seed
             case .direct: break
             }
             PrivacyLog.model(.offlineHandoff, count: turns.count, detail: PrivacyToken("liveResume"))

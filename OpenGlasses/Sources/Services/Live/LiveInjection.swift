@@ -100,6 +100,12 @@ enum LiveInjectionEnvelope {
 protocol LiveSessionInjecting: AnyObject {
     /// Whether the session is connected enough for an injection to reach the model.
     var canInject: Bool { get }
+    var supportsTextInjection: Bool { get }
+    var supportsContextUpdates: Bool { get }
+    var supportsSuppliedSpeech: Bool { get }
+    var supportsVision: Bool { get }
+    /// Validate media before a tool claims that delivery succeeded.
+    func validateSharpImage(_ jpegData: Data) throws
     /// Whether someone is mid-turn right now — the model speaking, or the wearer. An injection
     /// sent into either collides: the Realtime wire has one active-response slot and refuses a
     /// second, and a turn arriving mid-utterance cuts the speaker off. Consulted through
@@ -119,4 +125,36 @@ protocol LiveSessionInjecting: AnyObject {
     /// Put text in front of the model. `completeTurn: true` = the model responds now, in its own
     /// voice, inside the session — the whole point of the lane.
     func injectText(_ text: String, completeTurn: Bool)
+    func updateAppContext(_ text: String, key: String)
+    func speakSuppliedText(_ text: String)
+}
+
+extension LiveSessionInjecting {
+    var supportsTextInjection: Bool { true }
+    var supportsContextUpdates: Bool { supportsTextInjection }
+    var supportsSuppliedSpeech: Bool { false }
+    var supportsVision: Bool { true }
+    func validateSharpImage(_ jpegData: Data) throws {}
+    func updateAppContext(_ text: String, key: String) { injectText(text, completeTurn: false) }
+    func speakSuppliedText(_ text: String) {}
+}
+
+/// Notification delivery has different semantics from a silent job-context refresh.
+/// Return false when the caller must speak locally; never silently replace audible delivery
+/// with an append-only context update.
+@MainActor
+enum LiveAnnouncementDelivery {
+    @discardableResult
+    static func deliver(_ message: String, using injector: LiveSessionInjecting) -> Bool {
+        guard injector.canInject else { return false }
+        if injector.supportsSuppliedSpeech {
+            injector.speakSuppliedText(message)
+            return true
+        }
+        if injector.supportsTextInjection {
+            injector.injectText(AsyncDeliveryPhrasing.resultInstruction(question: nil, answer: message), completeTurn: true)
+            return true
+        }
+        return false
+    }
 }

@@ -15,6 +15,7 @@ class ToolCallRouter {
     /// plain single-response shape.
     private var ackTimers: [String: Task<Void, Never>] = [:]
     private var ackedCallIds: Set<String> = []
+    var supportsNonBlockingResponses = true
     static let ackDelay: Duration = .seconds(1)
 
     /// Plan BR P1: per-session circuit breaker — bounds runaway tool loops. The session
@@ -58,7 +59,7 @@ class ToolCallRouter {
         // Pause camera/audio streaming during tool execution to prevent instability
         onToolExecutionStarted?()
 
-        if Config.geminiNonBlockingToolsEnabled {
+        if supportsNonBlockingResponses && Config.geminiNonBlockingToolsEnabled {
             ackTimers[callId] = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: Self.ackDelay)
                 guard let self, !Task.isCancelled, self.inFlightTasks[callId] != nil else { return }

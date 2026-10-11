@@ -143,12 +143,10 @@ class AgentNotificationQueue: ObservableObject {
             return
         }
 
-        // During a live voice session, route through the session's own model instead of speaking
-        // over it with TTS in a different voice (Plan CB). completeTurn: true is load-bearing —
-        // without it the injection appends silently and the user hears nothing. The message is
-        // framed as the delivery of an earlier request, not fresh news, so the model presents it
-        // as the answer it is.
+        // Prefer exact provider speech, then a generated text turn. A context-only provider
+        // still needs local speech: a silent context refresh cannot deliver an announcement.
         if let injector = appState.activeLiveInjector {
+            let identity = injector.liveSessionIdentity
             // Wait for a gap first. Injected blind, this lands as `conversation.item.create` +
             // `response.create` while the model may already own the wire's single active-response
             // slot — the injection is refused or collides with barge-in, and the result is simply
@@ -165,11 +163,13 @@ class AgentNotificationQueue: ObservableObject {
                                                                           : "sessionWentQuiet"),
                                  seconds: admission.waited)
             }
-            let framed = AsyncDeliveryPhrasing.resultInstruction(question: nil, answer: message)
-            injector.injectText(framed, completeTurn: true)
-            appState.lastResponse = message
-            PrivacyLog.agent(.notifications, .deliveredViaSession, characters: message.count)
-            return
+            if appState.activeLiveInjector === injector,
+               injector.liveSessionIdentity == identity,
+               LiveAnnouncementDelivery.deliver(message, using: injector) {
+                appState.lastResponse = message
+                PrivacyLog.agent(.notifications, .deliveredViaSession, characters: message.count)
+                return
+            }
         }
 
         // Play soft notification chime
@@ -191,8 +191,17 @@ class AgentNotificationQueue: ObservableObject {
             spokenMessage = message
         }
 
+        let liveInjector = appState.activeLiveInjector
+        let liveIdentity = liveInjector?.liveSessionIdentity
         await appState.speechService.speak(spokenMessage)
         appState.lastResponse = message
+        if let liveInjector, appState.activeLiveInjector === liveInjector,
+           liveInjector.canInject, liveInjector.liveSessionIdentity == liveIdentity {
+            liveInjector.updateAppContext("The app announced to the wearer: " + spokenMessage, key: "announcement")
+        }
+        // A live microphone already handles follow-up, including if a new session replaced
+        // the original while local speech was playing.
+        if appState.geminiLiveSession.isActive || appState.openAIRealtimeSession.isActive { return }
 
         if waitForResponse {
             // Turn on mic — the active persona's wake word is now listening
@@ -232,12 +241,7 @@ class AgentNotificationQueue: ObservableObject {
             }
             appState.lastResponse = response
             appState.speechService.stopThinkingSound()
-            await appState.speechService.speak(response)
-
-            // Listen for response after summary
-            appState.inConversation = true
-            appState.isListening = true
-            appState.transcriptionService.startRecording()
+            await deliverImmediately(message: response, waitForResponse: true)
         } catch {
             appState.speechService.stopThinkingSound()
             PrivacyLog.agent(.notifications, .summaryFailed, error: SafeErrorSummary(error))

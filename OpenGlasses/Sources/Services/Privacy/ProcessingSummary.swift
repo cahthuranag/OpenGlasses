@@ -197,11 +197,11 @@ enum ProcessingSummary {
         case .image:
             // A live session streams frames to its own provider. Outside one, frames only leave if
             // the selected model can actually take them.
-            if let live = facts.liveProviderName { return .cloud(provider: live) }
+            if let live = liveDestination(facts) { return live }
             guard facts.modelAcceptsImages else { return .disabled }
             return modelDestination(facts)
         case .transcription:
-            if let live = facts.liveProviderName { return .cloud(provider: live) }
+            if let live = liveDestination(facts) { return live }
             if facts.diarizationEnabled, let vendor = facts.diarizationProviderName {
                 return .cloud(provider: vendor)
             }
@@ -213,12 +213,12 @@ enum ProcessingSummary {
             }
             return .cloud(provider: facts.speechRecognitionProviderName)
         case .aiResponse:
-            if let live = facts.liveProviderName { return .cloud(provider: live) }
+            if let live = liveDestination(facts) { return live }
             return modelDestination(facts)
         case .spokenVoice:
             // In a live session the provider speaks: the audio comes back from the same socket the
             // question went out on, and the configured voice engine is not in that path.
-            if let live = facts.liveProviderName { return .cloud(provider: live) }
+            if let live = liveDestination(facts) { return live }
             switch facts.voiceEngine {
             case .system:
                 return .onDevice
@@ -236,6 +236,12 @@ enum ProcessingSummary {
             if let host = facts.remoteToolHost { return .customEndpoint(host: host) }
             return .cloud(provider: facts.remoteToolProviderName)
         }
+    }
+
+    private static func liveDestination(_ facts: ProcessingFacts) -> ProcessingDestination? {
+        guard let provider = facts.liveProviderName else { return nil }
+        if let host = facts.liveEndpointHost { return .customEndpoint(host: host) }
+        return .cloud(provider: provider)
     }
 
     private static func modelDestination(_ facts: ProcessingFacts) -> ProcessingDestination {

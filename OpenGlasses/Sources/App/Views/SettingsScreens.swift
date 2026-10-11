@@ -286,7 +286,7 @@ struct AIPersonalitySettingsScreen: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Self.spokenModelRow(
                         name: model.name,
-                        provider: model.llmProvider.displayName,
+                        provider: model.providerDisplayName,
                         badge: Self.modelAuthBadge(
                             provider: model.llmProvider,
                             hasKey: !model.apiKey.isEmpty,
@@ -311,6 +311,16 @@ struct AIPersonalitySettingsScreen: View {
                 Text("AI Models")
             } footer: {
                 Text("Models are the AI you talk to. Add a key for any provider you want — you can switch between them anytime from the main screen.")
+            }
+
+            Section {
+                NavigationLink {
+                    RealtimeModelsView()
+                } label: {
+                    Label("Realtime Models", systemImage: "waveform")
+                }
+            } header: {
+                Text("Live conversation")
             }
 
             // MARK: Personality
@@ -470,7 +480,7 @@ struct AIPersonalitySettingsScreen: View {
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                 HStack(spacing: 8) {
-                    Text(model.llmProvider.displayName)
+                    Text(model.providerDisplayName)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

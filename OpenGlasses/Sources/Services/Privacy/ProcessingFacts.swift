@@ -32,6 +32,8 @@ struct ProcessingFacts: Equatable {
     /// audio, the frames, the reasoning and the spoken reply all travel on the same socket. Saying
     /// so plainly is more useful than five rows that each name the same provider by accident.
     var liveProviderName: String?
+    /// Host only for a configured compatible live server; never its URL or credentials.
+    var liveEndpointHost: String?
 
     // The answer
     var modelKind: ModelKind
@@ -69,6 +71,7 @@ struct ProcessingFacts: Equatable {
 
     init(voiceEngine: TTSEngine = .system,
          liveProviderName: String? = nil,
+         liveEndpointHost: String? = nil,
          modelKind: ModelKind = .cloud,
          modelProviderName: String = "the selected provider",
          modelHost: String? = nil,
@@ -89,6 +92,7 @@ struct ProcessingFacts: Equatable {
          medicalLocalOnly: Bool = false) {
         self.voiceEngine = voiceEngine
         self.liveProviderName = liveProviderName
+        self.liveEndpointHost = liveEndpointHost
         self.modelKind = modelKind
         self.modelProviderName = modelProviderName
         self.modelHost = modelHost
@@ -145,6 +149,9 @@ enum ProcessingFactsProvider {
 
         // Which realtime backend, if the wearer is in one of the live modes.
         facts.liveProviderName = liveProviderName()
+        if Config.appMode == .openaiCompatibleRealtime {
+            facts.liveEndpointHost = ProcessingFacts.host(of: Config.realtimeModel(for: .openaiCompatibleRealtime)?.endpoint ?? "")
+        }
 
         // The answer.
         let model = Config.activeModel
@@ -208,6 +215,7 @@ enum ProcessingFactsProvider {
         switch Config.appMode {
         case .geminiLive: return "Google (Gemini Live)"
         case .openaiRealtime: return "OpenAI (Realtime)"
+        case .openaiCompatibleRealtime: return "your selected realtime service"
         case .direct: return nil
         }
     }

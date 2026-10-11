@@ -56,18 +56,12 @@ enum LiveJobSnapshotPolicy {
 /// changing never re-sends the job block (or the reverse), and it goes through the same
 /// ``LiveJobSnapshotPolicy``, so a debrief block built before a reset never lands after it.
 ///
-/// ### The per-provider audio decision
+/// ### Guided questions
 ///
-/// **Both providers: the app speaks, gated on the session's own busy signal.** Neither backend can
-/// be made to say an exact sentence: `injectText(_:completeTurn: true)` asks the model to compose a
-/// reply — which is the "model goodwill" this plan exists to remove — and `completeTurn: false`
-/// produces no speech at all. So the question goes out through the same `TextToSpeechService` seam
-/// Direct mode already uses, with the exact wording `JobIntakePrompt`/`JobUnitChangeQuestion` own,
-/// and the session's `isBusyForInjection` is what stops it landing on top of the model. A question
-/// that cannot be put now is held by `JobIntakeState` itself and re-offered at the next turn
-/// boundary — `turnCompleted()` is the only moment either provider asks, and a turn boundary is by
-/// definition a moment the model has stopped talking. The ask budget still bounds how often it is
-/// put at all.
+/// The guided flow keeps its exact questions on the existing app speech seam. Its snapshot
+/// lane is separate: providers with context updates can receive job/debrief changes even if
+/// they cannot generate a reply to a text turn. A due question is held while the wearer or
+/// model is speaking and re-offered at the next turn boundary, within the existing ask budget.
 ///
 /// The one thing this cannot do is withhold the wearer's words from the provider: in a live session
 /// the audio is already on the wire before any transcript exists. "Classified before the turn"
@@ -88,6 +82,8 @@ final class LiveJobBridge {
         var isBusy: () -> Bool = { false }
         /// Put text into the live session without asking for a reply.
         var injectText: (String) -> Void = { _ in }
+        /// Replace the job/debrief lane without requesting a model reply.
+        var updateContext: ((String, String) -> Void)? = nil
         /// Offer an utterance to the guided flow. True when it answered an app question.
         var consumeUtterance: (String) async -> Bool = { _ in false }
         /// Put whatever question is due, at a turn boundary.
@@ -214,7 +210,11 @@ final class LiveJobBridge {
                                             canInject: seams.canInject(),
                                             isBusy: seams.isBusy()) {
         case .apply(let text):
-            seams.injectText(text)
+            if let updateContext = seams.updateContext {
+                updateContext(text, id == .job ? "job" : "debrief")
+            } else {
+                seams.injectText(text)
+            }
             update(id) { $0 = Lane(lastSent: text, lastSentGeneration: snapshot.generation, held: nil) }
             return snapshot
         case .holdBusy:

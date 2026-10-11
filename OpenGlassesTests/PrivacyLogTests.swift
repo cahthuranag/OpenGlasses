@@ -653,7 +653,7 @@ final class PrivacyLogTests: XCTestCase {
     /// separately below.
     private static let migratedFiles = [
         "OpenGlasses/Sources/Services/ToolCallRouter.swift",
-        "OpenGlasses/Sources/Services/OpenAIRealtime/OpenAIRealtimeService.swift",
+        "OpenGlasses/Sources/Services/Realtime/RealtimeJSONSessionService.swift",
         "OpenGlasses/Sources/Services/GeminiLive/GeminiLiveService.swift",
         "OpenGlasses/Sources/Services/NativeTools/QRContextTool.swift",
         "OpenGlasses/Sources/Services/NativeTools/HomeAssistantTool.swift",
@@ -700,10 +700,9 @@ final class PrivacyLogTests: XCTestCase {
         "OpenGlasses/Sources/Services/Audio/RealtimeAudioEngine.swift",
         "OpenGlasses/Sources/Services/Audio/AudioSessionCoordinator.swift",
         "OpenGlasses/Sources/Services/Audio/AudioSessionActivator.swift",
-        "OpenGlasses/Sources/Services/GeminiLive/GeminiLiveSessionManager.swift",
+        "OpenGlasses/Sources/Services/Realtime/RealtimeSessionManager.swift",
         "OpenGlasses/Sources/Services/GeminiLive/GeminiLiveModelCatalog.swift",
         "OpenGlasses/Sources/Services/GeminiLive/FrameThrottler.swift",
-        "OpenGlasses/Sources/Services/OpenAIRealtime/OpenAIRealtimeSessionManager.swift",
         "OpenGlasses/Sources/Services/LocalLLMService.swift",
         "OpenGlasses/Sources/Services/LLM/ToolLoopDriver.swift",
         "OpenGlasses/Sources/Services/ConversationStore.swift",
@@ -1232,7 +1231,7 @@ final class PrivacyLogTests: XCTestCase {
         let removed: [(String, [String])] = [
             ("OpenGlasses/Sources/Services/ToolCallRouter.swift",
              ["args: %@", "Result for"]),
-            ("OpenGlasses/Sources/Services/OpenAIRealtime/OpenAIRealtimeService.swift",
+            ("OpenGlasses/Sources/Services/Realtime/RealtimeJSONSessionService.swift",
              ["] You: %@", "Fatal error: %@"]),
             ("OpenGlasses/Sources/Services/GeminiLive/GeminiLiveService.swift",
              ["] You: %@", "] AI: %@", "NSLog(\"[Gemini] %@\", text)"]),

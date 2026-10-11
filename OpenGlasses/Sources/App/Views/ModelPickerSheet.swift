@@ -39,10 +39,16 @@ struct ModelPickerSheet: View {
                 }
         }
         .presentationDetents([.medium, .large])
+        .onAppear {
+            Config.migrateRealtimeModelsIfNeeded()
+            realtimeModels = Config.savedRealtimeModels
+        }
     }
 
     @State private var selectedTier: Config.ModelTier = Config.modelTier
-    @State private var selectedMode: AppMode = Config.appMode
+    @State private var selectedMode: AppMode = Config.appMode.isRealtime ? .openaiCompatibleRealtime : .direct
+    @State private var realtimeModels = Config.savedRealtimeModels
+    @State private var modeSelectionError: String?
 
     /// Which modes are selectable, and why not when they aren't. Read at display time so adding a
     /// key in Settings and coming back here shows the mode unlocked.
@@ -53,66 +59,99 @@ struct ModelPickerSheet: View {
     @ViewBuilder
     private var modelContent: some View {
         let savedModels = Config.savedModels
-        if savedModels.isEmpty {
-            ContentUnavailableView(
-                "No Models",
-                systemImage: "brain",
-                description: Text("Add a model in Settings to get started.")
-            )
-        } else {
+        // Live servers have their own credentials and do not require a saved text model.
+        Group {
             List {
                 Section {
                     Picker("Mode", selection: $selectedMode) {
-                        ForEach(modeOptions) { option in
-                            Text(option.mode.displayName).tag(option.mode)
-                        }
+                        Text("Direct").tag(AppMode.direct)
+                        Text("Realtime").tag(AppMode.openaiCompatibleRealtime)
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
                     .onChange(of: selectedMode) { previous, mode in
                         guard let option = modeOptions.first(where: { $0.mode == mode }) else { return }
                         guard option.isAvailable else {
                             // Bounce back rather than switching into a mode that cannot start —
                             // the reason is shown in the footer, so the refusal is explained.
+                            modeSelectionError = option.unavailableReason
                             selectedMode = previous
                             return
                         }
+                        guard mode != appState.currentMode else { return }
+                        modeSelectionError = nil
                         appState.switchMode(to: mode)
                     }
+                    NavigationLink("Manage Realtime Models") {
+                        RealtimeModelsView()
+                    }
                 } footer: {
-                    if let blocked = modeOptions.first(where: { $0.mode == selectedMode && !$0.isAvailable }),
+                    if let modeSelectionError {
+                        Text(modeSelectionError)
+                    } else if let blocked = modeOptions.first(where: { $0.mode == selectedMode && !$0.isAvailable }),
                        let reason = blocked.unavailableReason {
                         Text(reason)
-                    } else if let unavailable = modeOptions.first(where: { !$0.isAvailable }),
-                              let reason = unavailable.unavailableReason {
-                        Text(reason)
                     }
                 }
 
-                Section {
-                    Picker("Speed", selection: $selectedTier) {
-                        ForEach(Config.ModelTier.allCases) { tier in
-                            Label(tier.displayName, systemImage: tier.icon)
-                                .tag(tier)
+                if selectedMode == .openaiCompatibleRealtime {
+                    Section {
+                        if realtimeModels.isEmpty {
+                            Text("Add a realtime model in Settings, or open Manage Realtime Models above.")
+                                .foregroundStyle(.secondary)
+                        }
+                        ForEach(Array(realtimeModels), id: \.id) { (model: RealtimeModelConfig) in
+                            realtimeModelRow(model)
+                        }
+                    } header: { Text("Realtime Model") }
+                } else {
+                    Section {
+                        Picker("Speed", selection: $selectedTier) {
+                            ForEach(Config.ModelTier.allCases) { tier in
+                                Label(tier.displayName, systemImage: tier.icon)
+                                    .tag(tier)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: selectedTier) { _, newTier in
+                            Config.setModelTier(newTier)
+                            if let match = Config.modelForTier(newTier) {
+                                selectModel(match)
+                            }
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .onChange(of: selectedTier) { _, newTier in
-                        Config.setModelTier(newTier)
-                        if let match = Config.modelForTier(newTier) {
-                            selectModel(match)
-                        }
-                    }
-                }
 
-                Section {
-                    modelRows(savedModels)
-                } header: {
-                    Text("Model")
+                    Section {
+                        if savedModels.isEmpty {
+                            Text("Add a text model in Settings to use Direct Mode.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            modelRows(savedModels)
+                        }
+                    } header: {
+                        Text("Model")
+                    }
                 }
             }
             .listStyle(.insetGrouped)
             .ogFormStyle()
+            .onAppear { realtimeModels = Config.savedRealtimeModels }
         }
+    }
+
+    private func realtimeModelRow(_ model: RealtimeModelConfig) -> some View {
+        let protocolTitle = model.profile?.title ?? String(localized: "Unsupported protocol version")
+        return OGSelectionRow(title: model.name, subtitle: protocolTitle,
+                              isSelected: selectedRealtimeID == model.id,
+                              accessibilityText: model.name + ", " + protocolTitle) {
+            appState.selectRealtimeModel(model.id)
+            dismiss()
+        }
+    }
+
+    private var selectedRealtimeID: String {
+        if appState.currentMode == .geminiLive { return "legacy-gemini" }
+        if appState.currentMode == .openaiRealtime { return "legacy-openai" }
+        return Config.activeRealtimeModel?.id ?? ""
     }
 
     private func modelRows(_ models: [ModelConfig]) -> some View {
@@ -121,14 +160,14 @@ struct ModelPickerSheet: View {
             OGSelectionRow(
                 title: model.name,
                 subtitle: ModelRowSummary.subtitle(
-                    provider: model.llmProvider.displayName,
+                    provider: model.providerDisplayName,
                     modelId: model.model,
                     visionEnabled: model.visionEnabled
                 ),
                 isSelected: model.id == activeId,
                 accessibilityText: ModelRowSummary.spoken(
                     name: model.name,
-                    provider: model.llmProvider.displayName,
+                    provider: model.providerDisplayName,
                     visionEnabled: model.visionEnabled,
                     isActive: model.id == activeId
                 )
@@ -142,6 +181,12 @@ struct ModelPickerSheet: View {
         Config.setActiveModelId(model.id)
         appState.llmService.clearHistory()
         appState.llmService.refreshActiveModel()
+
+        // Picking a text model must not replace the independently configured live server.
+        if appState.currentMode == .openaiCompatibleRealtime {
+            dismiss()
+            return
+        }
 
         let isRealtimeModel = model.llmProvider == .openai
             && model.model.lowercased().contains("realtime")

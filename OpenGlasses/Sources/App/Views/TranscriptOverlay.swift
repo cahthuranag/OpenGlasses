@@ -18,7 +18,7 @@ struct TranscriptOverlay: View {
     @State private var expandedCard: ExpandedCard?
 
     private var isGemini: Bool { appState.currentMode == .geminiLive }
-    private var isOpenAI: Bool { appState.currentMode == .openaiRealtime }
+    private var isOpenAI: Bool { appState.currentMode.usesOpenAIRealtimeTransport }
 
     private var userText: String {
         if isGemini { return session.userTranscript }
@@ -123,7 +123,7 @@ struct SessionNoticeOverlay: View {
     @State private var dismissedError: String?
 
     private var isGemini: Bool { appState.currentMode == .geminiLive }
-    private var isOpenAI: Bool { appState.currentMode == .openaiRealtime }
+    private var isOpenAI: Bool { appState.currentMode.usesOpenAIRealtimeTransport }
 
     /// A camera condition the wearer can clear (a doff pausing the stream). Ranks below a real
     /// error but above silence — the failure mode it replaces was a UI reading "Streaming" with

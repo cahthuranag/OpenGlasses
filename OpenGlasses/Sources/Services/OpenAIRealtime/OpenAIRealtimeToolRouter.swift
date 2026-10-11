@@ -131,7 +131,7 @@ final class OpenAIRealtimeToolRouter {
     /// request for the model to carry on. Both are needed — `conversation.item.create` alone
     /// appends the result and the model never speaks again, which is the Realtime spelling of the
     /// `turnComplete` trap the injection path already documents.
-    static func outputMessages(callId: String, output: String) -> [[String: Any]] {
+    nonisolated static func outputMessages(callId: String, output: String) -> [[String: Any]] {
         [
             ["type": "conversation.item.create",
              "item": ["type": "function_call_output", "call_id": callId, "output": output]],

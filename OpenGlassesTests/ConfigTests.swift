@@ -61,7 +61,8 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(AppMode.direct.rawValue, "direct")
         XCTAssertEqual(AppMode.geminiLive.rawValue, "geminiLive")
         XCTAssertEqual(AppMode.openaiRealtime.rawValue, "openaiRealtime")
-        XCTAssertEqual(AppMode.allCases.count, 3)
+        XCTAssertEqual(AppMode.openaiCompatibleRealtime.rawValue, "openaiCompatibleRealtime")
+        XCTAssertEqual(AppMode.allCases.count, 4)
     }
 
     func testAppModeDisplayName() {

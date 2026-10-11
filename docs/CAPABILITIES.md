@@ -6,7 +6,7 @@ Practical examples, setup notes, and device requirements for the capabilities in
 
 ## Talk and translate
 
-Use the microphone button, an enabled wake word, or Siri to start a request. Standard voice mode combines speech recognition, your selected AI model, and text-to-speech. Gemini Live and OpenAI Realtime provide separate live conversation modes with their respective provider configuration.
+Use the microphone button, an enabled wake word, or Siri to start a request. Standard voice mode combines speech recognition, your selected AI model, and text-to-speech. [Realtime](compatible-realtime.md) offers saved OpenAI, Gemini, Qwen Omni, Qwen Audio (China API), Doubao and custom live models through a shared session engine. Add Model offers Chat and Realtime; ordinary chat also includes Qwen and Doubao API templates. Live features follow the selected protocol's capabilities; Qwen Omni supports images and app context updates, Qwen Audio supports text turns, and Doubao supports native speech for app announcements plus context updates. Qwen and Doubao authenticated live testing is still pending.
 
 ### Make the assistant your own
 

@@ -34,6 +34,7 @@ enum ConversationModeAvailability {
         /// refusal *says*, because a user who just signed in reasonably expects the voice mode
         /// their plan advertises and needs telling why this one is different.
         var hasChatGPTAccount: Bool = false
+        var hasCompatibleRealtimeConfiguration: Bool = false
     }
 
     static func options(for configuration: Configuration) -> [Option] {
@@ -58,6 +59,11 @@ enum ConversationModeAvailability {
                         ? nil
                         : realtimeUnavailableReason(hasChatGPTAccount: configuration.hasChatGPTAccount)
                 )
+            case .openaiCompatibleRealtime:
+                return Option(mode: mode,
+                              isAvailable: configuration.hasCompatibleRealtimeConfiguration,
+                              unavailableReason: configuration.hasCompatibleRealtimeConfiguration ? nil
+                                : String(localized: "Add a realtime model in Settings → AI & Personality."))
             }
         }
     }
@@ -84,7 +90,8 @@ enum ConversationModeAvailability {
             hasOpenAIRealtimeModel: Config.savedModels.contains { model in
                 model.llmProvider == .openai && model.model.lowercased().contains("realtime")
             },
-            hasChatGPTAccount: ChatGPTOAuthService.shared.isConnected
+            hasChatGPTAccount: ChatGPTOAuthService.shared.isConnected,
+            hasCompatibleRealtimeConfiguration: Config.realtimeModel(for: .openaiCompatibleRealtime)?.isConfigured ?? false
         )
     }
 }

@@ -10,6 +10,7 @@ struct ModelFormView: View {
     @Binding var baseURL: String
     @Binding var supportsVision: Bool
     @Binding var smallContext: Bool
+    var providerTemplateID: Binding<String?> = .constant(nil)
 
     // Model fetching state
     @Binding var availableModels: [ModelFetcher.RemoteModel]
@@ -48,12 +49,17 @@ struct ModelFormView: View {
         }
 
         Section {
-            Picker("Provider", selection: $selectedProvider) {
+            Picker("Provider", selection: providerSelection) {
                 ForEach(LLMProvider.allCases, id: \.self) { provider in
-                    Text(provider.displayName).tag(provider)
+                    Text(provider.displayName).tag("provider:" + provider.rawValue)
+                }
+                ForEach(RealtimeProviderCatalog.chatTemplates) { template in
+                    Text(LocalizedStringKey(template.name)).tag("template:" + template.id)
                 }
             }
+            .accessibilityIdentifier("chat.provider")
             .onChange(of: selectedProvider) { _, newProvider in
+                guard providerTemplateID.wrappedValue == nil else { resetModelList(); return }
                 baseURL = newProvider.defaultBaseURL
                 if resetModelOnProviderChange {
                     model = newProvider.defaultModel
@@ -181,7 +187,13 @@ struct ModelFormView: View {
             } header: {
                 Text(selectedProvider == .chatgpt ? "ChatGPT Account" : "API Key")
             } footer: {
-                Text(providerHelpText)
+                if providerTemplateID.wrappedValue == "qwen" {
+                    Text("Replace {workspace} in the URL with your Beijing Model Studio workspace ID. Use that workspace’s API key. This is separate from the Qwen Coding Plan subscription.")
+                } else if providerTemplateID.wrappedValue == "doubao" {
+                    Text("Use a Beijing Ark API key and a model ID or endpoint ID enabled for your account. Doubao speech has separate credentials.")
+                } else {
+                    Text(providerHelpText)
+                }
             }
 
             // The list a validated credential unlocks — a native grouped
@@ -226,6 +238,27 @@ struct ModelFormView: View {
                 Text("Each turn sends a short prompt and recent lines only — no tool list or full system prompt. Turn on for tight providers like Groq (8k token cap); leave off for roomier models so tools keep working.")
             }
         }
+    }
+
+    private var providerSelection: Binding<String> {
+        Binding(get: {
+            providerTemplateID.wrappedValue.map { "template:" + $0 } ?? "provider:" + selectedProvider.rawValue
+        }, set: { value in
+            if value.hasPrefix("template:"), let template = RealtimeProviderCatalog.chatTemplates.first(where: { "template:" + $0.id == value }) {
+                let previousName = RealtimeProviderCatalog.chatTemplates.first { $0.id == providerTemplateID.wrappedValue }?.name ?? selectedProvider.displayName
+                providerTemplateID.wrappedValue = template.id
+                selectedProvider = .custom
+                baseURL = template.endpoint
+                model = template.model
+                supportsVision = template.vision
+                apiKey = ""
+                if name.isEmpty || name == previousName { name = template.name }
+                resetModelList()
+            } else if let provider = LLMProvider(rawValue: String(value.dropFirst("provider:".count))) {
+                providerTemplateID.wrappedValue = nil
+                selectedProvider = provider
+            }
+        })
     }
 
     // MARK: - Key section rows

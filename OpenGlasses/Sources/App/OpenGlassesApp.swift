@@ -231,6 +231,7 @@ struct OpenGlassesApp: App {
         // Move any plaintext provider secrets out of UserDefaults and into the
         // Keychain. Must run before anything reads a secret (AppState, LLM, TTS…).
         Config.migrateSecretsToKeychainIfNeeded()
+        Config.migrateRealtimeModelsIfNeeded()
         // Same move for the FHIR blob, which carried a bearer token, a client secret, and the
         // patient/practitioner identifiers in one preferences value. Forward-only: the legacy key
         // is removed only after the protected copies read back identical, and a locked device
@@ -1768,10 +1769,13 @@ class AppState: ObservableObject, AppStateProtocol {
         geminiLiveSession.jobBridge.connect(.init(
             activeSession: { sessions().activeSession },
             generation: { [weak self] in self?.geminiLiveSession.sessionIdentity ?? 0 },
-            canInject: { [weak self] in self?.geminiLiveSession.canInject ?? false },
+            canInject: { [weak self] in (self?.geminiLiveSession.canInject ?? false) && (self?.geminiLiveSession.supportsContextUpdates ?? false) },
             isBusy: { [weak self] in self?.geminiLiveSession.isBusyForInjection ?? true },
             injectText: { [weak self] text in
                 self?.geminiLiveSession.injectText(text, completeTurn: false)
+            },
+            updateContext: { [weak self] text, key in
+                self?.geminiLiveSession.updateAppContext(text, key: key)
             },
             consumeUtterance: { [weak self] text in
                 await self?.guidedJobFlow.handleUtterance(text) ?? false
@@ -1786,10 +1790,13 @@ class AppState: ObservableObject, AppStateProtocol {
         openAIRealtimeSession.jobBridge.connect(.init(
             activeSession: { sessions().activeSession },
             generation: { [weak self] in self?.openAIRealtimeSession.sessionIdentity ?? 0 },
-            canInject: { [weak self] in self?.openAIRealtimeSession.canInject ?? false },
+            canInject: { [weak self] in (self?.openAIRealtimeSession.canInject ?? false) && (self?.openAIRealtimeSession.supportsContextUpdates ?? false) },
             isBusy: { [weak self] in self?.openAIRealtimeSession.isBusyForInjection ?? true },
             injectText: { [weak self] text in
                 self?.openAIRealtimeSession.injectText(text, completeTurn: false)
+            },
+            updateContext: { [weak self] text, key in
+                self?.openAIRealtimeSession.updateAppContext(text, key: key)
             },
             consumeUtterance: { [weak self] text in
                 await self?.guidedJobFlow.handleUtterance(text) ?? false
@@ -1854,7 +1861,7 @@ class AppState: ObservableObject, AppStateProtocol {
     var activeLiveInjector: LiveSessionInjecting? {
         switch currentMode {
         case .geminiLive: return geminiLiveSession.canInject ? geminiLiveSession : nil
-        case .openaiRealtime: return openAIRealtimeSession.canInject ? openAIRealtimeSession : nil
+        case .openaiRealtime, .openaiCompatibleRealtime: return openAIRealtimeSession.canInject ? openAIRealtimeSession : nil
         default: return nil
         }
     }
@@ -2766,7 +2773,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 let outbound = self.privacyFilter.filtered(image, for: .liveSession)
                 if self.currentMode == .geminiLive {
                     self.geminiLiveSession.submitVideoFrame(outbound)
-                } else if self.currentMode == .openaiRealtime {
+                } else if self.currentMode.usesOpenAIRealtimeTransport {
                     self.openAIRealtimeSession.submitVideoFrame(outbound)
                 }
             }
@@ -3267,7 +3274,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // Plan CF: was a live call in progress? Captured BEFORE teardown — the policy turns
         // this into an auto-redial so switching brains mid-call doesn't go silently dead.
         let wasSessionActive = (oldMode == .geminiLive && geminiLiveSession.isActive)
-            || (oldMode == .openaiRealtime && openAIRealtimeSession.isActive)
+            || (oldMode.usesOpenAIRealtimeTransport && openAIRealtimeSession.isActive)
         let actions = ModeSwitchPolicy.actions(from: oldMode, to: mode,
                                                wasSessionActive: wasSessionActive,
                                                autoRedial: Config.modeSwitchAutoRedialEnabled)
@@ -3290,7 +3297,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 case .geminiLive:
                     geminiLiveSession.stopSession()
                     await cameraService.tearDown()
-                case .openaiRealtime:
+                case .openaiRealtime, .openaiCompatibleRealtime:
                     openAIRealtimeSession.stopSession()
                     await cameraService.tearDown()
                 }
@@ -3304,13 +3311,15 @@ class AppState: ObservableObject, AppStateProtocol {
                 switch target {
                 case .direct:
                     await startWakeWordIfListeningEnabled(PrivacyToken("modeSwitch"))
-                case .geminiLive, .openaiRealtime:
+                case .geminiLive, .openaiRealtime, .openaiCompatibleRealtime:
                     // Nothing to start here for audio: a live session keeps running when the
                     // app is backgrounded on the `audio` background mode alone. The session
                     // manager's `RealtimeAudioEngine` holds a `.playAndRecord` session through
                     // `AudioSessionCoordinator`/`AudioSessionActivator` for as long as the
                     // session is up, which is what keeps capture and playback alive off-screen.
-                    // Camera up so frames are available when the session starts.
+                    // Start visual input only when the selected live protocol can accept it.
+                    guard Config.realtimeModel(for: target)?.capabilities?.vision != false,
+                          !Config.audioOnlyMode else { break }
                     do {
                         try await cameraService.startStreaming()
                     } catch {
@@ -3324,11 +3333,11 @@ class AppState: ObservableObject, AppStateProtocol {
                 // automatic path must not swallow them.
                 switch target {
                 case .geminiLive: await geminiLiveSession.startSession()
-                case .openaiRealtime: await openAIRealtimeSession.startSession()
+                case .openaiRealtime, .openaiCompatibleRealtime: await openAIRealtimeSession.startSession()
                 case .direct: break   // policy never emits this
                 }
                 let ready = (target == .geminiLive && geminiLiveSession.isActive)
-                    || (target == .openaiRealtime && openAIRealtimeSession.isActive)
+                    || (target.usesOpenAIRealtimeTransport && openAIRealtimeSession.isActive)
                 if ready {
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                     // Plan CE: re-push a held pin so the new brain sees the same referent.
@@ -4973,6 +4982,10 @@ class AppState: ObservableObject, AppStateProtocol {
 
     /// Capture a photo and send it to the LLM with a custom prompt.
     func capturePhotoAndSend(prompt: String) async {
+        guard !currentMode.isRealtime || realtimeSupportsVision else {
+            errorMessage = String(localized: "The selected model cannot see images. Choose a vision model.")
+            return
+        }
         guard isConnected else {
             // No glasses — fall back to the phone camera (live preview to aim + frame).
             presentPhoneCamera(prompt: prompt, userLog: "[Phone photo] \(prompt)")
@@ -5258,6 +5271,10 @@ class AppState: ObservableObject, AppStateProtocol {
     /// - Parameter glassesOnly: a temple tap (Plan GJ) — the glasses camera or nothing: no
     ///   reconnect wait, no phone-camera screen, no phone-camera capture.
     func captureAndAnalyzePhoto(glassesOnly: Bool = false) async {
+        guard !currentMode.isRealtime || realtimeSupportsVision else {
+            errorMessage = String(localized: "The selected model cannot see images. Choose a vision model.")
+            return
+        }
         if glassesOnly && !isConnected {
             errorMessage = String(localized: "The glasses camera isn't available.")
             return
@@ -5715,7 +5732,9 @@ class AppState: ObservableObject, AppStateProtocol {
 
         // Silent transitions — the ones this phase exists for.
         observe(geminiLiveSession.$isActive) { .liveSession(mode: "Gemini Live", active: $0) }
-        observe(openAIRealtimeSession.$isActive) { .liveSession(mode: "OpenAI Realtime", active: $0) }
+        observe(openAIRealtimeSession.$isActive) { [weak self] in
+            .liveSession(mode: self?.openAIRealtimeSession.sessionMode.displayName ?? "Live session", active: $0)
+        }
         observe(cameraService.$isStreaming) { .cameraStreaming($0) }
         observe($micMuted) { .micMuted($0) }
         observe($isProcessing) { .thinking($0) }
@@ -5729,7 +5748,7 @@ class AppState: ObservableObject, AppStateProtocol {
             .dropFirst()
             .filter { $0 }
             .sink { [weak self] _ in
-                let mode = self?.currentMode == .openaiRealtime ? "OpenAI Realtime" : "Gemini Live"
+                let mode = self?.currentMode.displayName ?? "Live session"
                 Task { @MainActor in announcer.announce(.reconnecting(mode: mode)) }
             }
         cancellables.append(reconnectToken)
@@ -5803,7 +5822,8 @@ class AppState: ObservableObject, AppStateProtocol {
             return lifecycle.handle(signal)
         }
         openAIRealtimeSession.onLifecycle = { [weak self] signal in
-            if case .reconnectExhausted = signal, self?.handOffLostLiveSession(.openaiRealtime) == true { return true }
+            if case .reconnectExhausted = signal, let self,
+               self.handOffLostLiveSession(self.openAIRealtimeSession.sessionMode) { return true }
             return lifecycle.handle(signal)
         }
     }

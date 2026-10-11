@@ -32,7 +32,7 @@ struct StatusIndicator: View {
     @ScaledMetric(relativeTo: .caption2) private var statusDot: CGFloat = 5
 
     private var isGemini: Bool { appState.currentMode == .geminiLive }
-    private var isOpenAI: Bool { appState.currentMode == .openaiRealtime }
+    private var isOpenAI: Bool { appState.currentMode.usesOpenAIRealtimeTransport }
     private var isRealtime: Bool { appState.currentMode.isRealtime }
 
     var body: some View {
@@ -448,17 +448,7 @@ struct StatusIndicator: View {
         }
     }
 
-    private func realtimePhase(_ state: GeminiConnectionState) -> SessionCardRealtimePhase {
-        switch state {
-        case .disconnected: return .disconnected
-        case .connecting: return .connecting
-        case .settingUp: return .settingUp
-        case .ready: return .ready
-        case .error: return .error
-        }
-    }
-
-    private func realtimePhase(_ state: OpenAIRealtimeConnectionState) -> SessionCardRealtimePhase {
+    private func realtimePhase(_ state: RealtimeConnectionState) -> SessionCardRealtimePhase {
         switch state {
         case .disconnected: return .disconnected
         case .connecting: return .connecting
@@ -601,7 +591,7 @@ struct StatusIndicator: View {
         if isGemini {
             return "Gemini Live"
         } else if isOpenAI {
-            return "OpenAI Realtime"
+            return openAISession.sessionModel?.name ?? Config.realtimeModel(for: appState.currentMode)?.name ?? appState.currentMode.displayName
         } else {
             return "Voice \u{00B7} \(appState.llmService.activeModelName)"
         }

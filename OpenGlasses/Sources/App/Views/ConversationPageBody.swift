@@ -22,7 +22,7 @@ struct ConversationPageBody: View {
     private var liveUserText: String {
         switch appState.currentMode {
         case .geminiLive: return session.userTranscript
-        case .openaiRealtime: return openAISession.userTranscript
+        case .openaiRealtime, .openaiCompatibleRealtime: return openAISession.userTranscript
         case .direct: return appState.currentTranscription
         }
     }
@@ -30,7 +30,7 @@ struct ConversationPageBody: View {
     private var liveAssistantText: String {
         switch appState.currentMode {
         case .geminiLive: return session.aiTranscript
-        case .openaiRealtime: return openAISession.aiTranscript
+        case .openaiRealtime, .openaiCompatibleRealtime: return openAISession.aiTranscript
         case .direct: return appState.lastResponse
         }
     }

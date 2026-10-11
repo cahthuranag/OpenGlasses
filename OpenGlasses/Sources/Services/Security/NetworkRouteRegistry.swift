@@ -121,6 +121,7 @@ enum NetworkRoute: String, CaseIterable, Sendable {
 
     // MARK: Realtime and translation
     case openAIRealtimeSession
+    case openAICompatibleRealtimeSession
     case geminiLiveSession
     case geminiLiveModelCatalog
     case cloudTranslationCaptions
@@ -201,6 +202,7 @@ extension NetworkRoute {
         case .elevenLabsSpeechSynthesis: return "Send the assistant's reply text to the cloud voice vendor and play back the returned audio."
         case .elevenLabsVoiceCatalog: return "List the voices the configured key may use, for the voice picker."
         case .openAIRealtimeSession: return "Hold a live speech-to-speech session, streaming audio and optional frames both ways."
+        case .openAICompatibleRealtimeSession: return "Hold a live session with the OpenAI-compatible server explicitly configured by the wearer."
         case .geminiLiveSession: return "Hold a live multimodal session, streaming audio and optional frames both ways."
         case .geminiLiveModelCatalog: return "List the realtime models the configured key may use."
         case .cloudTranslationCaptions: return "Translate captured speech in the cloud for translated captions."
@@ -262,7 +264,7 @@ extension NetworkRoute {
         case .elevenLabsVoiceCatalog, .geminiLiveModelCatalog, .providerModelCatalog,
              .gatewayConnectionTest, .fhirConnectionTest:
             return [.credential]
-        case .openAIRealtimeSession, .geminiLiveSession:
+        case .openAIRealtimeSession, .openAICompatibleRealtimeSession, .geminiLiveSession:
             return [.audio, .transcript, .frame, .credential]
         case .cloudTranslationCaptions:
             return [.audio, .transcript, .credential]
@@ -339,7 +341,9 @@ extension NetworkRoute {
              .aircraftOverhead, .aedDirectory, .twitchChatSocket, .playbookHTTPStep:
             return .publicWeb
         case .homeAssistantCommand, .homeAssistantEntityCache, .hermesBridgeSession,
-             .mcpHTTPTransport, .webHUDMirrorListener, .mcpGlassesListener, .jobRecordingOfficeSync:
+             .mcpHTTPTransport, .webHUDMirrorListener, .mcpGlassesListener, .jobRecordingOfficeSync,
+             .openAICompatibleRealtimeSession:
+            // The explicit compatible-server setting supports both LAN servers and TLS gateways.
             return .localNetwork
         case .loopbackOAuthCallback:
             return .loopback
@@ -376,6 +380,7 @@ extension NetworkRoute {
     var transportDelegatedTo: NetworkRoute? {
         switch self {
         case .cloudTranslationCaptions: return .geminiLiveSession
+        case .openAICompatibleRealtimeSession: return .openAIRealtimeSession
         case .conversationRecallSummary: return .llmCompletion
         case .openClawEventStream: return .openClawGatewaySocket
         default: return nil
@@ -403,8 +408,9 @@ extension NetworkRoute {
         case .deepgramLiveTranscription: return ["DeepgramSTTService"]
         case .deepgramBatchTranscription: return ["DeepgramBatchService"]
         case .elevenLabsSpeechSynthesis, .elevenLabsVoiceCatalog: return ["TextToSpeechService"]
-        case .openAIRealtimeSession: return ["OpenAIRealtimeService", "OpenAIWebSocketDelegate"]
-        case .geminiLiveSession: return ["GeminiLiveService", "WebSocketDelegate"]
+        case .openAIRealtimeSession: return ["RealtimeJSONSessionService"]
+        case .openAICompatibleRealtimeSession: return []
+        case .geminiLiveSession: return ["GeminiLiveService"]
         case .geminiLiveModelCatalog: return ["GeminiLiveModelCatalog"]
         case .cloudTranslationCaptions: return []
         case .llmCompletion: return ["LLMService"]
@@ -464,6 +470,10 @@ enum NetworkRouteRegistry {
     static let exemptTransportTypes: [String: String] = [
         "BoundedHTTPClient":
             "Shared hardened transport. It carries whatever route its caller declares; guarding here would hide which feature actually sent the bytes.",
+        "RealtimeWebSocketTransport":
+            "Shared ordered WebSocket mechanics; the caller declares and guards its route, and start rechecks policy before opening the socket.",
+        "RealtimeConnectionTransport":
+            "Transport interface for the shared WebSocket engine and its deterministic test double; it originates no feature route.",
         "NetworkInterceptor":
             "A URLProtocol diagnostic observer. It re-issues a request another route already originated and guarded, so counting it again would double-count."
     ]

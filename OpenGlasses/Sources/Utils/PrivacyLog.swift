@@ -323,7 +323,7 @@ enum PrivacyLog {
 
     // MARK: - Realtime sessions
 
-    enum RealtimeProvider: String { case openai, gemini }
+    enum RealtimeProvider: String { case openai, gemini, qwen, doubao, compatible }
 
     /// State transitions and protocol milestones. No case carries model or user text.
     ///

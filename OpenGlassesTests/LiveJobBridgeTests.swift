@@ -351,8 +351,7 @@ final class LiveJobBridgeWiringTests: XCTestCase {
     }
 
     func testBothManagersOwnTheSameBridge() throws {
-        for file in ["Services/GeminiLive/GeminiLiveSessionManager.swift",
-                     "Services/OpenAIRealtime/OpenAIRealtimeSessionManager.swift"] {
+        for file in ["Services/Realtime/RealtimeSessionManager.swift"] {
             let text = try source(file)
             XCTAssertTrue(text.contains("let jobBridge = LiveJobBridge()"), file)
             // The setup instruction carries the block…
@@ -557,5 +556,34 @@ final class JobStateTriggerTests: XCTestCase {
         for (index, delivery) in deliveries.enumerated() {
             XCTAssertEqual(delivery.shared, delivery.handed, "delivery \(index) read a stale session")
         }
+    }
+}
+
+extension LiveJobBridgeTests {
+    func testContextOnlyProviderReceivesIndependentJobAndDebriefLanes() {
+        session = openJob()
+        var context: [String: String] = [:]
+        let bridge = LiveJobBridge(seams: .init(
+            activeSession: { [weak self] in self?.session },
+            generation: { 1 },
+            canInject: { true },
+            isBusy: { false },
+            injectText: { _ in XCTFail("A context-only provider must not receive a text turn") },
+            updateContext: { text, key in context[key] = text },
+            debriefBlock: { [weak self] in self?.debrief }))
+        _ = bridge.setupBlock()
+        _ = bridge.setupDebriefBlock()
+        session?.jobIntake = .recorded(reference: "1005")
+        session?.jobReference = "1005"
+        bridge.refresh()
+        debrief = "Debrief 1004"
+        bridge.refreshDebrief()
+        XCTAssertTrue(context["job"]?.contains("1005") == true)
+        XCTAssertEqual(context["debrief"], "Debrief 1004")
+        session?.endedAt = Date()
+        session?.outcome = .resolved
+        bridge.refresh()
+        XCTAssertEqual(context["job"], LiveJobContract.heading + "\nNo job is open.")
+        XCTAssertEqual(context["debrief"], "Debrief 1004")
     }
 }

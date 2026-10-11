@@ -1034,7 +1034,8 @@ enum SensitiveStore: String, CaseIterable {
                           deleteAll: .unavailable("settings are the wearer's configuration, changed not erased"),
                           deleteSubject: .notSubjectLinked,
                           owner: "Config",
-                          ownerPaths: ["OpenGlasses/Sources/Utils/Config.swift"],
+                          ownerPaths: ["OpenGlasses/Sources/Utils/Config.swift",
+                                       "OpenGlasses/Sources/Services/Realtime/RealtimeProviderCatalog.swift"],
                           location: "UserDefaults; the content-bearing keys are registered separately above")
 
         case .licence:
@@ -1053,8 +1054,9 @@ enum SensitiveStore: String, CaseIterable {
                           deleteAll: .unavailable("keys are removed per provider"),
                           deleteSubject: .notSubjectLinked,
                           owner: "KeychainService",
-                          ownerPaths: ["OpenGlasses/Sources/Services/KeychainService.swift"],
-                          location: "Keychain: LLM, TTS and search provider API keys")
+                          ownerPaths: ["OpenGlasses/Sources/Services/KeychainService.swift",
+                                       "OpenGlasses/Sources/Services/Realtime/RealtimeProviderCatalog.swift"],
+                          location: "Keychain: LLM (including saved realtime models), TTS and search provider API keys")
 
         case .keychainOAuthTokens:
             return Record(store: self, dataClass: .credential, subjectLinkage: .wearer,

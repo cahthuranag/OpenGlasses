@@ -1,8 +1,9 @@
 # Plan EC — Automatic UI Localization
 
-**Status:** 🚧 Started (planned 2026-09-02; progress below, 2026-10-07). One P1 prerequisite fix,
-four catalog syncs and two complete catalogs (Russian, then Mexican Spanish) have landed; P1
-items 1 and 2, English plural variants, the rest of P2 and the other P3 languages remain.
+**Status:** 🚧 Started (planned 2026-09-02; progress below, 2026-10-11). One P1 prerequisite fix,
+four catalog syncs and two complete catalogs (Russian, then Mexican Spanish) have landed. Ten
+more locale catalogs are complete in this change; P1 items 1 and 2, English plural variants,
+the rest of P2 and the other P3 languages remain.
 **Origin:** The design-kit `LocalizedStringKey` conversion ([#394](https://github.com/straff2002/OpenGlasses/pull/394))
 made the string catalog able to see the app's authored copy, and the owner decision followed the same
 day: the UI should render in the phone's language. iOS does the "automatic" part natively — the
@@ -16,7 +17,34 @@ catalogs. Two PRs: P1+P2 (code, reviewable), then P3 (mechanical per-language ca
 
 ---
 
-## Progress (2026-10-07)
+## Progress (2026-10-11)
+
+**Full catalogs (2026-10-11, owner request).**
+- **Ten full locale catalogs:** Italian (`it`), Hungarian (`hu`), Korean (`ko`), Japanese (`ja`),
+  Simplified Chinese (`zh-Hans`), Traditional Chinese (`zh-Hant`), Arabic (`ar`), Brazilian
+  Portuguese (`pt-BR`), Dutch (`nl`) and Canadian French (`fr-CA`). Each covers all **2,991 textual
+  keys** in the current 3,025-key catalog, including retained stale entries; symbols and pure
+  format strings need no translation. Japanese and the two Chinese catalogs also retain one
+  previously localized punctuation-only key, so their raw localization totals are 2,992.
+  Catalog keys, English text, entry metadata and all other languages are preserved.
+- **Bundled and counted.** The seven previously downloadable languages move into the Included
+  list. There are now 18 bundled options and 17 downloadable ones. Their original JSON packs
+  remain intact for earlier builds. All ten join `completeLanguages` in the catalog guards. The
+  30 existing counted strings carry each locale's plural categories, including all six Arabic
+  categories; Arabic count labels use number-neutral wording. The English dynamic plural-suffix
+  strings use positional arguments and natural units or count labels instead of appending an
+  English `s`. Configured wake phrases, literal JSON and endpoint examples stay literal.
+- **Machine translation remains the first pass.** Existing bundled translations and original
+  pack vocabulary are retained where appropriate, with local corrections for counts and speech
+  transcripts. Only English copy verified against the public repository was sent to translation
+  services. Native-speaker review
+  of the flagged subset below is still owed before a store-listing claim of support.
+- **Validation:** all eight catalog guard tests pass in an isolated macOS harness using the
+  actual catalog and language manager (the unrelated endpoint-policy dependency is stubbed).
+  Apple's `xcstringstool` compiles the catalog. Native Foundation lookup verifies exact locale
+  selection, translated labels, literal examples and count formatting for 0, 1, 2, 3, 11, 100
+  and 1,000,000 in all ten compiled bundles. This is resource validation, not a full iOS app
+  build or device layout audit.
 
 **Landed.**
 - **Sync after the EU AI Act decisions (2026-10-07).** Three keys added the same add-only way:
@@ -115,8 +143,9 @@ catalogs. Two PRs: P1+P2 (code, reviewable), then P3 (mechanical per-language ca
 - P1 item 2: `OGChip`, `OGStatusPill`, `OGHeroDeviceCard` and `OGDiscoverCard` still accept only
   `String`.
 - P1 items 3 and 4: runtime-composed sentences, and plural variants (the catalog has none).
-- The rest of P2: a coverage floor for partial languages and the `knownRegions` prune. Of P3,
-  every language except `ru` and `es-MX` — `es` included.
+- The rest of P2: a coverage floor for partial languages and the `knownRegions` prune. Of the
+  planned P3 languages, `es`, `de`, `fr`, `uk` and `pl` still have partial catalogs. The ten
+  complete catalogs above also need native-speaker review of the flagged subset.
 
 ---
 

@@ -53,6 +53,8 @@ struct Config {
     static var knownSecretValues: [String] {
         var values = migratableStringSecretKeys.compactMap { KeychainService.string(for: $0) }
         values.append(contentsOf: savedModels.map(\.apiKey))
+        values.append(contentsOf: savedRealtimeModels.map(\.apiKey))
+        values.append(compatibleRealtimeConfiguration.apiKey)
         // FHIR credentials live in their own protected store rather than the migration list, but a
         // token that leaked into a log line has to be masked the same way.
         if let credential = try? FHIRConfigurationStore.shared.loadCredential() {
@@ -1457,7 +1459,7 @@ struct Config {
         if let data = UserDefaults.standard.data(forKey: "savedPromptPresets"),
            let presets = try? JSONDecoder().decode([PromptPreset].self, from: data),
            !presets.isEmpty {
-            return withCurrentIdentity(presets, device: device)
+            return withCurrentBuiltInPresets(presets, device: device)
         }
         // First access: seed with built-ins + migrate any existing custom prompt
         var presets = builtInPresets(device: device)
@@ -1478,81 +1480,25 @@ struct Config {
         return presets
     }
 
-    /// Re-compose the *shipped* presets' text from the current assistant name (Plan FE P6).
-    ///
-    /// Stored presets were seeded on first run, so a built-in's text is frozen at the name the
-    /// wearer had then. Recomposing on read is what makes a rename reach them — and it is safe
-    /// precisely because editing a built-in clears its `isBuiltIn` flag (`PromptPresetsView`),
-    /// so anything still marked built-in is byte-identical to shipped text nobody has touched.
-    /// A user-owned prompt — a custom one, or a built-in the wearer edited — is returned exactly
-    /// as stored: its identity, whatever it says, is respected and its contents are never
-    /// rewritten.
-    ///
-    /// The same refresh carries the device in use (Plan FY F3). The opening line names it, and the
-    /// default prompt's body has two sentences that depend on it or that earlier builds shipped
-    /// with glasses assumed; `comparableBody(of:)` reads those as one, so a stored built-in is
-    /// recomposed for whatever device this turn is on, and one seeded by an earlier build is
-    /// recognised as the shipped text it is.
-    private static func withCurrentIdentity(_ presets: [PromptPreset],
-                                            device: AssistantIdentity.Device) -> [PromptPreset] {
+    /// Refresh app-owned presets from today's templates, including older versions whose body
+    /// or language differs. Preset editing has cleared `isBuiltIn` since presets were introduced,
+    /// so ownership — not text similarity — distinguishes defaults from the wearer's own words.
+    /// Known built-ins follow the current assistant name, device, language and shipped wording;
+    /// custom/edited presets and unknown IDs stay exactly as stored. Selection IDs stay stable,
+    /// and reading does not rewrite storage.
+    private static func withCurrentBuiltInPresets(_ presets: [PromptPreset],
+                                                  device: AssistantIdentity.Device) -> [PromptPreset] {
         guard presets.contains(where: { $0.isBuiltIn }) else { return presets }
-        let shipped = Dictionary(builtInPresets(device: device).map { ($0.id, $0.prompt) },
+        let shipped = Dictionary(builtInPresets(device: device).map { ($0.id, $0) },
                                  uniquingKeysWith: { first, _ in first })
         return presets.map { preset in
-            guard preset.isBuiltIn, let text = shipped[preset.id], text != preset.prompt,
-                  comparableBody(of: text) == comparableBody(of: preset.prompt) else {
-                return preset
-            }
-            var refreshed = preset
-            refreshed.prompt = text
-            return refreshed
+            guard preset.isBuiltIn, let current = shipped[preset.id] else { return preset }
+            return current
         }
     }
 
-    /// Everything after a prompt's opening line. Two shipped texts whose bodies match differ only
-    /// in their identity, which is the one difference this refresh exists to close — a stored
-    /// preset whose body has moved on (a language change, an older app version's wording) is left
-    /// alone rather than quietly replaced with something else the wearer did not ask for.
-    private static func body(of prompt: String) -> Substring {
-        guard let firstBreak = prompt.firstIndex(of: "\n") else { return "" }
-        return prompt[prompt.index(after: firstBreak)...]
-    }
-
-    /// The default prompt's camera sentence. Device-neutral since Plan FY F3: the camera may be
-    /// the glasses' or the phone's, and a phone-only user is not told they wear anything.
+    /// The default prompt's camera sentence: the camera may be the glasses' or the phone's.
     static let cameraSentence = "You have a camera."
-
-    /// The camera sentence earlier builds shipped, when the default prompt assumed glasses.
-    private static let legacyCameraSentence = "The glasses have a camera."
-
-    /// The presets' camera lines as earlier builds shipped them, each beside today's wording
-    /// (Plan FY P2): the camera may be the glasses' or the phone's, so no preset says whose it is.
-    /// Folded for comparison only, so a built-in seeded by an earlier build is still recognised as
-    /// shipped text and follows the new wording; nothing stored is rewritten.
-    static let legacyCameraLines: [(legacy: String, current: String)] = [
-        ("You CAN see images from the glasses camera when provided.",
-         "You CAN see images from the camera when provided."),
-        ("你可以看到眼镜相机拍摄的图片。", "你可以看到相机拍摄的图片。"),
-        ("你可以看到眼镜相机图片，不要说看不到。", "你可以看到相机图片，不要说看不到。"),
-        ("你可以看到眼镜相机的图片。", "你可以看到相机的图片。"),
-    ]
-
-    /// A preset's body with its device sentences folded to one form, for comparison only — the
-    /// result is never stored or sent. Every device's context line and the pre-F3 context line
-    /// read as one placeholder, and the pre-F3 camera sentence and the pre-P2 camera lines read as
-    /// today's.
-    private static func comparableBody(of prompt: String) -> String {
-        var text = String(body(of: prompt))
-        let contextLines = AssistantIdentity.Device.allCases.map(AssistantIdentity.contextLine(device:))
-            + [AssistantIdentity.legacyContextLine]
-        for line in contextLines {
-            text = text.replacingOccurrences(of: line, with: "{device-context}")
-        }
-        for line in legacyCameraLines {
-            text = text.replacingOccurrences(of: line.legacy, with: line.current)
-        }
-        return text.replacingOccurrences(of: legacyCameraSentence, with: cameraSentence)
-    }
 
     static func setSavedPresets(_ presets: [PromptPreset]) {
         if let data = try? JSONEncoder().encode(presets) {

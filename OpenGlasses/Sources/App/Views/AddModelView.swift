@@ -20,11 +20,27 @@ struct AddModelView: View {
     @State private var fetchError: String?
     @State private var keyValidated: Bool = false
 
+    @State private var isRealtime = false
+    @State private var realtimeModel = RealtimeProviderCatalog.templates[0].modelConfiguration()
+    @State private var providerTemplateID: String?
+    @State private var saveError: String?
+
     let onAdd: (ModelConfig) -> Void
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Picker("Conversation", selection: $isRealtime) {
+                        Text("Chat").tag(false)
+                        Text("Realtime").tag(true)
+                    }.pickerStyle(.segmented)
+                        .accessibilityIdentifier("model.conversationKind")
+                }
+                if isRealtime {
+                    RealtimeModelForm(configuration: $realtimeModel)
+                    if let saveError { OGStatusLabel(saveError, kind: .error) }
+                } else {
                 ModelFormView(
                     name: $name,
                     selectedProvider: $selectedProvider,
@@ -33,12 +49,14 @@ struct AddModelView: View {
                     baseURL: $baseURL,
                     supportsVision: $supportsVision,
                     smallContext: $smallContext,
+                    providerTemplateID: $providerTemplateID,
                     availableModels: $availableModels,
                     isFetchingModels: $isFetchingModels,
                     fetchError: $fetchError,
                     keyValidated: $keyValidated,
                     resetModelOnProviderChange: true
                 )
+                }
             }
             .ogFormStyle()
             .navigationTitle("Add Model")
@@ -55,6 +73,17 @@ struct AddModelView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
+                        if isRealtime {
+                            do {
+                                _ = try realtimeModel.request()
+                                var models = Config.savedRealtimeModels
+                                models.append(realtimeModel)
+                                guard Config.setSavedRealtimeModels(models) else { saveError = String(localized: "Couldn't save the model to Keychain."); return }
+                                Config.setActiveRealtimeModelID(realtimeModel.id)
+                                dismiss()
+                            } catch { saveError = error.localizedDescription }
+                            return
+                        }
                         let config = ModelConfig(
                             id: UUID().uuidString,
                             name: name.isEmpty ? selectedProvider.displayName : name,
@@ -63,7 +92,8 @@ struct AddModelView: View {
                             model: model,
                             baseURL: baseURL,
                             supportsVision: supportsVision,
-                            smallContext: smallContext
+                            smallContext: smallContext,
+                            providerTemplateID: providerTemplateID
                         )
                         onAdd(config)
                         dismiss()
@@ -75,7 +105,8 @@ struct AddModelView: View {
     }
 
     private var canAdd: Bool {
-        ModelFormValidation.canAdd(
+        if isRealtime { return !realtimeModel.endpoint.isEmpty && !realtimeModel.apiKey.isEmpty && !realtimeModel.model.isEmpty }
+        return ModelFormValidation.canAdd(
             provider: selectedProvider, model: model, baseURL: baseURL, apiKey: apiKey,
             claudeConnected: claudeOAuth.isConnected,
             chatgptConnected: chatgptOAuth.isConnected,
@@ -88,7 +119,7 @@ struct AddModelView: View {
     /// If the user already has a saved model for this provider, pre-fill the API key
     /// and auto-fetch the model list so they don't have to re-enter credentials.
     private func prefillIfExistingKey(for provider: LLMProvider) {
-        guard provider != .local, provider != .appleOnDevice,
+        guard providerTemplateID == nil, provider != .local, provider != .appleOnDevice,
               let existing = Config.savedModels.first(where: {
                   $0.llmProvider == provider && !$0.apiKey.isEmpty
               }) else { return }

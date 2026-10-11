@@ -96,7 +96,8 @@ final class ConversationModeAvailabilityTests: XCTestCase {
     /// An available mode never carries a reason — a stale explanation beside an enabled control
     /// reads as a warning about the thing you just chose.
     func testAvailableModesCarryNoReason() {
-        for option in options(gemini: true, realtime: true) {
+        for option in ConversationModeAvailability.options(for: .init(
+            hasGeminiKey: true, hasOpenAIRealtimeModel: true, hasCompatibleRealtimeConfiguration: true)) {
             XCTAssertTrue(option.isAvailable)
             XCTAssertNil(option.unavailableReason)
         }

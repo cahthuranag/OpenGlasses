@@ -93,7 +93,9 @@ final class MedicalEgressCoordinator {
 // more than closing its socket — the audio graph has to come down too — so the manager is the
 // participant, not the service.
 extension OpenAIRealtimeSessionManager: MedicalEgressTeardown {
-    var openRoutes: [NetworkRoute] { [.openAIRealtimeSession] }
+    var openRoutes: [NetworkRoute] {
+        [sessionMode == .openaiCompatibleRealtime ? .openAICompatibleRealtimeSession : .openAIRealtimeSession]
+    }
     func tearDownForMedicalEgress() { stopSession() }
 }
 

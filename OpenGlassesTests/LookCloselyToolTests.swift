@@ -15,9 +15,14 @@ final class LookCloselyToolTests: XCTestCase {
     final class FakeInjector: LiveSessionInjecting {
         let recorder: Recorder
         var canInject: Bool = true
+        var supportsVision: Bool = true
+        var validationError: Error?
         var isBusyForInjection: Bool = false
         var liveSessionIdentity: Int = 1
         init(recorder: Recorder) { self.recorder = recorder }
+        func validateSharpImage(_ jpegData: Data) throws {
+            if let validationError { throw validationError }
+        }
         func injectSharpImage(jpegData: Data) {
             recorder.events.append("inject(\(jpegData.count)B)")
         }
@@ -98,6 +103,28 @@ final class LookCloselyToolTests: XCTestCase {
         let result = try await tool.execute(args: [:])
         XCTAssertTrue(result.contains("No live video session"))
         XCTAssertTrue(recorder.events.isEmpty)
+    }
+
+    func testAudioOnlyProviderDoesNotCaptureAnImage() async throws {
+        let recorder = Recorder()
+        let injector = FakeInjector(recorder: recorder)
+        injector.supportsVision = false
+        let tool = makeTool(recorder: recorder, injector: injector)
+        let result = try await tool.execute(args: [:])
+        XCTAssertTrue(result.contains("cannot be added"))
+        XCTAssertTrue(recorder.events.isEmpty)
+    }
+
+    func testProviderImageLimitDoesNotClaimDeliveryOrPlaySuccessCue() async throws {
+        let recorder = Recorder()
+        let cues = Recorder()
+        let injector = FakeInjector(recorder: recorder)
+        injector.validationError = RealtimeAdapterError.imageTooLarge
+        let tool = makeTool(recorder: recorder, injector: injector, cues: cues)
+        let result = try await tool.execute(args: [:])
+        XCTAssertTrue(result.contains("image size limit"))
+        XCTAssertEqual(recorder.events, ["capture(1024B)"])
+        XCTAssertTrue(cues.events.isEmpty)
     }
 
     func testReservePostureDeclinesWithoutTouchingTheCamera() async throws {

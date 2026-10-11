@@ -71,7 +71,7 @@ struct BottomControlBar: View {
     /// view needs, and none of its copy depends on the freshness clock.
     private var cameraReadiness: CameraReadiness { appState.cameraService.readiness }
     private var isGemini: Bool { appState.currentMode == .geminiLive }
-    private var isOpenAI: Bool { appState.currentMode == .openaiRealtime }
+    private var isOpenAI: Bool { appState.currentMode.usesOpenAIRealtimeTransport }
 
     private var realtimeSessionActive: Bool {
         isGemini ? session.isActive : (isOpenAI ? openAISession.isActive : false)
@@ -96,6 +96,7 @@ struct BottomControlBar: View {
     @ObservedObject private var orgProfile = OrgProfileManager.shared
 
     private var photoDisabledForLocalModel: Bool {
+        if isRealtime { return !appState.realtimeSupportsVision }
         guard let model = Config.activeModel, model.llmProvider == .local else { return false }
         return !model.visionEnabled
     }
@@ -616,7 +617,10 @@ struct BottomControlBar: View {
         case .model:
             // The on-device model's load key rides just before the picker as a tile of its own
             // (`HomeGridTile.localModel`), so the two model controls read as one group.
-            let provider = Config.activeModel?.llmProvider ?? .custom
+            let isCompatible = appState.currentMode == .openaiCompatibleRealtime
+            let provider: LLMProvider = isCompatible ? .custom : (Config.activeModel?.llmProvider ?? .custom)
+            let modelName = isCompatible ? Config.compatibleRealtimeConfiguration.model
+                : appState.llmService.activeModelName
             BarButton(
                 icon: DockLayout.modelTileGlyph(for: provider),
                 label: "Model",
@@ -624,7 +628,7 @@ struct BottomControlBar: View {
             ) {
                 showModelPicker = true
             }
-            .accessibilityLabel("Model: \(appState.llmService.activeModelName). Opens the model picker.")
+            .accessibilityLabel("Model: \(modelName). Opens the model picker.")
 
         case .camera:
             cameraButton
@@ -696,15 +700,15 @@ struct BottomControlBar: View {
         } else if isOpenAI {
             ActionCapsule(
                 icon: openAISession.isActive ? "stop.fill" : "play.fill",
-                label: openAISession.isActive ? "Stop Session" : "Start OpenAI Realtime",
+                label: openAISession.isActive ? String(localized: "Stop Session") : String(localized: "Start \(appState.currentMode.displayName)"),
                 isActive: openAISession.isActive,
                 color: openAISession.isActive ? .red : accent
             ) {
                 Task {
                     if openAISession.isActive {
-                        appState.stopLiveSession(.openaiRealtime, source: .appUI)
+                        appState.stopLiveSession(appState.currentMode, source: .appUI)
                     } else {
-                        await appState.requestLiveSession(.openaiRealtime, source: .appUI)
+                        await appState.requestLiveSession(appState.currentMode, source: .appUI)
                     }
                 }
             }
@@ -772,12 +776,12 @@ struct BottomControlBar: View {
                 isActive: cameraReadiness.phase != .stopped,
                 // Disabled while starting: the cold start takes seconds, and a second tap during it
                 // did nothing visible, which read as the first tap having failed.
-                isDisabled: !realtimeSessionActive || appState.cameraService.isStartingStream
+                isDisabled: !appState.realtimeSupportsVision || !realtimeSessionActive || appState.cameraService.isStartingStream
             ) {
                 // Start is an intent decision and reads intent only — never frames. A camera that
                 // is up but delivering nothing must not be started a second time, and a camera
                 // that is stopped must be startable with no pictures anywhere in sight.
-                if realtimeSessionActive && !appState.cameraService.isStreaming
+                if appState.realtimeSupportsVision && realtimeSessionActive && !appState.cameraService.isStreaming
                     && !appState.cameraService.isStartingStream {
                     Task {
                         do { try await appState.cameraService.startStreaming() }
@@ -822,7 +826,7 @@ struct BottomControlBar: View {
                 }
             }
             .accessibilityHint(
-                photoDisabledForLocalModel ? "The on-device model cannot see images. Choose a vision model."
+                photoDisabledForLocalModel ? "The selected model cannot see images. Choose a vision model."
                 : appState.cameraService.isCaptureInProgress ? "Taking a photo."
                 : "Double-tap to take a photo and describe it.")
         }

@@ -9,6 +9,7 @@ struct ModelEditorView: View {
     @State private var model: String
     @State private var baseURL: String
     @State private var supportsVision: Bool
+    @State private var providerTemplateID: String?
     @State private var smallContext: Bool
     @State private var reasoningEffort: String?
 
@@ -29,6 +30,7 @@ struct ModelEditorView: View {
         _model = State(initialValue: config.model)
         _baseURL = State(initialValue: config.baseURL)
         _supportsVision = State(initialValue: config.visionEnabled)
+        _providerTemplateID = State(initialValue: config.providerTemplateID)
         _smallContext = State(initialValue: config.smallContextEnabled)
         _reasoningEffort = State(initialValue: config.reasoningEffort)
     }
@@ -44,6 +46,7 @@ struct ModelEditorView: View {
                     baseURL: $baseURL,
                     supportsVision: $supportsVision,
                     smallContext: $smallContext,
+                    providerTemplateID: $providerTemplateID,
                     availableModels: $availableModels,
                     isFetchingModels: $isFetchingModels,
                     fetchError: $fetchError,
@@ -62,7 +65,7 @@ struct ModelEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let updated = ModelConfig(
+                        var updated = ModelConfig(
                             id: modelId,
                             name: name.isEmpty ? selectedProvider.displayName : name,
                             provider: selectedProvider.rawValue,
@@ -73,6 +76,7 @@ struct ModelEditorView: View {
                             smallContext: smallContext,
                             reasoningEffort: reasoningEffort
                         )
+                        updated.providerTemplateID = providerTemplateID
                         onSave(updated)
                         dismiss()
                     }

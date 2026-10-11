@@ -131,7 +131,7 @@ final class LookCloselyTool: NativeTool {
     }
 
     func execute(args: [String: Any]) async throws -> String {
-        guard let injector = injectorProvider(), injector.canInject else {
+        guard let injector = injectorProvider(), injector.canInject, injector.supportsVision else {
             // Direct mode (or a session that dropped mid-call): there is no live view to add an
             // image to. Point the model at the tools that carry their own vision instead.
             return "No live video session is active, so an image cannot be added to your view. Use a vision tool such as vision_assess or reading_assist instead — they capture and analyze a photo themselves."
@@ -244,7 +244,7 @@ final class LookCloselyTool: NativeTool {
                         report: CaptureQualityReport,
                         requestedAt: Date,
                         requestIdentity: Int) async -> String {
-        guard let injector = injectorProvider(), injector.canInject else {
+        guard let injector = injectorProvider(), injector.canInject, injector.supportsVision else {
             PrivacyLog.vision(.lookClosely, .captureStale,
                               reason: PrivacyToken(CaptureQualityReport.Refusal.sessionReplaced.rawValue))
             return ReadingCaptureOutcome.unavailable(.noFreshView)
@@ -267,6 +267,8 @@ final class LookCloselyTool: NativeTool {
             return ReadingCaptureOutcome.unavailable(refusal.stillReason)
         }
 
+        do { try injector.validateSharpImage(jpeg) }
+        catch { return error.localizedDescription }
         lastInjectionAt = now()
         // The image exists, is readable, and belongs to this request and this session. Every other
         // exit from this function has already returned.

@@ -246,14 +246,6 @@ final class DeviceIdentityTests: XCTestCase {
         XCTAssertEqual(UserDefaults.standard.data(forKey: presetsKey), stored)
     }
 
-    func testTheLegacyCameraLinesFoldOntoTodaysWording() {
-        for line in Config.legacyCameraLines {
-            XCTAssertNotEqual(line.legacy, line.current)
-            XCTAssertFalse(line.current.localizedCaseInsensitiveContains("glasses"))
-            XCTAssertFalse(line.current.contains("眼镜"))
-        }
-    }
-
     /// Agent mode's documents are written once on first use and then belong to the user; the
     /// template a new one starts from no longer says the agent lives on one vendor's glasses.
     func testTheAgentDocumentTemplatesDoNotAssumeGlasses() {

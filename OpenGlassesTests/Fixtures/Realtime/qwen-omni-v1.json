@@ -1,0 +1,43 @@
+[
+  {
+    "type": "session.created"
+  },
+  {
+    "type": "session.updated"
+  },
+  {
+    "type": "input_audio_buffer.speech_started"
+  },
+  {
+    "type": "input_audio_buffer.speech_stopped"
+  },
+  {
+    "type": "conversation.item.input_audio_transcription.completed",
+    "transcript": "你好"
+  },
+  {
+    "type": "response.audio.delta",
+    "delta": "AAABAA==",
+    "item_id": "fixture-reply",
+    "content_index": 0
+  },
+  {
+    "type": "response.audio_transcript.delta",
+    "delta": "你好，有什么可以帮你？"
+  },
+  {
+    "type": "response.function_call_arguments.done",
+    "call_id": "fixture-call",
+    "name": "fixture_tool",
+    "arguments": "{\"question\":\"fixture\"}"
+  },
+  {
+    "type": "response.done",
+    "response": {
+      "usage": {
+        "input_tokens": 3,
+        "output_tokens": 4
+      }
+    }
+  }
+]

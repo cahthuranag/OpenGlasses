@@ -2,27 +2,7 @@ import Foundation
 import UIKit
 
 /// Connection state for the Gemini Live WebSocket.
-enum GeminiConnectionState: Equatable {
-    case disconnected
-    case connecting
-    case settingUp
-    case ready
-    case error(String)
-}
-
-extension GeminiConnectionState {
-    /// The state's name for a log line. `.error` collapses to the bare case: its payload is a
-    /// server-supplied message, which is user-content class.
-    var privacyToken: PrivacyToken {
-        switch self {
-        case .disconnected: return PrivacyToken("disconnected")
-        case .connecting: return PrivacyToken("connecting")
-        case .settingUp: return PrivacyToken("settingUp")
-        case .ready: return PrivacyToken("ready")
-        case .error: return PrivacyToken("error")
-        }
-    }
-}
+typealias GeminiConnectionState = RealtimeConnectionState
 
 /// WebSocket-based real-time Gemini streaming service.
 /// Sends/receives audio (PCM), sends video frames (JPEG), handles tool calls,
@@ -150,10 +130,9 @@ class GeminiLiveService: ObservableObject {
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var connectContinuation: CheckedContinuation<Bool, Never>?
-    private let delegate = WebSocketDelegate()
+    private var delegate = RealtimeWebSocketTransport()
     /// BR P3: stale-callback guard — a superseded connection's late callbacks must no-op.
     private var generationGate = ConnectionGenerationGate()
-    private var urlSession: URLSession!
 
     // Dedicated send queue — keeps JSON serialization, JPEG compression, and base64
     // encoding off the main thread (matches VisionClaw's approach)
@@ -165,11 +144,9 @@ class GeminiLiveService: ObservableObject {
     /// `["AUDIO"]` for the voice session; `["TEXT"]` for the translation-caption session (BY P2).
     private var responseModalities: [String] = ["AUDIO"]
 
-    init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        self.urlSession = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-    }
+    init() {}
+    private var connectionSnapshot: RealtimeModelConfig?
+    func configureConnection(_ model: RealtimeModelConfig) { connectionSnapshot = model }
 
     /// Configure the session parameters before connecting.
     /// Call this before `connect()` to set mode-specific instructions and tools.
@@ -200,10 +177,14 @@ class GeminiLiveService: ObservableObject {
     /// setup message must go out promptly once the socket is open. Failure is not fatal: an empty
     /// list resolves to the offline fallback and the attempt proceeds.
     private func prepareLiveModel() async {
-        let key = Config.geminiLiveAPIKey
+        let key = connectionSnapshot?.apiKey ?? Config.geminiLiveAPIKey
+        if let snapshot = connectionSnapshot, snapshot.id != "legacy-gemini" {
+            resolvedLiveModel = .init(model: snapshot.model.hasPrefix("models/") ? String(snapshot.model.dropFirst(7)) : snapshot.model, substitutedFor: nil, usedOfflineFallback: false)
+            return
+        }
         let available = await GeminiLiveModelCatalog.shared.liveModels(apiKey: key)
         resolvedLiveModel = GeminiLiveModelPolicy.resolve(
-            configured: Config.geminiLiveConfiguredModel, available: available)
+            configured: connectionSnapshot?.model ?? Config.geminiLiveConfiguredModel, available: available)
     }
 
     func connect() async -> Bool {
@@ -214,16 +195,36 @@ class GeminiLiveService: ObservableObject {
         // Plan FF P1/PR5: a scripted attempt stands in for the socket only; everything the outcome
         // then drives — the ladder, the handle bookkeeping, the callbacks — is the production path.
         if scriptedTransportEnabled { return await runScriptedConnect() }
+        let gen = generationGate.advance()
+        resolveConnect(success: false)
+        receiveTask?.cancel(); receiveTask = nil
+        webSocketTask?.cancel(with: .goingAway, reason: nil); webSocketTask = nil
+        delegate.cancel()
+        connectionState = .connecting
         await prepareLiveModel()
+        // Model discovery can suspend. Stop or a newer connection must win before any socket opens.
+        guard generationGate.isCurrent(gen), !Task.isCancelled else { return false }
         lastCloseReason = nil
-        guard let url = Config.geminiLiveWebSocketURL else {
+        let request: URLRequest
+        do {
+            if let snapshot = connectionSnapshot {
+                try MedicalEgressGuard.check(snapshot.route)
+                request = try snapshot.request()
+            } else if let url = Config.geminiLiveWebSocketURL { request = URLRequest(url: url) }
+            else { throw RealtimeConnectionConfiguration.ValidationError.missingAPIKey }
+        } catch {
+            connectionState = .error(error.localizedDescription)
+            return false
+        }
+        guard request.url != nil else {
             connectionState = .error("No Gemini API key configured")
             return false
         }
 
         intentionalDisconnect = false
         setupCarriedResumptionHandle = false
-        let gen = generationGate.advance()
+        delegate.cancel()
+        delegate = RealtimeWebSocketTransport()
         connectionState = .connecting
 
         let result = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
@@ -268,7 +269,7 @@ class GeminiLiveService: ObservableObject {
                 }
             }
 
-            self.webSocketTask = self.urlSession.webSocketTask(with: url)
+            self.webSocketTask = self.delegate.webSocketTask(with: request)
             self.webSocketTask?.resume()
 
             // Timeout after 15 seconds. Stored + cancelled on resolve so a stale timer from a
@@ -472,6 +473,7 @@ class GeminiLiveService: ObservableObject {
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
+        delegate.cancel()
         delegate.onOpen = nil
         delegate.onClose = nil
         delegate.onError = nil
@@ -555,6 +557,7 @@ class GeminiLiveService: ObservableObject {
     func sendAudio(data: Data) {
         guard connectionState == .ready, let task = webSocketTask else { return }
         // Dispatch to send queue to keep base64 encoding off the main thread
+        let transport = delegate
         sendQueue.async {
             let base64 = data.base64EncodedString()
             let json: [String: Any] = [
@@ -565,7 +568,7 @@ class GeminiLiveService: ObservableObject {
                     ]
                 ]
             ]
-            Self.sendJSONDirect(json, via: task)
+            transport.send(json, via: task)
         }
     }
 
@@ -578,6 +581,7 @@ class GeminiLiveService: ObservableObject {
         videoFramesSent += 1
         let count = videoFramesSent
         // Dispatch JPEG compression, base64 encoding, and send to background queue
+        let transport = delegate
         sendQueue.async {
             guard let jpegData = image.jpegData(compressionQuality: Config.geminiLiveVideoJPEGQuality) else {
                 PrivacyLog.realtimeSendSkipped(.gemini, kind: .frame, reason: .encodingFailed)
@@ -594,15 +598,16 @@ class GeminiLiveService: ObservableObject {
             ]
             PrivacyLog.realtimeMedia(.gemini, kind: .streamedFrame,
                                      kilobytes: jpegData.count / 1024, sequence: count)
-            Self.sendJSONDirect(json, via: task)
+            transport.send(json, via: task)
         }
     }
 
     func sendToolResponse(_ response: [String: Any]) {
         guard let task = webSocketTask else { return }
         nonisolated(unsafe) let responseCopy = response
+        let transport = delegate
         sendQueue.async {
-            Self.sendJSONDirect(responseCopy, via: task)
+            transport.send(responseCopy, via: task)
         }
     }
 
@@ -618,7 +623,8 @@ class GeminiLiveService: ObservableObject {
             return
         }
         let json = LiveInjectionEnvelope.geminiText(text, completeTurn: completeTurn)
-        sendQueue.async { Self.sendJSONDirect(json, via: task) }
+        let transport = delegate
+        sendQueue.async { transport.send(json, via: task) }
     }
 
     /// Push a full-quality still into the model's view, bypassing the throttled stream path and its
@@ -629,10 +635,11 @@ class GeminiLiveService: ObservableObject {
                                            state: connectionState.privacyToken)
             return
         }
+        let transport = delegate
         sendQueue.async {
             let json = LiveInjectionEnvelope.geminiImage(base64JPEG: jpegData.base64EncodedString())
             PrivacyLog.realtimeMedia(.gemini, kind: .sharpFrame, kilobytes: jpegData.count / 1024)
-            Self.sendJSONDirect(json, via: task)
+            transport.send(json, via: task)
         }
     }
 
@@ -695,27 +702,7 @@ class GeminiLiveService: ObservableObject {
     }
 
     private func sendJSON(_ json: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: json),
-              let string = String(data: data, encoding: .utf8) else {
-            return
-        }
-        webSocketTask?.send(.string(string)) { _ in }
-    }
-
-    /// Send JSON via a captured URLSessionWebSocketTask reference.
-    /// Called from `sendQueue`. URLSessionWebSocketTask.send is thread-safe,
-    /// so we send directly without hopping to MainActor (matches VisionClaw's pattern).
-    /// The task reference is captured on MainActor before dispatching to sendQueue.
-    private static nonisolated func sendJSONDirect(_ json: [String: Any], via task: URLSessionWebSocketTask) {
-        guard let data = try? JSONSerialization.data(withJSONObject: json),
-              let string = String(data: data, encoding: .utf8) else {
-            return
-        }
-        task.send(.string(string)) { error in
-            if let error {
-                PrivacyLog.realtimeError(.gemini, phase: .send, SafeErrorSummary(error))
-            }
-        }
+        if let task = webSocketTask { delegate.send(json, via: task) }
     }
 
     private func startReceiving(generation: UInt64) {
@@ -736,6 +723,7 @@ class GeminiLiveService: ObservableObject {
                     // async), then apply state/callbacks on main — the old code did both on main for
                     // every message, at 10-25 msgs/sec while the model speaks.
                     if let parsed = await Self.parse(text) {
+                        guard self.generationGate.isCurrent(generation) else { return }
                         self.handleMessage(parsed)
                     }
                 } catch {
@@ -894,41 +882,6 @@ class GeminiLiveService: ObservableObject {
                 PrivacyLog.realtimeUtterance(.gemini, direction: .output, characters: text.count)
                 onOutputTranscription?(text)
             }
-        }
-    }
-}
-
-// MARK: - WebSocket Delegate
-
-private class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
-    var onOpen: ((String?) -> Void)?
-    var onClose: ((URLSessionWebSocketTask.CloseCode, Data?) -> Void)?
-    var onError: ((Error?) -> Void)?
-
-    func urlSession(
-        _ session: URLSession,
-        webSocketTask: URLSessionWebSocketTask,
-        didOpenWithProtocol protocol: String?
-    ) {
-        onOpen?(`protocol`)
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        webSocketTask: URLSessionWebSocketTask,
-        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
-        reason: Data?
-    ) {
-        onClose?(closeCode, reason)
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        didCompleteWithError error: Error?
-    ) {
-        if let error {
-            onError?(error)
         }
     }
 }

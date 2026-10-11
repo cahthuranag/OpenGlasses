@@ -20,7 +20,7 @@ final class NetworkRouteRegistryTests: XCTestCase {
     // MARK: - The scrape
 
     private static let transportTokens = [
-        "URLSession", "URLSessionWebSocketTask", "webSocketTask",
+        "URLSession", "URLSessionWebSocketTask", "webSocketTask", "RealtimeConnectionTransport",
         "NWConnection", "dataTask", "uploadTask", "downloadTask"
     ]
 
@@ -52,7 +52,10 @@ final class NetworkRouteRegistryTests: XCTestCase {
                 if trimmed.hasPrefix("//") { continue }
                 let code = raw.components(separatedBy: "//").first ?? raw
 
-                if Self.transportTokens.contains(where: { Self.containsToken($0, in: code) }) {
+                // Registry labels and diagnostic strings are not transport references.
+                let references = code.replacingOccurrences(of: #""(?:\\.|[^"\\])*""#,
+                                                          with: "", options: .regularExpression)
+                if Self.transportTokens.contains(where: { Self.containsToken($0, in: references) }) {
                     owners[stack.first?.name ?? fallbackName, default: []].insert(url.lastPathComponent)
                 }
                 if code.contains("{"), let declared = Self.declaredTypeName(in: code) {

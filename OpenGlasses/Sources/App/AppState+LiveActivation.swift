@@ -11,12 +11,37 @@ import Speech
 /// simulator cannot exercise anyway (`Wearables` traps in a headless process).
 extension AppState: LiveSessionActivationOwner {
 
+    var realtimeSupportsVision: Bool {
+        guard currentMode.isRealtime else { return true }
+        let model = currentMode == .geminiLive
+            ? (geminiLiveSession.isActive ? geminiLiveSession.sessionModel : Config.realtimeModel(for: currentMode))
+            : (openAIRealtimeSession.isActive ? openAIRealtimeSession.sessionModel : Config.realtimeModel(for: currentMode))
+        return model?.capabilities?.vision ?? false
+    }
+
+    func selectRealtimeModel(_ id: String) {
+        Task { @MainActor in
+            let wasActive = isSessionActive(currentMode)
+            guard id != Config.activeRealtimeModelID || currentMode != .openaiCompatibleRealtime else { return }
+            Config.setActiveRealtimeModelID(id)
+            if currentMode != .openaiCompatibleRealtime {
+                await performModeSwitch(to: .openaiCompatibleRealtime)
+            } else if wasActive {
+                stopLiveSession(.openaiCompatibleRealtime, source: .appUI)
+                if Config.modeSwitchAutoRedialEnabled {
+                    _ = await requestLiveSession(.openaiCompatibleRealtime, source: .appUI)
+                }
+            }
+        }
+    }
+
     var activeMode: AppMode { currentMode }
 
     func isSessionActive(_ mode: AppMode) -> Bool {
         switch mode {
         case .geminiLive: return geminiLiveSession.isActive
-        case .openaiRealtime: return openAIRealtimeSession.isActive
+        case .openaiRealtime, .openaiCompatibleRealtime:
+            return openAIRealtimeSession.isActive && openAIRealtimeSession.sessionMode == mode
         case .direct: return false
         }
     }
@@ -24,7 +49,7 @@ extension AppState: LiveSessionActivationOwner {
     func startSession(_ mode: AppMode) async {
         switch mode {
         case .geminiLive: await geminiLiveSession.startSession()
-        case .openaiRealtime: await openAIRealtimeSession.startSession()
+        case .openaiRealtime, .openaiCompatibleRealtime: await openAIRealtimeSession.startSession()
         case .direct: break
         }
     }
@@ -32,7 +57,10 @@ extension AppState: LiveSessionActivationOwner {
     func stopSession(_ mode: AppMode) {
         switch mode {
         case .geminiLive: if geminiLiveSession.isActive { geminiLiveSession.stopSession() }
-        case .openaiRealtime: if openAIRealtimeSession.isActive { openAIRealtimeSession.stopSession() }
+        case .openaiRealtime, .openaiCompatibleRealtime:
+            if openAIRealtimeSession.isActive, openAIRealtimeSession.sessionMode == mode {
+                openAIRealtimeSession.stopSession()
+            }
         case .direct: break
         }
     }
@@ -55,10 +83,10 @@ extension AppState: LiveSessionActivationOwner {
     func blindAssistantLaunchInputs(awaitRegistration: Bool) async
         -> BlindAssistantLaunchPolicy.Inputs {
         let mode = blindAssistantTargetMode
-        let provider: BlindAssistantLaunchPolicy.Provider =
-            (mode == .openaiRealtime) ? .openAIRealtime : .gemini
-        let providerConfigured = (mode == .openaiRealtime)
-            ? Config.isOpenAIRealtimeConfigured
+        let provider: BlindAssistantLaunchPolicy.Provider = mode == .openaiCompatibleRealtime
+            ? .openAICompatibleRealtime : (mode.usesOpenAIRealtimeTransport ? .openAIRealtime : .gemini)
+        let providerConfigured = mode.usesOpenAIRealtimeTransport
+            ? (Config.realtimeModel(for: mode)?.isConfigured ?? false)
             : Config.isGeminiLiveConfigured
 
         var glassesReady = registrationStateRaw >= 3

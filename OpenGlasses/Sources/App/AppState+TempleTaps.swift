@@ -48,7 +48,7 @@ extension AppState: TempleActionPerforming {
         case .endConversation:
             await hangUpConversation()
         case .endLiveSession:
-            stopLiveSession(geminiLiveSession.isActive ? .geminiLive : .openaiRealtime,
+            stopLiveSession(geminiLiveSession.isActive ? .geminiLive : openAIRealtimeSession.sessionMode,
                             source: .templeTap)
         case .setMicMuted(let muted):
             micMuted = muted

@@ -20,10 +20,18 @@ struct ModelConfig: Codable, Identifiable, Equatable {
     /// **Automatic**. Saved with the model and reused on every job. Optional so configs saved before
     /// the field existed decode as Automatic. `ReasoningPolicy` decides what is actually sent.
     var reasoningEffort: String? = nil
+    /// Catalog identity for an OpenAI-compatible chat template; old saved models decode as nil.
+    var providerTemplateID: String? = nil
 
     /// Convenience to get the LLMProvider enum
     var llmProvider: LLMProvider {
         LLMProvider(rawValue: provider) ?? .custom
+    }
+    var providerDisplayName: String {
+        guard let template = RealtimeProviderCatalog.chatTemplates.first(where: { $0.id == providerTemplateID }) else {
+            return llmProvider.displayName
+        }
+        return String(localized: String.LocalizationValue(template.name))
     }
 
     /// Whether this model should receive image input when the app has an image available.

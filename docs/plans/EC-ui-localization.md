@@ -19,6 +19,21 @@ catalogs. Two PRs: P1+P2 (code, reviewable), then P3 (mechanical per-language ca
 
 ## Progress (2026-10-11)
 
+- **Realtime provider localization (2026-10-11).** Synced the compiler output after the
+  shared realtime provider work and added the provider picker’s dynamic keys: **85 new keys**,
+  bringing the catalog to **3,110 keys**. Every new key has translations in all 12 complete
+  locales (`ar`, `es-MX`, `fr-CA`, `hu`, `it`, `ja`, `ko`, `nl`, `pt-BR`, `ru`, `zh-Hans`,
+  `zh-Hant`). Provider help, capabilities, connection results, validation errors, mode labels
+  and session controls now use localization lookups. Saved model names, provider/protocol IDs,
+  model IDs, voice IDs and wire messages stay stable. Existing translations are preserved;
+  the existing `Start %@` key is reactivated for the session button. New translations were
+  authored locally as a first pass; native-speaker review remains owed. Apple’s catalog compiler
+  passes, and Foundation resolves all **1,020 new-key lookups** in the exact 12 locales, including
+  numeric connection codes and formatted operation errors. The final iOS simulator build passes
+  **56 tests**: all eight catalog guards, the catalog ordering/rename guard, provider and text
+  contracts, endpoint validation, model persistence and conversation availability. A stalled
+  initial test-runner launch was stopped; the subsequent run passed with zero failures.
+
 **Full catalogs (2026-10-11, owner request).**
 - **Ten full locale catalogs:** Italian (`it`), Hungarian (`hu`), Korean (`ko`), Japanese (`ja`),
   Simplified Chinese (`zh-Hans`), Traditional Chinese (`zh-Hant`), Arabic (`ar`), Brazilian

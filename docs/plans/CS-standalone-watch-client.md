@@ -1,6 +1,13 @@
 # Plan CS — Standalone Watch Client (the watch works with the phone out of range)
 
 **Status:** 📝 Drafted (not scheduled), 2026-08-09
+**2026-10-13 — one piece of P3 exists, by the phone route only.** The watch has a Dictate row: the
+system's text input turns speech into text on the wrist, and the watch sends it to the phone as a
+typed turn (`askText`; `WatchDictation` on the phone, `WatchDictationWire` on the watch). The answer
+comes back in the reply and is shown in full; the phone speaks it only into glasses, earbuds or a
+car, never from its own speaker. It still needs the phone in reach — the direct route, the
+transcript and `WatchCommandRoute` below are unbuilt, and the complications are now links the watch
+app acts on (`WatchComplicationLink`), so P3's complication re-routing has one place to go.
 **Depends on:** Plan CR (a reachable endpoint for the direct path) — P1/P3 are independent of it
 **Shape:** pure routing core first (P1), credential + transport (P2), UI (P3), device edge deferred (P4)
 

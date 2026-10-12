@@ -1,6 +1,16 @@
 # Plan GA — Watch Vision with the Phone Camera
 
 **Status:** 📋 Planned 2026-09-30 — nothing built. For review before any code changes.
+**2026-10-13 — the complication path below has changed, outside this plan.** The complications were
+not reaching the phone: a complication on a watch face cannot run a button (a tap only opens the
+watch app), and the widget extension has no usable session with the phone, so the P4 question about
+`transferUserInfo` is answered — it did not. Each complication now carries a `widgetURL`
+(`WatchComplicationLink`), the watch app sends the command by `sendMessage` when it opens, and so a
+complication **does** have a reply channel: the watch app's. The action intents and the widget's
+`transferUserInfo` are gone. Two of P0/P1's pushes also landed: `sendStatusUpdate()` no longer
+returns early when the watch is unreachable, and the phone pushes on a listening or glasses-link
+change. Read "What is true today" and the complication rows of the tables with that in mind; the
+vision-source work is untouched.
 **Origin:** The owner, 2026-09-30: the phone camera is a real alternative to the glasses camera for
 vision, and the watch's camera and vision controls must behave sensibly whether the vision source is
 the glasses, the phone camera, or nothing.

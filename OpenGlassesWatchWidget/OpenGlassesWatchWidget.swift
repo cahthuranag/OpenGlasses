@@ -1,7 +1,6 @@
 import WidgetKit
 import SwiftUI
 import AppIntents
-import WatchConnectivity
 
 private var watchWidgetFamilies: [WidgetFamily] {
     #if os(watchOS)
@@ -86,6 +85,10 @@ struct RecordComplicationProvider: AppIntentTimelineProvider {
 }
 
 // MARK: - Complication Views
+//
+// None of these is a button. A complication on a watch face cannot run one — a tap opens the watch
+// app and nothing else — so each widget below carries a `widgetURL` naming its command, and the
+// watch app sends it to the phone when it opens (`WatchComplicationLink`).
 
 struct ListenComplicationView: View {
     let entry: WatchComplicationEntry
@@ -96,42 +99,39 @@ struct ListenComplicationView: View {
     private var tint: Color { entry.state.isListening ? .green : .primary }
 
     var body: some View {
-        Button(intent: ToggleListenIntent()) {
-            switch family {
-            case .accessoryRectangular:
-                HStack(spacing: 10) {
-                    Image(systemName: icon)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(tint)
-                        .frame(width: 28)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(label)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(tint)
-                        Text(entry.state.isListening ? "Tap to stop" : "OG glasses")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                }
-            case .accessoryCircular:
-                ZStack {
-                    AccessoryWidgetBackground()
-                    Image(systemName: icon)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(tint)
-                }
-            #if os(watchOS)
-            case .accessoryCorner:
+        switch family {
+        case .accessoryRectangular:
+            HStack(spacing: 10) {
                 Image(systemName: icon)
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(tint)
-                    .widgetLabel(label)
-            #endif
-            default:
-                Label(label, systemImage: icon)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(tint)
+                    Text(entry.state.isListening ? "Tap to stop" : "OG glasses")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
             }
+        case .accessoryCircular:
+            ZStack {
+                AccessoryWidgetBackground()
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+        #if os(watchOS)
+        case .accessoryCorner:
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+                .widgetLabel(label)
+        #endif
+        default:
+            Label(label, systemImage: icon)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -144,42 +144,39 @@ struct RecordComplicationView: View {
     private var tint: Color { entry.state.isRecording ? .red : .primary }
 
     var body: some View {
-        Button(intent: ToggleRecordIntent()) {
-            switch family {
-            case .accessoryRectangular:
-                HStack(spacing: 10) {
-                    Image(systemName: icon)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(tint)
-                        .frame(width: 28)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(label)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(tint)
-                        Text(entry.state.isRecording ? "Tap to stop" : "No AI response")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                }
-            case .accessoryCircular:
-                ZStack {
-                    AccessoryWidgetBackground()
-                    Image(systemName: icon)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(tint)
-                }
-            #if os(watchOS)
-            case .accessoryCorner:
+        switch family {
+        case .accessoryRectangular:
+            HStack(spacing: 10) {
                 Image(systemName: icon)
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(tint)
-                    .widgetLabel(label)
-            #endif
-            default:
-                Label(label, systemImage: icon)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(tint)
+                    Text(entry.state.isRecording ? "Tap to stop" : "No AI response")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
             }
+        case .accessoryCircular:
+            ZStack {
+                AccessoryWidgetBackground()
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+        #if os(watchOS)
+        case .accessoryCorner:
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+                .widgetLabel(label)
+        #endif
+        default:
+            Label(label, systemImage: icon)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -195,6 +192,7 @@ struct ListenComplication: Widget {
             provider: ListenComplicationProvider()
         ) { entry in
             ListenComplicationView(entry: entry)
+                .widgetURL(WatchComplicationLink.url(for: .toggleListen))
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Listen")
@@ -213,6 +211,7 @@ struct RecordComplication: Widget {
             provider: RecordComplicationProvider()
         ) { entry in
             RecordComplicationView(entry: entry)
+                .widgetURL(WatchComplicationLink.url(for: .toggleRecord))
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Transcribe")
@@ -249,42 +248,39 @@ struct PhotoComplicationView: View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        Button(intent: CapturePhotoNoteIntent()) {
-            switch family {
-            case .accessoryRectangular:
-                HStack(spacing: 10) {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 28)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Photo Note")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.primary)
-                        Text("Silent · added to transcript")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                }
-            case .accessoryCircular:
-                ZStack {
-                    AccessoryWidgetBackground()
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
-            #if os(watchOS)
-            case .accessoryCorner:
+        switch family {
+        case .accessoryRectangular:
+            HStack(spacing: 10) {
                 Image(systemName: "camera.fill")
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .widgetLabel("Photo Note")
-            #endif
-            default:
-                Label("Photo", systemImage: "camera.fill")
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Photo Note")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text("Silent · added to transcript")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
             }
+        case .accessoryCircular:
+            ZStack {
+                AccessoryWidgetBackground()
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.primary)
+            }
+        #if os(watchOS)
+        case .accessoryCorner:
+            Image(systemName: "camera.fill")
+                .foregroundStyle(.primary)
+                .widgetLabel("Photo Note")
+        #endif
+        default:
+            Label("Photo", systemImage: "camera.fill")
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -298,6 +294,7 @@ struct PhotoNoteComplication: Widget {
             provider: PhotoComplicationProvider()
         ) { entry in
             PhotoComplicationView(entry: entry)
+                .widgetURL(WatchComplicationLink.url(for: .capturePhoto))
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Photo Note")

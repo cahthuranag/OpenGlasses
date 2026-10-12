@@ -1,10 +1,14 @@
 import SwiftUI
 
 struct WatchMainView: View {
-    @StateObject private var connectivity = WatchConnectivityService()
+    @ObservedObject var connectivity: WatchConnectivityService
     @State private var errorMessage: String?
     @State private var feedbackTrigger: Int = 0
     @State private var errorFeedbackTrigger: Int = 0
+    /// A dictated question is with the phone and has not been answered yet.
+    @State private var isAsking = false
+    /// Counts dictated answers as they arrive, so the list can bring each one into view.
+    @State private var answerArrivals: Int = 0
 
     private var accentColor: Color {
         Self.color(for: connectivity.accentColorName)
@@ -65,69 +69,78 @@ struct WatchMainView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 12) {
-                    // Status bar
-                    statusBar
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 12) {
+                        // Status bar
+                        statusBar
 
-                    // The job in hand (Plan FO P3a). Read-only, and directly under the status,
-                    // because on a service visit it is the thing being glanced at.
-                    if let job = connectivity.job {
-                        jobSection(job)
+                        // The job in hand (Plan FO P3a). Read-only, and directly under the status,
+                        // because on a service visit it is the thing being glanced at.
+                        if let job = connectivity.job {
+                            jobSection(job)
+                            Divider()
+                        }
+
+                        // Listen toggle
+                        listenRow
+
+                        // Ask by speaking to the watch itself
+                        dictateRow
+
+                        // Record toggle (transcription)
+                        recordRow
+
+                        // Take a photo on the glasses
+                        photoRow
+
+                        // Record video on the glasses
+                        videoRow
+
                         Divider()
+
+                        // Quick Actions (top 4 from iOS app)
+                        if !connectivity.quickActions.isEmpty {
+                            quickActionsSection
+                            Divider()
+                        }
+
+                        // Persona agents
+                        if !connectivity.personas.isEmpty {
+                            personasSection
+                            Divider()
+                        }
+
+                        // Connect / Sleep — compact
+                        if connectivity.isConnected {
+                            compactActionButton(label: "Sleep", icon: "moon.fill", command: "sleep")
+                        } else {
+                            compactActionButton(label: "Connect", icon: "AvenkinMark", command: "connect")
+                        }
+
+                        // Recent conversations
+                        if !connectivity.recentThreads.isEmpty {
+                            Divider()
+                            conversationsSection
+                        }
+
+                        // Response
+                        if !connectivity.lastResponse.isEmpty {
+                            responseSection
+                                .id(Self.responseAnchor)
+                        }
+
+                        if let error = errorMessage {
+                            Text(error)
+                                .font(.caption2)
+                                .foregroundStyle(.red)
+                        }
                     }
-
-                    // Listen toggle
-                    listenRow
-
-                    // Record toggle (transcription)
-                    recordRow
-
-                    // Take a photo on the glasses
-                    photoRow
-
-                    // Record video on the glasses
-                    videoRow
-
-                    Divider()
-
-                    // Quick Actions (top 4 from iOS app)
-                    if !connectivity.quickActions.isEmpty {
-                        quickActionsSection
-                        Divider()
-                    }
-
-                    // Persona agents
-                    if !connectivity.personas.isEmpty {
-                        personasSection
-                        Divider()
-                    }
-
-                    // Connect / Sleep — compact
-                    if connectivity.isConnected {
-                        compactActionButton(label: "Sleep", icon: "moon.fill", command: "sleep")
-                    } else {
-                        compactActionButton(label: "Connect", icon: "AvenkinMark", command: "connect")
-                    }
-
-                    // Recent conversations
-                    if !connectivity.recentThreads.isEmpty {
-                        Divider()
-                        conversationsSection
-                    }
-
-                    // Response
-                    if !connectivity.lastResponse.isEmpty {
-                        responseSection
-                    }
-
-                    if let error = errorMessage {
-                        Text(error)
-                            .font(.caption2)
-                            .foregroundStyle(.red)
-                    }
+                    .padding()
                 }
-                .padding()
+                .onChange(of: answerArrivals) {
+                    withAnimation { proxy.scrollTo(Self.responseAnchor, anchor: .top) }
+                }
             }
             .navigationTitle("")
             .toolbar {
@@ -138,6 +151,19 @@ struct WatchMainView: View {
         }
         .sensoryFeedback(.success, trigger: feedbackTrigger)
         .sensoryFeedback(.error, trigger: errorFeedbackTrigger)
+        // A tap on a complication lands here: it can only open the app, so the app does the work.
+        .onOpenURL { url in
+            guard let command = WatchComplicationLink.command(from: url) else { return }
+            errorMessage = nil
+            connectivity.runComplicationCommand(command) { error in
+                if let error {
+                    errorMessage = error
+                    errorFeedbackTrigger += 1
+                } else {
+                    feedbackTrigger += 1
+                }
+            }
+        }
     }
 
     // MARK: - Wordmark
@@ -201,6 +227,46 @@ struct WatchMainView: View {
         }
         .disabled(!connectivity.isReachable)
         .tint(accentColor)
+    }
+
+    // MARK: - Dictate Row
+
+    /// Ask with the watch's own microphone. Listen opens a microphone the phone can reach — the
+    /// glasses, earbuds, or the phone itself; this one needs none of them. The system's dictation
+    /// turns what is said into text here on the wrist, and the text is what goes to the phone.
+    private var dictateRow: some View {
+        TextFieldLink(prompt: Text("Ask Avenkin")) {
+            Label {
+                HStack {
+                    Text("Dictate")
+                        .font(.body)
+                    if isAsking {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    }
+                    Spacer(minLength: 0)
+                }
+            } icon: {
+                Image(systemName: "waveform")
+                    .foregroundStyle(accentColor)
+            }
+        } onSubmit: { question in
+            errorMessage = nil
+            isAsking = true
+            connectivity.sendCommand(WatchDictationWire.command,
+                                     extra: [WatchDictationWire.textKey: question]) { error in
+                isAsking = false
+                if let error {
+                    errorMessage = error
+                    errorFeedbackTrigger += 1
+                } else {
+                    feedbackTrigger += 1
+                    // The answer is the point, and it is drawn at the foot of the list.
+                    answerArrivals += 1
+                }
+            }
+        }
+        .disabled(!connectivity.isReachable || connectivity.isProcessing)
     }
 
     // MARK: - Record Toggle Row
@@ -406,14 +472,16 @@ struct WatchMainView: View {
 
     // MARK: - Response
 
+    private static let responseAnchor = "response"
+
     private var responseSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Response")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            // In full: for a question dictated with nothing else on, this is the whole answer.
             Text(connectivity.lastResponse)
                 .font(.caption)
-                .lineLimit(6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)

@@ -33,6 +33,10 @@ class WatchConnectivityService: NSObject, ObservableObject {
     // Debounce: false→true immediately, true→false after 2 s
     private var reachabilityDebounceTask: Task<Void, Never>?
 
+    /// A complication's command waiting for the phone, and who to tell how it went.
+    private var pendingComplication: (request: PendingComplicationCommand, completion: (String?) -> Void)?
+    private var pendingComplicationExpiry: Task<Void, Never>?
+
     struct PersonaInfo: Identifiable {
         let id: String
         let name: String
@@ -98,6 +102,48 @@ class WatchConnectivityService: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Complication Commands
+
+    /// Send the command a complication was tapped for.
+    ///
+    /// The tap usually launches the app, so the link gets here before the session with the phone
+    /// is up. The command waits for it — for `PendingComplicationCommand.lifetime`, no longer —
+    /// and is sent the moment the phone is reachable. `completion` gets nil when the phone took it.
+    func runComplicationCommand(_ command: WatchComplicationLink.Command,
+                                completion: @escaping (String?) -> Void) {
+        pendingComplicationExpiry?.cancel()
+        pendingComplication = nil
+
+        if WCSession.default.activationState == .activated, WCSession.default.isReachable {
+            sendCommand(command.rawValue, completion: completion)
+            return
+        }
+
+        let pending = PendingComplicationCommand(command: command, requestedAt: Date())
+        pendingComplication = (pending, completion)
+        isProcessing = true
+        pendingComplicationExpiry = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(PendingComplicationCommand.lifetime * 1_000_000_000))
+            guard let self, !Task.isCancelled, self.pendingComplication?.request == pending else { return }
+            self.pendingComplication = nil
+            self.isProcessing = false
+            completion("iPhone not reachable")
+        }
+    }
+
+    /// Send the waiting command, if there is one and the phone can now take it.
+    private func flushPendingComplication() {
+        guard let pending = pendingComplication, WCSession.default.isReachable else { return }
+        pendingComplicationExpiry?.cancel()
+        pendingComplication = nil
+        guard pending.request.isLive(at: Date()) else {
+            isProcessing = false
+            pending.completion("iPhone not reachable")
+            return
+        }
+        sendCommand(pending.request.command.rawValue, completion: pending.completion)
+    }
+
     // MARK: - Send Commands
 
     func sendCommand(_ command: String, extra: [String: Any] = [:], completion: @escaping (String?) -> Void) {
@@ -147,8 +193,14 @@ class WatchConnectivityService: NSObject, ObservableObject {
 
 extension WatchConnectivityService: WCSessionDelegate {
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        // The delegate is only told about a context that arrives while the app runs. The one the
+        // phone sent while it was not is waiting here, and without it a fresh launch shows
+        // nothing connected until the phone next has something to say.
+        let lastContext = session.receivedApplicationContext
         DispatchQueue.main.async {
+            if !lastContext.isEmpty { self.apply(lastContext) }
             self.updateReachability(session.isReachable)
+            self.flushPendingComplication()
         }
     }
 
@@ -163,92 +215,89 @@ extension WatchConnectivityService: WCSessionDelegate {
     func sessionReachabilityDidChange(_ session: WCSession) {
         DispatchQueue.main.async {
             self.updateReachability(session.isReachable)
+            self.flushPendingComplication()
         }
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        DispatchQueue.main.async {
-            if let connected = applicationContext["isConnected"] as? Bool {
-                self.isConnected = connected
-            }
-            if let listening = applicationContext["isListening"] as? Bool {
-                self.isListening = listening
-            }
-            if let recording = applicationContext["isRecording"] as? Bool {
-                self.isRecording = recording
-            }
-            if let videoRecording = applicationContext["isVideoRecording"] as? Bool {
-                self.isVideoRecording = videoRecording
-            }
-            if let status = applicationContext["status"] as? String {
-                self.status = status
-            }
-            if let response = applicationContext["lastResponse"] as? String {
-                self.lastResponse = response
-            }
-            if let name = applicationContext["deviceName"] as? String {
-                self.deviceName = name
-            }
-            if let battery = applicationContext["batteryLevel"] as? Int {
-                self.batteryLevel = battery
-            }
-            if let accent = applicationContext["accentColor"] as? String {
-                self.accentColorName = accent
-            }
-            // Parse persona list
-            if let personaData = applicationContext["personas"] as? [[String: String]] {
-                self.personas = personaData.compactMap { dict in
-                    guard let id = dict["id"], let name = dict["name"] else { return nil }
-                    return PersonaInfo(id: id, name: name)
-                }
-            }
-            // Parse recent threads
-            if let threadData = applicationContext["recentThreads"] as? [[String: String]] {
-                self.recentThreads = threadData.compactMap { dict in
-                    guard let id = dict["id"], let title = dict["title"] else { return nil }
-                    return ThreadInfo(
-                        id: id,
-                        title: title,
-                        summary: dict["summary"] ?? "",
-                        updatedAt: dict["updatedAt"] ?? ""
-                    )
-                }
-            }
-            // Parse quick actions
-            if let actionData = applicationContext["quickActions"] as? [[String: String]] {
-                self.quickActions = actionData.compactMap { dict in
-                    guard let id = dict["id"], let label = dict["label"] else { return nil }
-                    return QuickActionInfo(
-                        id: id,
-                        label: label,
-                        icon: dict["icon"] ?? "star.fill",
-                        type: dict["type"] ?? "prompt"
-                    )
-                }
-            }
-            // The open job, or nothing. An absent key clears it: a finished job must not linger
-            // on the wrist looking open.
-            if let jobData = applicationContext["job"] as? [String: String],
-               let number = jobData["jobNumber"] {
-                self.job = JobInfo(jobNumber: number,
-                                   state: jobData["state"] ?? "",
-                                   unit: jobData["unit"] ?? "",
-                                   nextAction: jobData["nextAction"] ?? "")
-            } else {
-                self.job = nil
-            }
-            // Persist to app group for complications
-            self.persistSharedState()
-        }
+        DispatchQueue.main.async { self.apply(applicationContext) }
     }
 
-    /// Handle transferUserInfo from complications (queued delivery, no reply handler).
-    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
-        guard let command = userInfo["command"] as? String else { return }
-        // Re-route complication commands through the normal sendCommand path
-        // but we can't get a reply from a transferUserInfo — fire and forget
-        DispatchQueue.main.async {
-            self.sendCommand(command) { _ in }
+    /// Take the phone's status into the published state and the complications. Main queue only.
+    private func apply(_ applicationContext: [String: Any]) {
+        if let connected = applicationContext["isConnected"] as? Bool {
+            self.isConnected = connected
         }
+        if let listening = applicationContext["isListening"] as? Bool {
+            self.isListening = listening
+        }
+        if let recording = applicationContext["isRecording"] as? Bool {
+            self.isRecording = recording
+        }
+        if let videoRecording = applicationContext["isVideoRecording"] as? Bool {
+            self.isVideoRecording = videoRecording
+        }
+        if let status = applicationContext["status"] as? String {
+            self.status = status
+        }
+        // The status carries only the opening of the last answer. One already held in full, from a
+        // command's own reply, is not replaced by its first lines.
+        if let response = applicationContext["lastResponse"] as? String,
+           !(lastResponse.count > response.count && lastResponse.hasPrefix(response)) {
+            self.lastResponse = response
+        }
+        if let name = applicationContext["deviceName"] as? String {
+            self.deviceName = name
+        }
+        if let battery = applicationContext["batteryLevel"] as? Int {
+            self.batteryLevel = battery
+        }
+        if let accent = applicationContext["accentColor"] as? String {
+            self.accentColorName = accent
+        }
+        // Parse persona list
+        if let personaData = applicationContext["personas"] as? [[String: String]] {
+            self.personas = personaData.compactMap { dict in
+                guard let id = dict["id"], let name = dict["name"] else { return nil }
+                return PersonaInfo(id: id, name: name)
+            }
+        }
+        // Parse recent threads
+        if let threadData = applicationContext["recentThreads"] as? [[String: String]] {
+            self.recentThreads = threadData.compactMap { dict in
+                guard let id = dict["id"], let title = dict["title"] else { return nil }
+                return ThreadInfo(
+                    id: id,
+                    title: title,
+                    summary: dict["summary"] ?? "",
+                    updatedAt: dict["updatedAt"] ?? ""
+                )
+            }
+        }
+        // Parse quick actions
+        if let actionData = applicationContext["quickActions"] as? [[String: String]] {
+            self.quickActions = actionData.compactMap { dict in
+                guard let id = dict["id"], let label = dict["label"] else { return nil }
+                return QuickActionInfo(
+                    id: id,
+                    label: label,
+                    icon: dict["icon"] ?? "star.fill",
+                    type: dict["type"] ?? "prompt"
+                )
+            }
+        }
+        // The open job, or nothing. An absent key clears it: a finished job must not linger
+        // on the wrist looking open.
+        if let jobData = applicationContext["job"] as? [String: String],
+           let number = jobData["jobNumber"] {
+            self.job = JobInfo(jobNumber: number,
+                               state: jobData["state"] ?? "",
+                               unit: jobData["unit"] ?? "",
+                               nextAction: jobData["nextAction"] ?? "")
+        } else {
+            self.job = nil
+        }
+        // Persist to app group for complications
+        self.persistSharedState()
     }
 }

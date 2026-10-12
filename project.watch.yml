@@ -43,6 +43,8 @@ targets:
       - path: OpenGlassesWatchWidget
       # Shared with iOS app — defines LogoIcon + AccentColors
       - path: GlassesActivityWidget/AccentColors.swift
+      # Shared with the watch app — the link each complication carries, and the app reads back.
+      - path: OpenGlassesWatch/WatchComplicationLink.swift
     entitlements:
       path: OpenGlassesWatchWidget/OpenGlassesWatchWidget.entitlements
       properties:

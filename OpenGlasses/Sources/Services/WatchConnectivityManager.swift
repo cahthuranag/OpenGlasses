@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import WatchConnectivity
 
@@ -10,6 +11,9 @@ class WatchConnectivityManager: NSObject, ObservableObject {
 
     private var session: WCSession?
 
+    /// The state the wrist shows, watched so the watch hears about a change it did not cause.
+    private var stateObservers: Set<AnyCancellable> = []
+
     /// The watch protocol's fixed command vocabulary.
     ///
     /// A command arrives as a dictionary value from the paired device, so it is *classified*
@@ -21,7 +25,7 @@ class WatchConnectivityManager: NSObject, ObservableObject {
         let known: Set<String> = [
             "toggleListen", "toggleRecord", "toggleVideo", "capturePhoto", "photo", "describe",
             "ask", "persona", "connect", "disconnect", "sleep", "status",
-            "quickAction", "resumeThread",
+            "quickAction", "resumeThread", WatchDictation.command,
         ]
         return known.contains(raw) ? PrivacyToken(raw) : nil
     }
@@ -40,11 +44,34 @@ class WatchConnectivityManager: NSObject, ObservableObject {
         session.activate()
         self.session = session
         PrivacyLog.device(.watch, .sessionActivated)
+        observeState()
+    }
+
+    /// Tell the watch when listening or the glasses link changes, whoever changed it.
+    ///
+    /// Without this the watch only heard back after a command of its own, so a turn that ended on
+    /// the phone left the wrist — and the Listen complication — saying "Listening" indefinitely.
+    /// `@Published` emits in `willSet`, and `sendStatusUpdate()` reads `appState` rather than the
+    /// value handed over, so delivery waits for the next main-queue turn, where the property is set.
+    private func observeState() {
+        guard let appState else { return }
+        stateObservers.removeAll()
+        Publishers.Merge(appState.$isListening.removeDuplicates().dropFirst(),
+                         appState.$isConnected.removeDuplicates().dropFirst())
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.sendStatusUpdate() }
+            .store(in: &stateObservers)
     }
 
     /// Send current app status to the Watch for display.
+    ///
+    /// Not gated on reachability: the watch is reachable only while its app is on screen, and the
+    /// application context is exactly the channel that reaches it when it is not — the system
+    /// keeps the latest one and hands it over when the watch app next runs. A phone with no watch,
+    /// or a watch without the app, is skipped before anything is gathered.
     func sendStatusUpdate() {
-        guard let session, session.isReachable else { return }
+        guard let session, session.activationState == .activated,
+              session.isPaired, session.isWatchAppInstalled else { return }
         guard let appState else { return }
 
         // Recent conversation threads (last 5, title + summary only)
@@ -192,6 +219,26 @@ extension WatchConnectivityManager: WCSessionDelegate {
                 try? await Task.sleep(nanoseconds: 100_000_000)
                 await appState.handleWakeWordDetected()
                 replyHandler(["status": "listening"])
+
+            case WatchDictation.command:
+                // A question dictated on the watch: a typed turn, answered on the wrist and — when
+                // the wearer has something on to hear it — in their ear. Checked for a turn already
+                // in flight first: `sendTextMessage` would do nothing, and the reply would carry
+                // the previous answer as if it were this one.
+                if let question = WatchDictation.question(from: message) {
+                    if appState.isProcessing {
+                        replyHandler(["error": "Avenkin is still working on something."])
+                    } else {
+                        await appState.sendTextMessage(question,
+                                                       speakResponse: WatchDictation.speaksAnswerNow())
+                        replyHandler([
+                            "status": "completed",
+                            "response": appState.lastResponse
+                        ])
+                    }
+                } else {
+                    replyHandler(["error": "I didn't catch a question."])
+                }
 
             case "persona":
                 // Activate a specific persona agent and start listening

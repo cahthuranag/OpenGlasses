@@ -14,6 +14,10 @@ targets:
       # them on fixtures and on the tree. Its entry point is a lazy global that a module never
       # reads, so compiling it here runs nothing.
       - path: Scripts/rename-to-avenkin.swift
+      # The link a watch complication carries and the rule for how long its command waits for the
+      # phone. Foundation only, so it is compiled here and unit-tested by WatchComplicationTests:
+      # the watch targets have no test bundle of their own.
+      - path: OpenGlassesWatch/WatchComplicationLink.swift
       # Golden fixtures exported from the Python reference pipeline (Plan CK —
       # Scripts/export-fingerspelling-fixtures.py); loaded via Bundle(for:).
       - path: OpenGlassesTests/Fixtures

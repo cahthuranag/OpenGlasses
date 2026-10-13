@@ -1,6 +1,7 @@
 # Plan IH — Van Stock (what is on the technician's own truck, kept by voice)
 
-**Status:** 📝 Drafted 2026-10-13 — nothing implemented. A technician tells the assistant what
+**Status:** 🚧 P0 built 2026-10-14 (the pure ledger, matcher and sentences; no store, tool or
+screen yet, so nothing a technician can use). P1–P5 unbuilt. A technician tells the assistant what
 they loaded at the shop and what they used on a job; the phone keeps the count, answers "have I
 got one?" with no signal, says when the last one has gone, and offers to ask the office for a
 replacement. The count lives on the phone and nowhere else. A spreadsheet goes out and comes back
@@ -150,6 +151,7 @@ A **movement** is one dated fact about one item. The kinds are a closed list:
 | `ordered` | none | the `PartsRequest` id, when this phone made the request; closed by later loads, oldest first |
 | `edited` | none | which attribute changed (number, description, unit, minimum, standard, bin) |
 | `reversed` | undoes one earlier movement | that movement's id |
+| `opening` | sets the level | what a folded history left: the figure, whether it was counted, whether it was unreliable |
 
 Every movement has an id, a time, a `batch` id (one spoken sentence or one imported sheet is one
 batch), and a `source`: `spoken`, `typed`, `scanned`, `sheet` or `handover`. Movements carry no free text, so
@@ -422,9 +424,14 @@ company-wide picture with no further software; HF is what replaces the folder.
 
 ## Build order (one PR each)
 
-**P0 — Ledger, matcher and sentences (pure).** `VanStockItem`, `VanStockMovement`,
-`VanStockLedger`, `VanStockMatcher`, `VanStockAnswerComposer` (injected clock, localised strings),
-`SpokenPartNumber`. No store, no tool, no UI.
+**P0 — Ledger, matcher and sentences (pure).** ✅ **Built 2026-10-14.** `VanStockItem` and
+`VanStockUnit`, `VanStockMovement`, `VanStockLog` and `VanStockLevel` (`VanStockLedger.swift`: the
+fold, the changes, undo, and folding an old history), `VanStockMatcher`, `VanStockAnswerComposer`
+(injected clock and calendar), `SpokenPartNumber`, under `Services/FieldAssist/VanStock/`. No
+store, no tool, no UI. As built: the composer returns English, as every tool result does, because
+its reader is the model and the model answers in the technician's language; the item carries
+`standard` and who set it, and a movement may carry the `handover` source, so P5 needs no change
+of format.
 *Owed:* nothing.
 
 **P1 — Store and `van_stock`.** `VanStockStore`, the `SensitiveStore` case, `VanStockService`,

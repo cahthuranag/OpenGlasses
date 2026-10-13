@@ -63,6 +63,8 @@ anything company-wide.
 - **The technician tops up, at the start of the shift, before leaving base.** Nobody restocks the
   vehicle overnight. With the day's jobs in mind the technician also loads parts beyond the
   standard load, and may return what was not used at the end of the shift (§8).
+- **One phone per technician.** The phone goes home with its owner and the vehicle stays, so the
+  takeover in §8 is needed and stays in P5.
 
 ## Product promise
 
@@ -523,5 +525,3 @@ P4 if the pilot's vehicles change hands between shifts.
    record, or needs a change before P4 ships.
 9. **Returned extras.** Does base want to be told what came back at the end of a shift, as a
    line in the handover message, or is the level enough?
-10. **Whose phone.** One per technician is assumed. If a phone stays with the vehicle there is
-    no takeover and P5 is only the message to base.

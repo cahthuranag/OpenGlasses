@@ -93,6 +93,7 @@ enum OfflineToolPolicy {
         "task": .local,
         "team_learning": .local,           // filed in the phone's own store; sending is a later phase
         "teleprompter": .local,
+        "van_stock": .local,               // the phone's own log; nothing in it needs signal
         "video_recording": .local,
         "voice_skills": .local,
         "yield_to_human": .local,

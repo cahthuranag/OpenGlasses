@@ -1,7 +1,8 @@
 # Plan IH — Van Stock (what is on the technician's own truck, kept by voice)
 
-**Status:** 🚧 P0 built 2026-10-14 (the pure ledger, matcher and sentences; no store, tool or
-screen yet, so nothing a technician can use). P1–P5 unbuilt. A technician tells the assistant what
+**Status:** 🚧 P0 and P1 built 2026-10-14: the ledger, the store and the `van_stock` tool, so a
+technician can load, use, count, check and undo by voice. No screen, spreadsheet, job-close
+question or handover yet (P2–P5), and the P1 device checks are owed. A technician tells the assistant what
 they loaded at the shop and what they used on a job; the phone keeps the count, answers "have I
 got one?" with no signal, says when the last one has gone, and offers to ask the office for a
 replacement. The count lives on the phone and nowhere else. A spreadsheet goes out and comes back
@@ -434,9 +435,22 @@ its reader is the model and the model answers in the technician's language; the 
 of format.
 *Owed:* nothing.
 
-**P1 — Store and `van_stock`.** `VanStockStore`, the `SensitiveStore` case, `VanStockService`,
-`VanStockTool`, its `OfflineToolPolicy` and `ToolEffectClassification` rows, registration, the
-`parts_request` seam, scanned-code aliases.
+**P1 — Store and `van_stock`.** ✅ **Built 2026-10-14; device checks owed.** `VanStockStore`
+(one protected JSON file, left in the backup, refused when unreadable, old history folded on
+load), the `vanStock` case in `SensitiveStore`, `VanStockService` (the one place a spoken line is
+matched, recorded and answered), `VanStockTool`, its `OfflineToolPolicy`, `ToolEffectClassification`
+and `FieldToolProfile` rows, registration, the `parts_request` seam, scanned-code aliases.
+As built, beyond the design above:
+- **`new_line`.** A vaguer description joins the line it fits — "capacitor" goes on the 45/5
+  line — and the read-back names that line. Saying it is a different part (`new_line`) starts
+  a new one, matched only by its number or its code.
+- **`for_van_stock` on `parts_request`.** After the last one is used the technician no longer
+  "has one on the van", so `on_van` alone could not mark a restock. Either flag writes the
+  `ordered` movement; a request for a part the van has never carried says so and adds no line.
+- **A part number has no spaces and at least one digit.** Words given where a number goes are
+  the description.
+- **Outside a job there is no vault to check a number against**, so a line loaded at the shop is
+  unverified until it is next touched with a job open, when it is checked again.
 *Owed (device):* ten parts loaded by voice in a noisy room, through the glasses and through the
 phone; a check and a use in aeroplane mode; the same in a live session.
 **The three-line voice workflow is testable with a partner after this phase**, on an empty van.

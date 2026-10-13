@@ -16,8 +16,9 @@ final class PartsRequestTool: NativeTool {
     let description = """
     Ask base for a part on the active Field Assist job, or record base's reply. Pass 'part' (the \
     number exactly as the manual or the label prints it) with 'quantity', optionally 'task_id' to \
-    tie it to a task, 'urgency' (routine, today, emergency) and 'on_van' when the technician \
-    already has one. The number is checked against the vault's parts list and its manuals and the \
+    tie it to a task, 'urgency' (routine, today, emergency), 'on_van' when the technician \
+    already has one, and 'for_van_stock' when the part is to restock the van rather than to be \
+    fitted on this job. The number is checked against the vault's parts list and its manuals and the \
     page it was found on is recorded; a number that is not there is recorded unverified and you \
     must tell the technician so. A request does not need a task — a stock check can go out before \
     the repair is decided. To record what base replied, pass 'answer' with the text they sent (and \
@@ -49,6 +50,10 @@ final class PartsRequestTool: NativeTool {
                 "type": "boolean",
                 "description": "True when the technician already has one on the van and this is a replacement for stock."
             ],
+            "for_van_stock": [
+                "type": "boolean",
+                "description": "True when the part is to restock the van, for example after van_stock reported the last one used. The van list then shows it as asked for until it is loaded."
+            ],
             "answer": [
                 "type": "string",
                 "description": "Base's reply, verbatim. Recording it files the text against the request and nothing else."
@@ -63,12 +68,17 @@ final class PartsRequestTool: NativeTool {
 
     /// Session to record against; nil means the shared service. Injectable for tests.
     private let injectedSession: FieldSessionService?
+    /// The van's stock, told when a replacement for it is asked for (Plan IH P1); nil means the
+    /// shared one. Injectable for tests.
+    private let injectedVanStock: VanStockService?
 
-    init(sessionService: FieldSessionService? = nil) {
+    init(sessionService: FieldSessionService? = nil, vanStock: VanStockService? = nil) {
         self.injectedSession = sessionService
+        self.injectedVanStock = vanStock
     }
 
     private var session: FieldSessionService { injectedSession ?? .shared }
+    private var vanStock: VanStockService { injectedVanStock ?? .shared }
 
     func execute(args: [String: Any]) async throws -> String {
         guard Config.fieldAssistActive else {
@@ -100,14 +110,20 @@ final class PartsRequestTool: NativeTool {
         let urgency = PartsRequest.Urgency(
             rawValue: (args["urgency"] as? String)?.lowercased() ?? "routine") ?? .routine
 
+        let onVan = (args["on_van"] as? Bool) ?? false
         guard let request = session.requestPart(
             verified,
             quantity: Self.integer(args["quantity"]) ?? 1,
             taskId: (taskId?.isEmpty == true) ? nil : taskId,
             urgency: urgency,
-            onVan: (args["on_van"] as? Bool) ?? false) else {
+            onVan: onVan) else {
             return "No active Field Assist session."
         }
+        // A replacement for stock is something the van is waiting for; a part to be fitted is not.
+        let forVanStock = onVan || ((args["for_van_stock"] as? Bool) ?? false)
+        let vanNote = forVanStock
+            ? vanStock.noteOrdered(number: request.part.number, quantity: request.quantity, requestID: request.id)
+            : nil
 
         var lines = ["Requested \(request.quantity) × \(request.part.number) — \(urgency.rawValue)."]
         if request.part.verified {
@@ -119,6 +135,11 @@ final class PartsRequestTool: NativeTool {
         if request.taskId == nil { lines.append("Tagged to the job, not to a task.") }
         if let model = request.modelToken { lines.append("For the \(model).") }
         lines.append("It goes out with the job record, and on its own as soon as there is a connection.")
+        if let vanNote {
+            lines.append(vanNote)
+        } else if forVanStock {
+            lines.append("It is not a line on the van list, so the list does not show it as asked for.")
+        }
         return lines.joined(separator: " ")
     }
 

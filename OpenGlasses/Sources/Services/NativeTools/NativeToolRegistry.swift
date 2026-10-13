@@ -223,6 +223,9 @@ final class NativeToolRegistry {
             register(ReadingTool())
             register(EvidenceTool())
             register(PartsRequestTool())
+            // The technician's own van stock (Plan IH): loaded at the shop with no job open, so
+            // it needs Field Assist and nothing else.
+            register(VanStockTool())
             // "Note this for the team" (Plan FP P1): a finding filed for a supervisor's review. The
             // tool checks Field Assist; the team-learning capability is checked by its service.
             register(TeamLearningTool())

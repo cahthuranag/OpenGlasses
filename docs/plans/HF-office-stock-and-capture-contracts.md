@@ -1,6 +1,10 @@
 # Plan HF — Office Stock and Capture Contracts (parts stock between the phone and Avenkin Office)
 
 **Status:** 📝 Drafted (not scheduled), 2026-10-02 — nothing built.
+**See also (2026-10-13):** Plan [IH](IH-van-stock.md) keeps the technician's own van stock on the
+phone, with no office involved, in this plan's movement vocabulary. Where both exist the phone's
+ledger answers for its own van and the snapshot answers for base and every other location; P1's
+`StockAnswerComposer` should take the own-van figure from there.
 **Depends on:** Plan [FX](FX-desktop-office-and-device-sync.md)'s next milestone (a physical
 main-app pairing, then one signed job and one signed manual with an exact receipt — **no production
 managed folder is enabled today**, so nothing in this plan can be delivered until that lands);

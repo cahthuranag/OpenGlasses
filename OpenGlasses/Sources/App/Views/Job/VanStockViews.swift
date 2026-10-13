@@ -1,0 +1,323 @@
+import SwiftUI
+
+/// What is on the van, on the phone (Plan IH §5).
+///
+/// The ordinary way to fix one wrong figure: a searchable list, and a page per line where the
+/// count is set by hand. Every state shown here is also spoken by `van_stock`; the list and the
+/// voice read the same log through the same service, so they cannot disagree.
+struct VanStockView: View {
+    @ObservedObject var store: VanStockStore
+    var service: VanStockService = .shared
+    /// Open one line's page.
+    let onOpen: (String) -> Void
+
+    @State private var search = ""
+    @State private var confirmingReset = false
+
+    private var rows: [VanStockRow] { VanStockRows.rows(store.log, query: search) }
+
+    var body: some View {
+        List {
+            if store.isUnreadable {
+                unreadableSection
+            } else if store.log.isEmpty {
+                emptySection
+            } else {
+                Section {
+                    ForEach(rows) { row in
+                        Button { onOpen(row.id) } label: { VanStockRowLabel(row: row) }
+                            .buttonStyle(.plain)
+                    }
+                    if rows.isEmpty {
+                        Text("Nothing on the van matches that.")
+                            .foregroundStyle(.secondary)
+                    }
+                } footer: {
+                    Text("Tap a line to set its count or change its details. Anything said to the assistant shows here too.")
+                }
+            }
+        }
+        .ogFormStyle()
+        .searchable(text: $search, prompt: Text("Part number or description"))
+        .navigationTitle("Van stock")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Undo") { _ = service.undo(source: .typed) }
+                    .disabled(!service.canUndo)
+                    .accessibilityHint("Takes back the last entry, spoken or typed.")
+            }
+        }
+        .confirmationDialog("Start the van list again?", isPresented: $confirmingReset, titleVisibility: .visible) {
+            Button("Start again", role: .destructive) { store.removeAll() }
+            Button("Keep it", role: .cancel) {}
+        } message: {
+            Text("The list on this phone can't be read. Starting again clears it.")
+        }
+    }
+
+    private var emptySection: some View {
+        Section {
+            Text("Nothing on the van yet.")
+                .font(.headline)
+            Text("Tell the assistant what you've loaded — “I've loaded four flame sensors” — or count what's on the shelves.")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var unreadableSection: some View {
+        Section {
+            Label("The van list on this phone can't be read.", systemImage: "exclamationmark.triangle")
+            Button("Start the list again", role: .destructive) { confirmingReset = true }
+        } footer: {
+            Text("Nothing has been changed. The assistant won't guess what is on the van.")
+        }
+    }
+}
+
+/// One line in the list: what it is, how many, and what needs attention.
+private struct VanStockRowLabel: View {
+    let row: VanStockRow
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.item.description.isEmpty ? (row.item.number ?? "") : row.item.description)
+                if let detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                marks
+            }
+            Spacer(minLength: 12)
+            if let quantity = row.quantity {
+                Text(quantity)
+                    .font(.title3.monospacedDigit())
+            } else {
+                Text("Not counted")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(minHeight: OGMetrics.minTouchTarget)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// The part number and where it lives, when the description is not already the number.
+    private var detail: String? {
+        let number = row.item.description.isEmpty ? nil : row.item.number
+        let parts = [number, row.item.bin].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private var marks: some View {
+        if row.level.unreliable {
+            Label("Needs counting", systemImage: "exclamationmark.triangle")
+                .font(.caption)
+        } else if row.isLow {
+            Label("Low", systemImage: "arrow.down.circle")
+                .font(.caption)
+        }
+        if row.level.onOrder > 0 {
+            Label("\(row.level.onOrder) asked for", systemImage: "shippingbox")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        if row.isUnverified {
+            Label("Number not checked against the manuals", systemImage: "questionmark.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// One line of the van: its level and how it is known, a count set by hand, its details, and its
+/// history (Plan IH §5).
+struct VanStockItemView: View {
+    @ObservedObject var store: VanStockStore
+    let itemID: String
+    var service: VanStockService = .shared
+
+    @State private var count = 0
+    @State private var description = ""
+    @State private var number = ""
+    @State private var bin = ""
+    @State private var minimum = ""
+    @State private var unit = VanStockUnit.each
+    @State private var loaded = false
+
+    private var item: VanStockItem? { store.log.item(id: itemID) }
+
+    var body: some View {
+        Group {
+            if let item {
+                let level = store.log.level(of: itemID)
+                List {
+                    levelSection(item, level)
+                    countSection(level)
+                    detailsSection(item)
+                    historySection
+                }
+                .ogFormStyle()
+                .navigationTitle(item.description.isEmpty ? (item.number ?? "") : item.description)
+                .onAppear { if !loaded { fill(from: item, level); loaded = true } }
+            } else {
+                Text("This line is no longer on the van list.")
+                    .foregroundStyle(.secondary)
+                    .navigationTitle("Van stock")
+            }
+        }
+    }
+
+    // MARK: - Sections
+
+    @ViewBuilder
+    private func levelSection(_ item: VanStockItem, _ level: VanStockLevel) -> some View {
+        Section {
+            if level.unreliable {
+                Label("This count can't be trusted: a use was recorded when the list showed none. Count them and set the figure below.",
+                      systemImage: "exclamationmark.triangle")
+            }
+            if let asOf = level.asOf {
+                LabeledContent("On the van") {
+                    Text(item.unit == .each ? "\(level.onHand)" : "\(level.onHand) \(item.unit.rawValue)")
+                }
+                LabeledContent("How it's known") {
+                    if level.handedOver {
+                        Text("Handed over")
+                    } else if level.provenance == .counted {
+                        Text("Counted")
+                    } else {
+                        Text("Worked out from loads and uses")
+                    }
+                }
+                LabeledContent("Last changed") {
+                    Text(asOf.formatted(date: .abbreviated, time: .shortened))
+                }
+            } else {
+                Text("Nothing has been recorded for this line yet.")
+                    .foregroundStyle(.secondary)
+            }
+            if level.onOrder > 0 {
+                LabeledContent("Asked for, not yet loaded") { Text("\(level.onOrder)") }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func countSection(_ level: VanStockLevel) -> some View {
+        Section {
+            Stepper(value: $count, in: 0...9_999) {
+                LabeledContent("Count") { Text("\(count)").monospacedDigit() }
+            }
+            Button("Save count") { _ = service.setCount(itemID: itemID, to: count) }
+                .disabled(level.isRecorded && !level.unreliable && level.provenance == .counted && count == level.onHand)
+        } header: {
+            Text("Set the count")
+        } footer: {
+            Text("Saving records a count, so the figure is marked as counted from now.")
+        }
+    }
+
+    @ViewBuilder
+    private func detailsSection(_ item: VanStockItem) -> some View {
+        Section {
+            TextField("Description", text: $description)
+            TextField("Part number", text: $number)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+            Picker("Counted in", selection: $unit) {
+                ForEach(VanStockUnit.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            TextField("Minimum", text: $minimum)
+                .keyboardType(.numberPad)
+            TextField("Where it lives", text: $bin)
+            Button("Save details") { saveDetails() }
+                .disabled(changes(to: item).isEmpty)
+        } header: {
+            Text("Details")
+        } footer: {
+            Text("The assistant warns at or below the minimum. Leave it empty for no warning until the last one is used.")
+        }
+    }
+
+    @ViewBuilder
+    private var historySection: some View {
+        let history = VanStockRows.history(store.log, itemID: itemID)
+        if !history.isEmpty {
+            Section {
+                ForEach(history) { entry in
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            kindText(entry.movement)
+                                .strikethrough(entry.takenBack)
+                            if entry.takenBack {
+                                Text("Taken back")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else if let job = entry.movement.jobReference {
+                                Text("Job \(job)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 12)
+                        Text(entry.movement.at.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("History")
+            }
+        }
+    }
+
+    private func kindText(_ movement: VanStockMovement) -> Text {
+        switch movement.kind {
+        case .loaded: return Text("Loaded \(movement.quantity)")
+        case .used: return Text("Used \(movement.quantity)")
+        case .removed: return Text("Removed \(movement.quantity)")
+        case .counted: return Text("Counted \(movement.quantity)")
+        case .ordered: return Text("Asked for \(movement.quantity)")
+        case .opening: return Text("Carried forward \(movement.quantity)")
+        case .edited, .reversed: return Text("Details changed")
+        }
+    }
+
+    // MARK: - Editing
+
+    private func fill(from item: VanStockItem, _ level: VanStockLevel) {
+        count = level.onHand
+        description = item.description
+        number = item.number ?? ""
+        bin = item.bin ?? ""
+        minimum = item.minimum.map(String.init) ?? ""
+        unit = item.unit
+    }
+
+    /// What the fields would change, in the order they are applied.
+    private func changes(to item: VanStockItem) -> [VanStockLog.Change] {
+        var changes: [VanStockLog.Change] = []
+        let newDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        if newDescription != item.description { changes.append(.description(newDescription)) }
+        let newNumber = VaultPartsIndex.normalise(number)
+        if newNumber != (item.number ?? "") { changes.append(.number(newNumber.isEmpty ? nil : newNumber)) }
+        if unit != item.unit { changes.append(.unit(unit)) }
+        let newMinimum = Int(minimum.trimmingCharacters(in: .whitespaces))
+        if newMinimum != item.minimum { changes.append(.minimum(newMinimum.map { max($0, 0) })) }
+        let newBin = bin.trimmingCharacters(in: .whitespacesAndNewlines)
+        if newBin != (item.bin ?? "") { changes.append(.bin(newBin.isEmpty ? nil : newBin)) }
+        return changes
+    }
+
+    private func saveDetails() {
+        guard let item else { return }
+        _ = service.edit(itemID: itemID, changes(to: item))
+        if let saved = self.item { fill(from: saved, store.log.level(of: itemID)) }
+    }
+}

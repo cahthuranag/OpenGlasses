@@ -178,6 +178,46 @@ final class VanStockService {
         return composer.undone(undone, items: store.log.items)
     }
 
+    // MARK: - From the screen
+
+    /// Whether there is an entry to take back.
+    var canUndo: Bool { !store.isUnreadable && store.log.canUndo }
+
+    /// A count typed on the Van Stock screen. False when nothing was recorded.
+    @discardableResult
+    func setCount(itemID: String, to quantity: Int) -> Bool {
+        lastWrite = nil
+        let at = now()
+        let batch = makeID()
+        let recorded = store.update { log in
+            log.record(.counted, itemID: itemID, quantity: quantity, at: at, batch: batch,
+                       source: .typed, id: self.makeID()) != nil
+        }
+        return recorded ?? false
+    }
+
+    /// Changes typed on the Van Stock screen, as one batch. A new part number is looked up again,
+    /// so a corrected number is not left marked as verified on the strength of the old one.
+    @discardableResult
+    func edit(itemID: String, _ changes: [VanStockLog.Change]) -> Bool {
+        lastWrite = nil
+        let at = now()
+        let batch = makeID()
+        let changed = store.update { log -> Bool in
+            var any = false
+            for change in changes {
+                any = log.edit(itemID: itemID, change, at: at, batch: batch, source: .typed, id: self.makeID()) || any
+                if case .number(let number) = change {
+                    let verified = number.map { self.verify($0).verified } ?? false
+                    any = log.edit(itemID: itemID, .verified(verified), at: at, batch: batch,
+                                   source: .typed, id: self.makeID()) || any
+                }
+            }
+            return any
+        }
+        return changed ?? false
+    }
+
     /// A replacement was asked for: the van now knows something is coming. Nil when the part is
     /// not a line on the van — an order never creates one.
     @discardableResult

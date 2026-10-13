@@ -36,6 +36,8 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     case organizationForbidsCustomerTranscript
     /// "Record this job" is not offered on this organisation's phones (Plan HE).
     case organizationForbidsJobRecording
+    /// The technician's own van stock (Plan IH) is off: no `van_stock`, no Van Stock screen.
+    case organizationForbidsVanStock
     /// A recorded job's faces must be blurred before it goes to the office. Until the app can
     /// blur a recording, this means no job is recorded at all — never one sent unblurred.
     case organizationRequiresBlurBeforeOfficeSync
@@ -96,6 +98,7 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
             return .ceiling(pinnedTo: false)
         case .organizationRequiresSignedJobFiles, .organizationRequiresCustomerSignOff,
              .organizationForbidsCustomerTranscript, .organizationForbidsJobRecording,
+             .organizationForbidsVanStock,
              .organizationRequiresBlurBeforeOfficeSync, .organizationForbidsRecordingSyncOnCellular,
              .privacyFilterEnabled, .aiConnectionCueEnabled:
             return .ceiling(pinnedTo: true)

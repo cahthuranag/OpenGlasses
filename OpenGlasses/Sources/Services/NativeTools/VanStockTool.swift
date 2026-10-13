@@ -89,6 +89,9 @@ final class VanStockTool: NativeTool {
         guard Config.fieldAssistActive else {
             return "Field Assist is disabled. Enable it in Settings → Field Assist."
         }
+        guard !Config.organizationForbidsVanStock else {
+            return "Your organisation has switched van stock off on this phone. Nothing was looked up or changed."
+        }
         let action = (args["action"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         let lines = Self.lines(args)
 

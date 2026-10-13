@@ -2520,6 +2520,13 @@ struct Config {
                             stored: UserDefaults.standard.bool(forKey: "organizationForbidsJobRecording"))
     }
 
+    /// Whether the organisation has switched the technician's own van stock off (Plan IH). A
+    /// ceiling pinned on, written only by a profile; false on a phone without one.
+    static var organizationForbidsVanStock: Bool {
+        PolicyEnvelope.bool(.organizationForbidsVanStock,
+                            stored: UserDefaults.standard.bool(forKey: "organizationForbidsVanStock"))
+    }
+
     /// Whether the organisation requires a recorded job's faces blurred before it goes to the
     /// office. A ceiling pinned on. While the app cannot blur a recording, this makes recording a
     /// job unavailable and holds any unblurred recording already on the phone.

@@ -116,6 +116,7 @@ private struct JobTabContent: View {
                         search: $search,
                         openJobPrompt: $openJobPrompt,
                         onOpen: { path.append($0) },
+                        showsVanStock: !Config.organizationForbidsVanStock,
                         onAdd: addNewJob,
                         onAnswer: answer,
                         transcriptDays: model.transcriptDays,
@@ -242,6 +243,10 @@ private struct JobTabContent: View {
                             vaultUnlocked: noJobVault.unlocked,
                             // Started: this page is the job now, and Back is still the list.
                             onStarted: { _ in path = [.currentJob] })
+        case .vanStock:
+            VanStockView(store: .shared, onOpen: { path.append(.vanStockItem(id: $0)) })
+        case .vanStockItem(let id):
+            VanStockItemView(store: .shared, itemID: id)
         }
     }
 

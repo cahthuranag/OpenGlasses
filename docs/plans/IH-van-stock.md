@@ -55,6 +55,15 @@ anything company-wide.
 9. **A handover is sent by a person.** It is staged and shown, like a job report, and leaves by
    the organisation's own channel when the technician sends it.
 
+### Decided by the owner, 2026-10-14
+
+- **The standard load starts as base's baseline and grows per truck.** Base holds one baseline.
+  Each vehicle adds to it over time, and a later baseline from base must not undo what a truck
+  has added (§6, §8).
+- **The technician tops up, at the start of the shift, before leaving base.** Nobody restocks the
+  vehicle overnight. With the day's jobs in mind the technician also loads parts beyond the
+  standard load, and may return what was not used at the end of the shift (§8).
+
 ## Product promise
 
 - *"Check my truck for a 45/5 capacitor."* — *"Two on the van, counted on Monday."*
@@ -63,10 +72,13 @@ anything company-wide.
 - At the shop: *"I've loaded four flame sensors, part 62-23543-01, and six 45/5 capacitors."* —
   the assistant reads both lines back, and spells out any number it has not met before.
 - At the end of a job: *"The igniter on this job has no stock entry. Did it come off the van?"*
-- At the end of the shift: *"Send the truck stock to base."* — *"Truck 4: nine lines to top up,
-  two to count. Ready to send to the office."*
-- At the start of the next: the technician opens what base sent on and hears *"You've taken over
-  Truck 4, as it was left at ten past five. Nine lines are short; two need counting."*
+- At the start of a shift: the technician opens what the last shift sent and hears *"You've
+  taken over Truck 4, as it was left at ten past five. Nine lines are short; two need
+  counting."* They fill the shelves and say *"Topped up everything except the flame sensors, and
+  I've put an inducer motor on for the Hill Street job."*
+- At the end of the shift: *"Send the truck stock to base."* — *"The inducer motor wasn't used.
+  Are you returning it or keeping it on the truck?"* — then *"Truck 4: four lines to top up.
+  Ready to send to the office."*
 - An unknown is spoken as unknown. A count the log cannot stand behind is said to be unreliable
   until somebody counts; an invented figure is never spoken.
 - It all works in a basement. Nothing in this plan touches the network.
@@ -116,7 +128,8 @@ anything company-wide.
 
 An **item** is one line of stock: a stable `itemID`, an optional part `number` (normalised with
 `VaultPartsIndex.normalise`), a `description`, a `unit`, an optional `minimum` (warn at or below
-this), an optional `standard` (what the van should carry; top-ups fill to it), an optional `bin`
+this), an optional `standard` (what the van should carry; top-ups fill to it) with who set it, `base`
+or `van`, an optional `bin`
 (a short label such as "left shelf 2"), zero or more scanned `codes`, and whether the number was
 `verified` against the vault when it was last checked. The identifier is separate from the part
 number, as HF requires, because a number can be corrected and an item can have none.
@@ -128,7 +141,7 @@ A **movement** is one dated fact about one item. The kinds are a closed list:
 
 | Kind | Effect on the level | Carries |
 |---|---|---|
-| `loaded` | + quantity | — |
+| `loaded` | + quantity | the job it was loaded for, when the technician names one |
 | `used` | − quantity | the job session and job reference, when a job is open |
 | `removed` | − quantity | a reason from a closed list: `returned`, `damaged`, `lent`, `other` |
 | `counted` | sets the level | — |
@@ -210,6 +223,10 @@ Rules, each a test:
 - **A repeated identical write inside a few seconds is one write.** Models retry; a retry must
   not load four sensors twice.
 
+`load` also takes `to_standard`, with optional exceptions: *"topped up everything except the
+flame sensors"* brings every short line but those to its standard load in one batch. The
+read-back gives the number of lines and names the exceptions, and one undo takes the batch back.
+
 Classification: `OfflineToolPolicy` `local`; `ToolEffectClassification` `.local()`, since the
 strongest action writes on-device state. The existing `parts_request` gains one seam: a request
 made with `on_van` set, or made on the back of a `van_stock` offer, writes an `ordered` movement
@@ -251,10 +268,11 @@ second is a way to fix twenty figures at a desk.
 stored, uncompressed ZIP with CRC-32 from the system zlib, and the handful of XML parts a
 workbook needs):
 
-- **Van stock** — Part number, Description, Unit, On hand, Standard, To top up, Minimum, On
-  order, Needs a count, Bin, Last changed, and a hidden Item ID column. Part number and Bin are
-  text-formatted columns, so a number typed into a new row stays as typed. To top up, On order
-  and Needs a count are worked out by the phone and ignored on the way back in.
+- **Van stock** — Part number, Description, Unit, On hand, Standard, Standard set by, To top
+  up, Minimum, On order, Needs a count, Bin, Last changed, and a hidden Item ID column. Part number and Bin are
+  text-formatted columns, so a number typed into a new row stays as typed. Standard
+  set by, To top up, On order and Needs a count are worked out by the phone and ignored on the
+  way back in.
 - **History** — the movements, newest first. Read-only in spirit: import ignores it.
 
 The workbook records the van's name and identifier, when it was exported and the last movement
@@ -279,8 +297,14 @@ Nothing is applied until the technician has seen the summary ("7 counts changed,
 
 **A sheet we did not write.** A first import has no Item ID column. Columns are found by header,
 from a short list of synonyms (part / part number / item; description; qty / quantity / on
-hand; unit; standard / par / stock to; min / minimum; bin / location). This is also how base
-gives every vehicle the same standard load: one sheet, imported once per van. A sheet with no recognisable header is refused with a
+hand; unit; standard / par / stock to; min / minimum; bin / location).
+
+**Base's baseline.** The same reader takes base's baseline sheet through a third import,
+**Apply base's standard load**. It touches standards and nothing else — no level changes. A line
+the baseline names gets that standard, marked as set by base, and is created at zero if the van
+has never carried it. A line whose standard this truck set itself is shown with both figures and
+kept unless the technician chooses otherwise. A line the baseline does not name is left alone.
+So base can reissue the baseline as often as it likes and a truck keeps what it has grown. A sheet with no recognisable header is refused with a
 sentence naming the headers it needs.
 
 **Refused outright:** a macro workbook, an encrypted workbook, more than 5,000 rows, a file over
@@ -307,12 +331,13 @@ HF's mapping from the record to "issued to job" is missing today.
 ### 8 · The end of the shift, and the next one
 
 A vehicle that is driven by one technician today and another tomorrow needs two things: base has
-to know what to put back on it, and the next technician's phone has to know what is on it.
+to know what state it came back in, and the next technician's phone has to know what is on it,
+because that technician is the one who tops it up before driving off.
 
-**Out, at the end of the shift.** *"Send the truck stock to base"* (`send_to_base`) does three
+**Out, at the end of the shift.** *"Send the truck stock to base"* (`send_to_base`) does four
 things in order. It runs the reconciler of §7 over the shift's jobs and asks about any part still
 without a stock entry, because a handover that repeats a forgotten use passes the mistake on. It
-composes the handover: the workbook of §6 and a short text of what matters — the top-up list
+asks about the day's extras (below). It composes the handover: the workbook of §6 and a short text of what matters — the top-up list
 (each line below its standard load and by how much), what is on order, and what needs counting.
 Then it stages a delivery for the technician to look at and send.
 
@@ -324,6 +349,20 @@ unattended endpoint, the handover rides the queue as its own kind. The signed of
 cannot carry it — its report contract knows a work record, an addendum and a parts request and
 nothing else — so until HF's capture message exists a phone enrolled with an office sends the
 handover by a person-operated channel or the share sheet, and says so.
+
+**The day's extras.** A technician who has read the job list loads more than the standard load:
+the part a job is expected to need, and the one it might. Nothing has to be said to mark these.
+`VanStockSurplus` (pure) finds them at the end of the shift: every line loaded since the takeover
+that now stands above its standard load, or has none. Each is asked about once — *returning it,
+or keeping it on the truck?*
+
+- **Returning** records a `removed` movement with the reason `returned`.
+- **Keeping** leaves the level as it is, and offers to make it part of this truck's standard
+  load. Saying yes sets the standard, marked as set by the van.
+
+That offer is how a truck's standard load grows: from what a technician chose to carry and
+chose to keep, one line at a time, never by inference. The handover's Standard set by column
+shows base which lines a truck has added, so the baseline can follow if base wants it to.
 
 A line with no standard load cannot be short of it. With none set anywhere, the top-up list is
 the lines at zero and the lines below their minimum, and the message says the van has no
@@ -341,9 +380,12 @@ The summary is shown first, and the technician taps once.
   archived and exportable, and switches. It never merges two vehicles.
 - **A stale handover.** One older than the phone's own latest movement for the same van is named
   as older and is not the default.
-- **Whoever tops up says so.** If base restocks overnight, base edits On hand in the sheet before
-  sending it on. If the next technician restocks from the list, they load by voice as usual.
-  Nothing is assumed to have been put back.
+- **The technician tops up and says so.** Straight after the takeover the phone reads the
+  top-up list. The technician fills the shelves and reports it — line by line, or *"topped up
+  everything except…"* (§3) — and adds the day's extras the same way, naming the job when there
+  is one. Nothing is assumed to have been put back; a line nobody mentions stays short.
+- **The phone does not predict the extras.** Which parts today's jobs might need is the
+  technician's judgement. A readiness note from the office is HF's, later.
 
 Answers after a takeover carry it: *"Two on the van, as handed over yesterday at ten past
 five."* The technician's name travels in the message, where base needs it, and never in the log.
@@ -403,10 +445,12 @@ phone and on a desktop, added to the fixtures. **A real truck can be loaded afte
 the `van_stock` block on the work record, the low-stock line in the day view.
 *Owed:* the office accepting a report whose record carries the new block; one uncoached job.
 
-**P5 — Shift handover.** The van's name and identifier, `standard` and the `top_up` answer,
+**P5 — Shift handover.** The van's name and identifier, `standard` with who set it, the `top_up`
+answer and `to_standard` loads, the baseline import, `VanStockSurplus` (pure),
 `VanStockHandoverComposer` (pure), the `DeliveryRequest.Payload` case and its queue kind,
 `send_to_base`, the take-over import and its review, the archived log.
-*Owed (device):* one vehicle handed between two phones through a real mailbox, both ways.
+*Owed (device):* one vehicle handed between two phones through a real mailbox, both ways, with a
+top-up, one extra returned and one extra kept.
 **Needs only P3**; the question about unrecorded parts joins it once P4 is in. It moves ahead of
 P4 if the pilot's vehicles change hands between shifts.
 
@@ -440,6 +484,15 @@ P4 if the pilot's vehicles change hands between shifts.
   line to zero where a correction leaves it alone; orders and unreliable marks come across; a
   different van archives rather than merges; a stale handover is not the default; nothing is
   staged under HIPAA mode; the log never holds a name.
+- `VanStockSurplusTests` — a line loaded this shift above its standard is found; one loaded and
+  used is not; one with no standard is; stock above standard from an earlier shift is not asked
+  about again; returning removes exactly the surplus named; keeping changes no level; accepting
+  the offer sets the standard as set by the van.
+- `VanStockBaselineImportTests` — levels never change; a named line takes base's figure; a new
+  line is created at zero; a van-set standard is kept by default and shown with both figures; an
+  unnamed line is untouched; a second, different baseline leaves the truck's additions alone.
+- `VanStockToolTests` update — `to_standard` fills only short lines, honours exceptions, is one
+  batch and one undo.
 - `WorkRecordTests` update — the block is absent when empty, so an older record encodes as it did.
 
 ## Non-goals
@@ -464,12 +517,11 @@ P4 if the pilot's vehicles change hands between shifts.
 5. **How long the history is kept** before it is folded into an opening balance.
 6. **When to ask about an unrecorded part:** only when the job is closed (proposed), or as soon
    as its task is finished.
-7. **Standard loads.** A top-up list needs to know what the van should carry. Does base hold a
-   standard load per vehicle today, and is it the same for every vehicle? Without one the list
-   can only show what has run out.
+7. **The baseline's form.** Base holds a baseline (decided). Is it already a spreadsheet with
+   part numbers and quantities, or does somebody have to write it down first?
 8. **The office.** Whether its report intake already tolerates an unknown block on the work
    record, or needs a change before P4 ships.
-9. **Who tops up.** Base overnight, or the next technician from the list? It decides whether the
-   sheet base forwards is expected to have been edited.
+9. **Returned extras.** Does base want to be told what came back at the end of a shift, as a
+   line in the handover message, or is the level enough?
 10. **Whose phone.** One per technician is assumed. If a phone stays with the vehicle there is
     no takeover and P5 is only the message to base.

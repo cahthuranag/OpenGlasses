@@ -146,6 +146,9 @@ extension ScanAssistTool {
 extension ProposeTaskTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 extension TaskTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 extension PartsRequestTool { var executionSemantics: ToolExecutionSemantics { .local() } }
+// van_stock writes the phone's own log of what is on the van and nothing else (Plan IH P1). Its
+// strongest action is a write; a repeated identical write inside a few seconds is recorded once.
+extension VanStockTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 // Files, amends or withdraws a candidate in the phone's own store; nothing leaves the device in P1.
 extension TeamLearningTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 // Readings and evidence choices are written onto the open job and nowhere else (Plan GB P3).

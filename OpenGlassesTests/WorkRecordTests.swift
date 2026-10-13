@@ -429,6 +429,35 @@ final class WorkRecordTests: XCTestCase {
         XCTAssertEqual(request.part.number, "99Z99")
     }
 
+    /// Plan IH P1 — a replacement for stock is something the van is waiting for; a part to be
+    /// fitted is not, and an order never puts a line on the van that was not there.
+    func testAStockReplacementIsShownOnTheVanAndAPartToBeFittedIsNot() async throws {
+        let service = try lennoxSession()
+        let store = VanStockStore(directory: tempRoot.appendingPathComponent("van", isDirectory: true))
+        let van = VanStockService(store: store, verify: { service.verifyPart($0) },
+                                  partsIndex: { service.partsIndex }, activeJob: { nil })
+        let tool = PartsRequestTool(sessionService: service, vanStock: van)
+
+        let notCarried = try await tool.execute(args: ["part": "14T65", "for_van_stock": true])
+        XCTAssertTrue(notCarried.contains("It is not a line on the van list"), notCarried)
+        XCTAssertTrue(store.log.isEmpty)
+
+        _ = van.load([.init(part: "14T65", quantity: 1)])
+        let toBeFitted = try await tool.execute(args: ["part": "14T65"])
+        XCTAssertFalse(toBeFitted.contains("van list"), toBeFitted)
+        XCTAssertFalse(store.log.movements.contains { $0.kind == .ordered })
+
+        let replacement = try await tool.execute(args: ["part": "14T65", "quantity": 2, "for_van_stock": true])
+        XCTAssertTrue(replacement.contains("The van list now shows 2 asked for and not yet loaded."), replacement)
+        let ordered = try XCTUnwrap(store.log.movements.last)
+        XCTAssertEqual(ordered.kind, .ordered)
+        XCTAssertEqual(ordered.requestID, service.activeSession?.partsRequests.last?.id)
+        XCTAssertEqual(store.log.items.first?.verified, true, "the line was checked against the book when it was loaded")
+
+        let onVan = try await tool.execute(args: ["part": "14T65", "on_van": true])
+        XCTAssertTrue(onVan.contains("The van list now shows 3 asked for"), onVan)
+    }
+
     // MARK: - Codable
 
     func testTheSessionRoundTripsTheNewFieldsAndOlderSessionsStillDecode() throws {

@@ -78,6 +78,7 @@ enum SensitiveStore: String, CaseIterable {
     case fieldDeliverySettings
     case jobDeliveryQueue
     case upcomingJobs
+    case vanStock
     case learningCandidates
     case learningEntries
     case orgEnrolment
@@ -601,6 +602,23 @@ enum SensitiveStore: String, CaseIterable {
                           owner: "UpcomingJobStore",
                           ownerPaths: ["OpenGlasses/Sources/Services/FieldAssist/Job/UpcomingJobStore.swift"],
                           location: "Application Support/FieldAssist/upcoming-jobs.json")
+
+        case .vanStock:
+            // What is on the technician's own van (Plan IH P1): lines of stock and the movements
+            // recorded against them — part numbers, descriptions, quantities and job references.
+            // A movement carries no free text, which is what keeps this about parts and not about
+            // people, so there is no subject to erase. Protected, and deliberately left in the
+            // backup: it is the wearer's own working record, like their notes, and a new phone
+            // should still know what is on the truck. History older than the window is folded
+            // into one opening figure per line; levels are exact either way.
+            return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .none,
+                          protection: .complete, backupExcluded: false,
+                          retention: .policy("history folded after \(VanStockStore.historyDays) days"),
+                          deleteAll: .api("VanStockStore.removeAll()"),
+                          deleteSubject: .notSubjectLinked,
+                          owner: "VanStockStore",
+                          ownerPaths: ["OpenGlasses/Sources/Services/FieldAssist/VanStock/VanStockStore.swift"],
+                          location: "Application Support/FieldAssist/van-stock.json")
 
         case .learningCandidates:
             // Team-learning candidates (Plan FP P1): what a technician filed for their supervisor to

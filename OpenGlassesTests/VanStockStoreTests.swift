@@ -1,0 +1,107 @@
+import XCTest
+@testable import OpenGlasses
+
+/// Plan IH P1 — the van's stock on disk: kept, protected, and refused when it cannot be read.
+@MainActor
+final class VanStockStoreTests: XCTestCase {
+
+    private var directory: URL!
+    private let start = Date(timeIntervalSince1970: 1_790_000_000)
+
+    override func setUp() {
+        super.setUp()
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("van-stock-tests-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: directory)
+        super.tearDown()
+    }
+
+    private var fileURL: URL { directory.appendingPathComponent("van-stock.json") }
+
+    private func loadOne(into store: VanStockStore, at date: Date) {
+        store.update { log in
+            let item = log.addItem(id: "item-1", number: "62-23543-01", description: "Flame sensor", batch: "b0")
+            log.record(.loaded, itemID: item.id, quantity: 4, at: date, batch: "b0", source: .spoken)
+        }
+    }
+
+    func testANewStoreIsEmptyAndWritesNothing() {
+        let store = VanStockStore(directory: directory, now: start)
+        XCTAssertTrue(store.log.isEmpty)
+        XCTAssertFalse(store.isUnreadable)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    func testAChangeSurvivesARelaunch() {
+        loadOne(into: VanStockStore(directory: directory, now: start), at: start)
+        let reopened = VanStockStore(directory: directory, now: start)
+        XCTAssertEqual(reopened.log.items.map(\.id), ["item-1"])
+        XCTAssertEqual(reopened.log.level(of: "item-1").onHand, 4)
+        XCTAssertFalse(reopened.isUnreadable)
+    }
+
+    func testAChangeThatChangesNothingIsNotWritten() {
+        let store = VanStockStore(directory: directory, now: start)
+        XCTAssertEqual(store.update { _ in 7 }, 7)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    func testTheFileIsProtectedAndStaysInTheBackup() throws {
+        loadOne(into: VanStockStore(directory: directory, now: start), at: start)
+        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        #if !targetEnvironment(simulator)
+        XCTAssertEqual(attributes[.protectionKey] as? FileProtectionType, .complete)
+        #else
+        _ = attributes
+        #endif
+        let values = try fileURL.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertNotEqual(values.isExcludedFromBackup, true, "a new phone should still know what is on the truck")
+    }
+
+    func testATornFileIsRefusedNotHalfReadAndNotOverwritten() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let torn = Data(#"{"version":1,"log":{"items":[{"id":"item-1","#.utf8)
+        try torn.write(to: fileURL)
+
+        let store = VanStockStore(directory: directory, now: start)
+        XCTAssertTrue(store.isUnreadable)
+        XCTAssertTrue(store.log.isEmpty)
+        XCTAssertNil(store.update { $0.addItem(description: "Igniter", batch: "b1") }, "nothing is written over it")
+        XCTAssertEqual(try Data(contentsOf: fileURL), torn)
+    }
+
+    func testAFileFromALaterFormatIsRefused() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(#"{"version":99,"log":{"items":[],"movements":[]}}"#.utf8).write(to: fileURL)
+        XCTAssertTrue(VanStockStore(directory: directory, now: start).isUnreadable)
+    }
+
+    func testRemoveAllClearsAnUnreadableFileAndTheStoreWorksAgain() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: fileURL)
+        let store = VanStockStore(directory: directory, now: start)
+        XCTAssertTrue(store.isUnreadable)
+        store.removeAll()
+        XCTAssertFalse(store.isUnreadable)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+        loadOne(into: store, at: start)
+        XCTAssertEqual(VanStockStore(directory: directory, now: start).log.level(of: "item-1").onHand, 4)
+    }
+
+    func testOldHistoryIsFoldedOnLoadAndLevelsStayExact() {
+        let store = VanStockStore(directory: directory, now: start)
+        loadOne(into: store, at: start)
+        store.update { $0.record(.used, itemID: "item-1", quantity: 1, at: self.start.addingTimeInterval(60), batch: "b1", source: .spoken) }
+        XCTAssertEqual(store.log.movements.count, 2)
+
+        let later = start.addingTimeInterval(Double(VanStockStore.historyDays + 1) * 86_400)
+        let reopened = VanStockStore(directory: directory, now: later)
+        XCTAssertEqual(reopened.log.movements.map(\.kind), [.opening])
+        XCTAssertEqual(reopened.log.level(of: "item-1").onHand, 3)
+        // And the fold was written, so the next launch does not redo it.
+        XCTAssertEqual(VanStockStore(directory: directory, now: later).log, reopened.log)
+    }
+}

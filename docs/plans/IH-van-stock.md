@@ -4,7 +4,9 @@
 they loaded at the shop and what they used on a job; the phone keeps the count, answers "have I
 got one?" with no signal, says when the last one has gone, and offers to ask the office for a
 replacement. The count lives on the phone and nowhere else. A spreadsheet goes out and comes back
-in for bulk loading and hand corrections. Company-wide stock is not in this plan.
+in for bulk loading and hand corrections. At the end of a shift the levels and a top-up list go
+to base, and the next technician to take the vehicle picks the list up on their own phone.
+Company-wide stock is not in this plan.
 **Track:** Field Assist (B2B).
 **Depends on:** Plan [EM](EM-work-record-and-parts.md) P1 (shipped: `PartsVerifier`,
 `VaultPartsIndex`, `parts_request`, the work record). Nothing here waits on the office connection.
@@ -46,8 +48,12 @@ anything company-wide.
 7. **Nothing is ordered unattended.** A low count is spoken and a request is offered. The
    technician says yes. Anything that would act without them is gated behind `agentModeEnabled`
    and is out of this plan.
-8. **One phone, one van.** A shared truck, a second technician's phone and stock moving between
-   vans belong to HF.
+8. **One van on a phone at a time, and a van can change hands.** The log belongs to the van,
+   not to the technician: it has a name and an identifier, it is sent to base at the end of a
+   shift, and the next technician takes it over on their phone. Two phones working the same van
+   in the same shift, and stock moving between vans, belong to HF.
+9. **A handover is sent by a person.** It is staged and shown, like a job report, and leaves by
+   the organisation's own channel when the technician sends it.
 
 ## Product promise
 
@@ -57,6 +63,10 @@ anything company-wide.
 - At the shop: *"I've loaded four flame sensors, part 62-23543-01, and six 45/5 capacitors."* —
   the assistant reads both lines back, and spells out any number it has not met before.
 - At the end of a job: *"The igniter on this job has no stock entry. Did it come off the van?"*
+- At the end of the shift: *"Send the truck stock to base."* — *"Truck 4: nine lines to top up,
+  two to count. Ready to send to the office."*
+- At the start of the next: the technician opens what base sent on and hears *"You've taken over
+  Truck 4, as it was left at ten past five. Nine lines are short; two need counting."*
 - An unknown is spoken as unknown. A count the log cannot stand behind is said to be unreliable
   until somebody counts; an invented figure is never spoken.
 - It all works in a basement. Nothing in this plan touches the network.
@@ -74,6 +84,11 @@ anything company-wide.
   technician has one and this is a replacement for stock". The request leaves with the job report
   by the organisation's channel (`DeliverySettings`: email, messages, WhatsApp, Telegram or an
   endpoint) or through the office connection.
+- **Things already leave by a person's hand.** `DeliveryRequest.Payload` has two kinds, a job
+  report and a team-learning bundle; `deliver_report` only stages one and the composer sends it.
+  `DeliveryChannel` is email, messages, WhatsApp, Telegram, the share sheet, or an unattended
+  endpoint. The signed office report contract (`Contracts/office-reports.md`) carries three record
+  kinds — `workRecord`, `partsRequest`, `addendum` — and no other.
 - **"Used" has no quantity.** `WorkRecord.partsUsed` is the parts on tasks that ended `done`,
   de-duplicated by number. `TaskPart` carries no quantity, and a part on a task did not
   necessarily come off the van. `propose_task` is what attaches parts to a task.
@@ -100,10 +115,14 @@ anything company-wide.
 ### 1 · Items and movements
 
 An **item** is one line of stock: a stable `itemID`, an optional part `number` (normalised with
-`VaultPartsIndex.normalise`), a `description`, a `unit`, an optional `minimum`, an optional `bin`
+`VaultPartsIndex.normalise`), a `description`, a `unit`, an optional `minimum` (warn at or below
+this), an optional `standard` (what the van should carry; top-ups fill to it), an optional `bin`
 (a short label such as "left shelf 2"), zero or more scanned `codes`, and whether the number was
 `verified` against the vault when it was last checked. The identifier is separate from the part
 number, as HF requires, because a number can be corrected and an item can have none.
+
+A **van** is a name ("Truck 4") and an identifier, set once and carried in every export, so a
+list can be told apart from another vehicle's and followed from one phone to the next.
 
 A **movement** is one dated fact about one item. The kinds are a closed list:
 
@@ -113,12 +132,12 @@ A **movement** is one dated fact about one item. The kinds are a closed list:
 | `used` | − quantity | the job session and job reference, when a job is open |
 | `removed` | − quantity | a reason from a closed list: `returned`, `damaged`, `lent`, `other` |
 | `counted` | sets the level | — |
-| `ordered` | none | the `PartsRequest` id; closed by later loads, oldest first |
-| `edited` | none | which attribute changed (number, description, unit, minimum, bin) |
+| `ordered` | none | the `PartsRequest` id, when this phone made the request; closed by later loads, oldest first |
+| `edited` | none | which attribute changed (number, description, unit, minimum, standard, bin) |
 | `reversed` | undoes one earlier movement | that movement's id |
 
 Every movement has an id, a time, a `batch` id (one spoken sentence or one imported sheet is one
-batch), and a `source`: `spoken`, `typed`, `scanned` or `sheet`. Movements carry no free text, so
+batch), and a `source`: `spoken`, `typed`, `scanned`, `sheet` or `handover`. Movements carry no free text, so
 the log holds part data and job references and nothing about a person.
 
 **Levels are a fold.** `VanStockLedger` (pure) reduces the movements to, per item: `onHand`,
@@ -170,11 +189,13 @@ It does not require an active session. Its description names both "van" and "tru
 |---|---|
 | `check` | One item's level, on-order figure, provenance and age; or candidates; or "not on the van" |
 | `low` | Items at or below their minimum, and items at zero with no minimum set |
+| `top_up` | What it takes to bring the van back to its standard load: each short line and by how much |
 | `load` | One or more lines of `part`/`description`, `quantity`, `unit` |
 | `use` | The same shape; tagged to the active job when there is one |
 | `remove` | The same shape, with a reason |
 | `count` | Sets one or more levels: a stocktake |
 | `undo` | Reverses the most recent batch, once |
+| `send_to_base` | Stages the end-of-shift handover (§8). It sends nothing by itself |
 
 Rules, each a test:
 
@@ -230,12 +251,14 @@ second is a way to fix twenty figures at a desk.
 stored, uncompressed ZIP with CRC-32 from the system zlib, and the handful of XML parts a
 workbook needs):
 
-- **Van stock** — Part number, Description, Unit, On hand, Minimum, Bin, Last changed, and a
-  hidden Item ID column. Part number and Bin are text-formatted columns, so a number typed into
-  a new row stays as typed.
+- **Van stock** — Part number, Description, Unit, On hand, Standard, To top up, Minimum, On
+  order, Needs a count, Bin, Last changed, and a hidden Item ID column. Part number and Bin are
+  text-formatted columns, so a number typed into a new row stays as typed. To top up, On order
+  and Needs a count are worked out by the phone and ignored on the way back in.
 - **History** — the movements, newest first. Read-only in spirit: import ignores it.
 
-The workbook records when it was exported and the last movement it includes. It leaves through
+The workbook records the van's name and identifier, when it was exported and the last movement
+it includes. It leaves through
 the share sheet, to wherever the technician sends it.
 
 **Back.** The app registers as a viewer for `.xlsx` and takes the file as a copy, exactly as it
@@ -245,7 +268,7 @@ numeric values. `VanStockSheetImport` (pure) turns the sheet into a **proposal**
 
 - a changed On hand becomes a `counted` movement;
 - a new row becomes a new item and a `counted` movement;
-- changed attributes become `edited` movements;
+- changed attributes, a standard load among them, become `edited` movements;
 - **a missing row changes nothing** and is listed as missing — sorting, filtering and an
   accidental delete must not zero the van; zero is typed as zero;
 - a line that also moved on the phone after the export is shown with both figures, and the
@@ -256,7 +279,8 @@ Nothing is applied until the technician has seen the summary ("7 counts changed,
 
 **A sheet we did not write.** A first import has no Item ID column. Columns are found by header,
 from a short list of synonyms (part / part number / item; description; qty / quantity / on
-hand; unit; min / minimum; bin / location). A sheet with no recognisable header is refused with a
+hand; unit; standard / par / stock to; min / minimum; bin / location). This is also how base
+gives every vehicle the same standard load: one sheet, imported once per van. A sheet with no recognisable header is refused with a
 sentence naming the headers it needs.
 
 **Refused outright:** a macro workbook, an encrypted workbook, more than 5,000 rows, a file over
@@ -280,15 +304,64 @@ quantities, units and whether each number was verified. Nil, and absent from the
 that used nothing — the pattern `usage` and `teamLearnings` already follow. This is the quantity
 HF's mapping from the record to "issued to job" is missing today.
 
-### 8 · When the office keeps stock too
+### 8 · The end of the shift, and the next one
+
+A vehicle that is driven by one technician today and another tomorrow needs two things: base has
+to know what to put back on it, and the next technician's phone has to know what is on it.
+
+**Out, at the end of the shift.** *"Send the truck stock to base"* (`send_to_base`) does three
+things in order. It runs the reconciler of §7 over the shift's jobs and asks about any part still
+without a stock entry, because a handover that repeats a forgotten use passes the mistake on. It
+composes the handover: the workbook of §6 and a short text of what matters — the top-up list
+(each line below its standard load and by how much), what is on order, and what needs counting.
+Then it stages a delivery for the technician to look at and send.
+
+The delivery is a third `DeliveryRequest.Payload` beside the job report and the team-learning
+bundle, so it goes by the channel the organisation already chose for reports, to the recipients
+it already named, through the same composer and the same audit trail. It is unsigned, like the
+learning bundle: a spreadsheet is meant to be edited. Where the organisation's reports go to an
+unattended endpoint, the handover rides the queue as its own kind. The signed office connection
+cannot carry it — its report contract knows a work record, an addendum and a parts request and
+nothing else — so until HF's capture message exists a phone enrolled with an office sends the
+handover by a person-operated channel or the share sheet, and says so.
+
+A line with no standard load cannot be short of it. With none set anywhere, the top-up list is
+the lines at zero and the lines below their minimum, and the message says the van has no
+standard load to measure against.
+
+**In, at the start of the next.** The next technician opens the workbook — forwarded by base,
+or sent straight from the last shift — and the app, seeing a van identifier, offers **Take over
+this van** beside the ordinary import. Taking over differs from correcting in one way that
+matters: the sheet is the whole truth. Every line in it becomes a `counted` movement with source
+`handover`; a line on the phone that is missing from the sheet is set to zero; lines on order
+come across as orders with no request attached; lines marked as needing a count stay unreliable.
+The summary is shown first, and the technician taps once.
+
+- **A different van.** A phone that holds Truck 2 and is handed Truck 4 keeps Truck 2's log,
+  archived and exportable, and switches. It never merges two vehicles.
+- **A stale handover.** One older than the phone's own latest movement for the same van is named
+  as older and is not the default.
+- **Whoever tops up says so.** If base restocks overnight, base edits On hand in the sheet before
+  sending it on. If the next technician restocks from the list, they load by voice as usual.
+  Nothing is assumed to have been put back.
+
+Answers after a takeover carry it: *"Two on the van, as handed over yesterday at ten past
+five."* The technician's name travels in the message, where base needs it, and never in the log.
+
+**Medical modes.** Descriptions in the workbook may have been dictated. With HIPAA mode on, the
+handover is not staged and the action is not offered to the model, the rule HF sets for its
+capture messages; the share sheet on the Van Stock screen remains the technician's own act.
+
+### 9 · When the office keeps stock too
 
 When HF is built, the office's snapshot may also carry a figure for this phone's own van. The
 phone's ledger is the fresher of the two for its own van and answers for it; the snapshot answers
 for base and for everybody else. The ledger's movements are already in HF's vocabulary, so a
 van's history can go to the office as capture proposals without being reshaped. Neither is built
-here.
+here. A firm that collects each vehicle's handover has, in a folder of spreadsheets, a first
+company-wide picture with no further software; HF is what replaces the folder.
 
-### 9 · Honest limits
+### 10 · Honest limits
 
 - The count is only as good as what the technician says. The plan makes saying it cheap, makes a
   mistake cheap to undo, and asks at the end of the job; it cannot see the shelf.
@@ -298,8 +371,10 @@ here.
   reader accepts. Which apps do, on which devices, is a check owed before the pilot.
 - The spoken number reaches whichever model the conversation uses. Under the medical local-only
   mode that model is on device; nothing in this plan adds an egress of its own.
-- One phone knows one van. A technician who changes phones without a backup re-imports the last
-  export.
+- A handover is as current as the moment it was sent. Stock used after it, or put back by
+  somebody who did not say so, is not in it.
+- Two phones cannot work one van at the same time. A technician who changes phones without a
+  backup takes the van over from its last handover.
 
 ## Build order (one PR each)
 
@@ -328,6 +403,13 @@ phone and on a desktop, added to the fixtures. **A real truck can be loaded afte
 the `van_stock` block on the work record, the low-stock line in the day view.
 *Owed:* the office accepting a report whose record carries the new block; one uncoached job.
 
+**P5 — Shift handover.** The van's name and identifier, `standard` and the `top_up` answer,
+`VanStockHandoverComposer` (pure), the `DeliveryRequest.Payload` case and its queue kind,
+`send_to_base`, the take-over import and its review, the archived log.
+*Owed (device):* one vehicle handed between two phones through a real mailbox, both ways.
+**Needs only P3**; the question about unrecorded parts joins it once P4 is in. It moves ahead of
+P4 if the pilot's vehicles change hands between shifts.
+
 ## Tests
 
 - `VanStockLedgerTests` — every kind's effect; a reversal undoes exactly one movement and cannot
@@ -352,11 +434,17 @@ the `van_stock` block on the work record, the low-stock line in the day view.
   case; a foreign sheet matched by header; an unrecognised header refused.
 - `VanStockReconcilerTests` — a part on a finished task with no movement is listed; one with a
   movement is not; a dismissed part stays dismissed for that job only.
+- `VanStockHandoverTests` — the top-up list is standard minus on hand, never negative; with no
+  standard anywhere it falls back to zero and below-minimum lines and says so; unrecorded parts
+  are asked about before anything is staged; staging sends nothing; a takeover sets a missing
+  line to zero where a correction leaves it alone; orders and unreliable marks come across; a
+  different van archives rather than merges; a stale handover is not the default; nothing is
+  staged under HIPAA mode; the log never holds a name.
 - `WorkRecordTests` update — the block is absent when empty, so an older record encodes as it did.
 
 ## Non-goals
 
-- The firm's stock, base stock, stock on other vans, and transfers between them (HF).
+- The firm's stock, base stock, transfers between vans, and two phones on one van at once (HF).
 - Ordering from a supplier, prices, and anything that spends money.
 - Requests sent without the technician saying so.
 - Fractional quantities and unit conversion.
@@ -376,6 +464,12 @@ the `van_stock` block on the work record, the low-stock line in the day view.
 5. **How long the history is kept** before it is folded into an opening balance.
 6. **When to ask about an unrecorded part:** only when the job is closed (proposed), or as soon
    as its task is finished.
-7. **Minimums.** Wanted from the first day, or is "that was your last one" enough?
+7. **Standard loads.** A top-up list needs to know what the van should carry. Does base hold a
+   standard load per vehicle today, and is it the same for every vehicle? Without one the list
+   can only show what has run out.
 8. **The office.** Whether its report intake already tolerates an unknown block on the work
    record, or needs a change before P4 ships.
+9. **Who tops up.** Base overnight, or the next technician from the list? It decides whether the
+   sheet base forwards is expected to have been edited.
+10. **Whose phone.** One per technician is assumed. If a phone stays with the vehicle there is
+    no takeover and P5 is only the message to base.

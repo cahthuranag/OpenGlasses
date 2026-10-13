@@ -218,6 +218,40 @@ final class VanStockService {
         return changed ?? false
     }
 
+    // MARK: - The spreadsheet
+
+    /// The van's stock as a workbook, written to a temporary file for the share sheet. The caller
+    /// removes it once the share is finished. Nil when there is nothing readable to export.
+    func exportFile() -> URL? {
+        guard !store.isUnreadable else { return nil }
+        let at = now()
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("van-stock-export-\(makeID())", isDirectory: true)
+        let url = folder.appendingPathComponent(VanStockSheet.fileName(exportedAt: at, calendar: calendar))
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try VanStockSheet.data(store.log, exportedAt: at, calendar: calendar)
+                .write(to: url, options: [.atomic, .completeFileProtection])
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    /// Apply a reviewed workbook as one batch, so one undo takes the whole import back.
+    @discardableResult
+    func apply(_ proposal: VanStockSheet.Proposal, keepingPhoneFigure: Set<String> = []) -> Bool {
+        lastWrite = nil
+        let at = now()
+        let batch = makeID()
+        let before = store.log
+        store.update { log in
+            VanStockSheet.apply(proposal, to: &log, keepingPhoneFigure: keepingPhoneFigure, at: at,
+                                batch: batch, verify: { self.verify($0) }, makeID: self.makeID)
+        }
+        return store.log != before
+    }
+
     /// A replacement was asked for: the van now knows something is coming. Nil when the part is
     /// not a line on the van — an order never creates one.
     @discardableResult

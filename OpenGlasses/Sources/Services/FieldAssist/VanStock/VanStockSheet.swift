@@ -1,0 +1,407 @@
+import Foundation
+
+/// The van's stock as a spreadsheet, out and back (Plan IH §6).
+///
+/// The log is the store and the workbook is a view of it. Out: every line with its level, and the
+/// history beside it. Back: an edited workbook becomes a *proposal* — counts, new lines, changed
+/// details — that the technician sees before one tap applies it as a single batch, so one undo
+/// takes the whole import back. A sheet this app did not write is read by its headers.
+enum VanStockSheet {
+
+    static let stockSheetName = "Van stock"
+    static let historySheetName = "History"
+    /// The hidden sheet that says when the workbook was written.
+    static let metaSheetName = "Avenkin"
+    static let exportedAtKey = "exported_at"
+    static let fileExtension = "xlsx"
+
+    /// Whether a file handed to the app is a workbook this can try to read.
+    static func isWorkbook(_ url: URL) -> Bool {
+        url.isFileURL && url.pathExtension.lowercased() == fileExtension
+    }
+
+    /// The stock sheet's columns, in order.
+    enum Column: String, CaseIterable {
+        case partNumber = "Part number"
+        case description = "Description"
+        case unit = "Unit"
+        case onHand = "On hand"
+        case standard = "Standard"
+        case standardSetBy = "Standard set by"
+        case toTopUp = "To top up"
+        case minimum = "Minimum"
+        case onOrder = "On order"
+        case needsCount = "Needs a count"
+        case bin = "Bin"
+        case lastChanged = "Last changed"
+        case itemID = "Item ID"
+
+        var layout: XLSX.Column {
+            switch self {
+            case .partNumber: return XLSX.Column(width: 20, isText: true)
+            case .description: return XLSX.Column(width: 38)
+            case .bin: return XLSX.Column(width: 18, isText: true)
+            case .lastChanged: return XLSX.Column(width: 18, isText: true)
+            case .standardSetBy: return XLSX.Column(width: 16)
+            case .itemID: return XLSX.Column(width: 38, isText: true, isHidden: true)
+            case .unit, .onHand, .standard, .toTopUp, .minimum, .onOrder, .needsCount:
+                return XLSX.Column(width: 12)
+            }
+        }
+    }
+
+    // MARK: - Out
+
+    /// "Van stock 2026-10-14.xlsx".
+    static func fileName(exportedAt: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: exportedAt)
+        return String(format: "Van stock %04d-%02d-%02d.xlsx", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
+    static func data(_ log: VanStockLog, exportedAt: Date, calendar: Calendar = .current) -> Data {
+        XLSXWriter.data(for: workbook(log, exportedAt: exportedAt, calendar: calendar), modified: exportedAt)
+    }
+
+    static func workbook(_ log: VanStockLog, exportedAt: Date, calendar: Calendar = .current) -> XLSX.Workbook {
+        let rows = VanStockRows.rows(log)
+        var stock: [[XLSX.Cell]] = [Column.allCases.map { .text($0.rawValue) }]
+        for row in rows {
+            let item = row.item
+            let level = row.level
+            stock.append(Column.allCases.map { column -> XLSX.Cell in
+                switch column {
+                case .partNumber: return item.number.map(XLSX.Cell.text) ?? .empty
+                case .description: return .text(item.description)
+                case .unit: return .text(item.unit.rawValue)
+                // An unknown is never a number: a line nothing was recorded against is left blank.
+                case .onHand: return level.isRecorded ? .number(level.onHand) : .empty
+                case .standard: return item.standard.map(XLSX.Cell.number) ?? .empty
+                case .standardSetBy:
+                    switch item.standard == nil ? nil : item.standardSetBy {
+                    case .base?: return .text("Base")
+                    case .van?: return .text("This truck")
+                    case nil: return .empty
+                    }
+                case .toTopUp: return item.standard.map { .number(max($0 - level.onHand, 0)) } ?? .empty
+                case .minimum: return item.minimum.map(XLSX.Cell.number) ?? .empty
+                case .onOrder: return level.onOrder > 0 ? .number(level.onOrder) : .empty
+                case .needsCount: return level.unreliable ? .text("Yes") : .empty
+                case .bin: return item.bin.map(XLSX.Cell.text) ?? .empty
+                case .lastChanged: return level.asOf.map { .text(stamp($0, calendar)) } ?? .empty
+                case .itemID: return .text(item.id)
+                }
+            })
+        }
+
+        let names = Dictionary(log.items.map { ($0.id, $0.name) }) { first, _ in first }
+        var history: [[XLSX.Cell]] = [["When", "Line", "What", "Quantity", "Job", "How"].map { .text($0) }]
+        let reversed = Set(log.movements.compactMap { $0.kind == .reversed ? $0.reverses : nil })
+        for movement in log.movements.reversed().prefix(2_000) where movement.kind != .reversed {
+            history.append([
+                .text(stamp(movement.at, calendar)),
+                .text(names[movement.itemID] ?? ""),
+                .text(movement.kind.rawValue + (reversed.contains(movement.id) ? " (taken back)" : "")),
+                movement.changesLevel || movement.kind == .ordered ? .number(movement.quantity) : .empty,
+                movement.jobReference.map(XLSX.Cell.text) ?? .empty,
+                .text(movement.source.rawValue),
+            ])
+        }
+
+        let meta: [[XLSX.Cell]] = [
+            [.text("key"), .text("value")],
+            [.text("format"), .text("1")],
+            [.text(exportedAtKey), .text(ISO8601DateFormatter().string(from: exportedAt))],
+        ]
+
+        return XLSX.Workbook(sheets: [
+            XLSX.Sheet(name: stockSheetName, columns: Column.allCases.map(\.layout), rows: stock),
+            XLSX.Sheet(name: historySheetName,
+                       columns: [XLSX.Column(width: 18, isText: true), XLSX.Column(width: 38), XLSX.Column(width: 22),
+                                 XLSX.Column(width: 10), XLSX.Column(width: 16, isText: true), XLSX.Column(width: 10)],
+                       rows: history),
+            XLSX.Sheet(name: metaSheetName,
+                       columns: [XLSX.Column(width: 16, isText: true), XLSX.Column(width: 28, isText: true)],
+                       rows: meta, isHidden: true),
+        ])
+    }
+
+    /// "2026-10-14 10:40", in the calendar's own time zone.
+    private static func stamp(_ date: Date, _ calendar: Calendar) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        return String(format: "%04d-%02d-%02d %02d:%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0,
+                      parts.hour ?? 0, parts.minute ?? 0)
+    }
+
+    // MARK: - Back
+
+    /// What an edited workbook would change. Nothing here has been applied.
+    struct Proposal: Equatable {
+
+        struct Count: Equatable, Identifiable {
+            let itemID: String
+            let name: String
+            /// What the phone shows now. Nil for a line nothing was recorded against.
+            let from: Int?
+            let to: Int
+            /// The line also moved on the phone after the workbook was written, so there are two
+            /// figures and the technician chooses. The sheet's is the default.
+            let movedSinceExport: Bool
+            var id: String { itemID }
+        }
+
+        struct NewLine: Equatable, Identifiable {
+            let row: Int
+            let number: String?
+            let description: String
+            let unit: VanStockUnit
+            let onHand: Int?
+            let minimum: Int?
+            let standard: Int?
+            let bin: String?
+            var id: Int { row }
+        }
+
+        struct Edit: Equatable, Identifiable {
+            let itemID: String
+            let name: String
+            let changes: [VanStockLog.Change]
+            var id: String { itemID }
+        }
+
+        struct Refusal: Equatable, Identifiable {
+            enum Reason: Equatable {
+                /// A figure that is negative, fractional or not a number: the column and what it held.
+                case notAWholeNumber(column: String, value: String)
+                case unknownUnit(String)
+                case noPartNumberOrDescription
+                /// The same line appears on an earlier row.
+                case repeatsRow(Int)
+            }
+
+            let row: Int
+            let reason: Reason
+            var id: Int { row }
+        }
+
+        var counts: [Count] = []
+        var newLines: [NewLine] = []
+        var edits: [Edit] = []
+        /// Lines on the phone that the sheet no longer has. Listed, and left exactly as they are:
+        /// sorting, filtering and an accidental delete must not zero the van.
+        var missing: [VanStockItem] = []
+        var refusals: [Refusal] = []
+
+        /// Whether applying it would change anything.
+        var changesNothing: Bool { counts.isEmpty && newLines.isEmpty && edits.isEmpty }
+    }
+
+    enum Failure: Error, Equatable {
+        case workbook(XLSXReader.Failure)
+        /// No row of the sheet names a part and a quantity in words this recognises.
+        case noRecognisableHeader
+    }
+
+    /// The header words a sheet somebody else wrote may use.
+    static let headerSynonyms: [Column: Set<String>] = [
+        .itemID: ["item id"],
+        .partNumber: ["part", "part number", "part no", "part #", "item", "number", "sku"],
+        .description: ["description", "desc", "name", "item description"],
+        .onHand: ["on hand", "qty", "quantity", "count", "stock"],
+        .unit: ["unit", "units", "uom"],
+        .standard: ["standard", "par", "stock to", "standard load"],
+        .minimum: ["min", "minimum", "reorder point"],
+        .bin: ["bin", "location", "shelf"],
+    ]
+
+    static func proposal(from data: Data, log: VanStockLog) -> Result<Proposal, Failure> {
+        switch XLSXReader.read(data) {
+        case .failure(let failure): return .failure(.workbook(failure))
+        case .success(let sheets): return proposal(from: sheets, log: log)
+        }
+    }
+
+    static func proposal(from sheets: [XLSXReader.Sheet], log: VanStockLog) -> Result<Proposal, Failure> {
+        let sheet = sheets.first { $0.name == stockSheetName } ?? sheets.first { !$0.isHidden }
+        guard let sheet, let (headerIndex, columns) = header(in: sheet.rows) else {
+            return .failure(.noRecognisableHeader)
+        }
+        let exportedAt = sheets.first { $0.name == metaSheetName }
+            .flatMap { meta in meta.rows.first { $0.first == exportedAtKey } }
+            .flatMap { $0.count > 1 ? ISO8601DateFormatter().date(from: $0[1]) : nil }
+        /// A sheet this app wrote names its lines; an empty cell in it means "cleared".
+        let isOwn = columns[.itemID] != nil
+
+        let levels = log.levels
+        var proposal = Proposal()
+        var seen: [String: Int] = [:]
+
+        for (offset, cells) in sheet.rows.enumerated() where offset > headerIndex {
+            let rowNumber = offset + 1
+            func cell(_ column: Column) -> String? {
+                guard let index = columns[column] else { return nil }
+                return index < cells.count ? cells[index].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            }
+            guard cells.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { continue }
+
+            // Words where a part number goes are a description, as they are when spoken.
+            var number = cell(.partNumber).flatMap { $0.isEmpty ? nil : $0 }
+            var described = cell(.description).flatMap { $0.isEmpty ? nil : $0 }
+            if let candidate = number, described == nil, columns[.description] == nil,
+               candidate.contains(where: \.isWhitespace) || !candidate.contains(where: \.isNumber) {
+                described = candidate
+                number = nil
+            }
+            let normalised = number.map(VaultPartsIndex.normalise).flatMap { $0.isEmpty ? nil : $0 }
+
+            var numbers: [Column: Int?] = [:]
+            var refusal: Proposal.Refusal.Reason?
+            for column in [Column.onHand, .minimum, .standard] {
+                guard let raw = cell(column) else { continue }
+                switch wholeNumber(raw) {
+                case .absent: numbers[column] = .some(nil)
+                case .value(let value): numbers[column] = .some(value)
+                case .invalid: refusal = .notAWholeNumber(column: column.rawValue, value: raw)
+                }
+            }
+            var unit: VanStockUnit?
+            if let raw = cell(.unit), !raw.isEmpty {
+                unit = VanStockUnit(spoken: raw)
+                if unit == nil { refusal = .unknownUnit(raw) }
+            }
+            if let refusal {
+                proposal.refusals.append(.init(row: rowNumber, reason: refusal))
+                continue
+            }
+
+            let existing = match(id: cell(.itemID), number: normalised, description: described, in: log)
+            guard let item = existing else {
+                guard normalised != nil || described != nil else {
+                    proposal.refusals.append(.init(row: rowNumber, reason: .noPartNumberOrDescription))
+                    continue
+                }
+                proposal.newLines.append(.init(
+                    row: rowNumber, number: normalised, description: described ?? "", unit: unit ?? .each,
+                    onHand: numbers[.onHand] ?? nil, minimum: numbers[.minimum] ?? nil,
+                    standard: numbers[.standard] ?? nil,
+                    bin: cell(.bin).flatMap { $0.isEmpty ? nil : $0 }))
+                continue
+            }
+            if let earlier = seen[item.id] {
+                proposal.refusals.append(.init(row: rowNumber, reason: .repeatsRow(earlier)))
+                continue
+            }
+            seen[item.id] = rowNumber
+
+            let level = levels[item.id] ?? VanStockLevel(itemID: item.id)
+            if case .some(.some(let onHand)) = numbers[.onHand],
+               !(level.isRecorded && !level.unreliable && level.onHand == onHand) {
+                // The export's stamp is to the second, so a movement in that same second is not "after".
+                let moved = exportedAt.map { exported in
+                    level.asOf.map { $0 >= exported.addingTimeInterval(1) } ?? false
+                } ?? false
+                proposal.counts.append(.init(itemID: item.id, name: item.name,
+                                             from: level.isRecorded ? level.onHand : nil, to: onHand,
+                                             movedSinceExport: moved))
+            }
+
+            var changes: [VanStockLog.Change] = []
+            if let described, described != item.description { changes.append(.description(described)) }
+            if let normalised, normalised != item.number { changes.append(.number(normalised)) }
+            if let unit, unit != item.unit { changes.append(.unit(unit)) }
+            if case .some(let minimum) = numbers[.minimum], minimum != item.minimum, minimum != nil || isOwn {
+                changes.append(.minimum(minimum))
+            }
+            if case .some(let standard) = numbers[.standard], standard != item.standard, standard != nil || isOwn {
+                changes.append(.standard(standard, setBy: .van))
+            }
+            if let bin = cell(.bin), bin != (item.bin ?? ""), !bin.isEmpty || isOwn {
+                changes.append(.bin(bin.isEmpty ? nil : bin))
+            }
+            if !changes.isEmpty { proposal.edits.append(.init(itemID: item.id, name: item.name, changes: changes)) }
+        }
+
+        if isOwn { proposal.missing = log.items.filter { seen[$0.id] == nil } }
+        return .success(proposal)
+    }
+
+    /// Apply a proposal as one batch. `keepingPhoneFigure` names the lines, among those that moved
+    /// since the export, where the technician chose the phone's figure over the sheet's.
+    static func apply(_ proposal: Proposal, to log: inout VanStockLog, keepingPhoneFigure: Set<String> = [],
+                      at: Date, batch: String, verify: (String) -> TaskPart,
+                      makeID: () -> String = { UUID().uuidString }) {
+        for edit in proposal.edits {
+            for change in edit.changes {
+                log.edit(itemID: edit.itemID, change, at: at, batch: batch, source: .sheet, id: makeID())
+                if case .number(let number) = change {
+                    log.edit(itemID: edit.itemID, .verified(number.map { verify($0).verified } ?? false),
+                             at: at, batch: batch, source: .sheet, id: makeID())
+                }
+            }
+        }
+        for line in proposal.newLines {
+            let checked = line.number.map(verify)
+            let item = log.addItem(id: makeID(), number: line.number,
+                                   description: line.description.isEmpty ? (checked?.partDescription ?? "") : line.description,
+                                   unit: line.unit, minimum: line.minimum, standard: line.standard,
+                                   standardSetBy: line.standard == nil ? nil : .van, bin: line.bin,
+                                   verified: checked?.verified ?? false, batch: batch)
+            if let onHand = line.onHand {
+                log.record(.counted, itemID: item.id, quantity: onHand, at: at, batch: batch, source: .sheet, id: makeID())
+            }
+        }
+        for count in proposal.counts where !(count.movedSinceExport && keepingPhoneFigure.contains(count.itemID)) {
+            log.record(.counted, itemID: count.itemID, quantity: count.to, at: at, batch: batch, source: .sheet, id: makeID())
+        }
+    }
+
+    // MARK: - Reading a sheet
+
+    /// The header row and where each recognised column is. A header names a part or a
+    /// description, and at least one of the figures.
+    private static func header(in rows: [[String]]) -> (Int, [Column: Int])? {
+        for (offset, row) in rows.prefix(10).enumerated() {
+            var found: [Column: Int] = [:]
+            for (index, raw) in row.enumerated() {
+                let word = raw.lowercased().trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+                guard !word.isEmpty,
+                      let column = headerSynonyms.first(where: { $0.value.contains(word) })?.key
+                        ?? Column.allCases.first(where: { $0.rawValue.lowercased() == word }),
+                      found[column] == nil else { continue }
+                found[column] = index
+            }
+            let namesALine = found[.partNumber] != nil || found[.description] != nil
+            let hasAFigure = found[.onHand] != nil || found[.standard] != nil || found[.minimum] != nil
+            if namesALine && hasAFigure { return (offset, found) }
+        }
+        return nil
+    }
+
+    private static func match(id: String?, number: String?, description: String?, in log: VanStockLog) -> VanStockItem? {
+        if let id, !id.isEmpty, let item = log.item(id: id) { return item }
+        if let number {
+            let sameNumber = log.items.filter { $0.number == number }
+            if sameNumber.count == 1 { return sameNumber[0] }
+            if sameNumber.count > 1 { return nil }
+        }
+        guard let description else { return nil }
+        let sameWords = log.items.filter {
+            $0.description.caseInsensitiveCompare(description) == .orderedSame
+                && (number == nil || $0.number == nil || $0.number == number)
+        }
+        return sameWords.count == 1 ? sameWords[0] : nil
+    }
+
+    private enum Whole {
+        case absent
+        case value(Int)
+        case invalid
+    }
+
+    /// "" is absent; "4" and "4.0" are 4; anything negative, fractional or not a number is invalid.
+    private static func wholeNumber(_ raw: String) -> Whole {
+        guard !raw.isEmpty else { return .absent }
+        if let value = Int(raw) { return value >= 0 ? .value(value) : .invalid }
+        if let value = Double(raw), value >= 0, value == value.rounded(), value < 1_000_000 { return .value(Int(value)) }
+        return .invalid
+    }
+}

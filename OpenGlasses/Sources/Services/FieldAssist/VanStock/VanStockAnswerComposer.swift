@@ -50,7 +50,8 @@ struct VanStockAnswerComposer {
 
     func emptyVan() -> String {
         "The van list is empty: nothing has been loaded or counted yet. The technician can say what "
-            + "they have loaded, or count what is on the shelves, to start it. Do not guess what is on the van."
+            + "they have loaded, count what is on the shelves, or import a spreadsheet from the Van stock "
+            + "screen, to start it. Do not guess what is on the van."
     }
 
     func low(_ entries: [(item: VanStockItem, level: VanStockLevel)]) -> String {

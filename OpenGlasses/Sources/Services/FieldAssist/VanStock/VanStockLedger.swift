@@ -198,6 +198,12 @@ struct VanStockLog: Codable, Equatable, Sendable {
 
     // MARK: - Undo
 
+    /// Whether there is a batch an undo would take back.
+    var canUndo: Bool {
+        guard let last = movements.last else { return false }
+        return last.kind != .reversed && last.kind != .opening
+    }
+
     /// What an undo took back.
     struct Undone: Equatable, Sendable {
         let batch: String

@@ -23,6 +23,9 @@ enum JobRoute: Hashable {
     case transcript(threadId: String)
     /// A job ahead (Plan FO P3c): its details, its brief, directions and Start.
     case upcomingJob(id: String)
+    /// What is on the van (Plan IH P2), and one line of it.
+    case vanStock
+    case vanStockItem(id: String)
 }
 
 /// One field session, as the list needs it: the day card's to-do facts plus what a row prints and

@@ -881,6 +881,7 @@ extension SettingKey {
         case .organizationRequiresCustomerSignOff: return "Every job asks for the customer's signature"
         case .organizationForbidsCustomerTranscript: return "Transcripts go only to the office addresses it set up"
         case .organizationForbidsJobRecording: return "Jobs can't be recorded"
+        case .organizationForbidsVanStock: return "Van stock is off"
         case .organizationRequiresBlurBeforeOfficeSync: return "Faces must be blurred before a job recording goes to the office"
         case .organizationForbidsRecordingSyncOnCellular: return "Job recordings are never sent over mobile data"
         case .privacyFilterEnabled: return "Bystander face blur is always on"

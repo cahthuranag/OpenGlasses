@@ -17,6 +17,9 @@ struct JobListView: View {
     /// A new job asked for while one is open: the question.
     @Binding var openJobPrompt: OpenJobPrompt?
     let onOpen: (JobRoute) -> Void
+    /// Whether the van's stock is offered here (Plan IH P2). Off when the organisation has
+    /// switched it off.
+    var showsVanStock = false
     let onAdd: () -> Void
     let onAnswer: (OpenJobPrompt.Answer) -> Void
     /// Days with jobs, for "Export a day…".
@@ -66,6 +69,7 @@ struct JobListView: View {
                 }
                 if !list.older.isEmpty { olderSection }
             }
+            if showsVanStock, !isSearching { vanStockSection }
             toolsSection
         }
         .ogFormStyle()
@@ -177,6 +181,18 @@ struct JobListView: View {
         }
     }
 
+    private var vanStockSection: some View {
+        Section {
+            Button { onOpen(.vanStock) } label: {
+                Label("Van stock", systemImage: "shippingbox")
+                    .frame(maxWidth: .infinity, minHeight: OGMetrics.minTouchTarget, alignment: .leading)
+            }
+            .accessibilityHint(Self.hint(.vanStock))
+        } footer: {
+            Text("What you've loaded and used, kept on this phone.")
+        }
+    }
+
     @ViewBuilder
     private var toolsSection: some View {
         if onSendToday != nil || (onExportDay != nil && !transcriptDays.isEmpty) {
@@ -244,6 +260,8 @@ struct JobListView: View {
         case .pastJob: return "Opens the work record, its conversation, and Send report."
         case .upcomingJob: return "Opens the job's brief, directions and Start."
         case .transcript: return "Opens the conversation."
+        case .vanStock: return "Opens the list of what is on the van."
+        case .vanStockItem: return "Opens this line: its count, details and history."
         }
     }
 }

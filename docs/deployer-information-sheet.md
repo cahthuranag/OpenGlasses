@@ -64,6 +64,7 @@ An organisation profile is a signed document we prepare with you. Each phone enr
 | No job recording | `organizationForbidsJobRecording` | On only |
 | Faces blurred before a recording goes to the office | `organizationRequiresBlurBeforeOfficeSync` | On only |
 | No recording sent over mobile data | `organizationForbidsRecordingSyncOnCellular` | On only |
+| No van stock kept on the phone | `organizationForbidsVanStock` | On only |
 
 While it is in place the profile also sets your organisation's name, report recipients and channel, whether office reports carry the transcript, the key your job files are signed with, and your colour. It can name the AI provider and model, lock whole groups of settings and close tools in a Field Assist edition, and give starting values the technician may change later (Field Assist on, the default vault and mode, the support address).
 

@@ -1,8 +1,9 @@
 # Plan IH — Van Stock (what is on the technician's own truck, kept by voice)
 
-**Status:** 🚧 P0 and P1 built 2026-10-14: the ledger, the store and the `van_stock` tool, so a
-technician can load, use, count, check and undo by voice. No screen, spreadsheet, job-close
-question or handover yet (P2–P5), and the P1 device checks are owed. A technician tells the assistant what
+**Status:** 🚧 P0–P2 built 2026-10-14: the ledger, the store, the `van_stock` tool and the Van
+Stock screen, so a technician can load, use, count, check and undo by voice and correct a figure
+on the phone. No spreadsheet, job-close question or handover yet (P3–P5), and the P1 and P2
+device checks are owed. A technician tells the assistant what
 they loaded at the shop and what they used on a job; the phone keeps the count, answers "have I
 got one?" with no signal, says when the last one has gone, and offers to ask the office for a
 replacement. The count lives on the phone and nowhere else. A spreadsheet goes out and comes back
@@ -455,9 +456,17 @@ As built, beyond the design above:
 phone; a check and a use in aeroplane mode; the same in a live session.
 **The three-line voice workflow is testable with a partner after this phase**, on an empty van.
 
-**P2 — The Van Stock screen.** List, detail, correction, history, undo, the CT ceiling key, the
-accessibility audit entry.
-*Owed (device):* VoiceOver and largest text size on the list and the detail.
+**P2 — The Van Stock screen.** ✅ **Built 2026-10-14; device checks owed.** `VanStockView` and
+`VanStockItemView` (`App/Views/Job/VanStockViews.swift`), reached from a Van stock row on the Job
+tab's list through two new `JobRoute` cases; `VanStockRows` (pure: the rows, their marks, the
+search, a line's history); the screen's operations on `VanStockService` (a typed count, edits as
+one batch, undo); and `organizationForbidsVanStock`, a ceiling pinned on, which makes the tool
+refuse and hides the row. A part number corrected on the screen is looked up again, so the old
+number's verification does not carry over.
+*Not built:* the accessibility audit entry. The audit runs in the UI-test target on a simulator,
+and none was available when this was built; it is owed with the device pass below. Import, Export
+and the review sheet arrive with P3.
+*Owed (device):* VoiceOver and largest text size on the list and the detail; the audit entry.
 
 **P3 — Spreadsheet out and back.** `XLSXWriter`, `XLSXReader`, `VanStockSheetExport`,
 `VanStockSheetImport`, the review sheet, the document type.

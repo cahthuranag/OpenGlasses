@@ -32,6 +32,9 @@ enum JobCloseSequence {
         var evidenceDecided: Bool
         var signOff: SignOffPolicy.Decision
         var route: Route
+        /// Parts on finished tasks with no stock entry, already named for the question (Plan IH
+        /// P4). Empty when the technician keeps no van stock, or everything is accounted for.
+        var unrecordedVanParts: String = ""
     }
 
     enum Decision: Equatable {
@@ -63,6 +66,15 @@ enum JobCloseSequence {
             return .ask("Not closed yet: \(items) on this job and nobody has said which go with the "
                         + "report. Ask the technician: send them as they are, or leave any out? Then "
                         + "call the evidence tool (keep, include or exclude) and close the job again.")
+        }
+        // A part used and never recorded is what leaves the van short at the next job. By voice it
+        // is asked about once per part; the screen's close does not hold a job for it.
+        if inputs.route == .voice, !inputs.unrecordedVanParts.isEmpty {
+            return .ask("Not closed yet: there is no van stock entry on this job for "
+                        + "\(inputs.unrecordedVanParts). Ask the technician whether each came off the van. "
+                        + "For one that did, call van_stock with action 'use', the part and how many. For one "
+                        + "that was ordered in or was the customer's, call van_stock with action "
+                        + "'not_from_van' and the part. Then close the job again.")
         }
         if case .blocked(let reason) = inputs.signOff { return .refuse(reason) }
         return .proceed(outcome: outcome)

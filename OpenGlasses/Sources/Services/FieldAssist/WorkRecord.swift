@@ -112,6 +112,10 @@ struct WorkRecord: Codable, Equatable {
     /// Internal, like `teamLearnings`: no customer summary, no printed work-order line, and a
     /// customer-audience export leaves it out. Nil, and absent from the JSON, when there were none.
     var teamLearningAnswers: [TeamLearningAnswer]?
+    /// What came off the van on this job (Plan IH P4), with quantities — the figure a part on a
+    /// finished task does not carry. Nil, and absent from the JSON, on a job that recorded none,
+    /// so an older record encodes exactly as it did.
+    var vanStock: [VanStockUse]?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -145,6 +149,7 @@ struct WorkRecord: Codable, Equatable {
         case usage
         case teamLearnings = "team_learnings"
         case teamLearningAnswers = "team_learning_answers"
+        case vanStock = "van_stock"
     }
 
     // MARK: - Assembly
@@ -190,6 +195,7 @@ struct WorkRecord: Codable, Equatable {
         self.usage = Self.nonEmpty(usage)
         self.teamLearnings = (session.teamLearnings ?? []).isEmpty ? nil : session.teamLearnings
         self.teamLearningAnswers = (session.teamLearningAnswers ?? []).isEmpty ? nil : session.teamLearningAnswers
+        self.vanStock = (session.vanStockUses ?? []).isEmpty ? nil : session.vanStockUses
     }
 
     /// Hand-written so a record exported before the evidence review existed still decodes.
@@ -232,6 +238,7 @@ struct WorkRecord: Codable, Equatable {
         usage = Self.nonEmpty(try c.decodeIfPresent(JobUsageSummary.self, forKey: .usage))
         teamLearnings = try c.decodeIfPresent([LearningCandidateReference].self, forKey: .teamLearnings)
         teamLearningAnswers = try c.decodeIfPresent([TeamLearningAnswer].self, forKey: .teamLearningAnswers)
+        vanStock = try c.decodeIfPresent([VanStockUse].self, forKey: .vanStock)
     }
 
     /// A summary with no requests is no summary: kept out of the record, so the synthesized encoder
@@ -379,6 +386,10 @@ struct WorkRecord: Codable, Equatable {
         if !partsRequests.isEmpty {
             lines.append("Parts requested:")
             lines.append(contentsOf: partsRequests.map { "  \($0.summary)" })
+        }
+        if let vanStock, !vanStock.isEmpty {
+            lines.append("Off the van:")
+            lines.append(contentsOf: vanStock.map { "  \($0.summary)" })
         }
         let pages = pagesVerified
         if !pages.isEmpty {

@@ -52,6 +52,27 @@ final class VanStockService {
     private let now: () -> Date
     private let calendar: Calendar
     private let makeID: () -> String
+    /// The open job's own record of what came off the van (Plan IH P4): told of a use, of uses an
+    /// undo took back, and of a part that did not come from the van.
+    private let jobUses: JobUses
+
+    /// How a use reaches the job it was recorded on.
+    @MainActor
+    struct JobUses {
+        var record: @MainActor (VanStockUse) -> Void
+        var remove: @MainActor (Set<String>) -> Void
+        /// False when there is no job open to say it about.
+        var notFromVan: @MainActor (String) -> Bool
+        /// The names of the parts on the open job that still have no stock entry.
+        var unrecorded: @MainActor () -> [TaskPart]
+
+        static let none = JobUses(record: { _ in }, remove: { _ in }, notFromVan: { _ in false }, unrecorded: { [] })
+        static let shared = JobUses(
+            record: { FieldSessionService.shared.recordVanStockUse($0) },
+            remove: { FieldSessionService.shared.removeVanStockUses(movementIDs: $0) },
+            notFromVan: { FieldSessionService.shared.markNotFromVan(part: $0) },
+            unrecorded: { FieldSessionService.shared.unrecordedVanParts })
+    }
 
     private var lastWrite: (signature: String, at: Date, answer: String)?
 
@@ -61,7 +82,8 @@ final class VanStockService {
          activeJob: (@MainActor () -> Job?)? = nil,
          now: @escaping () -> Date = Date.init,
          calendar: Calendar = .current,
-         makeID: @escaping () -> String = { UUID().uuidString }) {
+         makeID: @escaping () -> String = { UUID().uuidString },
+         jobUses: JobUses? = nil) {
         self.store = store ?? .shared
         self.verify = verify ?? { FieldSessionService.shared.verifyPart($0) }
         self.partsIndex = partsIndex ?? { FieldSessionService.shared.partsIndex }
@@ -71,6 +93,8 @@ final class VanStockService {
         self.now = now
         self.calendar = calendar
         self.makeID = makeID
+        // A service built for a test with its own store speaks to no job unless it is given one.
+        self.jobUses = jobUses ?? (store == nil ? .shared : .none)
     }
 
     private var composer: VanStockAnswerComposer { VanStockAnswerComposer(now: now(), calendar: calendar) }
@@ -128,9 +152,14 @@ final class VanStockService {
             case .success(let found):
                 let before = log.level(of: found.item.id)
                 let job = self.activeJob()
-                log.record(.used, itemID: found.item.id, quantity: quantity, at: at, batch: batch,
-                           source: source, id: self.makeID(), jobSessionID: job?.sessionID,
-                           jobReference: job?.reference)
+                let movement = log.record(.used, itemID: found.item.id, quantity: quantity, at: at, batch: batch,
+                                          source: source, id: self.makeID(), jobSessionID: job?.sessionID,
+                                          jobReference: job?.reference)
+                if job != nil, let movement {
+                    self.jobUses.record(VanStockUse(id: movement.id, number: found.item.number,
+                                                    description: found.item.description, quantity: quantity,
+                                                    unit: found.item.unit, verified: found.item.verified, at: at))
+                }
                 return self.composer.used(found.item, quantity: quantity, before: before,
                                           after: log.level(of: found.item.id), jobReference: job?.reference)
             }
@@ -175,7 +204,28 @@ final class VanStockService {
         let at = now()
         let undone = store.update { $0.undoLastBatch(at: at, batch: self.makeID(), source: source, makeID: self.makeID) }
         guard let undone = undone ?? nil else { return composer.nothingToUndo() }
+        let uses = Set(undone.movements.filter { $0.kind == .used }.map(\.id))
+        if !uses.isEmpty { jobUses.remove(uses) }
         return composer.undone(undone, items: store.log.items)
+    }
+
+    // MARK: - The job's own account
+
+    /// Parts on the open job's finished tasks with no stock entry, for the model to ask about.
+    func unrecorded() -> String {
+        let parts = jobUses.unrecorded()
+        guard !parts.isEmpty else {
+            return "Every part on this job's finished tasks has a van stock entry, or was said not to have come off the van."
+        }
+        return "No van stock entry on this job for " + VanStockReconciler.named(parts)
+            + ". Ask the technician whether each came off the van; do not record a use they did not confirm."
+    }
+
+    /// The technician said a part on the open job did not come off the van.
+    func notFromVan(_ line: Line) -> String {
+        guard let part = line.part else { return "Say which part did not come off the van, by its part number." }
+        guard jobUses.notFromVan(part) else { return "There is no job open to say that about. Nothing was changed." }
+        return "Noted: \(VaultPartsIndex.normalise(part)) did not come off the van on this job. The van list is unchanged."
     }
 
     // MARK: - From the screen

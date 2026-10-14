@@ -945,6 +945,54 @@ final class FieldSessionService: ObservableObject {
         return request
     }
 
+    // MARK: Van stock (Plan IH P4)
+
+    /// Whether the technician keeps van stock at all. The close only asks about parts with no
+    /// stock entry when they do: a phone whose van list is empty has nothing to reconcile, and a
+    /// question about it would be noise on every job. Injectable for tests.
+    var vanStockInUse: () -> Bool = {
+        !Config.organizationForbidsVanStock && !VanStockStore.shared.log.isEmpty
+    }
+
+    /// A part recorded as used from the van on the open job.
+    func recordVanStockUse(_ use: VanStockUse) {
+        guard activeSession != nil else { return }
+        mutateSession { $0.vanStockUses = ($0.vanStockUses ?? []) + [use] }
+    }
+
+    /// An undo in the van's log took these uses back, so they come off the job too.
+    func removeVanStockUses(movementIDs: Set<String>) {
+        guard let uses = activeSession?.vanStockUses, uses.contains(where: { movementIDs.contains($0.id) }) else { return }
+        mutateSession { session in
+            let kept = uses.filter { !movementIDs.contains($0.id) }
+            session.vanStockUses = kept.isEmpty ? nil : kept
+        }
+    }
+
+    /// The technician said a part on this job did not come off the van. False with no job open.
+    @discardableResult
+    func markNotFromVan(part number: String) -> Bool {
+        let cleaned = VaultPartsIndex.normalise(number)
+        guard activeSession != nil, !cleaned.isEmpty else { return false }
+        mutateSession { session in
+            if !(session.vanStockNotFromVan ?? []).contains(cleaned) {
+                session.vanStockNotFromVan = (session.vanStockNotFromVan ?? []) + [cleaned]
+            }
+        }
+        return true
+    }
+
+    /// Parts on the open job's finished tasks with no stock entry. Empty when the technician
+    /// keeps no van stock.
+    var unrecordedVanParts: [TaskPart] {
+        guard let session = activeSession, vanStockInUse() else { return [] }
+        var seen = Set<String>()
+        let partsUsed = session.tasks.filter { $0.status == .done }.flatMap(\.parts)
+            .filter { seen.insert($0.number).inserted }
+        return VanStockReconciler.unrecorded(partsUsed: partsUsed, uses: session.vanStockUses ?? [],
+                                             notFromVan: session.vanStockNotFromVan ?? [])
+    }
+
     /// Record what base said. **Reported, never acted on**: it is attached to the request and
     /// spoken to the technician, and it changes no task and no recommendation by itself.
     @discardableResult

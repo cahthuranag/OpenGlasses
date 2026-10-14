@@ -209,6 +209,8 @@ struct OpenGlassesApp: App {
     /// A van stock spreadsheet being read in (Plan IH P3). Observed here because the review it
     /// raises is the app's sheet, whichever way the file arrived.
     @StateObject private var vanStockImports = VanStockImportService.shared
+    /// The end-of-shift stock, staged by voice or from the Van Stock screen (Plan IH P5).
+    @StateObject private var vanStockHandover = VanStockHandoverService.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var isHipaaLocked = Config.hipaaMode
 
@@ -353,6 +355,14 @@ struct OpenGlassesApp: App {
                         VanStockImportReviewSheet(service: vanStockImports) {
                             appState.openJobs(.list)
                         }
+                    }
+
+                // The end-of-shift stock (Plan IH P5): staged, shown, and sent only from this sheet.
+                Color.clear
+                    .sheet(isPresented: Binding(
+                        get: { vanStockHandover.staged != nil },
+                        set: { if !$0 { vanStockHandover.discard() } })) {
+                        VanStockHandoverSheet(service: vanStockHandover)
                     }
 
                 // Several facts matched a spoken forget or correction (Plan GG): the Memory screen,

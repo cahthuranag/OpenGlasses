@@ -13,6 +13,8 @@ enum VanStockSheet {
     /// The hidden sheet that says when the workbook was written.
     static let metaSheetName = "Avenkin"
     static let exportedAtKey = "exported_at"
+    static let vanIDKey = "van_id"
+    static let vanNameKey = "van_name"
     static let fileExtension = "xlsx"
 
     /// Whether a file handed to the app is a workbook this can try to read.
@@ -58,11 +60,13 @@ enum VanStockSheet {
         return String(format: "Van stock %04d-%02d-%02d.xlsx", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 
-    static func data(_ log: VanStockLog, exportedAt: Date, calendar: Calendar = .current) -> Data {
-        XLSXWriter.data(for: workbook(log, exportedAt: exportedAt, calendar: calendar), modified: exportedAt)
+    static func data(_ log: VanStockLog, van: VanIdentity? = nil, exportedAt: Date,
+                     calendar: Calendar = .current) -> Data {
+        XLSXWriter.data(for: workbook(log, van: van, exportedAt: exportedAt, calendar: calendar), modified: exportedAt)
     }
 
-    static func workbook(_ log: VanStockLog, exportedAt: Date, calendar: Calendar = .current) -> XLSX.Workbook {
+    static func workbook(_ log: VanStockLog, van: VanIdentity? = nil, exportedAt: Date,
+                         calendar: Calendar = .current) -> XLSX.Workbook {
         let rows = VanStockRows.rows(log)
         var stock: [[XLSX.Cell]] = [Column.allCases.map { .text($0.rawValue) }]
         for row in rows {
@@ -107,11 +111,15 @@ enum VanStockSheet {
             ])
         }
 
-        let meta: [[XLSX.Cell]] = [
+        var meta: [[XLSX.Cell]] = [
             [.text("key"), .text("value")],
             [.text("format"), .text("1")],
             [.text(exportedAtKey), .text(ISO8601DateFormatter().string(from: exportedAt))],
         ]
+        if let van {
+            meta.append([.text(vanIDKey), .text(van.id)])
+            meta.append([.text(vanNameKey), .text(van.name)])
+        }
 
         return XLSX.Workbook(sheets: [
             XLSX.Sheet(name: stockSheetName, columns: Column.allCases.map(\.layout), rows: stock),
@@ -220,20 +228,56 @@ enum VanStockSheet {
         }
     }
 
-    static func proposal(from sheets: [XLSXReader.Sheet], log: VanStockLog) -> Result<Proposal, Failure> {
+    /// One row of a stock sheet, read and checked, before anybody decides what it means.
+    struct Row: Equatable {
+        /// The row's number in the sheet, as a spreadsheet shows it.
+        let number: Int
+        let itemID: String?
+        /// Normalised. Nil when the row gives none.
+        let partNumber: String?
+        let description: String?
+        let unit: VanStockUnit?
+        /// For each figure: nil when the sheet has no such column, `.some(nil)` when the cell is
+        /// empty, and the value otherwise.
+        let onHandCell: Int??
+        let minimumCell: Int??
+        let standardCell: Int??
+        let onOrder: Int?
+        let needsCount: Bool
+        let standardSetByBase: Bool
+        /// Nil when the sheet has no such column; empty when the cell is.
+        let binCell: String?
+
+        var onHand: Int? { onHandCell ?? nil }
+        var minimum: Int? { minimumCell ?? nil }
+        var standard: Int? { standardCell ?? nil }
+        var bin: String? { binCell.flatMap { $0.isEmpty ? nil : $0 } }
+    }
+
+    /// A stock sheet, read.
+    struct Read: Equatable {
+        var rows: [Row] = []
+        var refusals: [Proposal.Refusal] = []
+        /// A sheet this app wrote names its lines; an empty cell in it means "cleared".
+        var isOwn = false
+        var exportedAt: Date?
+        var van: VanIdentity?
+    }
+
+    /// Read the stock sheet of a workbook into rows. Nothing is compared with the phone here.
+    static func rows(from sheets: [XLSXReader.Sheet]) -> Result<Read, Failure> {
         let sheet = sheets.first { $0.name == stockSheetName } ?? sheets.first { !$0.isHidden }
         guard let sheet, let (headerIndex, columns) = header(in: sheet.rows) else {
             return .failure(.noRecognisableHeader)
         }
-        let exportedAt = sheets.first { $0.name == metaSheetName }
-            .flatMap { meta in meta.rows.first { $0.first == exportedAtKey } }
-            .flatMap { $0.count > 1 ? ISO8601DateFormatter().date(from: $0[1]) : nil }
-        /// A sheet this app wrote names its lines; an empty cell in it means "cleared".
-        let isOwn = columns[.itemID] != nil
-
-        let levels = log.levels
-        var proposal = Proposal()
-        var seen: [String: Int] = [:]
+        var read = Read()
+        read.isOwn = columns[.itemID] != nil
+        let meta = sheets.first { $0.name == metaSheetName }?.rows ?? []
+        func value(_ key: String) -> String? {
+            meta.first { $0.first == key }.flatMap { $0.count > 1 && !$0[1].isEmpty ? $0[1] : nil }
+        }
+        read.exportedAt = value(exportedAtKey).flatMap { ISO8601DateFormatter().date(from: $0) }
+        if let id = value(vanIDKey) { read.van = VanIdentity(id: id, name: value(vanNameKey) ?? "") }
 
         for (offset, cells) in sheet.rows.enumerated() where offset > headerIndex {
             let rowNumber = offset + 1
@@ -255,11 +299,14 @@ enum VanStockSheet {
 
             var numbers: [Column: Int?] = [:]
             var refusal: Proposal.Refusal.Reason?
-            for column in [Column.onHand, .minimum, .standard] {
+            for column in [Column.onHand, .minimum, .standard, .onOrder] {
                 guard let raw = cell(column) else { continue }
                 switch wholeNumber(raw) {
                 case .absent: numbers[column] = .some(nil)
                 case .value(let value): numbers[column] = .some(value)
+                // On order is worked out by the phone; whatever was typed over it is not a reason
+                // to leave the row out.
+                case .invalid where column == .onOrder: numbers[column] = .some(nil)
                 case .invalid: refusal = .notAWholeNumber(column: column.rawValue, value: raw)
                 }
             }
@@ -269,34 +316,54 @@ enum VanStockSheet {
                 if unit == nil { refusal = .unknownUnit(raw) }
             }
             if let refusal {
-                proposal.refusals.append(.init(row: rowNumber, reason: refusal))
+                read.refusals.append(.init(row: rowNumber, reason: refusal))
                 continue
             }
+            read.rows.append(Row(
+                number: rowNumber, itemID: cell(.itemID).flatMap { $0.isEmpty ? nil : $0 },
+                partNumber: normalised, description: described, unit: unit,
+                onHandCell: numbers[.onHand], minimumCell: numbers[.minimum], standardCell: numbers[.standard],
+                onOrder: numbers[.onOrder] ?? nil,
+                needsCount: (cell(.needsCount) ?? "").lowercased() == "yes",
+                standardSetByBase: (cell(.standardSetBy) ?? "").lowercased() == "base",
+                binCell: cell(.bin)))
+        }
+        return .success(read)
+    }
 
-            let existing = match(id: cell(.itemID), number: normalised, description: described, in: log)
+    static func proposal(from sheets: [XLSXReader.Sheet], log: VanStockLog) -> Result<Proposal, Failure> {
+        let read: Read
+        switch rows(from: sheets) {
+        case .failure(let failure): return .failure(failure)
+        case .success(let value): read = value
+        }
+        let levels = log.levels
+        var proposal = Proposal(refusals: read.refusals)
+        var seen: [String: Int] = [:]
+
+        for row in read.rows {
+            let existing = match(id: row.itemID, number: row.partNumber, description: row.description, in: log)
             guard let item = existing else {
-                guard normalised != nil || described != nil else {
-                    proposal.refusals.append(.init(row: rowNumber, reason: .noPartNumberOrDescription))
+                guard row.partNumber != nil || row.description != nil else {
+                    proposal.refusals.append(.init(row: row.number, reason: .noPartNumberOrDescription))
                     continue
                 }
                 proposal.newLines.append(.init(
-                    row: rowNumber, number: normalised, description: described ?? "", unit: unit ?? .each,
-                    onHand: numbers[.onHand] ?? nil, minimum: numbers[.minimum] ?? nil,
-                    standard: numbers[.standard] ?? nil,
-                    bin: cell(.bin).flatMap { $0.isEmpty ? nil : $0 }))
+                    row: row.number, number: row.partNumber, description: row.description ?? "",
+                    unit: row.unit ?? .each, onHand: row.onHand, minimum: row.minimum,
+                    standard: row.standard, bin: row.bin))
                 continue
             }
             if let earlier = seen[item.id] {
-                proposal.refusals.append(.init(row: rowNumber, reason: .repeatsRow(earlier)))
+                proposal.refusals.append(.init(row: row.number, reason: .repeatsRow(earlier)))
                 continue
             }
-            seen[item.id] = rowNumber
+            seen[item.id] = row.number
 
             let level = levels[item.id] ?? VanStockLevel(itemID: item.id)
-            if case .some(.some(let onHand)) = numbers[.onHand],
-               !(level.isRecorded && !level.unreliable && level.onHand == onHand) {
+            if let onHand = row.onHand, !(level.isRecorded && !level.unreliable && level.onHand == onHand) {
                 // The export's stamp is to the second, so a movement in that same second is not "after".
-                let moved = exportedAt.map { exported in
+                let moved = read.exportedAt.map { exported in
                     level.asOf.map { $0 >= exported.addingTimeInterval(1) } ?? false
                 } ?? false
                 proposal.counts.append(.init(itemID: item.id, name: item.name,
@@ -305,22 +372,23 @@ enum VanStockSheet {
             }
 
             var changes: [VanStockLog.Change] = []
-            if let described, described != item.description { changes.append(.description(described)) }
-            if let normalised, normalised != item.number { changes.append(.number(normalised)) }
-            if let unit, unit != item.unit { changes.append(.unit(unit)) }
-            if case .some(let minimum) = numbers[.minimum], minimum != item.minimum, minimum != nil || isOwn {
+            if let described = row.description, described != item.description { changes.append(.description(described)) }
+            if let number = row.partNumber, number != item.number { changes.append(.number(number)) }
+            if let unit = row.unit, unit != item.unit { changes.append(.unit(unit)) }
+            if case .some(let minimum) = row.minimumCell, minimum != item.minimum, minimum != nil || read.isOwn {
                 changes.append(.minimum(minimum))
             }
-            if case .some(let standard) = numbers[.standard], standard != item.standard, standard != nil || isOwn {
+            if case .some(let standard) = row.standardCell, standard != item.standard, standard != nil || read.isOwn {
                 changes.append(.standard(standard, setBy: .van))
             }
-            if let bin = cell(.bin), bin != (item.bin ?? ""), !bin.isEmpty || isOwn {
+            if let bin = row.binCell, bin != (item.bin ?? ""), !bin.isEmpty || read.isOwn {
                 changes.append(.bin(bin.isEmpty ? nil : bin))
             }
             if !changes.isEmpty { proposal.edits.append(.init(itemID: item.id, name: item.name, changes: changes)) }
         }
 
-        if isOwn { proposal.missing = log.items.filter { seen[$0.id] == nil } }
+        proposal.refusals.sort { $0.row < $1.row }
+        if read.isOwn { proposal.missing = log.items.filter { seen[$0.id] == nil } }
         return .success(proposal)
     }
 
@@ -347,6 +415,9 @@ enum VanStockSheet {
                                    verified: checked?.verified ?? false, batch: batch)
             if let onHand = line.onHand {
                 log.record(.counted, itemID: item.id, quantity: onHand, at: at, batch: batch, source: .sheet, id: makeID())
+            } else {
+                // Nothing counted, so note the line's unit: the batch then has an entry an undo can find.
+                log.appendNote(itemID: item.id, at: at, batch: batch, source: .sheet, id: makeID())
             }
         }
         for count in proposal.counts where !(count.movedSinceExport && keepingPhoneFigure.contains(count.itemID)) {
@@ -376,7 +447,7 @@ enum VanStockSheet {
         return nil
     }
 
-    private static func match(id: String?, number: String?, description: String?, in log: VanStockLog) -> VanStockItem? {
+    static func match(id: String?, number: String?, description: String?, in log: VanStockLog) -> VanStockItem? {
         if let id, !id.isEmpty, let item = log.item(id: id) { return item }
         if let number {
             let sameNumber = log.items.filter { $0.number == number }

@@ -130,6 +130,26 @@ struct VanStockLog: Codable, Equatable, Sendable {
         return movement
     }
 
+    /// Carry a figure forward as an opening entry: what a folded history leaves, and how a
+    /// handover brings across a line whose count cannot be trusted.
+    mutating func appendOpening(itemID: String, quantity: Int, at: Date,
+                                source: VanStockMovement.Source, counted: Bool, unreliable: Bool) {
+        guard item(id: itemID) != nil, quantity >= 0 else { return }
+        movements.append(VanStockMovement(id: "opening-\(itemID)", itemID: itemID, kind: .opening,
+                                          quantity: quantity, at: at, batch: Self.openingBatch, source: source,
+                                          openingCounted: counted, openingUnreliable: unreliable))
+    }
+
+    /// Note that a line was added with nothing recorded against it, so the batch that added it
+    /// has an entry — and an undo of that batch has something to find.
+    mutating func appendNote(itemID: String, at: Date, batch: String, source: VanStockMovement.Source,
+                             id: String = UUID().uuidString) {
+        guard let item = item(id: itemID) else { return }
+        movements.append(VanStockMovement(id: id, itemID: itemID, kind: .edited, at: at, batch: batch,
+                                          source: source, attribute: .unit, oldValue: item.unit.rawValue,
+                                          newValue: item.unit.rawValue))
+    }
+
     /// One change to a line's attributes.
     enum Change: Equatable, Sendable {
         case number(String?)

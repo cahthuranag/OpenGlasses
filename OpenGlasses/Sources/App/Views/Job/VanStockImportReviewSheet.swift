@@ -13,6 +13,12 @@ struct VanStockImportReviewSheet: View {
     /// Lines that moved on the phone after the workbook was written, where the technician chose
     /// to keep the phone's figure. The sheet's figure is the default.
     @State private var keepingPhoneFigure: Set<String> = []
+    /// How the workbook is being applied. Nil until the review appears, then the suggested way.
+    @State private var chosenMode: VanStockImportService.Mode?
+    /// Lines whose standard this truck set itself, where the technician chose base's figure.
+    @State private var takingBaseFigure: Set<String> = []
+
+    private var mode: VanStockImportService.Mode { chosenMode ?? service.suggestedMode }
 
     var body: some View {
         NavigationStack {
@@ -34,10 +40,21 @@ struct VanStockImportReviewSheet: View {
                 }
                 if case .reviewing(let proposal, _) = service.stage {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Apply") {
-                            if service.apply(keepingPhoneFigure: keepingPhoneFigure) { onApplied() }
+                        switch mode {
+                        case .corrections:
+                            Button("Apply") {
+                                if service.apply(keepingPhoneFigure: keepingPhoneFigure) { onApplied() }
+                            }
+                            .disabled(proposal.changesNothing)
+                        case .takeover:
+                            Button("Take over") {
+                                if service.applyTakeover() { onApplied() }
+                            }
+                        case .baseline:
+                            Button("Apply") {
+                                if service.applyBaseline(takingBaseFigure: takingBaseFigure) { onApplied() }
+                            }
                         }
-                        .disabled(proposal.changesNothing)
                     }
                 }
             }
@@ -91,6 +108,113 @@ struct VanStockImportReviewSheet: View {
     @ViewBuilder
     private func reviewList(_ proposal: VanStockSheet.Proposal, fileName: String) -> some View {
         List {
+            if service.takeover != nil || service.baseline != nil {
+                Section {
+                    Picker("Use this spreadsheet as", selection: Binding(get: { mode }, set: { chosenMode = $0 })) {
+                        if service.takeover != nil { Text("This van, taken over").tag(VanStockImportService.Mode.takeover) }
+                        Text("Corrections to my list").tag(VanStockImportService.Mode.corrections)
+                        if service.baseline != nil { Text("Base's standard load").tag(VanStockImportService.Mode.baseline) }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } header: {
+                    Text("Use this spreadsheet as")
+                }
+            }
+            switch mode {
+            case .takeover:
+                if let takeover = service.takeover { takeoverSections(takeover, fileName: fileName) }
+            case .baseline:
+                if let baseline = service.baseline { baselineSections(baseline, fileName: fileName) }
+            case .corrections:
+                correctionSections(proposal, fileName: fileName)
+            }
+        }
+        .ogFormStyle()
+    }
+
+    // MARK: - Taking a van over
+
+    @ViewBuilder
+    private func takeoverSections(_ takeover: VanStockHandover.Takeover, fileName: String) -> some View {
+        Section {
+            Text(takeover.van?.name.isEmpty == false ? takeover.van?.name ?? "" : fileName)
+                .font(.headline)
+            if let exportedAt = takeover.exportedAt {
+                LabeledContent("As it was left") { Text(exportedAt.formatted(date: .abbreviated, time: .shortened)) }
+            }
+            LabeledContent("Lines") { Text("\(takeover.lineCount)") }
+            LabeledContent("To top up") { Text("\(takeover.shortfalls)") }
+            if takeover.needCounting > 0 {
+                LabeledContent("Need counting") { Text("\(takeover.needCounting)") }
+            }
+            if service.takeoverIsStale {
+                Label("This is older than the last entry on this phone for the same van.",
+                      systemImage: "exclamationmark.triangle")
+            }
+        } footer: {
+            Text("The spreadsheet becomes this phone's van list. The list that is here now is kept once, under Previous list on the Van stock screen, and is never merged in.")
+        }
+        refusalsSection(takeover.refusals)
+    }
+
+    // MARK: - Base's baseline
+
+    @ViewBuilder
+    private func baselineSections(_ changes: [VanStockHandover.BaselineChange], fileName: String) -> some View {
+        Section {
+            Text(fileName)
+                .font(.headline)
+            Text("\(changes.count) standards would change. No counts are touched.")
+                .foregroundStyle(.secondary)
+        }
+        let own = changes.filter { if case .keptOwn = $0.kind { return true } else { return false } }
+        if !own.isEmpty {
+            Section {
+                ForEach(own) { change in
+                    if let id = change.itemID, case .keptOwn(let current) = change.kind {
+                        Toggle(isOn: Binding(
+                            get: { takingBaseFigure.contains(id) },
+                            set: { take in
+                                if take { takingBaseFigure.insert(id) } else { takingBaseFigure.remove(id) }
+                            })) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(change.name)
+                                Text("This truck carries \(current). Base says \(change.standard).")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Set by this truck")
+            } footer: {
+                Text("This truck's own figure is kept unless you switch a line on to take base's.")
+            }
+        }
+        let plain = changes.filter { if case .keptOwn = $0.kind { return false } else { return true } }
+        if !plain.isEmpty {
+            Section {
+                ForEach(plain) { change in
+                    LabeledContent(change.name) {
+                        if change.kind == .newLine {
+                            Text("New, \(change.standard)")
+                        } else {
+                            Text("\(change.standard)")
+                        }
+                    }
+                }
+            } header: {
+                Text("Standard load")
+            }
+        }
+    }
+
+    // MARK: - Corrections
+
+    @ViewBuilder
+    private func correctionSections(_ proposal: VanStockSheet.Proposal, fileName: String) -> some View {
             Section {
                 Text(fileName)
                     .font(.headline)
@@ -177,23 +301,26 @@ struct VanStockImportReviewSheet: View {
                 }
             }
 
-            if !proposal.refusals.isEmpty {
-                Section {
-                    ForEach(proposal.refusals) { refusal in
-                        LabeledContent {
-                            reasonText(refusal.reason)
-                        } label: {
-                            Text("Row \(refusal.row)")
-                        }
+            refusalsSection(proposal.refusals)
+    }
+
+    @ViewBuilder
+    private func refusalsSection(_ refusals: [VanStockSheet.Proposal.Refusal]) -> some View {
+        if !refusals.isEmpty {
+            Section {
+                ForEach(refusals) { refusal in
+                    LabeledContent {
+                        reasonText(refusal.reason)
+                    } label: {
+                        Text("Row \(refusal.row)")
                     }
-                } header: {
-                    Text("Rows left out")
-                } footer: {
-                    Text("Fix these in the spreadsheet and import it again, or change the lines here.")
                 }
+            } header: {
+                Text("Rows left out")
+            } footer: {
+                Text("Fix these in the spreadsheet and import it again, or change the lines here.")
             }
         }
-        .ogFormStyle()
     }
 
     private func reasonText(_ reason: VanStockSheet.Proposal.Refusal.Reason) -> Text {

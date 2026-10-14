@@ -3662,7 +3662,11 @@ class LLMService: ObservableObject {
                         toolCalls.append(GeminiFunctionCalling.invocation(name: name, call: funcCall))
                     }
                 }
-                let text = parts.compactMap { $0["text"] as? String }.joined(separator: "\n")
+                // Pieces of one reply: joined so a sentence ending one part never runs into the
+                // next, and with the space put back where the model itself left it out — a tool
+                // turn came back as "…hora exata.Tens razão".
+                let text = TextSegmentJoiner.repairingGluedSentences(
+                    TextSegmentJoiner.join(parts.compactMap { $0["text"] as? String }))
                 return AssistantTurn(text: text, toolCalls: toolCalls, payload: parts)
             },
             appendAssistantToolCall: { [weak self] turn in

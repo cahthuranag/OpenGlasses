@@ -2,7 +2,9 @@ import WidgetKit
 import SwiftUI
 
 struct OpenGlassesHomeWidget: Widget {
-    let kind: String = "OpenGlassesHomeWidget"
+    /// Stored identifier — placed widgets are kept by it. Shared with the app, which reloads this
+    /// widget when the glasses change.
+    let kind: String = WidgetGlassesSnapshot.homeWidgetKind
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: HomeWidgetProvider()) { entry in
@@ -10,7 +12,7 @@ struct OpenGlassesHomeWidget: Widget {
                 .containerBackground(AccentColors.widgetSurface, for: .widget)
         }
         .configurationDisplayName("Avenkin")
-        .description("Glasses status and a quick Listen toggle.")
+        .description("Whether your glasses are connected, their battery, and a quick Listen toggle.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
@@ -18,20 +20,47 @@ struct OpenGlassesHomeWidget: Widget {
 struct HomeWidgetEntry: TimelineEntry {
     let date: Date
     let isListening: Bool
+    let glasses: WidgetGlassesLine
 }
 
 struct HomeWidgetProvider: TimelineProvider {
+    /// The gallery and the placeholder show a connected pair, which is what the widget is for.
+    private static func sample(_ date: Date) -> HomeWidgetEntry {
+        let snapshot = WidgetGlassesSnapshot(phase: .connected, battery: 72, writtenAt: date)
+        return HomeWidgetEntry(date: date, isListening: true,
+                               glasses: WidgetGlassesPresentation.render(snapshot: snapshot, now: date,
+                                                                         glassesEverAdded: true))
+    }
+
+    /// The snapshot as the app last wrote it. Nothing written yet means the app has not run since
+    /// the widget learned about glasses; the extension cannot read whether glasses were ever
+    /// added, so that reads as "not added" until the app's first launch writes one.
+    private static func entries(now: Date) -> [HomeWidgetEntry] {
+        let snapshot = WidgetGlassesSnapshot.load(from: SharedAppState.defaults)
+        let listening = SharedAppState.isListening
+        return WidgetGlassesPresentation.entryDates(for: snapshot, now: now).map { date in
+            HomeWidgetEntry(date: date, isListening: listening,
+                            glasses: WidgetGlassesPresentation.render(snapshot: snapshot, now: date,
+                                                                      glassesEverAdded: false))
+        }
+    }
+
     func placeholder(in context: Context) -> HomeWidgetEntry {
-        HomeWidgetEntry(date: Date(), isListening: false)
+        Self.sample(Date())
     }
 
     func getSnapshot(in context: Context, completion: @escaping (HomeWidgetEntry) -> Void) {
-        completion(HomeWidgetEntry(date: Date(), isListening: SharedAppState.isListening))
+        let now = Date()
+        completion(context.isPreview ? Self.sample(now) : Self.entries(now: now)[0])
     }
 
+    /// The live entry now and, for a connected or connecting snapshot, the entry in which it goes
+    /// stale — so a killed app never leaves "Connected" standing. The app reloads this timeline
+    /// when the glasses change; the periodic refresh is for listening changes the app makes
+    /// without reloading.
     func getTimeline(in context: Context, completion: @escaping (Timeline<HomeWidgetEntry>) -> Void) {
-        let entry = HomeWidgetEntry(date: Date(), isListening: SharedAppState.isListening)
-        completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(60 * 15))))
+        let now = Date()
+        completion(Timeline(entries: Self.entries(now: now), policy: .after(now.addingTimeInterval(60 * 15))))
     }
 }
 
@@ -51,6 +80,8 @@ struct HomeWidgetView: View {
         }
     }
 
+    private var glasses: WidgetGlassesLine { entry.glasses }
+
     private var smallView: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -63,9 +94,7 @@ struct HomeWidgetView: View {
             Text("Avenkin")
                 .font(.headline)
                 .foregroundStyle(.primary)
-            Text(entry.isListening ? "Listening" : "Tap to listen")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            glassesLine(font: .caption)
             Button(intent: ToggleListeningIntent()) {
                 HStack {
                     Image(systemName: entry.isListening ? "mic.slash.fill" : "mic.fill")
@@ -91,11 +120,11 @@ struct HomeWidgetView: View {
                         .font(.headline)
                         .foregroundStyle(.primary)
                 }
-                Text(entry.isListening ? "Listening for wake word" : "Listening disabled")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 Spacer()
-                statusDot
+                HStack(spacing: 6) {
+                    statusDot
+                    glassesLine(font: .subheadline)
+                }
             }
             Spacer()
             VStack(spacing: 8) {
@@ -111,6 +140,8 @@ struct HomeWidgetView: View {
                     .background(accent, in: RoundedRectangle(cornerRadius: 16))
                 }
                 .buttonStyle(.plain)
+                // Dimmed, not hidden, without glasses in use: the link still opens the app, which
+                // says why there is no photo.
                 Link(destination: DeepLinkTrust.signedURL("openglasses://action/photo")!) {
                     HStack(spacing: 4) {
                         Image(systemName: "camera.fill")
@@ -121,6 +152,7 @@ struct HomeWidgetView: View {
                     .frame(width: 96, height: 30)
                     .background(Color.primary.opacity(0.1), in: Capsule())
                 }
+                .opacity(glasses.glassesUsable ? 1 : 0.4)
             }
         }
     }
@@ -134,11 +166,29 @@ struct HomeWidgetView: View {
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.primary)
                 Spacer()
+            }
+            HStack(spacing: 10) {
+                Image(systemName: glasses.symbol)
+                    .font(.title3)
+                    .foregroundStyle(glasses.tone == .connected ? accent : Color.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(glasses.deviceName ?? "Glasses")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(glasses.text)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                batteryLabel(font: .subheadline.weight(.medium))
                 statusDot
             }
-            Text(entry.isListening ? "Listening for wake word" : "Listening disabled")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            .padding(10)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(glasses.accessibilityLabel)
             Spacer()
             Button(intent: ToggleListeningIntent()) {
                 HStack {
@@ -156,8 +206,42 @@ struct HomeWidgetView: View {
             HStack(spacing: 8) {
                 quickActionLink(url: "openglasses://action/ask", icon: "questionmark.circle.fill", label: "Ask")
                 quickActionLink(url: "openglasses://action/photo", icon: "camera.fill", label: "Photo")
+                    .opacity(glasses.glassesUsable ? 1 : 0.4)
                 quickActionLink(url: "openglasses://action/describe", icon: "eye.fill", label: "Describe")
             }
+        }
+    }
+
+    /// The glasses' state in one line — words, then the live battery — read by VoiceOver as one
+    /// element.
+    private func glassesLine(font: Font) -> some View {
+        HStack(spacing: 4) {
+            Text(glasses.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            batteryLabel(font: font)
+        }
+        .font(font)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(glasses.accessibilityLabel)
+    }
+
+    /// "72%", with a bolt while charging. Nothing unless the reading is live.
+    @ViewBuilder
+    private func batteryLabel(font: Font) -> some View {
+        if glasses.batteryText != nil || glasses.charging {
+            HStack(spacing: 2) {
+                if glasses.charging {
+                    Image(systemName: "bolt.fill")
+                }
+                if let battery = glasses.batteryText {
+                    Text(battery)
+                        .monospacedDigit()
+                }
+            }
+            .font(font)
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -176,13 +260,16 @@ struct HomeWidgetView: View {
         }
     }
 
+    /// Follows the glasses: the accent while connected and in use, neutral otherwise. Listening
+    /// is shown by the Listen button's own state.
     private var statusDot: some View {
         Circle()
-            .fill(entry.isListening ? Color.green : Color.gray)
+            .fill(glasses.tone == .connected ? accent : Color.secondary)
             .frame(width: 8, height: 8)
             .overlay(
                 Circle()
                     .stroke(Color.primary.opacity(0.3), lineWidth: 1)
             )
+            .accessibilityHidden(true)
     }
 }

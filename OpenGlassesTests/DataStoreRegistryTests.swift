@@ -79,6 +79,10 @@ final class DataStoreRegistryTests: XCTestCase {
             "which cards the wearer dismissed today",
         "OpenGlasses/Sources/Services/ShortcutsCatalog.swift":
             "the app's own shortcut definitions, not the wearer's data",
+        "OpenGlasses/Sources/Shared/WidgetGlassesStatus.swift":
+            "the Home Screen widget's one glasses line: link phase, paused, the pair's name, live "
+                + "battery and charging, and when it was written. One value, replaced on every "
+                + "change, and no record of anyone",
 
         // Test-only.
         "OpenGlasses/Sources/Utils/UITestSupport.swift":

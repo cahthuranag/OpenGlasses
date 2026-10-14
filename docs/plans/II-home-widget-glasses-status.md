@@ -1,6 +1,6 @@
 # Plan II — Glasses Status on the Home-Screen Widget
 
-**Status:** 📝 Drafted 2026-10-14 — nothing implemented.
+**Status:** ✅ Shipped 2026-10-15 — snapshot, writer, presentation core, timeline and views built and tested headless. Device-pending: the widget refreshing within seconds of a connect/disconnect with the app in the background, and the stale entry appearing after a force-quit with glasses connected. See *As built* below.
 **Origin:** A 2026-10-14 comparison with another companion app for the same glasses, whose
 home-screen widget and quick-settings tile lead with the state of the glasses. Ours leads with the
 wake word and says nothing about the glasses at all.
@@ -125,3 +125,32 @@ runs in the background; the stale entry appears after the app is force-quit with
 2. Should the Photo quick action hide rather than dim when the glasses are not connected?
 3. Does the Live Activity want the same stood-down ("paused") wording? Today it only knows
    connected or not.
+
+## As built (2026-10-15)
+
+- `WidgetGlassesSnapshot`, `WidgetGlassesLine` and `WidgetGlassesPresentation` live in
+  `OpenGlasses/Sources/Shared/WidgetGlassesStatus.swift`, compiled into the app (and so the tests)
+  and the widget extension, like `LockScreenActivityLayout`. The App Group key is
+  `widgetGlassesSnapshot`; it and the widget kind are pinned in `StorageIdentifierGuardTests`.
+- `WidgetGlassesStatusWriter` (app only) takes the reading at the end of a 1.5 s window rather than
+  when asked, because the service publishes in `willSet`. The first reading after launch is always
+  written, since whatever the App Group holds was stamped by an earlier run.
+- **Open question 1, answered for now:** `staleAfter` is 45 minutes, and a running app re-stamps an
+  unchanged live snapshot once it is 30 minutes old (checked every 10, so by 40 minutes at the
+  latest), so an app that is alive but has nothing new to say is not shown as gone.
+- **WidgetKit's reload budget.** An app in the background, which this one mostly is, gets a few
+  dozen widget reloads a day, and once they are spent reloads are dropped and the widget ages out
+  to "Last seen connected" while the glasses are on. So every write is a reload worth spending:
+  phase, paused, name and charging write at once, but the battery writes only when it has moved 5
+  points from the value last written, crossed 20% or 10% (either way), or appeared or gone. The
+  widget shows the battery as last written, a few points behind at most. While connected that is
+  about two re-stamps and about two battery steps an hour, and a re-stamp only in an hour with
+  nothing else to write.
+- **Open question 2:** Photo is dimmed, not hidden, as drafted. Paused glasses dim it too.
+- A link that reads "never added" for someone the app knows has added glasses (`Config.glassesAdded`)
+  is written as "not connected", matching the app. Before the app has written anything the
+  extension cannot read `Config.glassesAdded`, so the never-written case shows "No glasses added"
+  until the first launch of this build.
+- The widget's rendered glasses words come from the core as strings (the house pattern for
+  pure presentation); the widget extension has no string catalog of its own yet.
+- The timeline keeps its 15-minute refresh: the app changes listening without reloading the widget.

@@ -242,6 +242,18 @@ final class StorageIdentifierGuardTests: XCTestCase {
                            + "would be written where the app never looks.")
     }
 
+    /// The widget's glasses snapshot and the Home Screen widget's kind. Neither is spelled like the
+    /// product, but both are stored: placed widgets are kept by their kind, and the snapshot is
+    /// what the app and the widget extension share.
+    func testHomeWidgetIdentifiersArePinned() {
+        XCTAssertEqual(WidgetGlassesSnapshot.storageKey, "widgetGlassesSnapshot",
+                       "WidgetGlassesSnapshot.storageKey changed. The widget would read a key the "
+                           + "app no longer writes and show its last snapshot for ever.")
+        XCTAssertEqual(WidgetGlassesSnapshot.homeWidgetKind, "\(Self.name)HomeWidget",
+                       "WidgetGlassesSnapshot.homeWidgetKind changed. Every placed Home Screen widget "
+                           + "would disappear, and the app would reload a kind nobody has.")
+    }
+
     /// The watch targets compile none of the phone's shared files, so each keeps its own literal.
     func testWatchAppGroupLiteralsArePinned() throws {
         for path in ["OpenGlassesWatch/WatchConnectivityService.swift",

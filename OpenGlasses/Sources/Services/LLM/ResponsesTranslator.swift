@@ -152,7 +152,10 @@ enum ResponsesTranslator {
     /// `encrypted_content` and all) for `assistantHistoryMessage(…rawOutputItems:)` to keep.
     static func parseOutput(_ response: [String: Any])
         -> (text: String, toolCalls: [ToolInvocation], rawOutputItems: [[String: Any]]) {
-        var text = ""
+        // Text from every message item and block, in order. Joined, not concatenated: a reply
+        // in two messages (a commentary line, then the answer) must not run one sentence into
+        // the next.
+        var texts: [String] = []
         var toolCalls: [ToolInvocation] = []
         let output = response["output"] as? [[String: Any]] ?? []
         for (index, item) in output.enumerated() {
@@ -160,7 +163,7 @@ enum ResponsesTranslator {
             case "message":
                 for block in item["content"] as? [[String: Any]] ?? []
                 where block["type"] as? String == "output_text" {
-                    text += block["text"] as? String ?? ""
+                    texts.append(block["text"] as? String ?? "")
                 }
             case "function_call":
                 guard let name = item["name"] as? String, !name.isEmpty else { continue }
@@ -173,7 +176,7 @@ enum ResponsesTranslator {
                 break   // reasoning items etc. — not ours to consume, only to replay
             }
         }
-        return (text, toolCalls, output)
+        return (TextSegmentJoiner.join(texts), toolCalls, output)
     }
 
     /// `incomplete_details.reason` (e.g. `max_output_tokens`) when the response stopped short

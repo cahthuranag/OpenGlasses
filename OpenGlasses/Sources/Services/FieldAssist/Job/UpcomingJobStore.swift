@@ -17,6 +17,12 @@ final class UpcomingJobStore: ObservableObject {
     /// growing would be an office system that happens to live on a phone.
     static let entryCap = 100
 
+    /// The protection class this store's files are written with and re-stamped to. First-unlock,
+    /// not `.complete`: the store is written from voice turns that run with the phone locked in a
+    /// pocket (the app keeps the `audio` background mode), and a `.complete` file refuses those
+    /// writes — and its read, so a store first opened while locked would start empty.
+    nonisolated static let fileProtection = FileProtectionType.completeUntilFirstUserAuthentication
+
     @Published private(set) var jobs: [UpcomingJob]
 
     private let fileURL: URL
@@ -120,16 +126,16 @@ final class UpcomingJobStore: ObservableObject {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(jobs) else { return }
-        try? data.write(to: fileURL, options: [.atomic, .completeFileProtection])
+        try? data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         protectFile()
     }
 
-    /// Complete protection and no backup: customers' names and addresses, which belong on this
+    /// First-unlock protection and no backup: customers' names and addresses, which belong on this
     /// phone and nowhere a backup would carry them.
     private func protectFile() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         try? FileManager.default.setAttributes(
-            [.protectionKey: FileProtectionType.complete], ofItemAtPath: fileURL.path)
+            [.protectionKey: Self.fileProtection], ofItemAtPath: fileURL.path)
         var url = fileURL
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

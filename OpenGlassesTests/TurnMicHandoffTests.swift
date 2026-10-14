@@ -31,6 +31,74 @@ final class TurnMicHandoffTests: XCTestCase {
                                              routePortAvailable: false), .phone)
     }
 
+    // MARK: - Why the phone
+
+    func testPhoneReasonNamesWhyABluetoothTurnWentToThePhone() {
+        XCTAssertEqual(TurnMicHandoff.phoneReason(micRoute: .glasses, glassesStoodDown: true, glassesWorn: true,
+                                                  routePortAvailable: true), .stoodDown)
+        XCTAssertEqual(TurnMicHandoff.phoneReason(micRoute: .glasses, glassesStoodDown: true, glassesWorn: false,
+                                                  routePortAvailable: false), .stoodDown, "stood down wins")
+        XCTAssertEqual(TurnMicHandoff.phoneReason(micRoute: .glasses, glassesStoodDown: false, glassesWorn: false,
+                                                  routePortAvailable: true), .notWorn)
+        XCTAssertEqual(TurnMicHandoff.phoneReason(micRoute: .glasses, glassesStoodDown: false, glassesWorn: nil,
+                                                  routePortAvailable: false), .portUnavailable)
+        XCTAssertEqual(TurnMicHandoff.phoneReason(micRoute: .headset, glassesStoodDown: true, glassesWorn: false,
+                                                  routePortAvailable: false), .portUnavailable,
+                       "a headset does not care about the glasses")
+    }
+
+    func testNoPhoneReasonWhenTheTurnKeepsItsMicOrThePhoneWasChosen() {
+        XCTAssertNil(TurnMicHandoff.phoneReason(micRoute: .glasses, glassesStoodDown: false, glassesWorn: true,
+                                                routePortAvailable: true))
+        XCTAssertNil(TurnMicHandoff.phoneReason(micRoute: .phone, glassesStoodDown: true, glassesWorn: false,
+                                                routePortAvailable: false), "the phone by choice is no fallback")
+    }
+
+    /// The reason and the target are one rule read two ways: a reason exactly when a Bluetooth
+    /// route was sent to the phone.
+    func testPhoneReasonAgreesWithTarget() {
+        for route in MicRoute.allCases {
+            for stoodDown in [false, true] {
+                for worn in [Bool?.none, true, false] {
+                    for available in [false, true] {
+                        let target = TurnMicHandoff.target(micRoute: route, glassesStoodDown: stoodDown,
+                                                           glassesWorn: worn, routePortAvailable: available)
+                        let reason = TurnMicHandoff.phoneReason(micRoute: route, glassesStoodDown: stoodDown,
+                                                                glassesWorn: worn, routePortAvailable: available)
+                        XCTAssertEqual(reason != nil, route != .phone && target == .phone,
+                                       "\(route) stoodDown=\(stoodDown) worn=\(String(describing: worn)) available=\(available)")
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Re-reading a port that was just there
+
+    func testAPortSeenBeforeTheSwitchIsReReadBeforeFallingBack() {
+        XCTAssertTrue(TurnMicHandoff.shouldRecheckPort(wanted: .glasses, portAvailable: false,
+                                                       portSeenBeforeSwitch: true))
+        XCTAssertTrue(TurnMicHandoff.shouldRecheckPort(wanted: .headset, portAvailable: false,
+                                                       portSeenBeforeSwitch: true))
+    }
+
+    func testNoReReadWhenThePortIsThereWasNeverSeenOrThePhoneIsWanted() {
+        XCTAssertFalse(TurnMicHandoff.shouldRecheckPort(wanted: .glasses, portAvailable: true,
+                                                        portSeenBeforeSwitch: true), "already there")
+        XCTAssertFalse(TurnMicHandoff.shouldRecheckPort(wanted: .glasses, portAvailable: false,
+                                                        portSeenBeforeSwitch: false),
+                       "glasses in their case: fall back at once, as before")
+        XCTAssertFalse(TurnMicHandoff.shouldRecheckPort(wanted: .phone, portAvailable: false,
+                                                        portSeenBeforeSwitch: true))
+    }
+
+    func testTheReReadIsShortAgainstTheHandOffDeadline() {
+        let total = Double(TurnMicHandoff.portRecheckAttempts) * TurnMicHandoff.portRecheckInterval
+        XCTAssertGreaterThanOrEqual(total, 0.3)
+        XCTAssertLessThanOrEqual(total, 0.5)
+        XCTAssertLessThan(total, TurnMicHandoff.deadline)
+    }
+
     // MARK: - Sequencing
 
     func testRouteThenFramesThenTheTurn() {

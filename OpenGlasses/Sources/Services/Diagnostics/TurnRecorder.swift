@@ -332,6 +332,11 @@ enum TurnRecorder {
         update { $0.imageSent = true }
     }
 
+    /// The words going to the model are the app's own prompt, not the wearer's.
+    static func noteAppPrompt() {
+        update { $0.appPrompt = true }
+    }
+
     /// The effective reasoning setting of the request that served this turn (Plan GB P0). A token
     /// from `ReasoningPolicy.Resolution.token`, never text. Last-wins across a cascade.
     static func noteReasoning(_ token: String) {
@@ -386,7 +391,7 @@ enum TurnRecorder {
         update { $0.addToolTime(now().timeIntervalSince(start)) }
     }
 
-    /// App-side work inside the backend leg — a spoken model-switch notice, a cold location fix —
+    /// App-side work that blocks the backend leg — a cold location fix —
     /// timed from `start`. See `TurnTimeline.nonModelSeconds` for why it is held apart.
     static func addNonModelTime(since start: Date) {
         update { $0.addNonModelTime(now().timeIntervalSince(start)) }

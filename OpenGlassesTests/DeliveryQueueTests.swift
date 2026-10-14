@@ -277,7 +277,7 @@ final class DeliveryQueueTests: XCTestCase {
     func testTheStoreIsRegisteredAsASensitiveStore() {
         let record = SensitiveStore.jobDeliveryQueue.record
         XCTAssertEqual(record.owner, "DeliveryQueueStore")
-        XCTAssertEqual(record.protection, .complete)
+        XCTAssertEqual(record.protection, .completeUntilFirstUserAuthentication)
         XCTAssertTrue(record.backupExcluded)
         XCTAssertTrue(record.deleteAll.isAvailable)
     }

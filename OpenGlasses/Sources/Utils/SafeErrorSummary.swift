@@ -42,6 +42,8 @@ struct SafeErrorSummary: Equatable, CustomStringConvertible {
         case modelDeclined
         /// A model's reply stopped at its output ceiling with nothing said.
         case outputTruncated
+        /// The request would not fit the model's context window, checked before it was sent.
+        case contextTooLarge
         case unknown
     }
 
@@ -91,6 +93,12 @@ struct SafeErrorSummary: Equatable, CustomStringConvertible {
         }
         if let llm = error as? LLMError {
             self = Self.model(llm)
+            return
+        }
+        // Raised before anything was sent; its description is a sentence and is never read.
+        if let capacity = error as? RequestContextBudget.CapacityError {
+            self.init(category: .contextTooLarge,
+                      detail: PrivacyToken(capacity.toolsRanThisTurn ? "afterTools" : "beforeTools"))
             return
         }
         // A closed vocabulary, never the SDK's free-form unexpectedError description.

@@ -270,7 +270,7 @@ enum SensitiveStore: String, CaseIterable {
 
         case .conversationThreads:
             return Record(store: self, dataClass: .conversationContent, subjectLinkage: .wearer,
-                          protection: .complete, backupExcluded: true,
+                          protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
                           retention: .policy("wearer history retention days; off by default"),
                           deleteAll: .api("ConversationStore.deleteAllThreads()"),
                           deleteSubject: .api("ConversationStore.deleteThread(_:)"),
@@ -578,7 +578,7 @@ enum SensitiveStore: String, CaseIterable {
             // erase. It is protected and kept out of backup all the same: a queue restored onto
             // another phone would offer to send a report that already went.
             return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,
-                          protection: .complete, backupExcluded: true,
+                          protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
                           retention: .cap(DeliveryQueue.entryCap),
                           deleteAll: .api("DeliveryQueueStore.removeAll()"),
                           deleteSubject: .notSubjectLinked,
@@ -595,7 +595,7 @@ enum SensitiveStore: String, CaseIterable {
             // compliance record, so it can be cleared, and it is protected and kept out of backup
             // because a restored list would offer jobs this phone was never given.
             return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,
-                          protection: .complete, backupExcluded: true,
+                          protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
                           retention: .cap(UpcomingJobStore.entryCap),
                           deleteAll: .api("UpcomingJobStore.removeAll()"),
                           deleteSubject: .notSubjectLinked,
@@ -612,7 +612,7 @@ enum SensitiveStore: String, CaseIterable {
             // should still know what is on the truck. History older than the window is folded
             // into one opening figure per line; levels are exact either way.
             return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .none,
-                          protection: .complete, backupExcluded: false,
+                          protection: .completeUntilFirstUserAuthentication, backupExcluded: false,
                           retention: .policy("history folded after \(VanStockStore.historyDays) days"),
                           deleteAll: .api("VanStockStore.removeAll()"),
                           deleteSubject: .notSubjectLinked,
@@ -629,7 +629,7 @@ enum SensitiveStore: String, CaseIterable {
             // walked by the subject erasure, and is protected and kept out of backup: a restored
             // copy would put unreviewed findings, and anything they slipped, onto another phone.
             return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .thirdPartySubject,
-                          protection: .complete, backupExcluded: true,
+                          protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
                           retention: .cap(LearningCandidateStore.entryCap),
                           deleteAll: .api("LearningCandidateStore.removeAll()"),
                           deleteSubject: .api("LearningCandidateStore.deleteMatching(_:)"),
@@ -648,7 +648,7 @@ enum SensitiveStore: String, CaseIterable {
             // bundle applied per organisation label, and tombstones — retraction reasons — for
             // entries this phone does not hold; cleared and erased with the entries.
             return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .thirdPartySubject,
-                          protection: .complete, backupExcluded: true,
+                          protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
                           retention: .none,
                           deleteAll: .api("LearningEntryStore.removeAll()"),
                           deleteSubject: .api("LearningEntryStore.deleteMatching(_:)"),
@@ -976,7 +976,9 @@ enum SensitiveStore: String, CaseIterable {
         case .diagnosticBreadcrumbs:
             return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,
                           protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
-                          retention: .policy("most recent 500 events; previous run readable for 48 hours"),
+                          retention: .policy("up to \(DiagnosticRing.defaultCapacity) events per run "
+                                             + "and 48 hours, earlier runs included; a run's first "
+                                             + "\(DiagnosticRing.defaultLaunchLimit) events kept"),
                           deleteAll: .api("DiagnosticRing.shared.clear()"),
                           deleteSubject: .notSubjectLinked,
                           owner: "DiagnosticRing",

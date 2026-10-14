@@ -16,6 +16,12 @@ final class VanStockStore: ObservableObject {
 
     static let shared = VanStockStore()
 
+    /// The protection class this store's files are written with and re-stamped to. First-unlock,
+    /// not `.complete`: the store is written from voice turns that run with the phone locked in a
+    /// pocket (the app keeps the `audio` background mode), and a `.complete` file refuses those
+    /// writes — and its read, so a store first opened while locked would be marked unreadable.
+    nonisolated static let fileProtection = FileProtectionType.completeUntilFirstUserAuthentication
+
     /// How long a movement is kept before it is folded into its line's opening figure. Levels are
     /// exact either way; only the history gets shorter.
     static let historyDays = 400
@@ -155,16 +161,16 @@ final class VanStockStore: ObservableObject {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(File(version: Self.formatVersion, log: log, van: van)) else { return }
-        try? data.write(to: fileURL, options: [.atomic, .completeFileProtection])
+        try? data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         protectFile()
     }
 
-    /// Complete protection. Not excluded from backup: see the type's note.
+    /// First-unlock protection. Not excluded from backup: see the type's note.
     private func protectFile() { protect(fileURL) }
 
     private func protect(_ url: URL) {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         try? FileManager.default.setAttributes(
-            [.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
+            [.protectionKey: Self.fileProtection], ofItemAtPath: url.path)
     }
 }

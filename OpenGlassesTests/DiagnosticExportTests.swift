@@ -118,6 +118,211 @@ final class DiagnosticRingTests: XCTestCase {
         XCTAssertTrue(store.read(capacity: 10, now: now).isEmpty)
     }
 
+    // MARK: - Retention across a long run and across relaunches
+
+    private func temporaryFile() -> (directory: URL, url: URL) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        return (directory, directory.appendingPathComponent("breadcrumbs.json"))
+    }
+
+    /// A tester's report held exactly the newest 500 lines of a long run: the launch was gone and
+    /// nothing said so. The launch window is now kept, and the hole is counted.
+    func testTheLaunchWindowSurvivesALongRunAndTheHoleIsCounted() {
+        let ring = DiagnosticRing(capacity: 100, launchLimit: 10)
+        XCTAssertEqual(ring.launchLimit, 10)
+        for index in 0..<500 { ring.record(event(index), line: "line-\(index)") }
+
+        let entries = ring.entries
+        XCTAssertEqual(entries.count, 100, "the count bound still holds")
+        XCTAssertEqual(entries.prefix(10).map(\.line), (0..<10).map { "line-\($0)" },
+                       "the first events of the run are never evicted")
+        XCTAssertEqual(entries[10].line, "line-410", "after them, the newest are kept")
+        XCTAssertEqual(entries[10].gapBefore, 400, "and the first one kept counts what went")
+        XCTAssertEqual(entries.last?.line, "line-499")
+        XCTAssertEqual(entries.filter { $0.gapBefore != nil }.count, 1)
+    }
+
+    func testTheLaunchWindowIsATenthOfASmallRingAtMost() {
+        XCTAssertEqual(DiagnosticRing(capacity: 5).launchLimit, 0)
+        XCTAssertEqual(DiagnosticRing(capacity: 100).launchLimit, 10)
+        XCTAssertEqual(DiagnosticRing().launchLimit, DiagnosticRing.defaultLaunchLimit)
+        XCTAssertGreaterThan(DiagnosticRing.defaultCapacity, 500,
+                             "the old 500-line ring is what lost a long run's launch")
+    }
+
+    func testEventsPastTheAgeBoundAreDroppedAndCounted() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let ring = DiagnosticRing(capacity: 1000, maxAge: 60, launchLimit: 0)
+        ring.record(event(1), line: "old-1", at: start)
+        ring.record(event(2), line: "old-2", at: start.addingTimeInterval(10))
+        ring.record(event(3), line: "recent", at: start.addingTimeInterval(100))
+
+        XCTAssertEqual(ring.entries.map(\.line), ["recent"])
+        XCTAssertEqual(ring.entries.first?.gapBefore, 2)
+    }
+
+    /// An app update that renames or removes an event name used to make the whole saved file
+    /// undecodable. Now it costs those entries, and they are counted.
+    func testAnUndecodableEntryCostsOnlyItselfAndIsCounted() throws {
+        let (directory, url) = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let now = Date()
+        let valid = (0..<3).map {
+            DiagnosticRing.Entry(timestamp: now, category: .lifecycle, name: .app, line: "kept-\($0)")
+        }
+        var objects = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(valid)) as? [[String: Any]])
+        var renamed = objects[0]
+        renamed["name"] = "anEventNameThisBuildNeverHad"
+        renamed["line"] = "gone"
+        // [gone, kept-0, gone, kept-1, kept-2, gone]
+        objects = [renamed, objects[0], renamed, objects[1], objects[2], renamed]
+        try JSONSerialization.data(withJSONObject: objects).write(to: url)
+
+        let load = DiagnosticBreadcrumbStore(url: url).load(capacity: 10, now: now)
+        guard case .loaded(let entries, let trailing) = load else {
+            return XCTFail("a file with some bad entries still loads, got \(load)")
+        }
+        XCTAssertEqual(entries.map(\.line), ["kept-0", "kept-1", "kept-2"])
+        XCTAssertEqual(entries.map(\.gapBefore), [1, 1, nil])
+        XCTAssertEqual(trailing, 1)
+
+        // The trailing one is carried onto the new run's first entry.
+        let ring = DiagnosticRing(capacity: 10, persistenceURL: url)
+        ring.record(event(1), line: "new-run")
+        XCTAssertEqual(ring.entries.first?.gapBefore, 1)
+        ring.waitForPendingWrites()
+    }
+
+    /// The format before runs were told apart still reads: no `run`, no `gapBefore`.
+    func testAFileWrittenByAnOlderBuildStillReads() throws {
+        let (directory, url) = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let now = Date()
+        let old: [[String: Any]] = [[
+            "timestamp": now.timeIntervalSinceReferenceDate,
+            "category": "lifecycle", "name": "app",
+            "line": "[lifecycle] app event=loggingActive",
+        ]]
+        try JSONSerialization.data(withJSONObject: old).write(to: url)
+
+        let ring = DiagnosticRing(capacity: 10, persistenceURL: url)
+        XCTAssertEqual(ring.previousEntries.map(\.line), ["[lifecycle] app event=loggingActive"])
+        XCTAssertNil(ring.previousEntries.first?.run)
+    }
+
+    /// Only the immediately previous run used to survive: the first event of a new run overwrote
+    /// the file with that run alone. Earlier runs now accumulate within the bounds.
+    func testEarlierRunsAccumulateAcrossRelaunches() {
+        let (directory, url) = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let first = DiagnosticRing(capacity: 100, runID: "run-one", persistenceURL: url)
+        for index in 0..<3 { first.record(event(index), line: "one-\(index)") }
+        first.waitForPendingWrites()
+
+        let second = DiagnosticRing(capacity: 100, runID: "run-two", persistenceURL: url)
+        XCTAssertEqual(second.previousEntries.map(\.line), ["one-0", "one-1", "one-2"])
+        for index in 0..<2 { second.record(event(index), line: "two-\(index)") }
+        second.waitForPendingWrites()
+
+        let third = DiagnosticRing(capacity: 100, runID: "run-three", persistenceURL: url)
+        XCTAssertEqual(third.previousEntries.map(\.line), ["one-0", "one-1", "one-2", "two-0", "two-1"],
+                       "the run before last is still there")
+        XCTAssertEqual(third.previousEntries.map(\.run),
+                       ["run-one", "run-one", "run-one", "run-two", "run-two"])
+        third.record(event(9), line: "three-0")
+
+        let lines = third.timeline.map(\.line)
+        XCTAssertEqual(lines, [
+            "── an earlier run of the app ──", "one-0", "one-1", "one-2",
+            "── an earlier run of the app ──", "two-0", "two-1",
+            "── this run of the app ──", "three-0",
+        ])
+        third.waitForPendingWrites()
+    }
+
+    func testTheTimelineMarksEveryHoleAndEveryRunBoundary() {
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        func entry(_ line: String, run: String?, gap: Int? = nil) -> DiagnosticRing.Entry {
+            DiagnosticRing.Entry(timestamp: at, category: .lifecycle, name: .app, line: line,
+                                 run: run, gapBefore: gap)
+        }
+        let lines = DiagnosticRing.timeline(
+            history: [entry("legacy", run: nil, gap: 3), entry("a-1", run: "a")],
+            current: [entry("launch", run: "me"), entry("later", run: "me", gap: 1)],
+            historyProblem: nil, now: at).map(\.line)
+        XCTAssertEqual(lines, [
+            "… 3 earlier events not kept …", "── an earlier run of the app ──", "legacy",
+            "── an earlier run of the app ──", "a-1",
+            "── this run of the app ──", "launch",
+            "… 1 earlier event not kept …", "later",
+        ])
+    }
+
+    func testTheTimelineSaysWhenEarlierRunsCouldNotBeRead() {
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        let current = [DiagnosticRing.Entry(timestamp: at, category: .lifecycle, name: .app,
+                                            line: "now", run: "me")]
+        let locked = DiagnosticRing.timeline(history: [], current: current,
+                                             historyProblem: .unreadable, now: at)
+        XCTAssertTrue(locked.first?.line.contains("could not be read yet") ?? false)
+        XCTAssertEqual(locked.first?.at, at, "dated with the events it sits beside, so a window keeps it")
+        let corrupt = DiagnosticRing.timeline(history: [], current: current,
+                                              historyProblem: .corrupt, now: at)
+        XCTAssertTrue(corrupt.first?.line.contains("could not be read") ?? false)
+    }
+
+    /// A launch before the phone's first unlock cannot read the saved history. Writing then would
+    /// replace every earlier run with this one, so writes wait for the retry on unlock.
+    func testAnUnreadableHistoryIsNotOverwrittenAndIsReadOnUnlock() throws {
+        let (directory, url) = temporaryFile()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let earlier = DiagnosticRing(capacity: 100, runID: "earlier", persistenceURL: url)
+        earlier.record(event(1), line: "from-before")
+        earlier.waitForPendingWrites()
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+        if (try? Data(contentsOf: url)) != nil {
+            throw XCTSkip("this process can read a 0o000 file (running as root?)")
+        }
+
+        let ring = DiagnosticRing(capacity: 100, runID: "now", persistenceURL: url)
+        XCTAssertTrue(ring.previousEntries.isEmpty)
+        ring.record(event(2), line: "while-locked")
+        ring.waitForPendingWrites()
+        XCTAssertTrue(ring.timeline.first?.line.contains("could not be read yet") ?? false)
+
+        // Unlocked: the history is read, and only then is the file written — with both runs.
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+        ring.protectedDataDidBecomeAvailable()
+        XCTAssertEqual(ring.previousEntries.map(\.line), ["from-before"])
+        ring.waitForPendingWrites()
+        XCTAssertEqual(DiagnosticBreadcrumbStore(url: url).read(capacity: 100, now: Date()).map(\.line),
+                       ["from-before", "while-locked"])
+    }
+
+    func testClearForgetsEarlierRunsToo() {
+        let (directory, url) = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let earlier = DiagnosticRing(capacity: 100, persistenceURL: url)
+        earlier.record(event(1), line: "from-before")
+        earlier.waitForPendingWrites()
+
+        let ring = DiagnosticRing(capacity: 100, persistenceURL: url)
+        XCTAssertFalse(ring.previousEntries.isEmpty)
+        ring.clear()
+        ring.waitForPendingWrites()
+        XCTAssertTrue(ring.previousEntries.isEmpty)
+        XCTAssertTrue(ring.timeline.isEmpty)
+        XCTAssertTrue(DiagnosticBreadcrumbStore(url: url).read(capacity: 100, now: Date()).isEmpty)
+    }
+
     /// Attaching subscribes to the real facade; detaching actually stops it.
     func testAttachRecordsRealEventsAndDetachStops() {
         let ring = DiagnosticRing(capacity: 50)

@@ -11,7 +11,7 @@ import Foundation
 ///
 /// Registered in `DataStoreRegistry` as `learningCandidates`. A finding is meant to name machines,
 /// not people, but a customer's name is exactly what redaction cannot catch and review exists to
-/// remove, so the store is treated as able to hold one: complete protection, excluded from backup,
+/// remove, so the store is treated as able to hold one: protected (first-unlock), excluded from backup,
 /// and walked by the subject erasure.
 @MainActor
 final class LearningCandidateStore {
@@ -21,6 +21,12 @@ final class LearningCandidateStore {
     /// How many candidates a phone keeps. A crew member files a handful a week; a store that kept
     /// growing past this would be a notes app nobody reviews. Withdrawn candidates make room first.
     static let entryCap = 500
+
+    /// The protection class this store's files are written with and re-stamped to. First-unlock,
+    /// not `.complete`: the store is written from voice turns that run with the phone locked in a
+    /// pocket (the app keeps the `audio` background mode), and a `.complete` file refuses those
+    /// writes — and its read, so a store first opened while locked would start empty.
+    nonisolated static let fileProtection = FileProtectionType.completeUntilFirstUserAuthentication
 
     private(set) var candidates: [LearningCandidate]
 
@@ -122,16 +128,16 @@ final class LearningCandidateStore {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(candidates) else { return }
-        try? data.write(to: fileURL, options: [.atomic, .completeFileProtection])
+        try? data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         protectFile()
     }
 
-    /// Complete protection and no backup: unreviewed findings that may yet carry a name review
+    /// First-unlock protection and no backup: unreviewed findings that may yet carry a name review
     /// would have removed, which belong on this phone and nowhere a backup would carry them.
     private func protectFile() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         try? FileManager.default.setAttributes(
-            [.protectionKey: FileProtectionType.complete], ofItemAtPath: fileURL.path)
+            [.protectionKey: Self.fileProtection], ofItemAtPath: fileURL.path)
         var url = fileURL
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

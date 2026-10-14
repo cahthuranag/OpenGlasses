@@ -53,7 +53,7 @@ final class VanStockStoreTests: XCTestCase {
         loadOne(into: VanStockStore(directory: directory, now: start), at: start)
         let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         #if !targetEnvironment(simulator)
-        XCTAssertEqual(attributes[.protectionKey] as? FileProtectionType, .complete)
+        XCTAssertEqual(attributes[.protectionKey] as? FileProtectionType, VanStockStore.fileProtection)
         #else
         _ = attributes
         #endif

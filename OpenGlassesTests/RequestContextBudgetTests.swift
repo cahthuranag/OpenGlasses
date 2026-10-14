@@ -224,6 +224,13 @@ final class ResponsesContextRecoveryTests: XCTestCase {
     }
 
     func testCatalogCannotCarryAcrossAccountsOrAnonymousSignIn() {
+        let suite = "ChatGPTContextCatalogTests.\(UUID().uuidString)"
+        let original = ChatGPTContextCatalog.store
+        ChatGPTContextCatalog.store = UserDefaults(suiteName: suite)!
+        defer {
+            ChatGPTContextCatalog.store.removePersistentDomain(forName: suite)
+            ChatGPTContextCatalog.store = original
+        }
         let data = Data(#"{"models":[{"slug":"test","context_window":64000}]}"#.utf8)
         ChatGPTContextCatalog.update(data: data, accountID: "account-a")
         XCTAssertEqual(ChatGPTContextCatalog.context(model: "test", accountID: "account-a"), 64_000)
@@ -273,5 +280,165 @@ final class ResponsesContextRecoveryTests: XCTestCase {
         XCTAssertEqual(ModelFallbackChain.classify(RequestContextBudget.CapacityError()), .terminalForTurn)
         XCTAssertEqual(ModelFallbackChain.classify(LLMError.apiError(provider: "ChatGPT", statusCode: 200,
             message: #"{"code":"context_length_exceeded","message":"too big"}"#)), .terminalForTurn)
+    }
+}
+
+/// A tester's ChatGPT model the table did not know failed every turn before it was sent: the
+/// conservative 32k window could not hold the tool schemas, the catalog that knew better lived
+/// only in memory, and the failure ended the turn instead of trying another model.
+@MainActor
+final class ChatGPTUnknownModelCapacityTests: XCTestCase {
+    private let endpoint = "https://chatgpt.com/backend-api/codex/responses"
+    private var suite = ""
+    private var originalStore: UserDefaults!
+
+    override func setUp() async throws {
+        try await super.setUp()
+        suite = "ChatGPTUnknownModelCapacityTests.\(UUID().uuidString)"
+        originalStore = ChatGPTContextCatalog.store
+        ChatGPTContextCatalog.store = UserDefaults(suiteName: suite)!
+    }
+
+    override func tearDown() async throws {
+        ChatGPTContextCatalog.store.removePersistentDomain(forName: suite)
+        ChatGPTContextCatalog.store = originalStore
+        try await super.tearDown()
+    }
+
+    // MARK: - Resolution
+
+    func testANewIdOfTheCatalogFamilyTakesTheFamilyDefault() {
+        for model in ["gpt-5.7-nova", "gpt-6.1-sol", "gpt-6", "gpt-5", "gpt-5.5-codex-mini", "GPT-7-vega"] {
+            XCTAssertEqual(RequestContextBudget.resolve(model: model, endpoint: endpoint),
+                           RequestContextBudget.Limit(context: 272_000, provenance: "codexFamilyDefault20261015"), model)
+        }
+        // The exact table still wins its own provenance.
+        XCTAssertEqual(RequestContextBudget.resolve(model: "gpt-5.6-terra", endpoint: endpoint).provenance,
+                       "codexCatalog20260919")
+    }
+
+    func testShapesOutsideTheFamilyStayConservative() {
+        for model in ["gpt-reserve", "gpt-unknown", "gpt-4o", "gpt-4.1", "o3", "gpt-", "gpt-5x", "unknown"] {
+            XCTAssertEqual(RequestContextBudget.resolve(model: model, endpoint: endpoint),
+                           RequestContextBudget.Limit(context: 32_768, provenance: "unknownModelConservativeV1"), model)
+        }
+        // Off the subscription route the family rule is never consulted.
+        XCTAssertEqual(RequestContextBudget.resolve(model: "gpt-5.7-nova", endpoint: "https://proxy.test/v1/responses").context,
+                       32_768)
+    }
+
+    // MARK: - The stored catalog
+
+    func testTheCatalogWindowSurvivesARelaunchForAWeek() {
+        let fetched = Date(timeIntervalSince1970: 1_800_000_000)
+        let data = Data(#"{"models":[{"slug":"gpt-reserve","context_window":400000}]}"#.utf8)
+        ChatGPTContextCatalog.update(data: data, accountID: "account-a", now: fetched)
+
+        // Nothing is held in memory: a later read comes from the store, as after a relaunch.
+        let twoDays = fetched.addingTimeInterval(2 * 24 * 3_600)
+        let catalog = ChatGPTContextCatalog.context(model: "gpt-reserve", accountID: "account-a", now: twoDays)
+        XCTAssertEqual(catalog, 400_000)
+        XCTAssertEqual(RequestContextBudget.resolve(model: "gpt-reserve", endpoint: endpoint, catalogContext: catalog),
+                       RequestContextBudget.Limit(context: 400_000, provenance: "accountCatalog"))
+        XCTAssertNil(ChatGPTContextCatalog.context(model: "gpt-reserve", accountID: "account-a",
+                                                   now: fetched.addingTimeInterval(8 * 24 * 3_600)))
+        XCTAssertNil(ChatGPTContextCatalog.context(model: "gpt-reserve", accountID: "account-b", now: twoDays))
+    }
+
+    func testTheStoreHoldsNoAccountIdAndClearsOnSignOut() throws {
+        let data = Data(#"{"models":[{"slug":"gpt-reserve","context_window":400000}]}"#.utf8)
+        ChatGPTContextCatalog.update(data: data, accountID: "account-visible-id")
+        let stored = try XCTUnwrap(ChatGPTContextCatalog.store.data(forKey: ChatGPTContextCatalog.storeKey))
+        XCTAssertFalse(String(decoding: stored, as: UTF8.self).contains("account-visible-id"))
+        ChatGPTContextCatalog.update(data: data, accountID: nil)
+        XCTAssertNil(ChatGPTContextCatalog.store.data(forKey: ChatGPTContextCatalog.storeKey))
+    }
+
+    func testRefreshIsAskedForWhenMissingOldOrAnotherAccounts() {
+        let fetched = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertTrue(ChatGPTContextCatalog.needsRefresh(accountID: "account-a", now: fetched), "nothing stored")
+        XCTAssertFalse(ChatGPTContextCatalog.needsRefresh(accountID: nil, now: fetched), "no account, no fetch")
+        ChatGPTContextCatalog.update(data: Data(#"{"models":[]}"#.utf8), accountID: "account-a", now: fetched)
+        XCTAssertFalse(ChatGPTContextCatalog.needsRefresh(accountID: "account-a", now: fetched.addingTimeInterval(600)))
+        XCTAssertTrue(ChatGPTContextCatalog.needsRefresh(accountID: "account-a", now: fetched.addingTimeInterval(7_200)))
+        XCTAssertTrue(ChatGPTContextCatalog.needsRefresh(accountID: "account-b", now: fetched.addingTimeInterval(600)))
+    }
+
+    // MARK: - Before a tool runs, another model may take the turn
+
+    func testCapacityBeforeAnyToolLetsTheCascadeTryAnotherModel() {
+        let huge = String(repeating: "X", count: 10_000)
+        do {
+            _ = try RequestContextBudget.build(model: "m", instructions: huge,
+                history: [["role": "user", "content": "hi"]], tools: nil, protectedStart: 0, allowance: 2_000)
+            XCTFail("expected a capacity error")
+        } catch let error as RequestContextBudget.CapacityError {
+            XCTAssertFalse(error.toolsRanThisTurn)
+            XCTAssertEqual(ModelFallbackChain.classify(error), .retryOtherModel)
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
+    }
+
+    func testCapacityAfterAToolRanEndsTheTurn() {
+        let history: [[String: Any]] = [
+            ["role": "user", "content": "record it"],
+            ["role": "assistant", "content": "", "tool_calls": [["id": "c", "type": "function",
+                                                                  "function": ["name": "record", "arguments": "{}"]]]],
+            ["role": "tool", "tool_call_id": "c", "content": String(repeating: "R", count: 10_000)],
+        ]
+        do {
+            _ = try RequestContextBudget.build(model: "m", instructions: "policy", history: history,
+                                               tools: nil, protectedStart: 0, allowance: 2_000)
+            XCTFail("expected a capacity error")
+        } catch let error as RequestContextBudget.CapacityError {
+            XCTAssertTrue(error.toolsRanThisTurn)
+            XCTAssertEqual(ModelFallbackChain.classify(error), .terminalForTurn)
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
+        // An older exchange's tool result is not this turn's.
+        XCTAssertFalse(RequestContextBudget.toolsRan(in: history, since: 3))
+        XCTAssertTrue(RequestContextBudget.toolsRan(in: history, since: 0))
+    }
+
+    func testThePreToolCapacityFailureHopsToTheNextCandidate() async throws {
+        func cloud(_ id: String) -> ModelFallbackChain.Candidate {
+            .init(id: id, isLocalMLX: false, supportsVision: false, contextTokens: ModelFallbackChain.cloudContextTokens)
+        }
+        var tried: [String] = []
+        var hops: [ModelFallbackChain.FailureClass] = []
+        let answer = try await ModelCascade.run(
+            candidates: [cloud("chatgpt"), cloud("claude")],
+            needs: .init(requiresVision: false, isBackgrounded: false), maxAttempts: 4,
+            onSwitch: { _, _, failure in hops.append(failure) },
+            attempt: { candidate in
+                tried.append(candidate.id)
+                if candidate.id == "chatgpt" { throw RequestContextBudget.CapacityError(toolsRanThisTurn: false) }
+                return "answered"
+            })
+        XCTAssertEqual(answer, "answered")
+        XCTAssertEqual(tried, ["chatgpt", "claude"])
+        XCTAssertEqual(hops, [.retryOtherModel])
+    }
+
+    // MARK: - What is logged and what is said
+
+    func testTheSummaryAndTheSpokenLineNameTheSize() {
+        XCTAssertEqual(SafeErrorSummary(RequestContextBudget.CapacityError(toolsRanThisTurn: false)).description,
+                       "contextTooLarge(beforeTools)")
+        XCTAssertEqual(SafeErrorSummary(RequestContextBudget.CapacityError()).description,
+                       "contextTooLarge(afterTools)")
+        let banner = AppState.plainReason("contextTooLarge(beforeTools)")
+        XCTAssertTrue(banner.contains("too large"), banner)
+
+        for error in [RequestContextBudget.CapacityError(toolsRanThisTurn: false), RequestContextBudget.CapacityError()] {
+            let phrase = ModelSwitchNarrator.exhaustionPhrase(lastError: error)
+            XCTAssertTrue(phrase.contains("too large"), phrase)
+            XCTAssertFalse(phrase.contains("couldn't be processed"), phrase)
+        }
+        let overflow = LLMError.apiError(provider: "ChatGPT", statusCode: 400,
+                                         message: #"{"error":{"code":"context_length_exceeded","message":"too big"}}"#)
+        XCTAssertTrue(ModelSwitchNarrator.exhaustionPhrase(lastError: overflow).contains("too large"))
     }
 }

@@ -4,8 +4,9 @@ import XCTest
 /// Issue 427: a conversations file that could not be read at launch blocked saves for the rest of
 /// the process.
 ///
-/// The file is written with `.completeFileProtection`, so an app that launches before the device's
-/// first unlock reads Cocoa 257 and latches `saveBlocked`. `loadThreads()` only ever ran from
+/// The file is protected at rest (`.complete` then; first-unlock since a tester's locked-phone
+/// saves failed), so an app that launches before the device's first unlock reads Cocoa 257 and
+/// latches `saveBlocked`. `loadThreads()` only ever ran from
 /// `init`, and `protectedDataDidBecomeAvailable()` rebuilt recall from memory without re-reading —
 /// so nothing could ever clear the latch. Field trace: launched 07:19 locked, active at 07:51,
 /// every single turn afterwards dropped with `saveSkipped detail=loadFailed`.
@@ -217,5 +218,156 @@ final class ConversationStoreLoadRetryTests: XCTestCase {
         XCTAssertTrue(store.saveBlocked, "and stays unwritable")
         XCTAssertEqual(try Data(contentsOf: fileURL), ciphertext,
                        "the ciphertext is untouched by a failed retry")
+    }
+}
+
+/// A save that fails is retried without waiting for another turn.
+///
+/// Field trace: app backgrounded, phone locked in a pocket, and every glasses turn logged
+/// `saveFailed error=storage(NSError)#513` — the file was `.complete`-protected. The threads lived
+/// on in memory, but nothing marked them unsaved, so a process death before the next successful
+/// turn lost them. The class is now first-unlock, and a failed save leaves the store dirty until
+/// protected data returns or the app comes to the front.
+@MainActor
+final class ConversationStoreSaveRetryTests: XCTestCase {
+
+    /// Counts writes so a test can tell a flush that wrote from one that did nothing.
+    private final class WriteCounter: @unchecked Sendable {
+        var count = 0
+    }
+
+    private var tempDir: URL!
+    private var fileURL: URL!
+
+    override func setUp() {
+        super.setUp()
+        Config.setConversationEncryptionEnabled(false)
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ConversationStoreSaveRetryTests-\(UUID().uuidString)",
+                                    isDirectory: true)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        fileURL = tempDir.appendingPathComponent("conversations.json")
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    /// Throws what a write against a `.complete` file on a locked phone throws (Cocoa 513).
+    private static let failingWriter: @Sendable (Data, URL, Data.WritingOptions) throws -> Void = { _, _, _ in
+        throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)
+    }
+
+    private func readThreadsFromDisk() throws -> [ConversationThread] {
+        try JSONDecoder().decode([ConversationThread].self, from: Data(contentsOf: fileURL))
+    }
+
+    func testTheFileIsWrittenWithTheFirstUnlockClass() {
+        XCTAssertEqual(ConversationStore.fileProtection, .completeUntilFirstUserAuthentication,
+                       "glasses turns save with the phone locked; .complete refuses them")
+        XCTAssertTrue(ConversationStore.writeOptions.contains(.completeFileProtectionUntilFirstUserAuthentication))
+        XCTAssertTrue(ConversationStore.writeOptions.contains(.atomic))
+        XCTAssertFalse(ConversationStore.writeOptions.contains(.completeFileProtection))
+        XCTAssertEqual(SensitiveStore.conversationThreads.record.protection,
+                       .completeUntilFirstUserAuthentication,
+                       "the registry describes the class the store actually writes")
+    }
+
+    func testTheWriteCarriesTheFirstUnlockOptions() {
+        let store = ConversationStore(directory: tempDir)
+        let seen = OptionsBox()
+        store.writeData = { data, url, options in
+            seen.options = options
+            try data.write(to: url, options: options)
+        }
+        store.startThread(mode: "direct")
+        XCTAssertEqual(seen.options, ConversationStore.writeOptions)
+    }
+
+    private final class OptionsBox: @unchecked Sendable {
+        var options: Data.WritingOptions?
+    }
+
+    func testAFailedSaveMarksTheStoreDirtyAndKeepsTheTurnInMemory() throws {
+        let store = ConversationStore(directory: tempDir)
+        store.writeData = Self.failingWriter
+
+        let thread = store.startThread(mode: "direct")
+        store.appendMessage(role: "user", content: "said with the phone in a pocket")
+
+        XCTAssertTrue(store.needsSave, "a failed save must be remembered, not just logged")
+        XCTAssertFalse(store.saveBlocked, "a write failure is not a read failure — no latch")
+        XCTAssertEqual(store.threads.first?.id, thread.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    func testUnlockFlushesWhatTheLockedSavesMissed() throws {
+        let store = ConversationStore(directory: tempDir)
+        store.writeData = Self.failingWriter
+        let thread = store.startThread(mode: "direct")
+        store.appendMessage(role: "user", content: "first locked turn")
+        store.appendMessage(role: "assistant", content: "second locked turn")
+        XCTAssertTrue(store.needsSave)
+
+        // The phone is unlocked: writes work again, and nothing else happens — no new turn.
+        store.writeData = { data, url, options in try data.write(to: url, options: options) }
+        store.protectedDataDidBecomeAvailable()
+
+        XCTAssertFalse(store.needsSave)
+        let persisted = try readThreadsFromDisk()
+        XCTAssertEqual(persisted.map(\.id), [thread.id])
+        XCTAssertEqual(persisted.first?.messages.count, 2, "both locked turns reached the file")
+    }
+
+    func testComingToTheFrontFlushesToo() throws {
+        let store = ConversationStore(directory: tempDir)
+        store.writeData = Self.failingWriter
+        let thread = store.startThread(mode: "direct")
+        XCTAssertTrue(store.needsSave)
+
+        store.writeData = { data, url, options in try data.write(to: url, options: options) }
+        store.flushPendingSave()
+
+        XCTAssertFalse(store.needsSave)
+        XCTAssertEqual(try readThreadsFromDisk().map(\.id), [thread.id])
+    }
+
+    func testAFlushWithNothingPendingDoesNotWrite() {
+        let store = ConversationStore(directory: tempDir)
+        store.startThread(mode: "direct")
+        XCTAssertFalse(store.needsSave)
+
+        let counter = WriteCounter()
+        store.writeData = { data, url, options in
+            counter.count += 1
+            try data.write(to: url, options: options)
+        }
+        store.flushPendingSave()
+        store.protectedDataDidBecomeAvailable()
+        XCTAssertEqual(counter.count, 0, "a clean store has nothing to flush")
+    }
+
+    func testTheNextSuccessfulTurnAlsoClearsTheFlag() throws {
+        let store = ConversationStore(directory: tempDir)
+        store.writeData = Self.failingWriter
+        store.startThread(mode: "direct")
+        store.appendMessage(role: "user", content: "lost to the lock")
+        XCTAssertTrue(store.needsSave)
+
+        store.writeData = { data, url, options in try data.write(to: url, options: options) }
+        store.appendMessage(role: "assistant", content: "written once unlocked")
+
+        XCTAssertFalse(store.needsSave, "every save writes the whole list, so one success covers all")
+        XCTAssertEqual(try readThreadsFromDisk().first?.messages.count, 2)
+    }
+
+    func testAFlushThatFailsAgainStaysDirty() {
+        let store = ConversationStore(directory: tempDir)
+        store.writeData = Self.failingWriter
+        store.startThread(mode: "direct")
+
+        store.flushPendingSave()
+        XCTAssertTrue(store.needsSave, "still locked — keep it for the next chance")
     }
 }

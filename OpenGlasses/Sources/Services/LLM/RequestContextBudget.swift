@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// FM: accounting on the *translated* Responses request, not just the chat transcript.
 /// Estimates intentionally err high: one UTF-8 byte per text token is an upper bound for
@@ -26,6 +27,12 @@ enum RequestContextBudget {
     }
 
     struct CapacityError: LocalizedError {
+        /// Whether a tool had already run in this user turn when the request would not fit.
+        /// Before any tool, nothing has happened yet: another model may take the turn from the
+        /// start. After one, restarting the turn elsewhere could repeat a state-changing tool, so
+        /// the turn ends. Defaults to the safe reading.
+        var toolsRanThisTurn = true
+
         var errorDescription: String? {
             "The current question, equipment context or tool evidence is too large for this model. Your conversation and field session are saved. Narrow the manual lookup or choose a model with a larger context window."
         }
@@ -52,9 +59,24 @@ enum RequestContextBudget {
             return Limit(context: context, provenance: "accountCatalog")
         }
         let known: Set<String> = ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4"]
-        return known.contains(model)
-            ? Limit(context: 272_000, provenance: "codexCatalog20260919")
-            : Limit(context: 32_768, provenance: "unknownModelConservativeV1")
+        if known.contains(model) { return Limit(context: 272_000, provenance: "codexCatalog20260919") }
+        // An id the table has not met yet but of the family the catalog serves (a new point
+        // release, a variant suffix) takes the catalog's uniform default. 32k cannot even hold
+        // the tool schemas, so the conservative value made every turn on such a model fail.
+        if isCodexFamily(model) { return Limit(context: 272_000, provenance: "codexFamilyDefault20261015") }
+        return Limit(context: 32_768, provenance: "unknownModelConservativeV1")
+    }
+
+    /// `gpt-5`, `gpt-5.x…`, `gpt-6…` and later majors: the generations the subscription catalog
+    /// lists, every one of them at its 272k default. A shape outside it stays unknown.
+    static func isCodexFamily(_ model: String) -> Bool {
+        let id = model.lowercased().trimmingCharacters(in: .whitespaces)
+        guard id.hasPrefix("gpt-") else { return false }
+        let rest = id.dropFirst(4)
+        let major = rest.prefix { $0.isASCII && $0.isNumber }
+        guard let number = Int(major), number >= 5 else { return false }
+        let next = rest.dropFirst(major.count).first
+        return next == nil || next == "." || next == "-"
     }
 
     /// Context windows from the provider's model pages, read 2026-09-30, matched by prefix with
@@ -125,10 +147,21 @@ enum RequestContextBudget {
             let estimate = estimate(body)
             if estimate.total <= allowance { return Selection(body: body, estimate: estimate, omittedMessages: removed) }
             let remainingOld = boundary - removed
-            guard remainingOld > 0 else { throw CapacityError() }
+            guard remainingOld > 0 else {
+                throw CapacityError(toolsRanThisTurn: toolsRan(in: history, since: boundary))
+            }
             let next = nextExchangeBoundary(in: selected, remainingOld: remainingOld)
             selected.removeFirst(next)
             removed += next
+        }
+    }
+
+    /// Whether this turn's own messages (from `boundary` on) include a tool result — in the chat
+    /// shape (`role: tool`) or as a raw Responses item.
+    static func toolsRan(in history: [[String: Any]], since boundary: Int) -> Bool {
+        guard boundary < history.count else { return false }
+        return history[max(0, boundary)...].contains { message in
+            message["role"] as? String == "tool" || message["type"] as? String == "function_call_output"
         }
     }
 
@@ -167,18 +200,34 @@ enum RequestContextBudget {
     }
 }
 
-/// Account-specific catalog metadata is memory-only, expires, and cannot bleed across sign-ins.
+/// Account-specific catalog context windows. Persisted (model ids and integers, keyed by a digest
+/// of the account, never the account id itself) so a relaunch keeps a catalog-only model's real
+/// window instead of dropping to the conservative default until someone opens the model picker.
+/// A snapshot serves for `maxAge`, is refreshed in the background once older than `refreshAfter`,
+/// and cannot bleed across sign-ins: a different account, or none, reads nothing.
 @MainActor
 enum ChatGPTContextCatalog {
-    private static var account: String?
-    private static var updatedAt: Date?
-    private static var windows: [String: Int] = [:]
+    /// How long a stored window is trusted at all.
+    static let maxAge: TimeInterval = 7 * 24 * 3_600
+    /// How old a snapshot may get before a ChatGPT turn asks for a fresh one, without waiting.
+    static let refreshAfter: TimeInterval = 3_600
+    static let storeKey = "chatGPTContextCatalog.v1"
+    /// Injectable so tests never touch the app's own defaults.
+    static var store: UserDefaults = .standard
 
-    static func update(data: Data, accountID: String?) {
+    /// A failed fetch is not retried on every turn: one attempt per `retryAfter`.
+    static let retryAfter: TimeInterval = 300
+    private static var lastRefreshAttempt: Date?
+
+    struct Snapshot: Codable, Equatable {
+        let accountDigest: String
+        let updatedAt: Date
+        let windows: [String: Int]
+    }
+
+    static func update(data: Data, accountID: String?, now: Date = Date()) {
         guard let accountID, !accountID.isEmpty else {
-            account = nil
-            updatedAt = nil
-            windows = [:]
+            store.removeObject(forKey: storeKey)
             return
         }
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
@@ -190,13 +239,45 @@ enum ChatGPTContextCatalog {
                   (8_192...2_000_000).contains(window) else { continue }
             parsed[id] = window
         }
-        account = accountID
-        windows = parsed
-        updatedAt = Date()
+        let snapshot = Snapshot(accountDigest: digest(accountID), updatedAt: now, windows: parsed)
+        if let encoded = try? JSONEncoder().encode(snapshot) {
+            store.set(encoded, forKey: storeKey)
+        }
     }
 
-    static func context(model: String, accountID: String?) -> Int? {
-        guard account == accountID, let updatedAt, Date().timeIntervalSince(updatedAt) < 3_600 else { return nil }
-        return windows[model]
+    static func context(model: String, accountID: String?, now: Date = Date()) -> Int? {
+        guard let snapshot = snapshot(for: accountID),
+              now.timeIntervalSince(snapshot.updatedAt) < maxAge else { return nil }
+        return snapshot.windows[model]
+    }
+
+    /// True when this account has no snapshot, or one older than `refreshAfter`.
+    static func needsRefresh(accountID: String?, now: Date = Date()) -> Bool {
+        guard let accountID, !accountID.isEmpty else { return false }
+        guard let snapshot = snapshot(for: accountID) else { return true }
+        return now.timeIntervalSince(snapshot.updatedAt) >= refreshAfter
+    }
+
+    /// Fetch the catalog in the background when the snapshot is missing or old. Never awaited by
+    /// a turn: this turn uses what is stored, the next one gets the fresh window.
+    static func refreshIfStale(accountID: String?, now: Date = Date()) {
+        guard needsRefresh(accountID: accountID, now: now) else { return }
+        if let last = lastRefreshAttempt, now.timeIntervalSince(last) < retryAfter { return }
+        lastRefreshAttempt = now
+        Task { @MainActor in
+            _ = await ModelFetcher.fetchChatGPTCatalog()
+        }
+    }
+
+    private static func snapshot(for accountID: String?) -> Snapshot? {
+        guard let accountID, !accountID.isEmpty,
+              let data = store.data(forKey: storeKey),
+              let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
+              snapshot.accountDigest == digest(accountID) else { return nil }
+        return snapshot
+    }
+
+    private static func digest(_ accountID: String) -> String {
+        SHA256.hash(data: Data(accountID.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }

@@ -49,6 +49,48 @@ enum TurnMicHandoff {
         }
     }
 
+    /// Why a turn whose conversation mic is Bluetooth was put on the phone instead — the one line
+    /// a support report needs to tell "glasses taken off" from "the port vanished". A fixed token,
+    /// never a device name.
+    enum PhoneReason: String, Equatable {
+        case stoodDown, notWorn, portUnavailable
+    }
+
+    /// The reason `target` answered `.phone` for a Bluetooth conversation mic, or nil when it did
+    /// not (or the wearer chose the phone, which is not a fallback). Mirrors `target` exactly.
+    static func phoneReason(micRoute: MicRoute, glassesStoodDown: Bool, glassesWorn: Bool?,
+                            routePortAvailable: Bool) -> PhoneReason? {
+        switch micRoute {
+        case .phone:
+            return nil
+        case .glasses:
+            if glassesStoodDown { return .stoodDown }
+            if glassesWorn == false { return .notWorn }
+            return routePortAvailable ? nil : .portUnavailable
+        case .headset:
+            return routePortAvailable ? nil : .portUnavailable
+        }
+    }
+
+    /// How many times, and how far apart, the conversation route's port is re-read when it is
+    /// missing straight after the category switch but was there just before it. About 360 ms in
+    /// all: long enough for a hands-free port that blinks out of `availableInputs` across a
+    /// category change to come back, short against the hand-off's own `deadline`, which only
+    /// starts counting afterwards.
+    static let portRecheckAttempts = 3
+    static let portRecheckInterval: TimeInterval = 0.12
+
+    /// Whether a missing port is worth re-reading before the turn falls back to the phone.
+    ///
+    /// Only for a Bluetooth route, and only when the port was observed before the switch (listed
+    /// in `availableInputs`, or the live input) — the idle listener was on it moments ago, so its
+    /// absence now is the switch, not the glasses leaving. A port that was not there before the
+    /// switch (glasses in their case, an idle phone-mic session that lists no hands-free inputs)
+    /// falls back at once, as before.
+    static func shouldRecheckPort(wanted: MicRoute, portAvailable: Bool, portSeenBeforeSwitch: Bool) -> Bool {
+        wanted != .phone && !portAvailable && portSeenBeforeSwitch
+    }
+
     enum State: Equatable {
         /// The route has been asked for; `currentRoute.inputs` does not show it yet.
         case waitingForRoute

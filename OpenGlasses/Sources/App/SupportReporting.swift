@@ -214,9 +214,10 @@ extension AppState {
         if let job = FieldSessionService.shared.activeSession, job.endedAt == nil {
             phone.append("Job open: \(job.jobReference.map { "Job \($0)" } ?? JobTabModel.noJobNumber)")
         }
-        let ring = DiagnosticRing.shared
-        let events = (ring.previousEntries + ring.entries).map {
-            JobTranscriptExport.AppEvent(at: $0.timestamp, line: $0.line)
+        // Earlier runs, then this one, with a line wherever events were not kept and wherever one
+        // run of the app gave way to the next.
+        let events = DiagnosticRing.shared.timeline.map {
+            JobTranscriptExport.AppEvent(at: $0.at, line: $0.line)
         }
         return .init(phone: phone, app: app.summary, appEvents: events, debugLog: Array(debugEvents.suffix(60)),
                      secrets: Config.knownSecretValues)
@@ -252,6 +253,7 @@ extension AppState {
         case .decoding, .badServerResponse: return "the AI's reply couldn't be read"
         case .modelDeclined: return "the AI declined to answer that — rephrase it, or try another model"
         case .outputTruncated: return "the AI ran out of room before it answered — try again, or lower the model's reasoning setting"
+        case .contextTooLarge: return "the request was too large for this model — choose a model with a larger context window"
         case .refused: return "the app refused the request"
         default: return "the AI didn't answer"
         }

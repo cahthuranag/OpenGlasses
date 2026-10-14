@@ -24,6 +24,10 @@ struct TurnTrace: Codable, Equatable, Identifiable {
     let id: UUID
     /// When the turn was handed to the model, or failing that the earliest mark it has.
     let at: Date
+    /// `at` is the hand-off to the model rather than a fallback mark (the end of speech, which
+    /// comes *before* the question is saved). Optional: traces written before it decode as nil,
+    /// and the export infers it from what the turn recorded.
+    var atHandOff: Bool?
     var threadId: String?
     var fieldSessionId: String?
     var backend: String?
@@ -33,6 +37,9 @@ struct TurnTrace: Codable, Equatable, Identifiable {
     var micRoute: String?
     var endOfTurn: String?
     var imageSent: Bool
+    /// The words sent were the app's own prompt — a photo from a button or quick action — not the
+    /// wearer's. Optional: traces written before it decode as nil; nil and false read the same.
+    var appPrompt: Bool?
     /// The effective reasoning token (Plan GB P0). Optional: traces written before it decode as nil.
     var reasoning: String?
     /// The OpenAI endpoint token (Plan GC). Optional: traces written before it decode as nil.
@@ -65,6 +72,7 @@ struct TurnTrace: Codable, Equatable, Identifiable {
     init(_ timeline: TurnTimeline, sealedAt: Date) {
         id = timeline.id
         at = timeline.commitAt ?? timeline.speechEndAt ?? timeline.heldAt ?? sealedAt
+        atHandOff = timeline.commitAt != nil
         threadId = timeline.threadId
         fieldSessionId = timeline.fieldSessionId
         backend = timeline.backend?.label
@@ -74,6 +82,7 @@ struct TurnTrace: Codable, Equatable, Identifiable {
         micRoute = timeline.micRoute?.rawValue
         endOfTurn = timeline.endOfTurnReason?.rawValue
         imageSent = timeline.imageSent
+        appPrompt = timeline.appPrompt ? true : nil
         reasoning = timeline.reasoning
         route = timeline.route
         promptBlocks = timeline.promptBlocks

@@ -46,8 +46,10 @@ final class VanStockTool: NativeTool {
     open and without signal. Pass 'action': 'check' (how many of one part; pass 'part' and/or \
     'description'), 'low' (what has run out or is at its minimum), 'load' (parts put on the van), \
     'use' (parts fitted from the van; tagged to the open job), 'remove' (parts taken off for \
-    another reason; pass 'reason'), 'count' (a stocktake: sets the figure), or 'undo' (takes back \
-    the last spoken entry). For one part pass 'part' (the number exactly as printed), \
+    another reason; pass 'reason'), 'count' (a stocktake: sets the figure), 'undo' (takes back \
+    the last spoken entry), 'unrecorded' (parts on this job's finished tasks with no stock entry), \
+    or 'not_from_van' (a part on this job that was ordered in or was the customer's; pass 'part'). \
+    For one part pass 'part' (the number exactly as printed), \
     'description', 'quantity' and optionally 'unit'; for several parts in one sentence pass \
     'items', each with the same fields. A scanned barcode goes in 'code'. Read the result back to \
     the technician as given: it says how each figure is known, and it spells out a part number it \
@@ -60,7 +62,7 @@ final class VanStockTool: NativeTool {
         var properties = vanStockLineProperties()
         properties["action"] = [
             "type": "string",
-            "enum": ["check", "low", "load", "use", "remove", "count", "undo"],
+            "enum": ["check", "low", "load", "use", "remove", "count", "undo", "unrecorded", "not_from_van"],
             "description": "What to do."
         ]
         properties["items"] = [
@@ -112,8 +114,13 @@ final class VanStockTool: NativeTool {
             return service.count(lines, source: Self.source(lines))
         case "undo":
             return service.undo()
+        case "unrecorded":
+            return service.unrecorded()
+        case "not_from_van":
+            guard let line = lines.first else { return "Say which part did not come off the van, by its part number." }
+            return service.notFromVan(line)
         default:
-            return "Pass 'action': check, low, load, use, remove, count or undo."
+            return "Pass 'action': check, low, load, use, remove, count, undo, unrecorded or not_from_van."
         }
     }
 

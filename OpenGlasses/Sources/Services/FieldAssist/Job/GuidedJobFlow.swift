@@ -145,7 +145,8 @@ final class GuidedJobFlow: ObservableObject {
             evidenceDecided: EvidenceSelectionPolicy.isDecided(session?.evidenceSelection),
             signOff: SignOffPolicy.decide(signOff: session?.signOff,
                                           required: sessions.customerSignOffRequired),
-            route: route)
+            route: route,
+            unrecordedVanParts: VanStockReconciler.named(sessions.unrecordedVanParts))
         let finalOutcome: FieldSession.Outcome
         switch JobCloseSequence.decide(closeInputs) {
         case .proceed(let decided): finalOutcome = decided

@@ -109,6 +109,12 @@ struct FieldSession: Codable, Identifiable, Equatable {
     /// and the approver's role, never the words. Nil, and absent from the JSON, on a job that had
     /// none and on every session recorded before this existed.
     var teamLearningAnswers: [TeamLearningAnswer]?
+    /// Parts recorded as used from the van on this job (Plan IH P4), with quantities. Nil when
+    /// none were, so a session written before van stock existed encodes exactly as it did.
+    var vanStockUses: [VanStockUse]?
+    /// Part numbers on this job the technician said did not come off the van — ordered in, or
+    /// the customer's — so the close does not ask about them again.
+    var vanStockNotFromVan: [String]?
 
     /// Whether anything is already recorded against the current unit: a task under its scope (a
     /// task with no recorded scope is `"initial"`), or a reading reported on it. Photos and pages
@@ -219,6 +225,7 @@ struct FieldSession: Codable, Identifiable, Equatable {
         case earlierWorkAttachedAt
         case teamLearnings
         case teamLearningAnswers
+        case vanStockUses, vanStockNotFromVan
     }
 }
 
@@ -288,6 +295,8 @@ extension FieldSession {
         earlierWorkAttachedAt = try c.decodeIfPresent(Date.self, forKey: .earlierWorkAttachedAt)
         teamLearnings = try c.decodeIfPresent([LearningCandidateReference].self, forKey: .teamLearnings)
         teamLearningAnswers = try c.decodeIfPresent([TeamLearningAnswer].self, forKey: .teamLearningAnswers)
+        vanStockUses = try c.decodeIfPresent([VanStockUse].self, forKey: .vanStockUses)
+        vanStockNotFromVan = try c.decodeIfPresent([String].self, forKey: .vanStockNotFromVan)
     }
 }
 

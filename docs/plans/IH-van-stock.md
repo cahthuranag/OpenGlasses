@@ -1,9 +1,9 @@
 # Plan IH — Van Stock (what is on the technician's own truck, kept by voice)
 
-**Status:** 🚧 P0–P3 built 2026-10-14: the ledger, the store, the `van_stock` tool, the Van Stock
-screen and the spreadsheet out and back, so a technician can keep the van by voice, correct a
-figure on the phone, and load a real truck from the shop's own list. No job-close question or
-handover yet (P4, P5), and the P1–P3 device and hand checks are owed. A technician tells the assistant what
+**Status:** 🚧 P0–P4 built 2026-10-14: the ledger, the store, the `van_stock` tool, the Van Stock
+screen, the spreadsheet out and back, and the question at the close of a job about a part with no
+stock entry. P4's Job-tab to-do and day-view line are not built, the handover (P5) is unbuilt,
+and the P1–P4 device and hand checks are owed. A technician tells the assistant what
 they loaded at the shop and what they used on a job; the phone keeps the count, answers "have I
 got one?" with no signal, says when the last one has gone, and offers to ask the office for a
 replacement. The count lives on the phone and nowhere else. A spreadsheet goes out and comes back
@@ -490,8 +490,25 @@ phone and on a desktop, added to the fixtures; "Open in Avenkin" from Mail and f
 device. Every workbook the tests read today was written by this app or built by hand in the
 tests. **A real truck can be loaded after this phase.**
 
-**P4 — Job close and the record.** `VanStockReconciler`, the to-do kind, the close-out question,
-the `van_stock` block on the work record, the low-stock line in the day view.
+**P4 — Job close and the record.** 🚧 **Core built 2026-10-14; two surfaces not built.**
+`VanStockUse` and `VanStockReconciler` (pure); the session's own account of what came off the van
+(`vanStockUses`, `vanStockNotFromVan` on `FieldSession`, and their methods on
+`FieldSessionService`); the question in `JobCloseSequence`; `van_stock` actions `unrecorded` and
+`not_from_van`; and the `van_stock` block on the work record. As built:
+- **The use is kept on the job as well as in the van's log**, because the two outlive each other
+  differently: the log changes hands with the vehicle and the record stays the job's. The record
+  is still assembled from the session alone. An undo in the van's log takes the use off the job.
+- **The question is one more step of the one close sequence.** By voice a part with no stock
+  entry holds the close and names both answers — record a use, or say it did not come off the
+  van. The screen's close is not held for it.
+- **A technician who keeps no van stock is never asked.** The close only looks when the van list
+  is not empty and the organisation has not switched van stock off.
+- **A part is matched by its number.** A use recorded by description alone does not account for
+  a numbered part on a task, so that part is still asked about.
+- The block sits in the record's JSON and its internal summary lines ("Off the van:"). It is not
+  added to the customer summary.
+*Not built:* the Job-tab to-do row for unrecorded parts, and the low-stock line in the day view.
+Both are surfaces in the Job tab's feed, which could not be exercised without a simulator.
 *Owed:* the office accepting a report whose record carries the new block; one uncoached job.
 
 **P5 — Shift handover.** The van's name and identifier, `standard` with who set it, the `top_up`

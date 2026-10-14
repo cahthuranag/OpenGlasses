@@ -458,6 +458,62 @@ final class WorkRecordTests: XCTestCase {
         XCTAssertTrue(onVan.contains("The van list now shows 3 asked for"), onVan)
     }
 
+    /// Plan IH P4 — a part on a finished task with no stock entry holds a close by voice until the
+    /// technician has said where it came from, and what came off the van reaches the record.
+    func testAPartWithNoStockEntryIsAskedAboutAtTheCloseAndTheRecordCarriesWhatCameOffTheVan() throws {
+        let service = try lennoxSession()
+        let task = try service.proposeTask(title: "Replace the pressure switch",
+                                           parts: [service.verifyPart("14T65")],
+                                           citation: "Service Manual, page 3")
+        _ = try service.decideTask(id: task.id, decision: .accept)
+        _ = try service.completeTask(id: task.id)
+
+        service.vanStockInUse = { false }
+        XCTAssertEqual(service.unrecordedVanParts, [], "a technician who keeps no van stock is never asked")
+
+        service.vanStockInUse = { true }
+        XCTAssertEqual(service.unrecordedVanParts.map(\.number), ["14T65"])
+        XCTAssertNil(service.activeSession.map { WorkRecord(session: $0, vaultName: "v") }?.vanStock)
+
+        let use = VanStockUse(id: "m1", number: "14T65", description: "High-altitude pressure switch",
+                              quantity: 1, unit: .each, verified: true, at: Date(timeIntervalSince1970: 0))
+        service.recordVanStockUse(use)
+        XCTAssertEqual(service.unrecordedVanParts, [])
+        let record = try XCTUnwrap(service.activeSession.map { WorkRecord(session: $0, vaultName: "v") })
+        XCTAssertEqual(record.vanStock, [use])
+        XCTAssertTrue(record.summaryLines.contains("Off the van:"))
+        XCTAssertTrue(record.summaryLines.contains("  1 × High-altitude pressure switch (14T65)"))
+
+        // It survives the JSON the office is sent, under its own key.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let json = try encoder.encode(record)
+        XCTAssertTrue(String(decoding: json, as: UTF8.self).contains("\"van_stock\""))
+        XCTAssertEqual(try decoder.decode(WorkRecord.self, from: json).vanStock, [use])
+
+        // An undo in the van's log takes the use off the job, and the part is asked about again.
+        service.removeVanStockUses(movementIDs: ["m1"])
+        XCTAssertNil(service.activeSession?.vanStockUses)
+        XCTAssertEqual(service.unrecordedVanParts.map(\.number), ["14T65"])
+
+        XCTAssertTrue(service.markNotFromVan(part: " 14t65 "))
+        XCTAssertEqual(service.activeSession?.vanStockNotFromVan, ["14T65"])
+        XCTAssertEqual(service.unrecordedVanParts, [])
+    }
+
+    func testAJobThatUsedNothingFromTheVanEncodesAsItAlwaysDid() throws {
+        let service = try lennoxSession()
+        let record = try XCTUnwrap(service.activeSession.map { WorkRecord(session: $0, vaultName: "v") })
+        XCTAssertNil(record.vanStock)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        XCTAssertFalse(String(decoding: try encoder.encode(record), as: UTF8.self).contains("van_stock"))
+        let session = try XCTUnwrap(service.activeSession)
+        XCTAssertFalse(String(decoding: try encoder.encode(session), as: UTF8.self).contains("vanStock"))
+    }
+
     // MARK: - Codable
 
     func testTheSessionRoundTripsTheNewFieldsAndOlderSessionsStillDecode() throws {

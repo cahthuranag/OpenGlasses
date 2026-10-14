@@ -368,3 +368,99 @@ final class SSEQueueProtocol: URLProtocol {
 
     override func stopLoading() {}
 }
+
+/// A tester's photo turn fell to Gemini, which answered 503 after nearly a minute; the turn failed
+/// with nothing said. Gemini now gets a deliberate timeout and one retry when the service says it
+/// is busy, and a failed photo turn says so whichever way it was started.
+@MainActor
+final class GeminiTransientRetryAndPhotoFailureTests: XCTestCase {
+    private func apiError(_ status: Int) -> LLMError {
+        LLMError.apiError(provider: "Gemini", statusCode: status, message: nil)
+    }
+
+    // MARK: - Gemini: one retry when busy
+
+    func testOnlyABusyServiceIsRetriedAndOnlyOnce() {
+        for status in [503, 429, 500, 502, 504] {
+            XCTAssertEqual(LLMService.geminiRetryDelay(after: apiError(status), failures: 1), 1.0, "\(status)")
+            XCTAssertNil(LLMService.geminiRetryDelay(after: apiError(status), failures: 2), "\(status) retries once")
+        }
+        for status in [400, 401, 403, 404, 422] {
+            XCTAssertNil(LLMService.geminiRetryDelay(after: apiError(status), failures: 1), "\(status)")
+        }
+        XCTAssertNil(LLMService.geminiRetryDelay(after: URLError(.timedOut), failures: 1),
+                     "a timeout already spent its allowance")
+        XCTAssertNil(LLMService.geminiRetryDelay(after: CancellationError(), failures: 1))
+        XCTAssertNil(LLMService.geminiRetryDelay(after: LLMError.invalidResponse("Gemini"), failures: 1))
+    }
+
+    func testTheTurnTimeoutIsShorterThanTheSystemDefault() {
+        XCTAssertEqual(LLMService.geminiTurnTimeout, 30)
+        XCTAssertLessThan(LLMService.geminiTurnTimeout, URLRequest(url: URL(string: "https://test.invalid")!).timeoutInterval)
+    }
+
+    func testABusyAnswerIsAskedAgainOnceThenGivenUp() async throws {
+        let service = LLMService()
+        var attempts = 0
+        let answer: String = try await service.withGeminiTransientRetry {
+            attempts += 1
+            if attempts == 1 { throw self.apiError(503) }
+            return "ok"
+        }
+        XCTAssertEqual(answer, "ok")
+        XCTAssertEqual(attempts, 2)
+
+        attempts = 0
+        do {
+            let _: String = try await service.withGeminiTransientRetry {
+                attempts += 1
+                throw self.apiError(503)
+            }
+            XCTFail("expected the second 503 to surface")
+        } catch {
+            XCTAssertEqual(attempts, 2)
+        }
+
+        attempts = 0
+        do {
+            let _: String = try await service.withGeminiTransientRetry {
+                attempts += 1
+                throw self.apiError(400)
+            }
+            XCTFail("expected the 400 to surface")
+        } catch {
+            XCTAssertEqual(attempts, 1, "a malformed request is sent once")
+        }
+    }
+
+    // MARK: - A failed photo turn says so
+
+    func testACancelledPhotoTurnSaysNothing() {
+        XCTAssertNil(SpokenErrorPolicy.photoFailureLine(for: CancellationError(), photoCaptured: true,
+                                                        narrateModelFailures: true))
+        XCTAssertNil(SpokenErrorPolicy.photoFailureLine(for: URLError(.cancelled), photoCaptured: false,
+                                                        narrateModelFailures: false))
+    }
+
+    func testTheLineSaysWhichHalfFailed() throws {
+        let camera = try XCTUnwrap(SpokenErrorPolicy.photoFailureLine(
+            for: URLError(.timedOut), photoCaptured: false, narrateModelFailures: true))
+        XCTAssertTrue(camera.hasPrefix("Sorry, I couldn't take a photo."), camera)
+
+        let busy = try XCTUnwrap(SpokenErrorPolicy.photoFailureLine(
+            for: apiError(503), photoCaptured: true, narrateModelFailures: true))
+        XCTAssertTrue(busy.hasPrefix("I took the photo, but couldn't get an answer about it"), busy)
+        XCTAssertTrue(busy.contains("unavailable"), busy)
+
+        let tooLarge = try XCTUnwrap(SpokenErrorPolicy.photoFailureLine(
+            for: RequestContextBudget.CapacityError(), photoCaptured: true, narrateModelFailures: true))
+        XCTAssertTrue(tooLarge.contains("too large"), tooLarge)
+
+        // Narration off: the error's own sentence when it reads as one, never a JSON body.
+        let plain = try XCTUnwrap(SpokenErrorPolicy.photoFailureLine(
+            for: LLMError.apiError(provider: "Gemini", statusCode: 503, message: #"{"error":{"status":"UNAVAILABLE"}}"#),
+            photoCaptured: true, narrateModelFailures: false))
+        XCTAssertTrue(plain.hasPrefix("I took the photo, but couldn't get an answer about it."), plain)
+        XCTAssertFalse(plain.contains("{"), plain)
+    }
+}

@@ -5084,6 +5084,14 @@ class AppState: ObservableObject, AppStateProtocol {
                 : "Photo failed: \(error.localizedDescription)"
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.error)
+            // A tap or a quick action has no screen in view on the glasses: say it, as the voice
+            // photo turn does. Never after a cancellation — the wearer stopped it.
+            if !Task.isCancelled,
+               let line = SpokenErrorPolicy.photoFailureLine(
+                   for: error, photoCaptured: photoCaptured,
+                   narrateModelFailures: Config.narrateModelSwitchesEnabled) {
+                await speechService.speak(line)
+            }
         }
         TurnRecorder.endTurn()
     }
@@ -5393,6 +5401,14 @@ class AppState: ObservableObject, AppStateProtocol {
                 : "Photo failed: \(error.localizedDescription)"
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.error)
+            // A tap or a quick action has no screen in view on the glasses: say it, as the voice
+            // photo turn does. Never after a cancellation — the wearer stopped it.
+            if !Task.isCancelled,
+               let line = SpokenErrorPolicy.photoFailureLine(
+                   for: error, photoCaptured: photoCaptured,
+                   narrateModelFailures: Config.narrateModelSwitchesEnabled) {
+                await speechService.speak(line)
+            }
         }
         TurnRecorder.endTurn()
     }
@@ -6280,16 +6296,16 @@ class AppState: ObservableObject, AppStateProtocol {
                             // Speak a human sentence; raw error internals (DecodingError
                             // paths, model module trees) go to the log only — live-traced:
                             // TTS once read out "keyNotFound(path: [language_model…".
-                            let reason = SpokenErrorPolicy.spokenReason(for: error)
+                            let line = SpokenErrorPolicy.photoFailureLine(
+                                for: error, photoCaptured: photoCaptured,
+                                narrateModelFailures: Config.narrateModelSwitchesEnabled)
                             if photoCaptured {
                                 self.lastResponse = "Photo analysis failed: \(error.localizedDescription)"
-                                await self.speechService.speak(
-                                    "I took the photo, but couldn't get an answer about it. \(reason)")
                             } else {
                                 PrivacyLog.camera(.glasses, .captureRejected, error: SafeErrorSummary(error))
                                 self.lastResponse = "Photo failed: \(error.localizedDescription)"
-                                await self.speechService.speak("Sorry, I couldn't take a photo. \(reason)")
                             }
+                            if let line { await self.speechService.speak(line) }
                         },
                         finish: {
                             self.isProcessing = false

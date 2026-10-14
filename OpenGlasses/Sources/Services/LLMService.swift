@@ -3507,6 +3507,39 @@ class LLMService: ObservableObject {
         return request
     }
 
+    /// Per-request timeout for a Gemini `generateContent` turn. Long enough for a thinking turn
+    /// with a photo; short enough that a stalled request leaves room for the retry below and the
+    /// cascade after it.
+    static let geminiTurnTimeout: TimeInterval = 30
+
+    /// The wait before retrying a failed Gemini request, or nil when it should not be retried.
+    /// Only a service that said it was busy — 429, or a 5xx such as 503 UNAVAILABLE — and only
+    /// once: a second failure goes to the cascade. A timeout is not retried here, since it has
+    /// already spent the whole allowance; nor is a cancellation.
+    nonisolated static func geminiRetryDelay(after error: Error, failures: Int) -> Double? {
+        guard case LLMError.apiError(_, let status, _, _) = error,
+              status == 429 || (500...599).contains(status) else { return nil }
+        return RealtimeReconnect.Policy(maxAttempts: 1, maxBackoffSeconds: 2).delay(forAttempt: failures)
+    }
+
+    /// Run a Gemini request with `geminiRetryDelay`'s single retry. The backoff sleep throws on
+    /// cancellation, so a barge-in during the wait ends the turn rather than sending again.
+    func withGeminiTransientRetry<T>(_ attempt: () async throws -> T) async throws -> T {
+        var failures = 0
+        while true {
+            try Task.checkCancellation()
+            do {
+                return try await attempt()
+            } catch {
+                failures += 1
+                guard let delay = Self.geminiRetryDelay(after: error, failures: failures) else { throw error }
+                PrivacyLog.model(.streamRetry, provider: PrivacyToken("gemini"), attempt: failures,
+                                 seconds: delay, error: SafeErrorSummary(error))
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+        }
+    }
+
     private func sendGemini(_ text: String, systemPrompt: String, config: ModelConfig, includeTools: Bool, imageData: Data?, smallContext: Bool = false) async throws -> String {
         // Validate credentials up front (fast-fail before touching history); each tool-loop
         // turn re-resolves below so a token refreshed mid-loop is picked up.
@@ -3532,8 +3565,9 @@ class LLMService: ObservableObject {
             performTurn: { [weak self] in
                 guard let self else { throw LLMError.invalidResponse("Gemini") }
                 // Re-resolve endpoint + auth per turn — a Vertex token refreshed mid-tool-loop
-                // is picked up; AI Studio resolves to the same keyed URL every time.
-                var request = try await self.geminiRequest(for: config)
+                // is picked up; AI Studio resolves to the same keyed URL every time. A deliberate
+                // timeout: the system default is 60 s, which a stalled turn spent in full.
+                var request = try await self.geminiRequest(for: config, timeout: Self.geminiTurnTimeout)
 
                 // Gemini format: system instruction + contents array
                 var contents: [[String: Any]] = []
@@ -3589,23 +3623,27 @@ class LLMService: ObservableObject {
 
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-                let (data, response) = try await URLSession.shared.data(for: request)
+                // One bounded retry when the service says it is busy (503 UNAVAILABLE, 429, 5xx).
+                let data: Data = try await self.withGeminiTransientRetry { () async throws -> Data in
+                    let (payload, response) = try await URLSession.shared.data(for: request)
 
-                guard let httpResponse = response as? HTTPURLResponse,
-                      httpResponse.statusCode == 200 else {
-                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    let rejection = ProviderRejection(response: response, body: data,
-                                                      provider: config.llmProvider)
-                    if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let errorObj = errorJson["error"] as? [String: Any],
-                       let errorMsg = errorObj["message"] as? String {
-                        PrivacyLog.model(.apiError, provider: PrivacyToken("gemini"),
-                                         status: statusCode)
+                    guard let httpResponse = response as? HTTPURLResponse,
+                          httpResponse.statusCode == 200 else {
+                        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                        let rejection = ProviderRejection(response: response, body: payload,
+                                                          provider: config.llmProvider)
+                        if let errorJson = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+                           let errorObj = errorJson["error"] as? [String: Any],
+                           let errorMsg = errorObj["message"] as? String {
+                            PrivacyLog.model(.apiError, provider: PrivacyToken("gemini"),
+                                             status: statusCode)
+                            throw LLMError.apiError(provider: "Gemini", statusCode: statusCode,
+                                                    message: errorMsg, rejection: rejection)
+                        }
                         throw LLMError.apiError(provider: "Gemini", statusCode: statusCode,
-                                                message: errorMsg, rejection: rejection)
+                                                message: nil, rejection: rejection)
                     }
-                    throw LLMError.apiError(provider: "Gemini", statusCode: statusCode,
-                                            message: nil, rejection: rejection)
+                    return payload
                 }
 
                 guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

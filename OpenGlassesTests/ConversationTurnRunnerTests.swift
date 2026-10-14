@@ -99,6 +99,40 @@ final class ConversationTurnRunnerTests: XCTestCase {
         XCTAssertEqual(log.value, ["send", "onCancelled", "finish"])
     }
 
+    /// A model-switch notice plays alongside the request; the reply waits for it, after `accept`
+    /// and before `speak` (so the wait is not counted as synthesis time).
+    func testReplyWaitsForAnnouncementBeforeSpeaking() async {
+        let log = Box<[String]>([])
+        var deps = recordingDeps(into: log)
+        deps.waitForAnnouncement = { log.value.append("waitForAnnouncement") }
+        await ConversationTurnRunner.run(deps)
+        XCTAssertEqual(log.value, ["send", "postProcess(raw)", "accept(raw)", "waitForAnnouncement",
+                                   "speak(raw)", "finish"])
+    }
+
+    /// The failure line is speech too: it must not cut off a notice still playing.
+    func testErrorLineWaitsForAnnouncement() async {
+        let log = Box<[String]>([])
+        var deps = recordingDeps(into: log, send: { throw TestError() })
+        deps.waitForAnnouncement = { log.value.append("waitForAnnouncement") }
+        await ConversationTurnRunner.run(deps)
+        XCTAssertEqual(log.value, ["send", "waitForAnnouncement", "onError(TestError)", "finish"])
+    }
+
+    /// A barge-in while the reply waits for the notice must still stop the reply being spoken.
+    func testCancellationWhileWaitingForAnnouncementNeverSpeaks() async {
+        let log = Box<[String]>([])
+        var deps = recordingDeps(into: log)
+        deps.waitForAnnouncement = {
+            log.value.append("waitForAnnouncement")
+            withUnsafeCurrentTask { $0?.cancel() }
+        }
+        let turnDeps = deps
+        await Task { await ConversationTurnRunner.run(turnDeps) }.value
+        XCTAssertEqual(log.value, ["send", "postProcess(raw)", "accept(raw)", "waitForAnnouncement",
+                                   "onCancelled", "finish"])
+    }
+
     /// A barge-in that lands while `accept` is persisting/mirroring the response must still stop
     /// the reply from being spoken.
     func testCancellationAfterAcceptNeverSpeaks() async {

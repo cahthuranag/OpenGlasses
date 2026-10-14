@@ -36,6 +36,10 @@ enum ConversationTurnRunner {
         /// Always runs last, on every path: restore any temporary model switch, clear the
         /// processing state, resume listening or return to the wake word.
         let finish: @MainActor () async -> Void
+        /// Wait out a model-switch notice still playing (`TurnAnnouncement.waitUntilSpoken`), so
+        /// the reply or the failure line does not cut it off mid-word. The notice plays alongside
+        /// the request, so by the time the model answers it has usually already finished.
+        var waitForAnnouncement: @MainActor () async -> Void = {}
     }
 
     @MainActor
@@ -58,6 +62,10 @@ enum ConversationTurnRunner {
             try Task.checkCancellation()
             await deps.accept(response)
             try Task.checkCancellation()
+            // Before the hand-off, not inside `speak`: waiting on the app's own notice is not
+            // synthesis time, and `ttsRequested → firstAudio` is the synthesis measure.
+            await deps.waitForAnnouncement()
+            try Task.checkCancellation()
             TurnRecorder.handOffToSpeech()
             await deps.speak(response)
         } catch is CancellationError {
@@ -65,6 +73,8 @@ enum ConversationTurnRunner {
             deps.onCancelled()
         } catch {
             TurnRecorder.noteAbandoned()
+            // The failure line is speech too: it must not cut off a notice still playing.
+            if !Task.isCancelled { await deps.waitForAnnouncement() }
             // URLSession/provider SDKs can surface their own error after the parent task was
             // cancelled. The interruption wins: do not speak an error after a user barge-in.
             if Task.isCancelled {

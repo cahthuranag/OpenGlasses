@@ -346,14 +346,14 @@ final class TurnRecorderTests: XCTestCase {
 
     // MARK: - Non-model work inside the backend leg
 
-    /// The model-switch notice blocks until it has finished *playing*, inside commit →
-    /// generationDone. Charged to the model, a cascade turn reports ~8 s of "model latency" when 3 s
-    /// of it was the app talking to the wearer.
+    /// App work that blocks the request — a cold location fix — sits inside commit →
+    /// generationDone. Charged to the model, a turn reports ~8 s of "model latency" when 3 s of it
+    /// was the app waiting on itself.
     func testAppWorkInsideTheBackendLegIsHeldOutOfModelTime() {
         TurnRecorder.beginTurn()
         TurnRecorder.mark(.commit, at: at(0))
         clock.now = at(3.0)
-        TurnRecorder.addNonModelTime(since: at(0))      // the spoken "switching to Groq"
+        TurnRecorder.addNonModelTime(since: at(0))      // a cold location fix
         TurnRecorder.mark(.firstToken, at: at(4.0))
         TurnRecorder.mark(.generationDone, at: at(8.0))
 
@@ -363,7 +363,7 @@ final class TurnRecorderTests: XCTestCase {
         XCTAssertEqual(turn?.modelSeconds ?? .nan, 5.0, accuracy: 0.001)
         XCTAssertEqual(turn?.timeToFirstToken ?? .nan, 4.0, accuracy: 0.001)
         XCTAssertEqual(turn?.modelTimeToFirstToken ?? .nan, 1.0, accuracy: 0.001,
-                       "the model had 1 s of the 4 s; the rest was the app speaking")
+                       "the model had 1 s of the 4 s; the rest was the app's own wait")
     }
 
     // MARK: - Mic route

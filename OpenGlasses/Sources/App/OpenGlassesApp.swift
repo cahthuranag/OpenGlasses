@@ -2170,6 +2170,17 @@ class AppState: ObservableObject, AppStateProtocol {
     /// BK P2c — set once the model-switch notice has been spoken this turn, so a multi-hop cascade
     /// narrates only the FIRST fallback hop (not once per hop). Reset at the start of every turn.
     private var didNarrateModelSwitchThisTurn = false
+    /// The model-switch notice, played alongside the request instead of in front of it. Every turn
+    /// path that speaks a reply or a failure line waits on it first, so neither cuts it off; when it
+    /// ends with the turn still working, the thinking sound `speak` stopped comes back.
+    private lazy var turnAnnouncement = TurnAnnouncement(
+        speak: { [weak self] text in
+            await self?.speechService.speak(text, urgency: .low, mirrorToHUD: true)
+        },
+        onFinished: { [weak self] in
+            guard let self, self.isProcessing else { return }
+            self.speechService.startThinkingSound()
+        })
     @Published private(set) var isProcessing: Bool = false {
         didSet {
             // CO Item 3: stamped here rather than at the ten-odd assignment sites, so a new one
@@ -4356,6 +4367,7 @@ class AppState: ObservableObject, AppStateProtocol {
     func stopSpeakingAndResume() {
         PrivacyLog.app(.playbackStopped)
         speechService.stopSpeaking()
+        turnAnnouncement.cancel()
         isProcessing = false
         speechService.stopThinkingSound()
         // Stay in conversation — listen for follow-up right away
@@ -4380,6 +4392,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // short; the same teardown from a disconnect is one they never got. Both used to be
         // `stopSpeaking()`, and the replay offer depends on telling them apart.
         speechService.stopSpeaking(interruption: .bargeIn)
+        turnAnnouncement.cancel()
         let interruptedTask = currentLLMTask
         interruptedTask?.cancel()
         currentLLMTask = nil
@@ -4425,6 +4438,7 @@ class AppState: ObservableObject, AppStateProtocol {
             wakeWordService.stopListening()
             transcriptionService.stopRecording()
             speechService.stopSpeaking()
+            turnAnnouncement.cancel()
             liveActivityManager.end()
             // Release any audio pause held by an in-flight conversation so Music/Podcasts resume.
             Task { await wakeWordService.forceResumeOtherAudio() }
@@ -4455,6 +4469,7 @@ class AppState: ObservableObject, AppStateProtocol {
         currentLLMTask?.cancel()
         currentLLMTask = nil
         speechService.stopSpeaking()
+        turnAnnouncement.cancel()
         isProcessing = false
         speechService.stopThinkingSound()
         isListening = false
@@ -4474,6 +4489,7 @@ class AppState: ObservableObject, AppStateProtocol {
         currentLLMTask = nil
         transcriptionService.stopRecording()
         speechService.stopSpeaking()
+        turnAnnouncement.cancel()
         speechService.stopThinkingSound()
         isProcessing = false
         await returnToWakeWord()
@@ -4489,6 +4505,7 @@ class AppState: ObservableObject, AppStateProtocol {
         }
         PrivacyLog.app(.playbackStopped)
         speechService.stopSpeaking()
+        turnAnnouncement.cancel()
         speechService.stopThinkingSound()
         isProcessing = false
         await handleWakeWordDetected(manual: true)
@@ -5002,6 +5019,8 @@ class AppState: ObservableObject, AppStateProtocol {
                 conversationStore.appendMessage(role: "user", content: userLog)
                 conversationStore.appendMessage(role: "assistant", content: response)
             }
+            // A switch notice still playing finishes before the reply takes the speaker.
+            await turnAnnouncement.waitUntilSpoken()
             isProcessing = false
             speechService.stopThinkingSound()
             TurnRecorder.handOffToSpeech()
@@ -5062,6 +5081,8 @@ class AppState: ObservableObject, AppStateProtocol {
                 conversationStore.appendMessage(role: "assistant", content: response)
             }
 
+            // A switch notice still playing finishes before the reply takes the speaker.
+            await turnAnnouncement.waitUntilSpoken()
             isProcessing = false
             speechService.stopThinkingSound()
             startStopListener()
@@ -5090,6 +5111,7 @@ class AppState: ObservableObject, AppStateProtocol {
                let line = SpokenErrorPolicy.photoFailureLine(
                    for: error, photoCaptured: photoCaptured,
                    narrateModelFailures: Config.narrateModelSwitchesEnabled) {
+                await turnAnnouncement.waitUntilSpoken()
                 await speechService.speak(line)
             }
         }
@@ -5379,6 +5401,8 @@ class AppState: ObservableObject, AppStateProtocol {
                 conversationStore.appendMessage(role: "assistant", content: response)
             }
 
+            // A switch notice still playing finishes before the reply takes the speaker.
+            await turnAnnouncement.waitUntilSpoken()
             isProcessing = false
             speechService.stopThinkingSound()
             startStopListener()
@@ -5407,6 +5431,7 @@ class AppState: ObservableObject, AppStateProtocol {
                let line = SpokenErrorPolicy.photoFailureLine(
                    for: error, photoCaptured: photoCaptured,
                    narrateModelFailures: Config.narrateModelSwitchesEnabled) {
+                await turnAnnouncement.waitUntilSpoken()
                 await speechService.speak(line)
             }
         }
@@ -6311,7 +6336,8 @@ class AppState: ObservableObject, AppStateProtocol {
                             self.isProcessing = false
                             self.speechService.stopThinkingSound()
                             await self.resumeListeningOrReturnToWakeWord(ensureEngine: true)
-                        }
+                        },
+                        waitForAnnouncement: { await self.turnAnnouncement.waitUntilSpoken() }
                     ))
                 }
                 return true
@@ -6517,8 +6543,15 @@ class AppState: ObservableObject, AppStateProtocol {
     /// BK P2c — speak a one-line "switching model" notice on the FIRST fallback hop of a turn.
     /// Only wired into the interactive voice/typed send paths (notification triage / scheduled runs
     /// don't cascade), so this is inherently interactive-only per Plan W's presence principle.
-    /// Restarts the thinking sound afterwards — `speak()` stops it, and the turn hasn't finished, so
-    /// without this the retry latency would be the exact dead air the notice was meant to fill.
+    ///
+    /// Returns without waiting for playback: the cascade has already picked the next model, and its
+    /// request runs while the notice plays. `turnAnnouncement` restarts the thinking sound when the
+    /// notice ends (`speak()` stops it), and the turn's reply waits for the notice to finish.
+    ///
+    /// Plan CU P1 used to bracket the notice with `TurnRecorder.addNonModelTime`, because an awaited
+    /// notice sat inside the commit → generationDone span as the app talking, not the model. It no
+    /// longer blocks the backend leg — the model is working the whole time it plays — so taking it
+    /// out of `modelSeconds` would now under-report the model instead.
     @MainActor
     private func narrateModelSwitch(from: ModelConfig?, to: ModelConfig?,
                                     failure: ModelFallbackChain.FailureClass) async {
@@ -6528,15 +6561,7 @@ class AppState: ObservableObject, AppStateProtocol {
             from: .init(name: from?.name ?? "the model", isLocal: from?.llmProvider == .local),
             to: .init(name: to?.name ?? "another model", isLocal: to?.llmProvider == .local),
             failure: failure)
-        // Plan CU P1: `speak` blocks until the whole notice has been *played*, and it sits inside
-        // the turn's commit → generationDone span while being the app talking, not the model.
-        // Unbracketed, a cascade turn charges those 2–4 s to `modelSeconds` and to TTFT and reports
-        // ~8 s of "model latency" for a 5 s model — the same mis-attribution `toolSeconds` exists to
-        // prevent, and it fires exactly when someone is looking at the panel.
-        let narrationStartedAt = Date()
-        await speechService.speak(phrase, urgency: .low, mirrorToHUD: true)
-        TurnRecorder.addNonModelTime(since: narrationStartedAt)
-        speechService.startThinkingSound()
+        turnAnnouncement.announce(phrase)
     }
 
     /// Plan CG: render an explicit multiple-choice reply as band-selectable HUD buttons.
@@ -6838,12 +6863,12 @@ class AppState: ObservableObject, AppStateProtocol {
             PrivacyLog.model(.agentSelected, model: PrivacyToken(id),
                              detail: PrivacyToken(classification.modelTier.rawValue))
             // BK P2c: narrate the auto-routing switch too, so the principle holds everywhere a model
-            // changes under the user (not just on failure). Speaks before the thinking sound starts.
+            // changes under the user (not just on failure). Started, not awaited: the request below
+            // runs while it plays, and the thinking sound waits for it to end.
             if Config.narrateModelSwitchesEnabled, let dest = tierModel {
                 didNarrateModelSwitchThisTurn = true
-                await speechService.speak(
-                    ModelSwitchNarrator.routingPhrase(to: .init(name: dest.name, isLocal: dest.llmProvider == .local)),
-                    urgency: .low, mirrorToHUD: true)
+                turnAnnouncement.announce(
+                    ModelSwitchNarrator.routingPhrase(to: .init(name: dest.name, isLocal: dest.llmProvider == .local)))
             }
         case .keepCurrent:
             break
@@ -6851,7 +6876,7 @@ class AppState: ObservableObject, AppStateProtocol {
 
         // Normal message — send to LLM (with Tier 1 prompt trimming via sections)
         isProcessing = true
-        speechService.startThinkingSound()
+        if !turnAnnouncement.isPending { speechService.startThinkingSound() }
 
         // See the photo turn: the generation this answer belongs to.
         let turnGeneration = conversationReset.currentGeneration
@@ -7027,7 +7052,8 @@ class AppState: ObservableObject, AppStateProtocol {
                     // Plan GE: a route change that waited for this turn applies now.
                     await connectivityHandoff.turnEnded()
                     await resumeListeningOrReturnToWakeWord(ensureEngine: true)
-                }
+                },
+                waitForAnnouncement: { [self] in await turnAnnouncement.waitUntilSpoken() }
             ))
         }
     }
@@ -7235,7 +7261,8 @@ class AppState: ObservableObject, AppStateProtocol {
                     isProcessing = false
                     speechService.stopThinkingSound()
                     await connectivityHandoff.turnEnded()   // Plan GE: apply a change that waited
-                }
+                },
+                waitForAnnouncement: { [self] in await turnAnnouncement.waitUntilSpoken() }
             ))
         }
         currentLLMTask = turn

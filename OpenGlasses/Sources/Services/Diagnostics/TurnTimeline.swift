@@ -218,12 +218,12 @@ struct TurnTimeline: Identifiable, Equatable {
     private(set) var heldSeconds: TimeInterval
     /// Seconds inside the backend leg that the app spent on its own work rather than on the model.
     ///
-    /// Two contributors today, and the rule generalises to any third: the spoken model-switch
-    /// notice (`narrateModelSwitch` blocks until the whole "switching to Groq" utterance has
-    /// *played*, 2–4 s, mid-cascade) and the cold location fix (up to 1.5 s, after commit and
-    /// before the backend is touched). Neither is a tool call and neither is a frame grab, so
-    /// without a bucket of their own they land in `modelSeconds` and in TTFT and read as a slow
-    /// model — the same mis-attribution `toolSeconds` exists to prevent, one layer over, and it
+    /// One contributor today, and the rule generalises to any other: the cold location fix (up to
+    /// 1.5 s, after commit and before the backend is touched). The spoken model-switch notice used
+    /// to be a second, while it blocked the cascade until it had played; it now plays alongside
+    /// the request, so the model is working through it and it is not held out. Work like this is
+    /// not a tool call and not a frame grab, so without a bucket of its own it lands in
+    /// `modelSeconds` and in TTFT and reads as a slow model — the same mis-attribution `toolSeconds` exists to prevent, one layer over, and it
     /// fires exactly when someone is looking at the panel. **Any `await` between `commit` and the
     /// backend call that isn't the model belongs here.**
     private(set) var nonModelSeconds: TimeInterval

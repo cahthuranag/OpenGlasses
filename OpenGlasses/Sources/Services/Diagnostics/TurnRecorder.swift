@@ -386,7 +386,7 @@ enum TurnRecorder {
         update { $0.addToolTime(now().timeIntervalSince(start)) }
     }
 
-    /// App-side work inside the backend leg — a spoken model-switch notice, a cold location fix —
+    /// App-side work that blocks the backend leg — a cold location fix —
     /// timed from `start`. See `TurnTimeline.nonModelSeconds` for why it is held apart.
     static func addNonModelTime(since start: Date) {
         update { $0.addNonModelTime(now().timeIntervalSince(start)) }

@@ -232,12 +232,16 @@ enum VanStockHandover {
             var changes: [BaselineChange] = []
             var seen = Set<String>()
             for row in read.rows {
-                // A baseline gives a standard; a sheet that only has quantities uses those.
-                guard let standard = row.standard ?? row.onHand else { continue }
+                // A baseline gives a standard. Only a sheet with no Standard column at all, which is
+                // not one of our own, has its quantities read as the standard: otherwise every
+                // export of a van's stock would look like a baseline of what happened to be on board.
+                let hasStandardColumn = row.standardCell != nil
+                guard let standard = hasStandardColumn ? row.standard : (read.isOwn ? nil : row.onHand) else { continue }
                 let existing = VanStockSheet.match(id: row.itemID, number: row.partNumber,
                                                    description: row.description, in: log)
                 if let item = existing {
-                    guard seen.insert(item.id).inserted, item.standard != standard || item.standardSetBy != .base else { continue }
+                    // The same figure is no change, whoever set it.
+                    guard seen.insert(item.id).inserted, item.standard != standard else { continue }
                     let kind: BaselineChange.Kind
                     if let current = item.standard, item.standardSetBy == .van, current != standard {
                         kind = .keptOwn(current: current)

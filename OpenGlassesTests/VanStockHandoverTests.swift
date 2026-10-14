@@ -269,6 +269,19 @@ final class VanStockHandoverTests: XCTestCase {
         XCTAssertEqual(applied.item(id: "motor")?.standard, 1)
     }
 
+    func testAnExportOfAVansOwnStockIsNotABaselineAndQuantitiesAreOnlyReadAsStandardsInAForeignSheet() throws {
+        // Our own workbook: it has a Standard column, so its quantities are never read as standards,
+        // and a figure the truck already has is no change whoever set it.
+        let own = try handover(of: van, van: nil, at: time(400))
+        XCTAssertEqual(try VanStockHandover.baseline(from: own, log: van).get(), [])
+
+        // A sheet from somebody else with only quantities: those are the standard load.
+        let quantitiesOnly = [XLSXReader.Sheet(name: "Truck load", isHidden: false, rows: [
+            ["Part", "Description", "Qty"], ["00123", "Flame sensor", "9"],
+        ])]
+        XCTAssertEqual(try VanStockHandover.baseline(from: quantitiesOnly, log: van).get().map(\.standard), [9])
+    }
+
     // MARK: By voice
 
     func testToppingUpEverythingExceptWhatCouldNotBeFilled() {

@@ -537,8 +537,10 @@ van, Send stock to base and Previous list on the Van Stock screen. As built:
   closed were asked at their own close.
 - **`set_standard`** is how a kept extra joins the truck's standard load, and how a technician
   sets one by voice. Zero clears it.
-- **The baseline import** takes a standard from a Standard column, or from the quantity column
-  of a sheet that has only quantities.
+- **The baseline import** takes a standard from a Standard column. Only a sheet from somebody
+  else that has no Standard column has its quantities read as the standard, so an export of a
+  van's own stock is never mistaken for a baseline. A figure the truck already has is no change,
+  whoever set it.
 - **Returned extras are listed in the message** ("Returned this shift"), which answers Open
   question 9 in base's favour until somebody says otherwise.
 - **Under Medical Compliance mode** `send_to_base` is refused and the screen's Send is disabled.

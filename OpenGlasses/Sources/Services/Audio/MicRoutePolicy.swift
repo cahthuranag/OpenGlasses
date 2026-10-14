@@ -148,6 +148,22 @@ enum MicRoutePolicy {
         return options
     }
 
+    /// The one retry when the conversation session could not be made active with `failed`.
+    ///
+    /// A non-mixable session cannot be activated while the app is in the background
+    /// (`AVAudioSession.ErrorCode.cannotInterruptOthers`): the wake phrase is heard with the phone
+    /// in a pocket, the switch is refused, and the hands-free port then reads as missing and the
+    /// turn — and its reply — landed on the phone mic and loudspeaker. The retry asks for the same
+    /// route **mixable**: the shape the idle Bluetooth hold already activates in the background
+    /// (`categoryOptions(for:mixWithOthers: true)`, hands-free still allowed), so the turn stays on
+    /// the glasses at the cost of not pausing other audio. Nil when `failed` was already mixable —
+    /// there is nothing gentler left to ask for.
+    static func conversationRetryOptions(for route: MicRoute,
+                                         failed: AVAudioSession.CategoryOptions) -> AVAudioSession.CategoryOptions? {
+        guard !failed.contains(.mixWithOthers) else { return nil }
+        return categoryOptions(for: route, mixWithOthers: true)
+    }
+
     /// Which of the session's available inputs to prefer, as an index into
     /// `ports` (nil = leave the system default alone).
     ///

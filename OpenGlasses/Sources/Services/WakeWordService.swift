@@ -336,18 +336,33 @@ class WakeWordService: NSObject, ObservableObject {
         // a phone-mic idle session lists no hands-free inputs at all.
         let wanted = TurnMicHandoff.target(micRoute: configured, glassesStoodDown: glasses.stoodDown,
                                            glassesWorn: glasses.worn, routePortAvailable: true)
+        let session = AVAudioSession.sharedInstance()
+        // Read before the switch: the idle listener on this route moments ago means a port missing
+        // straight after it is the switch settling, not the glasses leaving.
+        let portSeenBeforeSwitch = wanted != .phone
+            && (preferredPort(for: wanted, in: session) != nil || resolvedInput(session) == wanted)
         // Omitting mixWithOthers/duckOthers causes iOS to interrupt (pause) other audio apps.
         // .default (NOT .measurement): .measurement disables system audio processing/gain, which
         // makes TTS playback extremely quiet on the iPhone speaker.
         // BJ PR2: the blocking setCategory→setActive runs off-main through the coordinator's
         // `reconfigure` (no deactivate-first, no fallback — the hand-tuned options are preserved).
-        try? await sessionCoordinator().reconfigure(
-            category: .playAndRecord, mode: .default,
-            options: MicRoutePolicy.conversationCategoryOptions(for: wanted))
-        let session = AVAudioSession.sharedInstance()
-        let available = wanted == .phone || preferredPort(for: wanted, in: session) != nil
+        // A refusal (backgrounded: cannotInterruptOthers) is logged and retried once mixable.
+        await reconfigureForConversation(on: wanted)
+        var available = wanted == .phone || preferredPort(for: wanted, in: session) != nil
+        if TurnMicHandoff.shouldRecheckPort(wanted: wanted, portAvailable: available,
+                                            portSeenBeforeSwitch: portSeenBeforeSwitch) {
+            for _ in 0..<TurnMicHandoff.portRecheckAttempts where !available {
+                try? await Task.sleep(nanoseconds: UInt64(TurnMicHandoff.portRecheckInterval * 1_000_000_000))
+                available = preferredPort(for: wanted, in: session) != nil
+            }
+        }
         let target = TurnMicHandoff.target(micRoute: configured, glassesStoodDown: glasses.stoodDown,
                                            glassesWorn: glasses.worn, routePortAvailable: available)
+        if let reason = TurnMicHandoff.phoneReason(micRoute: configured, glassesStoodDown: glasses.stoodDown,
+                                                   glassesWorn: glasses.worn, routePortAvailable: available) {
+            PrivacyLog.audio(.wakeWord, .turnMicOnPhone, route: PrivacyToken(configured.rawValue),
+                             detail: PrivacyToken(reason.rawValue))
+        }
         turnMicRoute = target
         // Cheap, non-blocking route hints stay inline.
         if MicRoutePolicy.shouldOverrideToSpeaker(outputs: session.currentRoute.outputs.map(\.portType)) {
@@ -357,6 +372,32 @@ class WakeWordService: NSObject, ObservableObject {
             preferBuiltInMic(session)
         } else {
             preferConfiguredMicIfAvailable(session, route: target)
+        }
+    }
+
+    /// The conversation session for `route`: non-mixable first, as always. If iOS refuses it —
+    /// in the background a non-mixable activation fails with `cannotInterruptOthers` — the failure
+    /// is logged and the same route is asked for once more mixable
+    /// (`MicRoutePolicy.conversationRetryOptions`), so the turn keeps its hands-free mic rather
+    /// than reading the port as gone and dropping to the phone. A second failure is logged too and
+    /// the caller carries on with whatever the session now lists, as before.
+    private func reconfigureForConversation(on route: MicRoute) async {
+        let options = MicRoutePolicy.conversationCategoryOptions(for: route)
+        do {
+            try await sessionCoordinator().reconfigure(category: .playAndRecord, mode: .default, options: options)
+            return
+        } catch {
+            PrivacyLog.audio(.wakeWord, .sessionConfigureFailed, route: PrivacyToken(route.rawValue),
+                             detail: PrivacyToken("conversation"), error: SafeErrorSummary(error))
+        }
+        guard let retry = MicRoutePolicy.conversationRetryOptions(for: route, failed: options) else { return }
+        do {
+            try await sessionCoordinator().reconfigure(category: .playAndRecord, mode: .default, options: retry)
+            PrivacyLog.audio(.wakeWord, .sessionFallbackActivated, route: PrivacyToken(route.rawValue),
+                             detail: PrivacyToken("conversationMixable"))
+        } catch {
+            PrivacyLog.audio(.wakeWord, .sessionConfigureFailed, route: PrivacyToken(route.rawValue),
+                             detail: PrivacyToken("conversationMixable"), error: SafeErrorSummary(error))
         }
     }
 
@@ -1095,9 +1136,7 @@ class WakeWordService: NSObject, ObservableObject {
     /// The deadline passed: move this turn to the phone mic (conversation shape, no hands-free
     /// link). A2DP output stays allowed, so a reply still plays in the wearer's AirPods or glasses.
     private func fallBackToPhoneMic(_ session: AVAudioSession) async {
-        try? await sessionCoordinator().reconfigure(
-            category: .playAndRecord, mode: .default,
-            options: MicRoutePolicy.conversationCategoryOptions(for: .phone))
+        await reconfigureForConversation(on: .phone)
         preferBuiltInMic(session)
         if MicRoutePolicy.shouldOverrideToSpeaker(outputs: session.currentRoute.outputs.map(\.portType)) {
             try? session.overrideOutputAudioPort(.speaker)

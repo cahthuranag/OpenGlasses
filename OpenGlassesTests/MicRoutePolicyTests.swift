@@ -192,4 +192,33 @@ final class BluetoothRouteRecognitionTests: XCTestCase {
         XCTAssertEqual(phone, MicRoutePolicy.categoryOptions(for: .phone, mixWithOthers: false))
         XCTAssertFalse(phone.contains(.bluetoothHighQualityRecording))
     }
+
+    // MARK: - Backgrounded conversation switch
+
+    /// A non-mixable activation is refused in the background (cannotInterruptOthers). The retry
+    /// keeps the route's hands-free option — the turn must stay on the glasses — and is mixable,
+    /// the shape the idle Bluetooth hold already activates in the background.
+    func testARefusedConversationSwitchIsRetriedMixableOnTheSameRoute() {
+        for route in [MicRoute.glasses, .headset] {
+            let failed = MicRoutePolicy.conversationCategoryOptions(for: route)
+            let retry = MicRoutePolicy.conversationRetryOptions(for: route, failed: failed)
+            XCTAssertNotNil(retry, "\(route)")
+            XCTAssertTrue(retry?.contains(.allowBluetoothHFP) == true, "the glasses mic stays allowed (\(route))")
+            XCTAssertTrue(retry?.contains(.mixWithOthers) == true)
+            XCTAssertTrue(retry?.contains(.allowBluetoothA2DP) == true)
+            XCTAssertEqual(retry, IdleAudioPlan(listen: .bluetooth(route), speechGate: false,
+                                                strictGate: false).categoryOptions,
+                           "the background-proven idle hold shape")
+        }
+        let phone = MicRoutePolicy.conversationRetryOptions(
+            for: .phone, failed: MicRoutePolicy.conversationCategoryOptions(for: .phone))
+        XCTAssertEqual(phone, MicRoutePolicy.categoryOptions(for: .phone, mixWithOthers: true))
+        XCTAssertFalse(phone?.contains(.allowBluetoothHFP) == true, "phone still means phone mic")
+    }
+
+    func testAnAlreadyMixableFailureIsNotRetried() {
+        let mixable = MicRoutePolicy.categoryOptions(for: .glasses, mixWithOthers: true)
+        XCTAssertNil(MicRoutePolicy.conversationRetryOptions(for: .glasses, failed: mixable),
+                     "one retry: nothing gentler is left to ask for")
+    }
 }

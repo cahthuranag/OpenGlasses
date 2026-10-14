@@ -1456,6 +1456,9 @@ enum PrivacyLog {
         case idlePlanSelected, turnMicLive, turnMicFellBack, handedBack, handBackDeferred
         case gateOpened, gateClosed, gateAbandoned, highQualityRecordingSupport
         case engineConfigurationChanged, ownRouteChangeIgnored, replyRouteSelected
+        // A turn whose conversation mic is Bluetooth put on the phone, with the reason token
+        // (`stoodDown`, `notWorn`, `portUnavailable`).
+        case turnMicOnPhone
     }
 
     @discardableResult

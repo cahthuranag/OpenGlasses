@@ -60,6 +60,9 @@ final class DataStoreRegistryTests: XCTestCase {
             "which model is selected — a preference over downloaded assets",
         "OpenGlasses/Sources/Services/GeminiLive/GeminiLiveModelCatalog.swift":
             "cached list of the provider's own model names",
+        "OpenGlasses/Sources/Services/LLM/RequestContextBudget.swift":
+            "cached context-window sizes from the ChatGPT model catalog: the provider's model ids "
+                + "and integers, filed under a hash of the account id, never the id itself",
 
         // Operational bookkeeping with no content in it.
         "OpenGlasses/Sources/Services/Privacy/CapabilityDefaultMigration.swift":

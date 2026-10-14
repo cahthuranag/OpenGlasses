@@ -898,6 +898,55 @@ class AppState: ObservableObject, AppStateProtocol {
         if glassesStoodDown != glassesUse.stoodDown { glassesStoodDown = glassesUse.stoodDown }
         if isConnected != glassesUse.inUse { isConnected = glassesUse.inUse }
         appliedGlassesUse = glassesUse
+        widgetGlassesWriter.setNeedsWrite()
+    }
+
+    // MARK: - Home Screen widget glasses line
+
+    /// Tells the Home Screen widget about the glasses: link, stand-down, name, live battery and
+    /// charging. It writes only when the reading changes and folds a burst into one reload.
+    private lazy var widgetGlassesWriter = WidgetGlassesStatusWriter(
+        store: AppGroupWidgetGlassesStore(),
+        reloader: WidgetCenterReloader()
+    ) { [unowned self] date in
+        WidgetGlassesSnapshot.reading(link: self.glassesUse.link,
+                                      stoodDown: self.glassesUse.stoodDown,
+                                      glassesAdded: self.glassesAdded,
+                                      deviceName: self.glassesService.deviceName,
+                                      battery: self.glassesService.batteryLevel,
+                                      charging: self.glassesService.isCharging,
+                                      at: date)
+    }
+    private var widgetGlassesRestampTask: Task<Void, Never>?
+
+    /// Feed the widget writer from the service's live readings, and re-confirm a live snapshot
+    /// while the app runs so the widget does not age it out from under a running app.
+    private func wireWidgetGlassesStatus() {
+        // The phase arrives through `applyGlassesUse()`. These fire in willSet; the writer reads
+        // the service back at the end of its window, by when the new value is in place.
+        let tokens: [Any] = [
+            glassesService.$batteryLevel.removeDuplicates().sink { [weak self] _ in
+                self?.widgetGlassesWriter.setNeedsWrite()
+            },
+            glassesService.$isCharging.removeDuplicates().sink { [weak self] _ in
+                self?.widgetGlassesWriter.setNeedsWrite()
+            },
+            glassesService.$deviceName.removeDuplicates().sink { [weak self] _ in
+                self?.widgetGlassesWriter.setNeedsWrite()
+            },
+        ]
+        cancellables.append(contentsOf: tokens)
+        widgetGlassesRestampTask?.cancel()
+        widgetGlassesRestampTask = Task { @MainActor [weak self] in
+            // A live snapshot is re-stamped by `restampAfter + restampCheckInterval` at the
+            // latest — inside `staleAfter` whatever the phase of this loop.
+            let interval = UInt64(WidgetGlassesPresentation.restampCheckInterval * 1_000_000_000)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: interval)
+                guard let self else { return }
+                self.widgetGlassesWriter.setNeedsWrite()
+            }
+        }
     }
 
     // MARK: - Glasses link cue (Plan HX P0)
@@ -3473,6 +3522,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 self?.applyGlassesPhase(phase)
             }
         cancellables.append(glassesPhaseToken)
+        wireWidgetGlassesStatus()
         // Why the glasses are not connected (Plan HX P3). The service reads the Meta camera
         // permission through the camera, whose backend is where the SDK's permission calls are,
         // and a camera start that learns something about it on its way says so here.

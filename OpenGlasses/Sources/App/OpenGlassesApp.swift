@@ -5000,6 +5000,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // turn spine — they predate `ConversationTurnRunner` and never went through it, so the marks
         // that spine carries have to be repeated here or every "take a photo and…" turn is invisible.
         TurnRecorder.beginTurn()
+        TurnRecorder.noteAppPrompt()   // the prompt is the button's or quick action's, not words said
         didNarrateModelSwitchThisTurn = false
         do {
             TurnRecorder.mark(.commit)
@@ -5050,6 +5051,7 @@ class AppState: ObservableObject, AppStateProtocol {
         speechService.startThinkingSound()
         TurnRecorder.beginTurn()
         TurnRecorder.mark(.commit)
+        TurnRecorder.noteAppPrompt()   // the prompt is the button's or quick action's, not words said
         didNarrateModelSwitchThisTurn = false
         // Which half failed decides what the wearer is told: a camera that would not take the
         // picture, or a picture taken that no model could answer about (a missing key, an
@@ -5364,6 +5366,7 @@ class AppState: ObservableObject, AppStateProtocol {
         speechService.startThinkingSound()
         TurnRecorder.beginTurn()
         TurnRecorder.mark(.commit)
+        TurnRecorder.noteAppPrompt()   // the prompt is the button's or quick action's, not words said
         didNarrateModelSwitchThisTurn = false
         // Which half failed decides what the wearer is told: a camera that would not take the
         // picture, or a picture taken that no model could answer about (a missing key, an

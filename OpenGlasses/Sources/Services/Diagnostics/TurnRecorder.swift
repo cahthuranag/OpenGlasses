@@ -332,6 +332,11 @@ enum TurnRecorder {
         update { $0.imageSent = true }
     }
 
+    /// The words going to the model are the app's own prompt, not the wearer's.
+    static func noteAppPrompt() {
+        update { $0.appPrompt = true }
+    }
+
     /// The effective reasoning setting of the request that served this turn (Plan GB P0). A token
     /// from `ReasoningPolicy.Resolution.token`, never text. Last-wins across a cascade.
     static func noteReasoning(_ token: String) {

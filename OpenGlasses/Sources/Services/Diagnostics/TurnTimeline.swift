@@ -163,6 +163,10 @@ struct TurnTimeline: Identifiable, Equatable {
     var transcriber: ASREngine?
     /// A camera frame or photo went to the model with this turn.
     var imageSent = false
+    /// The words that went to the model were the app's own fixed prompt, not anything the wearer
+    /// said or typed: a photo taken from a button or a quick action ("Describe what you see in
+    /// this image."). A support report must not call them "the words above".
+    var appPrompt = false
     /// The effective reasoning setting the request carried (Plan GB P0), as `ReasoningPolicy`'s
     /// content-free token: `none`, `medium`, `default-medium`, `unsupported`, `na`.
     var reasoning: String?

@@ -338,6 +338,126 @@ final class JobTranscriptExportTests: XCTestCase {
         XCTAssertEqual(lines, ["10:00  · Turn handled by the app (no AI request)"])
     }
 
+    // MARK: - Where a turn sits
+
+    private static func at(_ hour: Int, _ minute: Int, _ second: TimeInterval) -> Date {
+        date(26, hour, minute).addingTimeInterval(second)
+    }
+
+    /// A turn whose time is the end of speech, not a hand-off to the model: one that failed before
+    /// it reached a model, or one the app answered by other means.
+    private static func speechEndTrace(at date: Date, thread: String, failed: Bool) -> TurnTrace {
+        var timeline = TurnTimeline(backend: .direct(.anthropic), model: "claude")
+        timeline.mark(.speechEnd, at: date)
+        timeline.threadId = thread
+        if failed { timeline.failure = SafeErrorSummary(category: .rateLimited, code: 429) }
+        return TurnTrace(timeline, sealedAt: date.addingTimeInterval(8))
+    }
+
+    /// A tester's report printed each turn above the question it answered: the turn is stamped at
+    /// the end of speech, and the question is saved a moment later, once the recogniser is done.
+    func testATurnStampedBeforeItsQuestionWasSavedSitsUnderThatQuestion() {
+        let conversation = JobTranscriptExport.Conversation(threadId: "t", title: "Weather", lines: [
+            .init(timestamp: Self.at(10, 6, 4), speaker: .technician, text: "How is the weather",
+                  imageAttached: false),
+            .init(timestamp: Self.at(10, 10, 3), speaker: .technician,
+                  text: "How is the weather how is the weather today", imageAttached: false),
+            .init(timestamp: Self.at(10, 10, 9), speaker: .assistant, text: "Sunny all afternoon.",
+                  imageAttached: false),
+        ])
+        let details = JobTranscriptExport.Details(traces: [
+            Self.speechEndTrace(at: Self.at(10, 6, 2), thread: "t", failed: true),
+            Self.speechEndTrace(at: Self.at(10, 10, 1), thread: "t", failed: false),
+        ])
+        let document = JobTranscriptExport.document(
+            scope: .conversation(threadId: "t"), jobs: [], exportedAt: Self.date(26, 18, 0),
+            timeZone: Self.utc, conversations: [conversation], details: details)
+        let lines = document.body.components(separatedBy: "\n")
+
+        let first = lines.firstIndex(of: "10:06  Technician: How is the weather")!
+        let failed = lines.firstIndex(of: "10:06  · AI turn FAILED — rateLimited#429")!
+        let second = lines.firstIndex(of: "10:10  Technician: How is the weather how is the weather today")!
+        let answered = lines.firstIndex(of: "10:10  · AI turn answered")!
+        let reply = lines.firstIndex(of: "10:10  Assistant: Sunny all afternoon.")!
+        XCTAssertEqual([first, failed, second, answered, reply], [first, failed, second, answered, reply].sorted())
+        XCTAssertEqual(document.turnCount, 2)
+    }
+
+    /// A handed-off turn's question was saved before the hand-off. A question asked after it — the
+    /// wearer trying again once the error was spoken — is the next turn's, however soon it came.
+    func testAHandedOffTurnNeverMovesUnderALaterQuestion() {
+        var timeline = TurnTimeline(backend: .direct(.anthropic), model: "claude")
+        timeline.mark(.commit, at: Self.at(9, 13, 0))
+        timeline.failure = SafeErrorSummary(category: .rateLimited, code: 429)
+        let trace = TurnTrace(timeline, sealedAt: Self.at(9, 13, 1))
+        let asked = [Self.at(9, 12, 58), Self.at(9, 13, 6)]
+        XCTAssertEqual(JobTranscriptExport.placement(of: trace, askedAt: asked), Self.at(9, 13, 0))
+    }
+
+    /// A turn whose time is the end of speech belongs to the question saved just after it, not to
+    /// one asked well after it.
+    func testASpeechEndTurnOnlyReachesTheQuestionSavedJustAfterIt() {
+        let trace = Self.speechEndTrace(at: Self.at(9, 0, 0), thread: "t", failed: true)
+        XCTAssertEqual(JobTranscriptExport.placement(of: trace, askedAt: [Self.at(9, 0, 2)]),
+                       Self.at(9, 0, 2))
+        XCTAssertEqual(JobTranscriptExport.placement(of: trace, askedAt: [Self.at(8, 59, 0), Self.at(9, 0, 30)]),
+                       Self.at(9, 0, 0), "a question half a minute on is the next turn's")
+    }
+
+    /// Traces written before `atHandOff` existed: what the turn recorded says whether it reached
+    /// a model.
+    func testATraceWrittenBeforeTheHandOffFlagIsPlacedFromWhatItRecorded() {
+        var handedOff = Self.trace(at: Self.at(9, 13, 0))
+        handedOff.atHandOff = nil
+        XCTAssertEqual(JobTranscriptExport.placement(of: handedOff, askedAt: [Self.at(9, 12, 58), Self.at(9, 13, 6)]),
+                       Self.at(9, 13, 0))
+
+        var timeline = TurnTimeline()
+        timeline.mark(.speechEnd, at: Self.at(9, 0, 0))
+        var handled = TurnTrace(timeline, sealedAt: Self.at(9, 0, 3))
+        handled.atHandOff = nil
+        XCTAssertEqual(JobTranscriptExport.placement(of: handled, askedAt: [Self.at(9, 0, 2)]), Self.at(9, 0, 2))
+    }
+
+    /// A photo taken from a button saves its line once the answer is in, after the hand-off, and
+    /// sends the app's own prompt — there are no words of the wearer's above it.
+    func testAButtonPhotoTurnSitsUnderItsLineAndSaysWhatWasSent() {
+        var timeline = TurnTimeline(backend: .direct(.anthropic), model: "claude")
+        timeline.mark(.commit, at: Self.at(9, 0, 0))
+        timeline.mark(.generationDone, at: Self.at(9, 0, 6))
+        timeline.imageSent = true
+        timeline.appPrompt = true
+        timeline.promptBlocks = [.init(name: "system prompt", characters: 4000)]
+        timeline.threadId = "t"
+        let trace = TurnTrace(timeline, sealedAt: Self.at(9, 0, 9))
+        XCTAssertEqual(trace.appPrompt, true)
+
+        let conversation = JobTranscriptExport.Conversation(threadId: "t", title: "Photo", lines: [
+            .init(timestamp: Self.at(9, 0, 6.4), speaker: .technician, text: "[Photo taken manually]",
+                  imageAttached: false),
+            .init(timestamp: Self.at(9, 0, 6.5), speaker: .assistant, text: "A condensing unit.",
+                  imageAttached: false),
+        ])
+        let document = JobTranscriptExport.document(
+            scope: .conversation(threadId: "t"), jobs: [], exportedAt: Self.date(26, 18, 0),
+            timeZone: Self.utc, conversations: [conversation], details: .init(traces: [trace]))
+        let lines = document.body.components(separatedBy: "\n")
+
+        let asked = lines.firstIndex(of: "09:00  Technician: [Photo taken manually]")!
+        let turn = lines.firstIndex(of: "09:00  · AI turn answered")!
+        let reply = lines.firstIndex(of: "09:00  Assistant: A condensing unit.")!
+        XCTAssertLessThan(asked, turn)
+        XCTAssertLessThan(turn, reply)
+        XCTAssertTrue(document.body.contains(
+            "sent: the app's photo prompt + instructions of 4000 characters (system prompt 4000) + a photo"))
+        XCTAssertFalse(document.body.contains("the words above"))
+    }
+
+    func testATurnOnTheWearersWordsStillPointsAtThem() {
+        let lines = JobTranscriptExport.render(Self.trace(at: Self.at(9, 13, 0)), stamp: "09:13")
+        XCTAssertTrue(lines.contains { $0.contains("sent: the words above + instructions") })
+    }
+
     func testLinesCanBeLimitedToAWindow() {
         let messages = [Self.message("user", "yesterday", at: Self.date(25, 23, 0)),
                         Self.message("user", "today", at: Self.date(26, 8, 0))]

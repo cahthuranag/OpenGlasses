@@ -622,23 +622,58 @@ enum JobTranscriptExport {
         return times
     }
 
-    /// Transcript lines, AI turns and job-log events in one time order. At equal times a line
-    /// comes before the turn that answered it, and the turn before any event it caused.
+    /// Transcript lines, AI turns and job-log events in one time order. Each turn sits under the
+    /// technician line it answered (`placement(of:askedAt:)`); at equal times a line comes before
+    /// the turn that answered it, and the turn before any event it caused. Every entry keeps its
+    /// own time stamp.
     private static func timeline(lines: [Line], traces: [TurnTrace], events: [SessionLogger.Event],
                                  reference: Date, format: Format) -> [String] {
-        typealias Entry = (at: Date, rank: Int, render: (String) -> [String])
+        typealias Entry = (at: Date, rank: Int, stamp: Date, render: (String) -> [String])
         var entries: [Entry] = []
         for line in lines {
-            entries.append((line.timestamp, 0, { stamp in render(line, stamp: stamp) }))
+            entries.append((line.timestamp, 0, line.timestamp, { stamp in render(line, stamp: stamp) }))
         }
+        let askedAt = lines.filter { $0.speaker == .technician }.map(\.timestamp).sorted()
         for trace in traces {
-            entries.append((trace.at, 1, { stamp in render(trace, stamp: stamp) }))
+            entries.append((placement(of: trace, askedAt: askedAt), 1, trace.at,
+                            { stamp in render(trace, stamp: stamp) }))
         }
         for event in events {
-            entries.append((event.timestamp, 2, { stamp in render(event, stamp: stamp) }))
+            entries.append((event.timestamp, 2, event.timestamp, { stamp in render(event, stamp: stamp) }))
         }
-        entries.sort { $0.at == $1.at ? $0.rank < $1.rank : $0.at < $1.at }
-        return entries.flatMap { $0.render(format.sameDayTime($0.at, as: reference)) }
+        // Stable on full ties, so two turns placed under one line keep their own order.
+        let ordered = entries.enumerated().sorted { a, b in
+            if a.element.at != b.element.at { return a.element.at < b.element.at }
+            if a.element.rank != b.element.rank { return a.element.rank < b.element.rank }
+            if a.element.stamp != b.element.stamp { return a.element.stamp < b.element.stamp }
+            return a.offset < b.offset
+        }
+        return ordered.flatMap { $0.element.render(format.sameDayTime($0.element.stamp, as: reference)) }
+    }
+
+    /// How far after a turn's own time its question can have been saved, when that time is not the
+    /// hand-off to the model: the end of speech, which comes before the recogniser's final text and
+    /// the app saving it.
+    static let questionLead: TimeInterval = 10
+
+    /// Where a turn's block goes in the timeline: under the technician line it answered.
+    ///
+    /// Sorting by the turn's own time is not enough. That time is the hand-off to the model when
+    /// there was one, but otherwise the end of speech — before the question is saved — so a turn
+    /// the app handled itself, or one that failed before the hand-off, printed above its own line
+    /// (and "sent: the words above" then pointed at the wrong words). A photo taken from a button
+    /// saves its line only once the answer is in, after the hand-off. So the question is the latest
+    /// technician line no later than the turn could have saved it: the end of the reply for a
+    /// handed-off turn, `questionLead` after its time for any other. A question later than the
+    /// turn's own time moves the turn down to sit just under it; an earlier one changes nothing.
+    static func placement(of trace: TurnTrace, askedAt: [Date]) -> Date {
+        let handedOff = trace.atHandOff
+            ?? (trace.backend != nil || !trace.promptBlocks.isEmpty
+                || trace.timeToFirstToken != nil || trace.backendSeconds != nil)
+        let reach = handedOff ? (trace.backendSeconds ?? 0) + 1 : questionLead
+        let latest = trace.at.addingTimeInterval(reach)
+        guard let asked = askedAt.last(where: { $0 <= latest }), asked > trace.at else { return trace.at }
+        return asked
     }
 
     private static func render(_ line: Line, stamp: String) -> [String] {
@@ -677,7 +712,11 @@ enum JobTranscriptExport {
         if !whoLine.isEmpty { out.append(indent + "model: " + whoLine) }
 
         if !trace.promptBlocks.isEmpty || trace.imageSent {
-            var sent = "sent: the words above"
+            // A photo from a button or quick action went with the app's own prompt; there are no
+            // words of the wearer's above it to point at.
+            var sent = trace.appPrompt == true
+                ? (trace.imageSent ? "sent: the app's photo prompt" : "sent: the app's prompt")
+                : "sent: the words above"
             if !trace.promptBlocks.isEmpty {
                 let parts = trace.promptBlocks.map { "\($0.name) \($0.characters)" }.joined(separator: ", ")
                 sent += " + instructions of \(trace.promptCharacters) characters (\(parts))"

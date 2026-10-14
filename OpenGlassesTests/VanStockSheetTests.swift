@@ -1,0 +1,252 @@
+import XCTest
+@testable import OpenGlasses
+
+/// Plan IH P3 — the van's stock out to a workbook, and an edited workbook back as a proposal.
+final class VanStockSheetTests: XCTestCase {
+
+    private let start = Date(timeIntervalSince1970: 1_790_000_000)
+    private var calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }()
+
+    private func time(_ minutes: Int) -> Date { start.addingTimeInterval(Double(minutes) * 60) }
+
+    private var log: VanStockLog {
+        var log = VanStockLog()
+        log.addItem(id: "sensor", number: "00123", description: "Flame sensor", minimum: 2, standard: 6,
+                    standardSetBy: .base, bin: "left shelf 2", verified: true, batch: "b0")
+        log.addItem(id: "igniter", number: "14E65", description: "Igniter", batch: "b0")
+        log.addItem(id: "cable", description: "Thermostat cable", unit: .m, standard: 30, standardSetBy: .van, batch: "b0")
+        log.addItem(id: "fuse", description: "Fuse", batch: "b0")
+        log.record(.counted, itemID: "sensor", quantity: 4, at: time(0), batch: "b0", source: .typed)
+        log.record(.loaded, itemID: "igniter", quantity: 1, at: time(0), batch: "b0", source: .spoken)
+        log.record(.used, itemID: "igniter", quantity: 2, at: time(1), batch: "b1", source: .spoken, jobReference: "job-2031")
+        log.record(.ordered, itemID: "igniter", quantity: 1, at: time(2), batch: "b2", source: .spoken, requestID: "r1")
+        log.record(.loaded, itemID: "cable", quantity: 40, at: time(3), batch: "b3", source: .spoken)
+        return log
+    }
+
+    private func verify(_ number: String) -> TaskPart { TaskPart(number: number, verified: number == "22B22") }
+
+    /// The exported stock sheet, as rows of text, ready to be edited.
+    private func exported(_ log: VanStockLog, at date: Date) throws -> [XLSXReader.Sheet] {
+        try XLSXReader.read(VanStockSheet.data(log, exportedAt: date, calendar: calendar)).get()
+    }
+
+    private func column(_ column: VanStockSheet.Column) -> Int { VanStockSheet.Column.allCases.firstIndex(of: column)! }
+
+    /// Replace one cell of the stock sheet, by the line's description.
+    private func editing(_ sheets: [XLSXReader.Sheet], line: String, _ target: VanStockSheet.Column,
+                         to value: String) -> [XLSXReader.Sheet] {
+        sheets.map { sheet in
+            guard sheet.name == VanStockSheet.stockSheetName else { return sheet }
+            let rows = sheet.rows.map { row -> [String] in
+                guard row.count > column(.description), row[column(.description)] == line else { return row }
+                var padded = row + Array(repeating: "", count: max(0, VanStockSheet.Column.allCases.count - row.count))
+                padded[column(target)] = value
+                return padded
+            }
+            return XLSXReader.Sheet(name: sheet.name, isHidden: sheet.isHidden, rows: rows)
+        }
+    }
+
+    // MARK: Out
+
+    func testTheStockSheetSaysWhatTheLogSays() throws {
+        let sheets = try exported(log, at: time(10))
+        XCTAssertEqual(sheets.map(\.name), ["Van stock", "History", "Avenkin"])
+        XCTAssertEqual(sheets.map(\.isHidden), [false, false, true])
+        let stock = sheets[0].rows
+        XCTAssertEqual(stock[0], VanStockSheet.Column.allCases.map(\.rawValue))
+        // Flame sensor, Fuse, Igniter, Thermostat cable — by name.
+        XCTAssertEqual(stock[1], ["00123", "Flame sensor", "each", "4", "6", "Base", "2", "2", "", "", "left shelf 2",
+                                  "2026-09-21 14:13", "sensor"])
+        XCTAssertEqual(stock[2], ["", "Fuse", "each", "", "", "", "", "", "", "", "", "", "fuse"],
+                       "a line nothing was recorded against has no figure, not a zero")
+        XCTAssertEqual(stock[3][column(.partNumber)], "14E65", "not 1.4E+66")
+        XCTAssertEqual(stock[3][column(.onHand)], "0")
+        XCTAssertEqual(stock[3][column(.onOrder)], "1")
+        XCTAssertEqual(stock[3][column(.needsCount)], "Yes")
+        XCTAssertEqual(stock[4][column(.unit)], "m")
+        XCTAssertEqual(stock[4][column(.standardSetBy)], "This truck")
+        XCTAssertEqual(stock[4][column(.toTopUp)], "0", "above its standard load is not short")
+    }
+
+    func testTheHistoryIsNewestFirstAndTheFileIsNamedForTheDay() throws {
+        let history = try exported(log, at: time(10))[1].rows
+        XCTAssertEqual(history[0], ["When", "Line", "What", "Quantity", "Job", "How"])
+        XCTAssertEqual(history[1][1...3].map { $0 }, ["Thermostat cable", "loaded", "40"])
+        XCTAssertEqual(history[3], ["2026-09-21 14:14", "Igniter (14E65)", "used", "2", "job-2031", "spoken"])
+        XCTAssertEqual(VanStockSheet.fileName(exportedAt: time(10), calendar: calendar), "Van stock 2026-09-21.xlsx")
+    }
+
+    // MARK: Back, unchanged
+
+    func testAWorkbookNobodyEditedProposesNothing() throws {
+        let proposal = try VanStockSheet.proposal(from: exported(log, at: time(10)), log: log).get()
+        // The igniter line is unreliable, so its figure is offered as a count even unchanged.
+        XCTAssertEqual(proposal.counts.map(\.itemID), ["igniter"])
+        XCTAssertEqual(proposal.edits, [])
+        XCTAssertEqual(proposal.newLines, [])
+        XCTAssertEqual(proposal.missing, [])
+        XCTAssertEqual(proposal.refusals, [])
+    }
+
+    // MARK: Back, edited
+
+    func testAChangedFigureIsACountAndAChangedDetailIsAnEdit() throws {
+        var sheets = try exported(log, at: time(10))
+        sheets = editing(sheets, line: "Flame sensor", .onHand, to: "5")
+        sheets = editing(sheets, line: "Flame sensor", .minimum, to: "")
+        sheets = editing(sheets, line: "Flame sensor", .bin, to: "right shelf 1")
+        sheets = editing(sheets, line: "Fuse", .onHand, to: "12.0")
+        sheets = editing(sheets, line: "Fuse", .standard, to: "10")
+        let proposal = try VanStockSheet.proposal(from: sheets, log: log).get()
+
+        let counts = Dictionary(uniqueKeysWithValues: proposal.counts.map { ($0.itemID, $0) })
+        XCTAssertEqual(counts["sensor"], .init(itemID: "sensor", name: "Flame sensor (00123)", from: 4, to: 5, movedSinceExport: false))
+        XCTAssertEqual(counts["fuse"], .init(itemID: "fuse", name: "Fuse", from: nil, to: 12, movedSinceExport: false))
+        let edits = Dictionary(uniqueKeysWithValues: proposal.edits.map { ($0.itemID, $0.changes) })
+        XCTAssertEqual(edits["sensor"], [.minimum(nil), .bin("right shelf 1")], "an emptied cell in our own sheet clears it")
+        XCTAssertEqual(edits["fuse"], [.standard(10, setBy: .van)])
+
+        var applied = log
+        VanStockSheet.apply(proposal, to: &applied, at: time(20), batch: "import", verify: verify)
+        XCTAssertEqual(applied.level(of: "sensor").onHand, 5)
+        XCTAssertEqual(applied.level(of: "sensor").provenance, .counted)
+        XCTAssertEqual(applied.level(of: "fuse").onHand, 12)
+        XCTAssertNil(applied.item(id: "sensor")?.minimum)
+        XCTAssertEqual(applied.item(id: "sensor")?.bin, "right shelf 1")
+        XCTAssertEqual(applied.item(id: "fuse")?.standardSetBy, .van)
+        XCTAssertEqual(Set(applied.movements.suffix(from: log.movements.count).map(\.batch)), ["import"])
+        XCTAssertEqual(Set(applied.movements.suffix(from: log.movements.count).map(\.source)), [.sheet])
+
+        // One undo takes the whole import back.
+        applied.undoLastBatch(at: time(21), batch: "undo", source: .typed)
+        XCTAssertEqual(applied.levels, log.levels)
+        XCTAssertEqual(applied.items, log.items)
+    }
+
+    func testANewRowIsANewLineAndItsNumberIsLookedUp() throws {
+        var sheets = try exported(log, at: time(10))
+        sheets[0] = XLSXReader.Sheet(name: sheets[0].name, isHidden: false,
+                                     rows: sheets[0].rows + [["22B22", "Hot surface igniter", "", "3", "4", "", "", "1", "", "", "tray"],
+                                                             ["", "", "", "2"]])
+        let proposal = try VanStockSheet.proposal(from: sheets, log: log).get()
+        XCTAssertEqual(proposal.newLines, [.init(row: 6, number: "22B22", description: "Hot surface igniter", unit: .each,
+                                                 onHand: 3, minimum: 1, standard: 4, bin: "tray")])
+        XCTAssertEqual(proposal.refusals, [.init(row: 7, reason: .noPartNumberOrDescription)])
+
+        var applied = log
+        VanStockSheet.apply(proposal, to: &applied, at: time(20), batch: "import", verify: verify)
+        let added = try XCTUnwrap(applied.items.first { $0.number == "22B22" })
+        XCTAssertTrue(added.verified)
+        XCTAssertEqual(applied.level(of: added.id).onHand, 3)
+        XCTAssertEqual(added.standardSetBy, .van)
+    }
+
+    func testAMissingRowChangesNothingAndIsListed() throws {
+        var sheets = try exported(log, at: time(10))
+        sheets[0] = XLSXReader.Sheet(name: sheets[0].name, isHidden: false,
+                                     rows: sheets[0].rows.filter { $0.count < 2 || $0[1] != "Flame sensor" })
+        let proposal = try VanStockSheet.proposal(from: sheets, log: log).get()
+        XCTAssertEqual(proposal.missing.map(\.id), ["sensor"])
+        var applied = log
+        VanStockSheet.apply(proposal, to: &applied, at: time(20), batch: "import", verify: verify)
+        XCTAssertEqual(applied.level(of: "sensor").onHand, 4, "a deleted row never zeroes a line")
+        XCTAssertNotNil(applied.item(id: "sensor"))
+    }
+
+    func testALineThatMovedSinceTheExportOffersBothFigures() throws {
+        var sheets = try exported(log, at: time(10))
+        sheets = editing(sheets, line: "Flame sensor", .onHand, to: "6")
+        var later = log
+        later.record(.used, itemID: "sensor", quantity: 1, at: time(15), batch: "b9", source: .spoken)
+        let proposal = try VanStockSheet.proposal(from: sheets, log: later).get()
+        let count = try XCTUnwrap(proposal.counts.first { $0.itemID == "sensor" })
+        XCTAssertEqual(count.from, 3)
+        XCTAssertEqual(count.to, 6)
+        XCTAssertTrue(count.movedSinceExport)
+
+        var sheetWins = later
+        VanStockSheet.apply(proposal, to: &sheetWins, at: time(20), batch: "import", verify: verify)
+        XCTAssertEqual(sheetWins.level(of: "sensor").onHand, 6, "the sheet's figure is the default")
+
+        var phoneWins = later
+        VanStockSheet.apply(proposal, to: &phoneWins, keepingPhoneFigure: ["sensor"], at: time(20), batch: "import", verify: verify)
+        XCTAssertEqual(phoneWins.level(of: "sensor").onHand, 3)
+    }
+
+    func testBadFiguresAndUnitsAreRefusedLineByLine() throws {
+        var sheets = try exported(log, at: time(10))
+        sheets = editing(sheets, line: "Flame sensor", .onHand, to: "-1")
+        sheets = editing(sheets, line: "Fuse", .onHand, to: "2.5")
+        sheets = editing(sheets, line: "Thermostat cable", .unit, to: "reel")
+        let proposal = try VanStockSheet.proposal(from: sheets, log: log).get()
+        XCTAssertEqual(proposal.refusals.map(\.row), [2, 3, 5])
+        XCTAssertEqual(proposal.refusals.map(\.reason), [.notAWholeNumber(column: "On hand", value: "-1"),
+                                                         .notAWholeNumber(column: "On hand", value: "2.5"),
+                                                         .unknownUnit("reel")])
+        XCTAssertEqual(proposal.counts.map(\.itemID), ["igniter"], "the refused lines change nothing")
+    }
+
+    func testARepeatedLineIsRefused() throws {
+        var sheets = try exported(log, at: time(10))
+        sheets[0] = XLSXReader.Sheet(name: sheets[0].name, isHidden: false, rows: sheets[0].rows + [sheets[0].rows[1]])
+        let proposal = try VanStockSheet.proposal(from: sheets, log: log).get()
+        XCTAssertEqual(proposal.refusals, [.init(row: 6, reason: .repeatsRow(2))])
+    }
+
+    // MARK: The file type
+
+    func testTheWorkbookTypeIsDeclaredSoTheSystemOffersThisAppBesideASpreadsheetApp() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("OpenGlasses/Info.plist")
+        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil) as? [String: Any])
+        let documents = try XCTUnwrap(plist["CFBundleDocumentTypes"] as? [[String: Any]])
+        let workbook = try XCTUnwrap(documents.first {
+            ($0["LSItemContentTypes"] as? [String])?.contains("org.openxmlformats.spreadsheetml.sheet") == true
+        })
+        XCTAssertEqual(workbook["LSHandlerRank"] as? String, "Alternate", "a spreadsheet app stays the default")
+        XCTAssertEqual(plist["LSSupportsOpeningDocumentsInPlace"] as? Bool, false, "read as a copy, never edited in place")
+        XCTAssertTrue(VanStockSheet.isWorkbook(URL(fileURLWithPath: "/tmp/Van stock 2026-10-14.XLSX")))
+        XCTAssertFalse(VanStockSheet.isWorkbook(URL(fileURLWithPath: "/tmp/stock.xlsm")))
+        XCTAssertFalse(VanStockSheet.isWorkbook(URL(string: "https://example.com/stock.xlsx")!))
+    }
+
+    // MARK: A sheet we did not write
+
+    func testAForeignSheetIsMatchedByItsHeaders() throws {
+        let foreign = [XLSXReader.Sheet(name: "Truck 4", isHidden: false, rows: [
+            ["Shop stock list"],
+            ["Item", "Desc.", "Qty", "Min"],
+            ["00123", "Flame sensor", "9", ""],
+            ["", "fuse", "20", "5"],
+            ["77-100", "Contactor", "2", ""],
+        ])]
+        let proposal = try VanStockSheet.proposal(from: foreign, log: log).get()
+        XCTAssertEqual(proposal.counts.map(\.itemID), ["sensor", "fuse"])
+        XCTAssertEqual(proposal.counts.map(\.to), [9, 20])
+        XCTAssertEqual(proposal.edits, [.init(itemID: "fuse", name: "Fuse", changes: [.description("fuse"), .minimum(5)])])
+        XCTAssertEqual(proposal.edits.first { $0.itemID == "sensor" }, nil, "an empty cell in a foreign sheet clears nothing")
+        XCTAssertEqual(proposal.newLines.map(\.number), ["77-100"])
+        XCTAssertEqual(proposal.missing, [], "a foreign sheet is not expected to list every line")
+    }
+
+    func testWordsInAPartColumnAreADescription() throws {
+        let foreign = [XLSXReader.Sheet(name: "Stock", isHidden: false, rows: [
+            ["Part", "Quantity"], ["Wire nuts", "50"], ["0456", "3"],
+        ])]
+        let proposal = try VanStockSheet.proposal(from: foreign, log: VanStockLog()).get()
+        XCTAssertEqual(proposal.newLines.map(\.description), ["Wire nuts", ""])
+        XCTAssertEqual(proposal.newLines.map(\.number), [nil, "0456"])
+    }
+
+    func testASheetWithNoRecognisableHeaderIsRefused() {
+        let foreign = [XLSXReader.Sheet(name: "Notes", isHidden: false, rows: [["Remember the ladder"], ["14T65", "2"]])]
+        XCTAssertEqual(VanStockSheet.proposal(from: foreign, log: log), .failure(.noRecognisableHeader))
+        XCTAssertEqual(VanStockSheet.proposal(from: Data("not a workbook".utf8), log: log), .failure(.workbook(.notAWorkbook)))
+    }
+}

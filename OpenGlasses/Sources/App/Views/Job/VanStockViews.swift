@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// What is on the van, on the phone (Plan IH §5).
 ///
@@ -13,6 +14,9 @@ struct VanStockView: View {
 
     @State private var search = ""
     @State private var confirmingReset = false
+    @State private var importing = false
+    @State private var sharing: ShareItem?
+    @State private var exportFailed = false
 
     private var rows: [VanStockRow] { VanStockRows.rows(store.log, query: search) }
 
@@ -44,8 +48,34 @@ struct VanStockView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button("Undo") { _ = service.undo(source: .typed) }
                     .disabled(!service.canUndo)
-                    .accessibilityHint("Takes back the last entry, spoken or typed.")
+                    .accessibilityHint("Takes back the last entry, spoken or typed, or the last spreadsheet import.")
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button {
+                    importing = true
+                } label: {
+                    Label("Import a spreadsheet…", systemImage: "square.and.arrow.down")
+                }
+                .disabled(store.isUnreadable)
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                Button(action: export) {
+                    Label("Export as a spreadsheet…", systemImage: "square.and.arrow.up")
+                }
+                .disabled(store.isUnreadable || store.log.isEmpty)
+            }
+        }
+        // The review is raised by the app, wherever the file came from; this only picks one.
+        .fileImporter(isPresented: $importing,
+                      allowedContentTypes: [UTType(filenameExtension: VanStockSheet.fileExtension) ?? .data]) { result in
+            guard case .success(let url) = result else { return }
+            Task { @MainActor in VanStockImportService.shared.open(url) }
+        }
+        .sheet(item: $sharing) { item in
+            ShareSheet(items: item.items, onComplete: item.onComplete)
+        }
+        .alert("The spreadsheet couldn't be made", isPresented: $exportFailed) {
+            Button("OK") {}
         }
         .confirmationDialog("Start the van list again?", isPresented: $confirmingReset, titleVisibility: .visible) {
             Button("Start again", role: .destructive) { store.removeAll() }
@@ -55,12 +85,25 @@ struct VanStockView: View {
         }
     }
 
+    /// Write the workbook to a temporary file, share it, and remove the file when the share is
+    /// done — sent, saved or cancelled alike.
+    private func export() {
+        guard let url = service.exportFile() else {
+            exportFailed = true
+            return
+        }
+        sharing = ShareItem(items: [url]) { _ in
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        }
+    }
+
     private var emptySection: some View {
         Section {
             Text("Nothing on the van yet.")
                 .font(.headline)
             Text("Tell the assistant what you've loaded — “I've loaded four flame sensors” — or count what's on the shelves.")
                 .foregroundStyle(.secondary)
+            Button("Import a spreadsheet…") { importing = true }
         }
     }
 

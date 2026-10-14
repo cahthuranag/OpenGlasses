@@ -206,6 +206,9 @@ enum AppStateProvider {
 struct OpenGlassesApp: App {
     @UIApplicationDelegateAdaptor(OpenGlassesAppDelegate.self) private var appDelegate
     @StateObject private var appState = AppState()
+    /// A van stock spreadsheet being read in (Plan IH P3). Observed here because the review it
+    /// raises is the app's sheet, whichever way the file arrived.
+    @StateObject private var vanStockImports = VanStockImportService.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var isHipaaLocked = Config.hipaaMode
 
@@ -340,6 +343,18 @@ struct OpenGlassesApp: App {
                         }
                     }
 
+                // A spreadsheet of van stock, opened from Mail or Files or picked on the Van Stock
+                // screen (Plan IH P3). Reading it changes nothing — this raises the review, and its
+                // one button is the write.
+                Color.clear
+                    .sheet(isPresented: Binding(
+                        get: { vanStockImports.stage != .idle },
+                        set: { if !$0 { vanStockImports.dismiss() } })) {
+                        VanStockImportReviewSheet(service: vanStockImports) {
+                            appState.openJobs(.list)
+                        }
+                    }
+
                 // Several facts matched a spoken forget or correction (Plan GG): the Memory screen,
                 // filtered to the phrase the wearer used, so they choose.
                 Color.clear
@@ -419,6 +434,12 @@ struct OpenGlassesApp: App {
                     // the shape of a phishing message.
                     if JobFileService.isJobFile(url) {
                         Task { @MainActor in appState.jobFiles.open(url) }
+                        return
+                    }
+                    // A spreadsheet of van stock (Plan IH P3): read into a review, never applied
+                    // from the file alone.
+                    if VanStockSheet.isWorkbook(url) {
+                        Task { @MainActor in vanStockImports.open(url) }
                         return
                     }
                     // An Avenkin Office setup file. Only a carrier: both documents in it are

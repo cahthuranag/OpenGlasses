@@ -18,6 +18,21 @@
 	     (LSSupportsOpeningDocumentsInPlace NO) so the app reads it once and deletes the copy. -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
+		<!-- A spreadsheet of van stock (Plan IH P3). Receive only, opened as a copy: the app reads
+		     it into a review and nothing is applied until the technician taps Apply. Alternate
+		     rank, so a spreadsheet app stays the default and Avenkin is offered beside it. -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Spreadsheet</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.openxmlformats.spreadsheetml.sheet</string>
+			</array>
+		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>Avenkin Job</string>

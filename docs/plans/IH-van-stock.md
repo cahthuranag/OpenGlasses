@@ -1,9 +1,9 @@
 # Plan IH — Van Stock (what is on the technician's own truck, kept by voice)
 
-**Status:** 🚧 P0–P2 built 2026-10-14: the ledger, the store, the `van_stock` tool and the Van
-Stock screen, so a technician can load, use, count, check and undo by voice and correct a figure
-on the phone. No spreadsheet, job-close question or handover yet (P3–P5), and the P1 and P2
-device checks are owed. A technician tells the assistant what
+**Status:** 🚧 P0–P3 built 2026-10-14: the ledger, the store, the `van_stock` tool, the Van Stock
+screen and the spreadsheet out and back, so a technician can keep the van by voice, correct a
+figure on the phone, and load a real truck from the shop's own list. No job-close question or
+handover yet (P4, P5), and the P1–P3 device and hand checks are owed. A technician tells the assistant what
 they loaded at the shop and what they used on a job; the phone keeps the count, answers "have I
 got one?" with no signal, says when the last one has gone, and offers to ask the office for a
 replacement. The count lives on the phone and nowhere else. A spreadsheet goes out and comes back
@@ -468,10 +468,27 @@ and none was available when this was built; it is owed with the device pass belo
 and the review sheet arrive with P3.
 *Owed (device):* VoiceOver and largest text size on the list and the detail; the audit entry.
 
-**P3 — Spreadsheet out and back.** `XLSXWriter`, `XLSXReader`, `VanStockSheetExport`,
-`VanStockSheetImport`, the review sheet, the document type.
+**P3 — Spreadsheet out and back.** ✅ **Built 2026-10-14; hand checks owed.** `XLSXWriter`
+(stored ZIP, inline-string cells, a text-formatted part number column), `XLSXReader` (over
+`ZipArchiveReader` and `XMLParser`; shared, inline and formula-string cells, cached numbers; the
+size, row and macro refusals), `VanStockSheet` (the workbook out, the proposal back, and applying
+it as one batch), `VanStockImportService` and `VanStockImportReviewSheet` (the review, raised by
+the app whichever way the file arrived), Import and Export on the Van Stock screen, and the
+workbook document type at alternate rank. As built:
+- The stock sheet already carries Standard, Standard set by, To top up, On order and Needs a
+  count, so P5 adds no columns.
+- A line is matched by its Item ID, then its part number, then its exact description.
+- The export's time, in a hidden sheet, is what marks a line as moved since the export. It is
+  to the second.
+- A figure that matches the phone's is not offered as a count unless the line is unreliable, so
+  an export imported straight back says there is nothing to change.
+- An export is a temporary file, removed when the share sheet finishes.
+- In a sheet this app wrote, an emptied Minimum, Standard or Bin clears it. In anybody else's,
+  an empty cell changes nothing. An empty description or part number never clears either.
 *Owed (hand):* a file saved by each spreadsheet app a pilot technician actually uses, on the
-phone and on a desktop, added to the fixtures. **A real truck can be loaded after this phase.**
+phone and on a desktop, added to the fixtures; "Open in Avenkin" from Mail and from Files on a
+device. Every workbook the tests read today was written by this app or built by hand in the
+tests. **A real truck can be loaded after this phase.**
 
 **P4 — Job close and the record.** `VanStockReconciler`, the to-do kind, the close-out question,
 the `van_stock` block on the work record, the low-stock line in the day view.

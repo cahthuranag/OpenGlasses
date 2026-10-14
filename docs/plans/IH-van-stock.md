@@ -1,9 +1,11 @@
 # Plan IH — Van Stock (what is on the technician's own truck, kept by voice)
 
-**Status:** 🚧 P0–P4 built 2026-10-14: the ledger, the store, the `van_stock` tool, the Van Stock
-screen, the spreadsheet out and back, and the question at the close of a job about a part with no
-stock entry. P4's Job-tab to-do and day-view line are not built, the handover (P5) is unbuilt,
-and the P1–P4 device and hand checks are owed. A technician tells the assistant what
+**Status:** 🚧 Every phase has its core built, 2026-10-14: the ledger, the store, the `van_stock`
+tool, the Van Stock screen, the spreadsheet out and back, the question at the close of a job, and
+the shift handover. Three things in the design are not built — P4's Job-tab to-do and day-view
+line, and P5's delivery by the organisation's report channel (the handover is sent through the
+share sheet) — and every device and hand check is owed. Nothing here has run on a phone. A
+technician tells the assistant what
 they loaded at the shop and what they used on a job; the phone keeps the count, answers "have I
 got one?" with no signal, says when the last one has gone, and offers to ask the office for a
 replacement. The count lives on the phone and nowhere else. A spreadsheet goes out and comes back
@@ -511,14 +513,39 @@ tests. **A real truck can be loaded after this phase.**
 Both are surfaces in the Job tab's feed, which could not be exercised without a simulator.
 *Owed:* the office accepting a report whose record carries the new block; one uncoached job.
 
-**P5 — Shift handover.** The van's name and identifier, `standard` with who set it, the `top_up`
-answer and `to_standard` loads, the baseline import, `VanStockSurplus` (pure),
-`VanStockHandoverComposer` (pure), the `DeliveryRequest.Payload` case and its queue kind,
-`send_to_base`, the take-over import and its review, the archived log.
+**P5 — Shift handover.** 🚧 **Core built 2026-10-14; the organisation's channel not built.**
+`VanIdentity` and `VanStockHandover` (pure: the top-up list, the day's extras, what was returned,
+the message, a workbook read as a van to take over, and base's baseline); the van's name and a
+one-generation previous list in `VanStockStore`; `van_stock` actions `top_up`, `set_standard` and
+`send_to_base`, and `load` with `to_standard`; `VanStockHandoverService` and
+`VanStockHandoverSheet`; the three ways of applying a workbook in the import review; and Name this
+van, Send stock to base and Previous list on the Van Stock screen. As built:
+- **The handover is sent through the system share sheet, not the organisation's report channel.**
+  It is staged and shown as §8 describes, with the workbook and the short text, and the
+  technician chooses who it goes to. `DeliveryRequest.Payload` is unchanged, so no recipient is
+  filled in, nothing rides the unattended endpoint, and it is not in the delivery audit trail.
+  That is the part of Decision 9 still to build.
+- **A takeover replaces the phone's list; it does not merge.** The list that was there is kept
+  once, as `van-stock-previous.json`, and can be gone back to from the screen. A second takeover
+  overwrites it.
+- **What a takeover does not carry:** scanned-code aliases, and whether a number was verified.
+  A number is looked up again the next time its line is touched with a job open.
+- **The shift begins at the takeover**, or at the start of the day when there was none. That is
+  what "loaded this shift" means for the day's extras and for what was returned.
+- **`send_to_base` asks first, once.** A part on the open job with no stock entry, and extras
+  still on board, come back as questions; the second call, with `answered`, stages. Jobs already
+  closed were asked at their own close.
+- **`set_standard`** is how a kept extra joins the truck's standard load, and how a technician
+  sets one by voice. Zero clears it.
+- **The baseline import** takes a standard from a Standard column, or from the quantity column
+  of a sheet that has only quantities.
+- **Returned extras are listed in the message** ("Returned this shift"), which answers Open
+  question 9 in base's favour until somebody says otherwise.
+- **Under Medical Compliance mode** `send_to_base` is refused and the screen's Send is disabled.
+  The tool is still declared; only the action is refused.
 *Owed (device):* one vehicle handed between two phones through a real mailbox, both ways, with a
 top-up, one extra returned and one extra kept.
-**Needs only P3**; the question about unrecorded parts joins it once P4 is in. It moves ahead of
-P4 if the pilot's vehicles change hands between shifts.
+**Needs only P3**; the question about unrecorded parts joins it once P4 is in.
 
 ## Tests
 

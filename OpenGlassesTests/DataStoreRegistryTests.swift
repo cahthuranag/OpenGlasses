@@ -296,6 +296,30 @@ final class DataStoreRegistryTests: XCTestCase {
         try assertAttributes(of: workspace.appendingPathComponent("known_faces.json"), match: .faces)
     }
 
+    /// The JSON stores written from voice turns run with the phone locked — the app keeps the
+    /// `audio` background mode — so they hold the first-unlock class, and the registry says so.
+    /// A tester's locked-phone log showed every conversation save failing with Cocoa 513 while
+    /// the file was `.complete`. The face database deliberately stays `.complete`: it holds
+    /// biometric templates of people who never installed the app, and loosening that is a
+    /// separate decision, not a side effect of this one.
+    func testStoresWrittenFromLockedTurnsUseTheFirstUnlockClass() {
+        let declared: [(SensitiveStore, FileProtectionType)] = [
+            (.conversationThreads, ConversationStore.fileProtection),
+            (.jobDeliveryQueue, DeliveryQueueStore.fileProtection),
+            (.upcomingJobs, UpcomingJobStore.fileProtection),
+            (.learningCandidates, LearningCandidateStore.fileProtection),
+            (.learningEntries, LearningEntryStore.fileProtection),
+            (.vanStock, VanStockStore.fileProtection),
+        ]
+        for (store, protection) in declared {
+            XCTAssertEqual(protection, .completeUntilFirstUserAuthentication,
+                           "\(store.rawValue): a .complete file refuses a locked-phone save")
+            XCTAssertEqual(store.record.protection, .completeUntilFirstUserAuthentication,
+                           "\(store.rawValue): the registry must describe the class the owner writes")
+        }
+        XCTAssertEqual(SensitiveStore.faces.record.protection, .complete)
+    }
+
     @MainActor
     func testSemanticMemoryDatabaseAttributesMatchTheRegistry() throws {
         let store = SemanticMemoryStore(directory: workspace)

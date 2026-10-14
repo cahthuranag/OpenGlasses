@@ -124,6 +124,33 @@ class ConversationStore: ObservableObject {
     /// `private(set)` rather than `private` so the unlock retry can be asserted in tests.
     private(set) var saveBlocked = false
 
+    /// True when the in-memory history holds changes the file does not: the last save failed (a
+    /// glasses turn on a locked phone, for one) or was skipped. Cleared by the next save that
+    /// lands, since every save writes the whole list. `flushPendingSave()` retries it when
+    /// protected data comes back and when the app comes to the front, so a turn taken in a pocket
+    /// is on disk before anything else can end the process. `private(set)` so tests can assert it.
+    private(set) var needsSave = false
+
+    /// The iOS protection class `conversations.json` is written with and re-stamped to.
+    ///
+    /// First-unlock, not `.complete`: the app declares the `audio` background mode and a glasses
+    /// turn runs with the phone locked in a pocket, so a `.complete` file refused every one of
+    /// those saves with Cocoa 513. The optional biometric encryption layer is the stronger guard
+    /// for wearers who want one; it is unaffected by this class.
+    nonisolated static let fileProtection = FileProtectionType.completeUntilFirstUserAuthentication
+
+    /// The `Data.write` options that carry `fileProtection`. One place, so the write and the
+    /// re-stamp in `protect(_:)` cannot drift apart.
+    nonisolated static let writeOptions: Data.WritingOptions = [
+        .atomic, .completeFileProtectionUntilFirstUserAuthentication,
+    ]
+
+    /// How a snapshot reaches disk. A seam so a test can make a write fail the way a locked phone
+    /// does; production never replaces it.
+    var writeData: @Sendable (Data, URL, Data.WritingOptions) throws -> Void = { data, url, options in
+        try data.write(to: url, options: options)
+    }
+
     /// Serializes encrypted saves so an older snapshot can never finish after — and overwrite —
     /// a newer one.
     private var pendingSaveTask: Task<Void, Never>?
@@ -144,11 +171,13 @@ class ConversationStore: ObservableObject {
     ///
     /// `.atomic` replaces the file rather than rewriting it, and backup exclusion is a property of
     /// the file and not of the path — so without this every save would quietly put the wearer's
-    /// conversation history back into iCloud. The protection class is `.complete` because this
-    /// file is only ever read and written from foreground turns, and its locked-read path is
-    /// already handled explicitly (`protectedDataWillBecomeUnavailable`).
+    /// conversation history back into iCloud. The class is `fileProtection` (first-unlock): this
+    /// file is written from glasses turns that run while the phone is locked, which `.complete`
+    /// refuses. Re-stamping also moves a file an older build left at `.complete` onto the new
+    /// class — which can only happen while protected data is available, so `init` and
+    /// `protectedDataDidBecomeAvailable()` both call it.
     private static func protect(_ url: URL) {
-        StoreProtection.apply(.complete, backupExcluded: true, to: url)
+        StoreProtection.apply(fileProtection, backupExcluded: true, to: url)
     }
 
     // MARK: - Session Persistence
@@ -555,7 +584,7 @@ class ConversationStore: ObservableObject {
             if FileManager.default.fileExists(atPath: storageURL.path),
                encryption.isFileEncrypted(at: storageURL) {
                 let plaintext = try await encryption.decryptFile(at: storageURL)
-                try plaintext.write(to: storageURL, options: [.atomic, .completeFileProtection])
+                try writeData(plaintext, storageURL, Self.writeOptions)
                 Self.protect(storageURL)
             }
             await encryption.deleteKey()
@@ -579,6 +608,8 @@ class ConversationStore: ObservableObject {
             let data = try await encryption.decryptFile(at: storageURL)
             threads = try JSONDecoder().decode([ConversationThread].self, from: data)
             saveBlocked = false
+            // What was just read *is* the file; nothing in memory is newer than it.
+            needsSave = false
             isLocked = false
             recallCoordinator?.storeDidUnlock(threads: threads)
             return true
@@ -611,16 +642,32 @@ class ConversationStore: ObservableObject {
     /// One exception: if the launch-time read failed *because* the device was locked, the
     /// in-memory snapshot is not authoritative — it is empty, and saves have been refused ever
     /// since. Now that protected data is readable, re-run the load before rebuilding recall.
+    ///
+    /// It is also the moment to finish what the lock interrupted: re-stamp the file's protection
+    /// class (an older build's `.complete` file cannot be re-stamped while locked) and write any
+    /// history whose save failed while the phone was in a pocket.
     func protectedDataDidBecomeAvailable() {
+        Self.protect(storageURL)
         guard !isLocked else { return }
         if saveBlocked, retryBlockedLoad() { return }
+        flushPendingSave()
         recallCoordinator?.storeDidUnlock(threads: threads)
+    }
+
+    /// Write the history if a save failed or was skipped since the last one that landed.
+    ///
+    /// Called when protected data becomes available and when the app comes to the front. A no-op
+    /// when nothing is pending, and `save()` keeps its own guards: a biometrically locked store or
+    /// one whose launch read failed still refuses, and stays dirty for the next attempt.
+    func flushPendingSave() {
+        guard needsSave else { return }
+        save()
     }
 
     /// Re-read a conversations file whose launch-time load failed under file protection.
     ///
     /// Field trace: the app launched before first unlock, `Data(contentsOf:)` returned Cocoa 257
-    /// on the `.completeFileProtection` file, `saveBlocked` latched, and **every** turn for the
+    /// on the (then `.complete`-protected) file, `saveBlocked` latched, and **every** turn for the
     /// rest of the process was dropped with `saveSkipped detail=loadFailed` — the store only ever
     /// loaded from `init`, so nothing could clear the latch.
     ///
@@ -716,12 +763,14 @@ class ConversationStore: ObservableObject {
         // writing now would encrypt that over the user's full history. Same for the async
         // encrypted-load window, which also runs with `isLocked == true`.
         guard !isLocked else {
+            needsSave = true
             PrivacyLog.conversation(.conversations, .saveSkipped,
                                     detail: PrivacyToken("locked"))
             return false
         }
         // After a failed read of an existing file, the on-disk data may be intact — never write.
         guard !saveBlocked else {
+            needsSave = true
             PrivacyLog.conversation(.conversations, .saveSkipped,
                                     detail: PrivacyToken("loadFailed"))
             return false
@@ -734,19 +783,25 @@ class ConversationStore: ObservableObject {
                 // writes land in submission order.
                 let url = storageURL
                 let enc = encryption
-                pendingSaveTask = Task { @MainActor [previous = pendingSaveTask] in
+                let write = writeData
+                // Because of that ordering, the save that finishes last decides `needsSave`: a
+                // later success covers an earlier failure, and a later failure leaves it dirty.
+                pendingSaveTask = Task { @MainActor [weak self, previous = pendingSaveTask] in
                     await previous?.value
                     do {
                         let encrypted = try await enc.encrypt(data)
                         var output = Data("OGENC1".utf8)
                         output.append(encrypted)
-                        try output.write(to: url, options: [.atomic, .completeFileProtection])
+                        try write(output, url, Self.writeOptions)
                         Self.protect(url)
+                        self?.needsSave = false
                         onPersisted?()
                     } catch {
                         // The existing ciphertext on disk is untouched — `encrypt` throws before
                         // the write, and a failed unlock no longer rotates the key out from under
-                        // it. This save is simply dropped; the next one retries.
+                        // it. This save is dropped and the store marked dirty, so the unlock or
+                        // the next foreground retries it rather than waiting for another turn.
+                        self?.needsSave = true
                         PrivacyLog.conversation(.conversations, .saveSkipped,
                                                 detail: PrivacyToken("encryptFailed"),
                                                 error: SafeErrorSummary(error))
@@ -756,12 +811,16 @@ class ConversationStore: ObservableObject {
             } else {
                 // Conversation history can hold sensitive content — encrypt at rest even when
                 // the optional biometric encryption layer is off.
-                try data.write(to: storageURL, options: [.atomic, .completeFileProtection])
+                try writeData(data, storageURL, Self.writeOptions)
                 Self.protect(storageURL)
+                needsSave = false
                 onPersisted?()
                 return true
             }
         } catch {
+            // The threads are still in memory; mark them so the next chance to write — protected
+            // data returning, the app coming forward — persists them without waiting for a turn.
+            needsSave = true
             PrivacyLog.conversation(.conversations, .saveFailed, error: SafeErrorSummary(error))
             return false
         }

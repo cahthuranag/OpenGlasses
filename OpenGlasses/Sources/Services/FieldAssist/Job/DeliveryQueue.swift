@@ -279,6 +279,12 @@ final class DeliveryQueueStore: ObservableObject {
 
     @Published private(set) var queue: DeliveryQueue
 
+    /// The protection class this store's files are written with and re-stamped to. First-unlock,
+    /// not `.complete`: the store is written from voice turns that run with the phone locked in a
+    /// pocket (the app keeps the `audio` background mode), and a `.complete` file refuses those
+    /// writes — and its read, so a store first opened while locked would start empty.
+    nonisolated static let fileProtection = FileProtectionType.completeUntilFirstUserAuthentication
+
     private let fileURL: URL
 
     /// The default location, and the one the registry documents.
@@ -352,16 +358,16 @@ final class DeliveryQueueStore: ObservableObject {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(queue) else { return }
-        try? data.write(to: fileURL, options: [.atomic, .completeFileProtection])
+        try? data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         protectFile()
     }
 
-    /// Complete protection and no backup: the entries carry customers' addresses, and a queue
+    /// First-unlock protection and no backup: the entries carry customers' addresses, and a queue
     /// restored onto another phone would offer to send a report somebody already sent.
     private func protectFile() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         try? FileManager.default.setAttributes(
-            [.protectionKey: FileProtectionType.complete], ofItemAtPath: fileURL.path)
+            [.protectionKey: Self.fileProtection], ofItemAtPath: fileURL.path)
         var url = fileURL
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

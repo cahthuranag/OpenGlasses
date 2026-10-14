@@ -673,6 +673,9 @@ struct OpenGlassesApp: App {
                 Task { await appState.refreshHealthSummaryCache() }
                 if appState.conversationStore.isLocked {
                     Task { await appState.conversationStore.unlock() }
+                } else {
+                    // A turn whose save failed while the phone was locked is written now.
+                    appState.conversationStore.flushPendingSave()
                 }
                 // Sync listening state from UserDefaults (may have been toggled via widget intent)
                 let storedEnabled = Config.listeningEnabled

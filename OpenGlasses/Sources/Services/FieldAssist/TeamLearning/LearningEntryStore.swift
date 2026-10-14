@@ -11,12 +11,18 @@ import Foundation
 ///
 /// Registered in `DataStoreRegistry` as `learningEntries`. An approved entry has been read by a
 /// reviewer whose job includes removing a customer's name, but a slip is still possible, so the
-/// store is treated as able to hold one: complete protection, excluded from backup, walked by the
+/// store is treated as able to hold one: protected (first-unlock), excluded from backup, walked by the
 /// subject erasure, and cleared when the phone leaves its organisation.
 @MainActor
 final class LearningEntryStore {
 
     static let shared = LearningEntryStore()
+
+    /// The protection class this store's files are written with and re-stamped to. First-unlock,
+    /// not `.complete`: the store is written from voice turns that run with the phone locked in a
+    /// pocket (the app keeps the `audio` background mode), and a `.complete` file refuses those
+    /// writes — and its read, so a store first opened while locked would start empty.
+    nonisolated static let fileProtection = FileProtectionType.completeUntilFirstUserAuthentication
 
     private(set) var entries: [LearningEntry]
     /// What bundles have been applied here (Plan FP P3): the newest per organisation label and
@@ -120,7 +126,7 @@ final class LearningEntryStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(bundleLedger) else { return }
-        try? data.write(to: ledgerURL, options: [.atomic, .completeFileProtection])
+        try? data.write(to: ledgerURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         protect(ledgerURL)
     }
 
@@ -129,11 +135,11 @@ final class LearningEntryStore {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(entries) else { return }
-        try? data.write(to: fileURL, options: [.atomic, .completeFileProtection])
+        try? data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         protectFile()
     }
 
-    /// Complete protection and no backup: a restored copy would put an organisation's approved
+    /// First-unlock protection and no backup: a restored copy would put an organisation's approved
     /// findings — and anything review missed — onto a phone that may no longer belong to it.
     private func protectFile() {
         protect(fileURL)
@@ -143,7 +149,7 @@ final class LearningEntryStore {
     private func protect(_ target: URL) {
         guard FileManager.default.fileExists(atPath: target.path) else { return }
         try? FileManager.default.setAttributes(
-            [.protectionKey: FileProtectionType.complete], ofItemAtPath: target.path)
+            [.protectionKey: Self.fileProtection], ofItemAtPath: target.path)
         var url = target
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

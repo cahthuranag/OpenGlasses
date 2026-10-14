@@ -154,8 +154,10 @@ class MemoryRewindService: ObservableObject {
         // Write to temp file (SFSpeechURLRecognitionRequest needs a file URL)
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("rewind_\(UUID().uuidString).wav")
         // Rolling-buffer audio is sensitive — encrypt the on-disk temp file at rest. It is
-        // deleted as soon as recognition finishes (see `defer`).
-        try wavData.write(to: tempURL, options: [.atomic, .completeFileProtection])
+        // deleted as soon as recognition finishes (see `defer`). First-unlock rather than
+        // `.complete`: "what did they just say?" is asked from the glasses with the phone locked,
+        // and a `.complete` file cannot be written (or read back by the recogniser) while locked.
+        try wavData.write(to: tempURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
         let request = SFSpeechURLRecognitionRequest(url: tempURL)

@@ -253,6 +253,7 @@ extension AppState {
         case .decoding, .badServerResponse: return "the AI's reply couldn't be read"
         case .modelDeclined: return "the AI declined to answer that — rephrase it, or try another model"
         case .outputTruncated: return "the AI ran out of room before it answered — try again, or lower the model's reasoning setting"
+        case .contextTooLarge: return "the request was too large for this model — choose a model with a larger context window"
         case .refused: return "the app refused the request"
         default: return "the AI didn't answer"
         }

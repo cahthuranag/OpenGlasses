@@ -44,6 +44,11 @@ enum ModelSwitchNarrator {
 
     /// Spoken instead of the generic error line when the whole chain is exhausted — the real reason.
     static func exhaustionPhrase(lastError: Error) -> String {
+        // Too large is its own reason whichever way it was classified: before a tool ran it may
+        // have hopped, after one it ended the turn — either way "unavailable" would be untrue.
+        if lastError is RequestContextBudget.CapacityError || RequestContextBudget.isOverflow(error: lastError) {
+            return "I couldn't get a response — the request was too large for this model."
+        }
         let reason: String
         switch ModelFallbackChain.classify(lastError) {
         case .visionUnavailable:

@@ -2914,6 +2914,9 @@ class LLMService: ObservableObject {
             throw LLMError.missingAPIKey("ChatGPT account not connected — sign in with ChatGPT in the model editor")
         }
         let accountID = ChatGPTOAuthService.shared.accountID
+        // The account catalog carries the real window of a model our table does not know. Keep
+        // the stored copy fresh in the background; this turn reads what is already stored.
+        ChatGPTContextCatalog.refreshIfStale(accountID: accountID)
         let endpoint = config.baseURL.isEmpty ? ChatGPTOAuth.backendResponsesURL : config.baseURL
         guard let url = URL(string: endpoint) else {
             throw LLMError.invalidConfiguration("Invalid ChatGPT backend URL: \(endpoint)")

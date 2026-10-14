@@ -268,6 +268,141 @@ final class VanStockService {
         return changed ?? false
     }
 
+    // MARK: - The shift (Plan IH P5)
+
+    /// What it takes to bring the van back to its standard load.
+    func topUp() -> String {
+        guard !store.isUnreadable else { return Self.unreadable }
+        let log = store.log
+        guard !log.isEmpty else { return composer.emptyVan() }
+        let shortfalls = VanStockHandover.topUp(log)
+        let measured = VanStockHandover.hasStandards(log)
+        guard !shortfalls.isEmpty else {
+            return measured ? "Nothing to top up: every line is at its standard load."
+                            : "Nothing has run out. No standard load is set for this van, so there is nothing to top up to."
+        }
+        let listed = shortfalls.map { shortfall in
+            shortfall.short.map { "\(shortfall.item.phrase($0)) (\(shortfall.onHand) on board)" }
+                ?? "\(shortfall.item.name) (\(shortfall.onHand) on board)"
+        }
+        let lead = measured ? "\(shortfalls.count) to top up"
+                            : "No standard load is set for this van; \(shortfalls.count) have run out or are below minimum"
+        return "\(lead): " + listed.joined(separator: "; ") + "."
+    }
+
+    /// "Topped up everything except the flame sensors": every short line but those is brought to
+    /// its standard load, as one batch that one undo takes back.
+    func loadToStandard(except exceptions: [Line] = [], source: VanStockMovement.Source = .spoken) -> String {
+        guard !store.isUnreadable else { return Self.unreadable }
+        lastWrite = nil
+        let at = now()
+        let batch = makeID()
+        var skipped: [VanStockItem] = []
+        var unmatched: [String] = []
+        var filled = 0
+        store.update { log in
+            for line in exceptions {
+                switch self.match(line, in: log) {
+                case .one(let item): skipped.append(item)
+                case .several(let items): skipped.append(contentsOf: items)
+                case .none: unmatched.append(line.reference)
+                }
+            }
+            let left = Set(skipped.map(\.id))
+            for shortfall in VanStockHandover.topUp(log) {
+                guard let short = shortfall.short, !left.contains(shortfall.item.id) else { continue }
+                log.record(.loaded, itemID: shortfall.item.id, quantity: short, at: at, batch: batch,
+                           source: source, id: self.makeID())
+                filled += 1
+            }
+        }
+        guard VanStockHandover.hasStandards(store.log) else {
+            return "No standard load is set for this van, so there is nothing to top up to. Nothing was changed."
+        }
+        var lines = [filled == 0 ? "Nothing was short of its standard load, so nothing was loaded."
+                                 : "\(filled) \(filled == 1 ? "line" : "lines") brought to the standard load."]
+        if !skipped.isEmpty { lines.append("Left as they were: " + skipped.map(\.name).joined(separator: "; ") + ".") }
+        if !unmatched.isEmpty {
+            lines.append("Not on the van list, so not treated as an exception: " + unmatched.joined(separator: "; ") + ".")
+        }
+        if filled > 0 { lines.append("The technician can say 'undo that' to take the whole top-up back.") }
+        return lines.joined(separator: " ")
+    }
+
+    /// Set what the van should carry of one line. Set by the technician, so it is this truck's own.
+    func setStandard(_ line: Line) -> String {
+        guard !store.isUnreadable else { return Self.unreadable }
+        guard let quantity = line.quantity, quantity >= 0 else { return "Say how many \(line.reference) the van should carry." }
+        lastWrite = nil
+        let at = now()
+        let batch = makeID()
+        var answer = composer.notOnVan(line.reference)
+        store.update { log in
+            switch self.match(line, in: log) {
+            case .several(let items): answer = self.composer.candidates(items, levels: log.levels)
+            case .none: break
+            case .one(let item):
+                log.edit(itemID: item.id, .standard(quantity == 0 ? nil : quantity, setBy: .van), at: at,
+                         batch: batch, source: .spoken, id: self.makeID())
+                answer = quantity == 0 ? "\(item.name) has no standard load now."
+                                       : "The standard load for this truck is now \(item.phrase(quantity))."
+            }
+        }
+        return answer
+    }
+
+    /// What `send_to_base` says before anything is staged: parts with no stock entry, and the
+    /// day's extras still on board. Nil when there is nothing left to ask.
+    func handoverQuestions() -> String? {
+        var lines: [String] = []
+        let parts = jobUses.unrecorded()
+        if !parts.isEmpty {
+            lines.append("Before the stock is sent: there is no van stock entry on the open job for "
+                + VanStockReconciler.named(parts) + ". Ask whether each came off the van.")
+        }
+        let extras = VanStockHandover.surplus(store.log, since: VanStockHandover.shiftStart(store.log, now: now(), calendar: calendar))
+        if !extras.isEmpty {
+            lines.append("Loaded this shift and still on board beyond the standard load: "
+                + extras.map { $0.item.phrase($0.extra) }.joined(separator: "; ")
+                + ". Ask for each: returning it, or keeping it on the truck? Record a return with action 'remove' "
+                + "and reason 'returned'. For one that is kept, offer to make it part of this truck's standard load "
+                + "(action 'set_standard').")
+        }
+        guard !lines.isEmpty else { return nil }
+        lines.append("Then call send_to_base again with 'answered' true.")
+        return lines.joined(separator: " ")
+    }
+
+    /// The text that goes to base with the workbook.
+    func handoverMessage() -> String {
+        VanStockHandover.message(store.log, van: store.van, now: now(), calendar: calendar)
+    }
+
+    /// Take a van over from a workbook: its list replaces the phone's.
+    func takeOver(_ takeover: VanStockHandover.Takeover) {
+        lastWrite = nil
+        store.replace(with: takeover.log, van: takeover.van)
+    }
+
+    /// Read a workbook as a van to take over.
+    func takeover(from sheets: [XLSXReader.Sheet]) -> Result<VanStockHandover.Takeover, VanStockSheet.Failure> {
+        VanStockHandover.takeover(from: sheets, at: now(), batch: makeID(), makeID: makeID)
+    }
+
+    /// Apply base's baseline to this van's standards, as one batch.
+    @discardableResult
+    func apply(baseline changes: [VanStockHandover.BaselineChange], takingBaseFigure: Set<String> = []) -> Bool {
+        lastWrite = nil
+        let at = now()
+        let batch = makeID()
+        let before = store.log
+        store.update { log in
+            VanStockHandover.apply(changes, to: &log, takingBaseFigure: takingBaseFigure, at: at,
+                                   batch: batch, makeID: self.makeID)
+        }
+        return store.log != before
+    }
+
     // MARK: - The spreadsheet
 
     /// The van's stock as a workbook, written to a temporary file for the share sheet. The caller
@@ -280,7 +415,7 @@ final class VanStockService {
         let url = folder.appendingPathComponent(VanStockSheet.fileName(exportedAt: at, calendar: calendar))
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try VanStockSheet.data(store.log, exportedAt: at, calendar: calendar)
+            try VanStockSheet.data(store.log, van: store.van, exportedAt: at, calendar: calendar)
                 .write(to: url, options: [.atomic, .completeFileProtection])
             return url
         } catch {

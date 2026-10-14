@@ -48,7 +48,11 @@ final class VanStockTool: NativeTool {
     'use' (parts fitted from the van; tagged to the open job), 'remove' (parts taken off for \
     another reason; pass 'reason'), 'count' (a stocktake: sets the figure), 'undo' (takes back \
     the last spoken entry), 'unrecorded' (parts on this job's finished tasks with no stock entry), \
-    or 'not_from_van' (a part on this job that was ordered in or was the customer's; pass 'part'). \
+    'not_from_van' (a part on this job that was ordered in or was the customer's; pass 'part'), \
+    'top_up' (what it takes to bring the van back to its standard load), 'set_standard' (how many \
+    of a part this truck should carry; pass 'quantity', 0 for none), or 'send_to_base' (stages the \
+    end-of-shift stock for the technician to send; it sends nothing itself). To record a top-up, \
+    call 'load' with 'to_standard' true, and 'items' naming any parts that could not be filled. \
     For one part pass 'part' (the number exactly as printed), \
     'description', 'quantity' and optionally 'unit'; for several parts in one sentence pass \
     'items', each with the same fields. A scanned barcode goes in 'code'. Read the result back to \
@@ -62,13 +66,22 @@ final class VanStockTool: NativeTool {
         var properties = vanStockLineProperties()
         properties["action"] = [
             "type": "string",
-            "enum": ["check", "low", "load", "use", "remove", "count", "undo", "unrecorded", "not_from_van"],
+            "enum": ["check", "low", "load", "use", "remove", "count", "undo", "unrecorded", "not_from_van",
+                     "top_up", "set_standard", "send_to_base"],
             "description": "What to do."
         ]
         properties["items"] = [
             "type": "array",
             "description": "Several parts said in one sentence. Use instead of the single-part fields.",
             "items": ["type": "object", "properties": vanStockLineProperties()] as [String: Any]
+        ]
+        properties["to_standard"] = [
+            "type": "boolean",
+            "description": "For 'load': true when the technician says they topped everything up. Every short line is brought to its standard load, except the parts named in 'items'."
+        ]
+        properties["answered"] = [
+            "type": "boolean",
+            "description": "For 'send_to_base': true once the technician has answered what the first call asked about."
         ]
         properties["reason"] = [
             "type": "string",
@@ -80,12 +93,15 @@ final class VanStockTool: NativeTool {
 
     /// The service to speak for; nil means the shared one. Injectable for tests.
     private let injectedService: VanStockService?
+    private let injectedHandover: VanStockHandoverService?
 
-    init(service: VanStockService? = nil) {
+    init(service: VanStockService? = nil, handover: VanStockHandoverService? = nil) {
         self.injectedService = service
+        self.injectedHandover = handover
     }
 
     private var service: VanStockService { injectedService ?? .shared }
+    private var handover: VanStockHandoverService { injectedHandover ?? .shared }
 
     func execute(args: [String: Any]) async throws -> String {
         guard Config.fieldAssistActive else {
@@ -104,6 +120,7 @@ final class VanStockTool: NativeTool {
         case "low":
             return service.low()
         case "load":
+            if (args["to_standard"] as? Bool) == true { return service.loadToStandard(except: lines) }
             return service.load(lines, source: Self.source(lines))
         case "use":
             return service.use(lines, source: Self.source(lines))
@@ -114,13 +131,30 @@ final class VanStockTool: NativeTool {
             return service.count(lines, source: Self.source(lines))
         case "undo":
             return service.undo()
+        case "top_up":
+            return service.topUp()
+        case "set_standard":
+            guard let line = lines.first else { return "Say which part, and how many the van should carry." }
+            return service.setStandard(line)
+        case "send_to_base":
+            // The handover carries descriptions that may have been dictated, so it is not staged
+            // while the medical mode holds everything on the phone.
+            guard !Config.hipaaMode else {
+                return "The stock is not sent to base while Medical Compliance mode is on. "
+                    + "The technician can export it themselves from the Van stock screen."
+            }
+            if (args["answered"] as? Bool) != true, let questions = service.handoverQuestions() { return questions }
+            guard handover.stage() else { return "There is no readable van list to send." }
+            return "Staged on the phone for the technician to look at and send. Nothing has been sent. "
+                + "What it says: " + service.handoverMessage()
         case "unrecorded":
             return service.unrecorded()
         case "not_from_van":
             guard let line = lines.first else { return "Say which part did not come off the van, by its part number." }
             return service.notFromVan(line)
         default:
-            return "Pass 'action': check, low, load, use, remove, count, undo, unrecorded or not_from_van."
+            return "Pass 'action': check, low, load, use, remove, count, undo, unrecorded, not_from_van, "
+                + "top_up, set_standard or send_to_base."
         }
     }
 

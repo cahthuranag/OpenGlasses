@@ -618,7 +618,8 @@ enum SensitiveStore: String, CaseIterable {
                           deleteSubject: .notSubjectLinked,
                           owner: "VanStockStore",
                           ownerPaths: ["OpenGlasses/Sources/Services/FieldAssist/VanStock/VanStockStore.swift"],
-                          location: "Application Support/FieldAssist/van-stock.json")
+                          location: "Application Support/FieldAssist/van-stock.json, and van-stock-previous.json "
+                              + "(the list from before the last takeover, one generation)")
 
         case .learningCandidates:
             // Team-learning candidates (Plan FP P1): what a technician filed for their supervisor to

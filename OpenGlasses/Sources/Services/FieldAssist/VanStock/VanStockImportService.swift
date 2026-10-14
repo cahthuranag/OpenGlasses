@@ -28,6 +28,21 @@ final class VanStockImportService: ObservableObject {
         case reviewing(VanStockSheet.Proposal, fileName: String)
     }
 
+    /// What a workbook under review may be applied as (Plan IH P5).
+    enum Mode: Equatable {
+        /// Corrections to this van's list: the ordinary import.
+        case corrections
+        /// The whole truth about a van: its list replaces the phone's.
+        case takeover
+        /// Base's standard load: standards only, no level changes.
+        case baseline
+    }
+
+    /// The same workbook read as a van to take over. Nil when it does not say which van it is.
+    @Published private(set) var takeover: VanStockHandover.Takeover?
+    /// The same workbook read as base's baseline. Nil when it would change no standard.
+    @Published private(set) var baseline: [VanStockHandover.BaselineChange]?
+
     @Published private(set) var stage: Stage = .idle
 
     private let store: VanStockStore
@@ -73,16 +88,65 @@ final class VanStockImportService: ObservableObject {
             stage = .refused(.listUnreadable)
             return
         }
-        switch VanStockSheet.proposal(from: data, log: store.log) {
+        takeover = nil
+        baseline = nil
+        let sheets: [XLSXReader.Sheet]
+        switch XLSXReader.read(data) {
+        case .failure(let failure):
+            stage = .refused(.workbook(failure))
+            return
+        case .success(let read):
+            sheets = read
+        }
+        switch VanStockSheet.proposal(from: sheets, log: store.log) {
         case .failure(.workbook(let failure)):
             stage = .refused(.workbook(failure))
         case .failure(.noRecognisableHeader):
             stage = .refused(.noRecognisableHeader)
         case .success(let proposal):
-            stage = proposal.changesNothing && proposal.refusals.isEmpty && proposal.missing.isEmpty
+            // A workbook that names its van can be taken over; one with standards can be applied
+            // as base's baseline. Either is offered beside the ordinary import, never instead.
+            if case .success(let read) = service.takeover(from: sheets), read.van != nil { takeover = read }
+            if case .success(let changes) = VanStockHandover.baseline(from: sheets, log: store.log),
+               !changes.isEmpty { baseline = changes }
+            let nothing = proposal.changesNothing && proposal.refusals.isEmpty && proposal.missing.isEmpty
+            stage = nothing && takeover == nil && baseline == nil
                 ? .refused(.nothingToChange)
                 : .reviewing(proposal, fileName: fileName)
         }
+    }
+
+    /// Which way of applying the workbook is offered first: a workbook from another van, or onto a
+    /// phone with no list, is a takeover; anything else is a correction.
+    var suggestedMode: Mode {
+        guard let takeover else { return .corrections }
+        return store.log.isEmpty || takeover.van?.id != store.van?.id ? .takeover : .corrections
+    }
+
+    /// Whether the workbook under review is older than the phone's own latest entry for the same
+    /// van — a handover that is not the newest word on it.
+    var takeoverIsStale: Bool {
+        guard let takeover, let exported = takeover.exportedAt, takeover.van?.id == store.van?.id,
+              let latest = store.log.movements.last?.at else { return false }
+        return latest >= exported.addingTimeInterval(1)
+    }
+
+    /// Take the van over: the workbook's list replaces the phone's, and the review closes.
+    @discardableResult
+    func applyTakeover() -> Bool {
+        guard case .reviewing = stage, let takeover else { return false }
+        service.takeOver(takeover)
+        dismiss()
+        return true
+    }
+
+    /// Apply base's baseline: standards only, as one batch.
+    @discardableResult
+    func applyBaseline(takingBaseFigure: Set<String> = []) -> Bool {
+        guard case .reviewing = stage, let baseline else { return false }
+        let applied = service.apply(baseline: baseline, takingBaseFigure: takingBaseFigure)
+        dismiss()
+        return applied
     }
 
     /// The one write: apply what is being reviewed, as a single batch, and close the review.
@@ -90,12 +154,14 @@ final class VanStockImportService: ObservableObject {
     func apply(keepingPhoneFigure: Set<String> = []) -> Bool {
         guard case .reviewing(let proposal, _) = stage else { return false }
         let applied = service.apply(proposal, keepingPhoneFigure: keepingPhoneFigure)
-        stage = .idle
+        dismiss()
         return applied
     }
 
     func dismiss() {
         stage = .idle
+        takeover = nil
+        baseline = nil
     }
 
     /// A file opened from another app arrives as a copy in the app's Inbox; it has been read, so

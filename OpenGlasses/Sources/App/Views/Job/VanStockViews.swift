@@ -17,6 +17,9 @@ struct VanStockView: View {
     @State private var importing = false
     @State private var sharing: ShareItem?
     @State private var exportFailed = false
+    @State private var namingVan = false
+    @State private var vanName = ""
+    @State private var confirmingRestore = false
 
     private var rows: [VanStockRow] { VanStockRows.rows(store.log, query: search) }
 
@@ -43,7 +46,7 @@ struct VanStockView: View {
         }
         .ogFormStyle()
         .searchable(text: $search, prompt: Text("Part number or description"))
-        .navigationTitle("Van stock")
+        .navigationTitle(store.van?.name.isEmpty == false ? store.van?.name ?? "" : String(localized: "Van stock"))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Undo") { _ = service.undo(source: .typed) }
@@ -64,6 +67,46 @@ struct VanStockView: View {
                 }
                 .disabled(store.isUnreadable || store.log.isEmpty)
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button {
+                    if !VanStockHandoverService.shared.stage() { exportFailed = true }
+                } label: {
+                    Label("Send stock to base…", systemImage: "paperplane")
+                }
+                .disabled(store.isUnreadable || store.log.isEmpty || Config.hipaaMode)
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                Button {
+                    vanName = store.van?.name ?? ""
+                    namingVan = true
+                } label: {
+                    Label("Name this van…", systemImage: "pencil")
+                }
+                .disabled(store.isUnreadable)
+            }
+            if store.hasPrevious {
+                ToolbarItem(placement: .secondaryAction) {
+                    Button {
+                        confirmingRestore = true
+                    } label: {
+                        Label("Previous list…", systemImage: "arrow.uturn.backward")
+                    }
+                }
+            }
+        }
+        .alert("Name this van", isPresented: $namingVan) {
+            TextField("Truck 4", text: $vanName)
+            Button("Save") { store.nameVan(vanName) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The name goes on every spreadsheet, so base and the next shift know which vehicle it is.")
+        }
+        .confirmationDialog("Go back to the list from before the last takeover?",
+                            isPresented: $confirmingRestore, titleVisibility: .visible) {
+            Button("Go back to it", role: .destructive) { _ = store.restorePrevious() }
+            Button("Keep this one", role: .cancel) {}
+        } message: {
+            Text("The list that is here now is replaced by the one it replaced.")
         }
         // The review is raised by the app, wherever the file came from; this only picks one.
         .fileImporter(isPresented: $importing,

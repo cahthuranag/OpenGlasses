@@ -432,6 +432,8 @@ struct OpenGlassesApp: App {
                 )) { _ in
                     appState.conversationStore.protectedDataDidBecomeAvailable()
                     appState.privacyFilter.noteProtectedDataAvailable(true)   // W04.1
+                    // The app event log's earlier runs, if a locked launch could not read them.
+                    DiagnosticRing.shared.protectedDataDidBecomeAvailable()
                     // Retry a migration that deferred while locked, then sweep abandoned exports.
                     FHIRConfigurationStore.shared.migrateIfNeeded()
                     appState.medicalExportService.leases.scavenge()

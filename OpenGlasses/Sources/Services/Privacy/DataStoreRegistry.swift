@@ -976,7 +976,9 @@ enum SensitiveStore: String, CaseIterable {
         case .diagnosticBreadcrumbs:
             return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,
                           protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
-                          retention: .policy("most recent 500 events; previous run readable for 48 hours"),
+                          retention: .policy("up to \(DiagnosticRing.defaultCapacity) events per run "
+                                             + "and 48 hours, earlier runs included; a run's first "
+                                             + "\(DiagnosticRing.defaultLaunchLimit) events kept"),
                           deleteAll: .api("DiagnosticRing.shared.clear()"),
                           deleteSubject: .notSubjectLinked,
                           owner: "DiagnosticRing",

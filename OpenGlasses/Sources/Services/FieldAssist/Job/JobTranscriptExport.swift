@@ -561,7 +561,7 @@ enum JobTranscriptExport {
 
             out += ["", rule("="), "App events (\(details.appEvents.count))", rule("-")]
             if details.appEvents.isEmpty {
-                out.append("None in this period — the app keeps this run's events and the previous run's.")
+                out.append("None in this period — the app keeps its own events for up to two days.")
             }
             for event in details.appEvents {
                 out.append("\(format.time(event.at, seconds: true))  \(event.line)")

@@ -68,10 +68,20 @@ protocol GlassesCameraBackend: AnyObject {
     /// hoped for. Defaulted to zero, because a backend with no automatic work of its own — every
     /// test fake, and any future backend that simply has none — should not have to say so.
     var scheduledWorkCount: Int { get }
+
+    /// Plan HJ P1 — where the app is: in front, in the background, or behind a locked screen.
+    /// Feeds the stream-end table (`StreamEndRecoveryPolicy`) and, on the way back to the front,
+    /// resumes a ladder that parked while nobody could see it. Presence alone changes nothing
+    /// about a running stream.
+    ///
+    /// Defaulted to nothing, because a backend with no recovery ladder has nothing to feed.
+    func notePresence(_ presence: StreamEndRecoveryPolicy.Presence)
 }
 
 extension GlassesCameraBackend {
     var scheduledWorkCount: Int { 0 }
+
+    func notePresence(_ presence: StreamEndRecoveryPolicy.Presence) {}
 
     func cameraPermission(asking: Bool) async -> GlassesCameraPermission {
         permissionGranted ? .granted : .notChecked

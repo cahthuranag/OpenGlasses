@@ -128,12 +128,17 @@ struct GatewaySettingsView: View {
             }
         }
         .sheet(item: $editingGateway) { gateway in
-            EditGatewaySheet(gateway: gateway) { updated in
+            EditGatewaySheet(appState: appState, gateway: gateway) { updated in
                 if let idx = gateways.firstIndex(where: { $0.id == updated.id }) {
                     gateways[idx] = updated
                     save()
                 }
             }
+        }
+        // A pairing stores its device token (or drops its setup code) behind this list's back;
+        // reload so the next save does not write the old copy over it.
+        .onChange(of: appState.gatewayPairing) { _, _ in
+            gateways = Config.savedGateways
         }
     }
 
@@ -319,6 +324,7 @@ struct AddGatewaySheet: View {
 // MARK: - Edit Gateway Sheet
 
 struct EditGatewaySheet: View {
+    @ObservedObject var appState: AppState
     @State var gateway: GatewayConfig
     var onSave: (GatewayConfig) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -326,6 +332,13 @@ struct EditGatewaySheet: View {
     @State private var testStatus: String = ""
     @State private var setupCodeInput: String = ""
     @State private var pairingMessage: String = ""
+    /// A setup code whose address differs from the saved one, held until the wearer decides.
+    @State private var pendingAddressChange: PendingAddressChange?
+
+    private struct PendingAddressChange: Equatable {
+        let address: SetupCodeAddress
+        let setupCode: String
+    }
 
     var body: some View {
         NavigationStack {
@@ -353,44 +366,7 @@ struct EditGatewaySheet: View {
                     Text("The gateway token from your server's config — or leave blank and pair this device below.")
                 }
 
-                Section {
-                    if let deviceToken = gateway.deviceToken, !deviceToken.isEmpty {
-                        HStack {
-                            Label("Paired", systemImage: "checkmark.seal.fill")
-                                .foregroundStyle(OGTheme.okLabel)
-                            Spacer()
-                            Text("This device").font(.caption).foregroundStyle(.secondary)
-                        }
-                        Button("Unpair This Device", role: .destructive) {
-                            gateway.deviceToken = nil
-                            gateway.deviceId = nil
-                            gateway.setupCode = nil
-                            pairingMessage = "Unpaired. Save to apply."
-                        }
-                    } else {
-                        TextField("Setup Code", text: $setupCodeInput, axis: .vertical)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .font(.system(.footnote, design: .monospaced))
-                        Button("Pair With Setup Code") {
-                            let trimmed = setupCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if SetupCode.decode(trimmed) != nil {
-                                gateway.setupCode = trimmed
-                                pairingMessage = "Setup code saved. Save the gateway, then approve this device on your gateway to finish pairing."
-                            } else {
-                                pairingMessage = "That setup code isn't valid."
-                            }
-                        }
-                        .disabled(setupCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                    if !pairingMessage.isEmpty {
-                        Text(pairingMessage).font(.caption).foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text("Device Pairing")
-                } footer: {
-                    Text("Pair with a one-time setup code instead of a shared token. The gateway issues a per-device token you can revoke independently.")
-                }
+                devicePairingSection
 
                 Section {
                     Picker("Connection Mode", selection: Binding(
@@ -452,7 +428,168 @@ struct EditGatewaySheet: View {
                     }
                 }
             }
+            .onChange(of: appState.gatewayPairing) { old, new in
+                // Only when a pairing for this gateway starts or ends — a plain status change
+                // must not undo an unpair the wearer has not saved yet.
+                let started = new.pairingGatewayId == gateway.id && old.pairingGatewayId != gateway.id
+                let ended = new.lastPairingGatewayId == gateway.id && new.pairingGatewayId != gateway.id
+                    && (old.pairingGatewayId == gateway.id || old.lastPairingEnd != new.lastPairingEnd)
+                if started || ended { reloadPairingFields() }
+            }
         }
+    }
+
+    // MARK: - Device pairing
+
+    private var pairing: GatewayPairingSnapshot { appState.gatewayPairing }
+    private var isPairingThisGateway: Bool { pairing.pairingGatewayId == gateway.id }
+
+    @ViewBuilder
+    private var devicePairingSection: some View {
+        Section {
+            // Pairing opens the gateway's event socket, which only runs with Agent Mode on.
+            if !Config.agentModeEnabled {
+                Label("Requires Agent Mode", systemImage: "lock.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let deviceToken = gateway.deviceToken, !deviceToken.isEmpty {
+                HStack {
+                    Label("Paired", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(OGTheme.okLabel)
+                    Spacer()
+                    Text("This device").font(.caption).foregroundStyle(.secondary)
+                }
+                Button("Unpair This Device", role: .destructive) {
+                    gateway.deviceToken = nil
+                    gateway.deviceId = nil
+                    gateway.setupCode = nil
+                    pairingMessage = String(localized: "Unpaired. Save to apply.")
+                }
+            } else if isPairingThisGateway {
+                pairingStatusRow
+                Button("Cancel Pairing", role: .destructive) {
+                    appState.openClawEventClient.cancelPairing()
+                }
+            } else if let change = pendingAddressChange {
+                Text("This setup code is for a different address from the one saved for this gateway. Pair with the address in the code, or cancel.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Use the Code's Address and Pair") {
+                    gateway = change.address.replacing(in: gateway)
+                    pendingAddressChange = nil
+                    beginPairing(setupCode: change.setupCode)
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingAddressChange = nil
+                    pairingMessage = ""
+                }
+            } else {
+                TextField("Setup Code", text: $setupCodeInput, axis: .vertical)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .font(.system(.footnote, design: .monospaced))
+                Button("Pair With Setup Code") {
+                    pairWithSetupCode()
+                }
+                .disabled(!Config.agentModeEnabled
+                          || setupCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if let ended = endedPairingMessage {
+                    Text(ended).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if !pairingMessage.isEmpty {
+                Text(pairingMessage).font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Device Pairing")
+        } footer: {
+            Text("Pair with a one-time setup code instead of a shared token. The gateway issues a per-device token you can revoke independently. A setup code fills in the gateway's address when none is saved.")
+        }
+    }
+
+    /// The running pairing, as the event client last reported it.
+    private var pairingStatusRow: some View {
+        HStack(spacing: 8) {
+            switch pairing.status {
+            case .waitingApproval?:
+                Image(systemName: "hourglass")
+                    .foregroundStyle(.secondary)
+                Text("Waiting for approval. Approve this device on your gateway.")
+            case .error?:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(OGTheme.errorLabel)
+                Text("The gateway didn't accept the connection. Check its address and setup code, or cancel and try again.")
+            case .paired?:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(OGTheme.okLabel)
+                Text("Connected. Finishing pairing…")
+            case .connecting?, .disconnected?, nil:
+                ProgressView()
+                Text("Connecting to the gateway…")
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// How the last pairing for this gateway ended, when it ended without pairing.
+    private var endedPairingMessage: String? {
+        guard pairing.lastPairingGatewayId == gateway.id else { return nil }
+        switch pairing.lastPairingEnd {
+        case .timedOut?:
+            return String(localized: "Pairing timed out before the device was approved. Get a new setup code from your gateway and try again.")
+        case .cancelled?:
+            return String(localized: "Pairing cancelled.")
+        case .paired?, nil:
+            return nil
+        }
+    }
+
+    /// Check the code and its address, then pair — or ask first if the address differs.
+    private func pairWithSetupCode() {
+        pairingMessage = ""
+        let trimmed = setupCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let payload = SetupCode.decode(trimmed) else {
+            pairingMessage = String(localized: "That setup code isn't valid.")
+            return
+        }
+        guard case let .success(address) = SetupCodeAddress.parse(
+            payload.url, defaultPort: gateway.gatewayProvider.defaultPort) else {
+            pairingMessage = String(localized: "The address in this setup code can't be used. Check the code with your gateway.")
+            return
+        }
+        switch address.apply(to: gateway) {
+        case .filled(let updated):
+            gateway = updated
+            beginPairing(setupCode: trimmed)
+        case .matches:
+            beginPairing(setupCode: trimmed)
+        case .differs:
+            pendingAddressChange = PendingAddressChange(address: address, setupCode: trimmed)
+        }
+    }
+
+    /// Save the gateway as it stands (the client pairs the saved copy), then start pairing.
+    private func beginPairing(setupCode: String) {
+        guard gateway.enabled else {
+            pairingMessage = String(localized: "Turn this gateway on to pair with it.")
+            return
+        }
+        gateway.setupCode = setupCode
+        onSave(gateway)
+        setupCodeInput = ""
+        appState.openClawEventClient.startPairing(gatewayId: gateway.id, setupCode: setupCode)
+    }
+
+    /// The client writes the pairing fields to the saved gateway; keep this sheet's copy in step
+    /// so Save does not put the old ones back.
+    private func reloadPairingFields() {
+        guard let saved = Config.savedGateways.first(where: { $0.id == gateway.id }) else { return }
+        gateway.deviceToken = saved.deviceToken
+        gateway.deviceId = saved.deviceId
+        gateway.setupCode = saved.setupCode
     }
 
     private func testConnection() {

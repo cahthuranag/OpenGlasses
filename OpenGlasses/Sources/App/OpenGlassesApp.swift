@@ -2157,6 +2157,7 @@ class AppState: ObservableObject, AppStateProtocol {
         erasure.agentDocuments = agentDocs
         erasure.conversations = conversationStore
         erasure.offlineQueue = offlineQueue
+        erasure.capturedManuals = CapturedManualStore.shared
         erasure.learningCandidates = LearningCandidateStore.shared
         erasure.learningEntries = LearningEntryStore.shared
         return MemoryFactServices(
@@ -2670,6 +2671,7 @@ class AppState: ObservableObject, AppStateProtocol {
             erasureStores.recordedSessions = recordedSessionStore
             erasureStores.offlineQueue = offlineQueue
             erasureStores.stagedExports = StagedExportCoordinator.allFamilies
+            erasureStores.capturedManuals = CapturedManualStore.shared
             erasureStores.learningCandidates = LearningCandidateStore.shared
             erasureStores.learningEntries = LearningEntryStore.shared
             replaySources.subjects = SubjectErasureCoordinator(stores: erasureStores)

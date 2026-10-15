@@ -4,7 +4,7 @@
 Swift/Go golden and negative checks, Office-report verifier extension and
 [lifecycle inventory](IF-lifecycle-inventory.md). P1 durable capture core implemented 2026-10-15: protected staging, resumable redacted
 checkpoints, immutable atomic bundles, lifecycle tombstones and erasure linkage. The portable
-contract/core suite passes 64 tests. P2 retrieval core is implemented (2026-10-16): captured-only prompt/manual/equipment lookup, exact scope, physical page routing and retained citations pass focused simulator checks. P3–P5 remain unbuilt on this phase branch; camera UI and sender are not yet active.
+contract/core suite passes 64 tests. P2 retrieval core is implemented (2026-10-16): captured-only prompt/manual/equipment lookup, exact scope, physical page routing and retained citations pass focused simulator checks. P3 phone capture/local-use code is implemented (2026-10-16), with on-device Vision recognition, recovery and list/view/forget surfaces. Portable checks and 25 focused simulator checks pass. Physical-device qualification remains owed in [the device guide](../field-assist/photographed-manuals.md). P4–P5 remain unbuilt on this phase branch; no Office sender or pool-review route is active.
 Drafted 2026-10-10. A technician at an older unit photographs
 the pages of the paper manual that came with it; the phone recognises the text on each page on
 device, makes the pages answerable in the same job, attaches them to the job in text and image
@@ -463,7 +463,7 @@ Nothing in this plan builds the office half; it names the contract the office wi
   evidence, capture citation/page models, and the pure supersession state machine. Add capability
   and HIPAA/profile checks across services. Production-default pagination and captured-only
   retrieval tests are gates, not just a happy-path fixture.
-- **P3 — phone capture and local-use surfaces.** Frozen single-flight request, VisionKit sheet,
+- **P3 — phone capture and local-use surfaces (code implemented 2026-10-16; physical qualification owed).** Frozen single-flight request, VisionKit sheet,
   `manual_capture`, job action, progress/recovery, photographed-page routing and Custom Vaults
   list/view/forget. Check a real binder on the oldest supported phone: glare, forty pages,
   cancellation/lock/relaunch, memory/thermal behaviour and time to answerable; set shipping

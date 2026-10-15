@@ -56,6 +56,14 @@ final class CapturedManualCatalog {
             guard let self, self.accessAllowed(), m.scope == self.scopeForVault(m.vaultID) else { return false }
             return (try? self.source?.manifests().contains { $0.documentID == id }) == true
         }
+        guard current() else {throw CapturedManualStore.Failure.cancelled}
+        if pages.allSatisfy({$0.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}) {
+            // Keep a complete unreadable book viewable without publishing empty evidence.
+            for document in documents.documents where document.namespace.hasPrefix("captured:\(m.captureID):") {
+                documents.forget(documentId:document.id)
+            }
+            return
+        }
         // Empty failed pages contribute no text, but remain in the source map/PDF for viewing.
         guard await documents.ingestPages(documentId:id,name:Self.citationName(m),pages:pages,
             sourceType:"captured_manual_ocr",namespace:Self.namespace(m),stillAllowed:current) else {

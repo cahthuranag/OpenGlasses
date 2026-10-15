@@ -52,7 +52,7 @@ final class CapturedManualIntegrationTests: XCTestCase {
         Config.hipaaMode = previousHipaa;EntitlementTestScope.restore(previousEntitlement)
         try await super.tearDown()
     }
-    private func capture(revision: Int64 = 1) async throws -> CapturedManualContract.Manifest {
+    private func capture(revision: Int64 = 1, failed:Bool = false) async throws -> CapturedManualContract.Manifest {
         let session = try XCTUnwrap(sessions.activeSession)
         let m = CapturedManualStore.Metadata(captureID:"integration-book",revision:revision,sessionID:session.id,
             jobReference:"JOB-ORIGINAL",jobID:"",jobRevision:0,scope:catalog.scopeForVault(vaultID),
@@ -63,6 +63,7 @@ final class CapturedManualIntegrationTests: XCTestCase {
         try source.finishStaging(m.key)
         let pdf = try OfficeCheckInFixtures.file("captured-manual-pages-v1",extension:"pdf")
         let assembler = CapturedManualAssembler(store:source,read:{ bytes,_,_ in
+            if failed {throw CapturedManualStore.Failure.missingPage}
             let page = String(decoding:bytes,as:UTF8.self)
             return .init(text:page == "1" ? "Fault ZX7 means wet pressure switch tubing. Replacement part AB1234.\nPage 41" : "Other page \(page)",confidence:0.95)
         },makePDF:{ _,_ in pdf },pageCount:{try XCTUnwrap(PDFDocument(data:$0)).pageCount})
@@ -113,5 +114,16 @@ final class CapturedManualIntegrationTests: XCTestCase {
         XCTAssertTrue(documents.documents.isEmpty)
         XCTAssertNil(catalog.historical(citation:citation))
         XCTAssertThrowsError(try source.file(first,name:"pages.pdf"))
+    }
+    func testAllFailedCaptureKeepsPagesWithoutInventingSearchEvidence() async throws {
+        let m = try await capture(failed:true)
+        XCTAssertEqual(m.failedPages,3)
+        XCTAssertTrue(documents.documents.isEmpty)
+        XCTAssertEqual(try source.manifests().first,m)
+        XCTAssertNoThrow(try source.file(m,name:"pages.pdf"))
+        XCTAssertFalse(sessions.retrievableCorpus(store:try XCTUnwrap(sessions.activeVault),documentStore:documents).any)
+        _ = try await ManualFigureTool(documentStore:documents,sessionService:sessions).execute(args:["page":2])
+        let figure = try XCTUnwrap(sessions.stagedFigure)
+        XCTAssertEqual(figure.page,2);XCTAssertNotNil(sessions.sourcePDFURL(for:figure))
     }
 }

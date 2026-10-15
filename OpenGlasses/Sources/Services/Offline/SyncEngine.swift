@@ -28,6 +28,7 @@ final class LocalSyncSink: SyncSink {
     private(set) var delivered: [String] = []
 
     func deliver(_ op: QueuedOp) async -> SyncOutcome {
+        if op.kind == .capturedManual { return .waiting(reason:"waiting for a compatible authorised office") }
         if delivered.contains(op.id) { return .done }   // idempotent
         delivered.append(op.id)
         return .done

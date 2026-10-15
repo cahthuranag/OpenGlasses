@@ -146,7 +146,7 @@ get an honest unsupported/pending receipt, never an assertion of remote deletion
 ## 5. Standalone signed report extension
 
 Compatibility name: **`captured-manual-v1`**. P4 must enable it only with an explicitly selected
-compatible opt-in peer. No negotiation is implemented by P0; merely recognising the new enum
+compatible opt-in peer. The P4 phone sender defaults to denied compatibility and exposes an injectable qualified-peer seam for tests. Production negotiation/selection is not implemented; merely recognising the new enum
 on this phone is not evidence that an Office can receive it. Old peers refuse unknown kinds.
 An unavailable/old peer leaves the operation pending, and capture operations never fall through
 to a local sink returning success. Personal captures without an authorised Office stay local.

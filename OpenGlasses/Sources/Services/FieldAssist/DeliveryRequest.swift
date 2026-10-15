@@ -23,6 +23,7 @@ struct DeliveryRequest: Identifiable, Equatable {
         /// A team-learning bundle (Plan FP P3): candidates on their way to the reviewer, or the
         /// reviewer's decisions on their way back. Unsigned — see `LearningBundle`.
         case learningBundle(LearningBundle, direction: LearningBundle.Direction)
+        case capturedManual(CapturedManualContract.Manifest)
 
         /// The job session the delivery is audited against. A bundle belongs to no job, so it is
         /// filed under `LearningBundle.queueSessionID`, which no job's counts include.
@@ -30,6 +31,7 @@ struct DeliveryRequest: Identifiable, Equatable {
             switch self {
             case .workRecord(let record, _): return record.sessionId
             case .learningBundle: return LearningBundle.queueSessionID
+            case .capturedManual(let m): return m.sessionID
             }
         }
 
@@ -37,6 +39,7 @@ struct DeliveryRequest: Identifiable, Equatable {
             switch self {
             case .workRecord(let record, _): return record.jobReference
             case .learningBundle: return nil
+            case .capturedManual(let m): return m.jobReference.isEmpty ? nil : m.jobReference
             }
         }
 
@@ -46,6 +49,7 @@ struct DeliveryRequest: Identifiable, Equatable {
             switch self {
             case .workRecord(_, let ids): return ids
             case .learningBundle: return []
+            case .capturedManual: return []
             }
         }
 
@@ -61,6 +65,7 @@ struct DeliveryRequest: Identifiable, Equatable {
             switch self {
             case .workRecord(let record, _): return QueuedOp.make(workRecord: record)
             case .learningBundle(let bundle, _): return QueuedOp.make(learningBundle: bundle)
+            case .capturedManual(let m): return QueuedOp.make(capturedManual:m)
             }
         }
     }
@@ -77,10 +82,13 @@ struct DeliveryRequest: Identifiable, Equatable {
             /// The separate transcript PDF a report to the office may carry (Plan HD). Its own kind
             /// so the confirmation, the audit line and a test can tell it from the work order.
             case transcriptPDF = "transcript_pdf"
+            case capturedManualPDF = "captured_manual_pdf"
+            case capturedManualText = "captured_manual_text"
 
             var mimeType: String {
                 switch self {
-                case .pdf, .transcriptPDF: return "application/pdf"
+                case .pdf, .transcriptPDF, .capturedManualPDF: return "application/pdf"
+                case .capturedManualText: return "text/markdown"
                 case .json: return "application/json"
                 case .video: return "video/mp4"
                 }
@@ -89,7 +97,8 @@ struct DeliveryRequest: Identifiable, Equatable {
             /// The UTI the Messages composer wants, which is not the MIME type.
             var uti: String {
                 switch self {
-                case .pdf, .transcriptPDF: return "com.adobe.pdf"
+                case .pdf, .transcriptPDF, .capturedManualPDF: return "com.adobe.pdf"
+                case .capturedManualText: return "net.daringfireball.markdown"
                 case .json: return "public.json"
                 case .video: return "public.mpeg-4"
                 }
@@ -189,7 +198,7 @@ struct DeliveryRequest: Identifiable, Equatable {
     var record: WorkRecord? {
         switch payload {
         case .workRecord(let record, _): return record
-        case .learningBundle: return nil
+        case .learningBundle, .capturedManual: return nil
         }
     }
 
@@ -199,6 +208,17 @@ struct DeliveryRequest: Identifiable, Equatable {
 
     var sessionId: String { payload.sessionId }
     var jobReference: String? { payload.jobReference }
+    var manualAttachmentNote: String? {
+        guard transcript?.audience == .office,let manuals = record?.capturedManuals,!manuals.isEmpty else {return nil}
+        let notes = manuals.map { m -> String in
+            let stem = "manual-\(m.captureID)-\(m.captureRevision)."
+            let pdf = attachments.contains {$0.kind == .capturedManualPDF && $0.filename == stem + "pdf"}
+            let text = attachments.contains {$0.kind == .capturedManualText && $0.filename == stem + "md"}
+            let files = pdf && text ? "PDF and recognised text attached" : text ? "recognised text attached; pages stayed on this phone" : "files stayed on this phone"
+            return "Photographed manual \(m.captureID), original job \(m.originalJob): \(files); \(m.standing)."
+        }
+        return notes.joined(separator:"\n") + " Share omitted files from Saved photographed manuals if needed. These are unreviewed scan references."
+    }
 
     /// Build the request for a decided channel. The three shapes come off one record, so the PDF a
     /// person reads, the JSON a system parses and the sentence in a message bubble cannot disagree.
@@ -237,8 +257,21 @@ struct DeliveryRequest: Identifiable, Equatable {
             payload: .learningBundle(bundle, direction: bundle.direction))
     }
 
+    /// This payload has one destination: signed Office records. The generic endpoint sink
+    /// explicitly waits if this reaches it without the managed Office route.
+    static func make(capturedManual m: CapturedManualContract.Manifest, pdf: URL, text: URL) -> DeliveryRequest {
+        let line = "Photographed manual: \(m.pageCount) pages; original job \(m.jobReference). Local, unreviewed; job-only evidence."
+        return .init(channel:.endpoint,recipients:[],subject:"Photographed manual for the office",
+            body:line,shortBody:line,attachments:[
+                .init(url:pdf,kind:.capturedManualPDF,filename:"pages.pdf"),
+                .init(url:text,kind:.capturedManualText,filename:"text.md")],payload:.capturedManual(m))
+    }
+
     /// What the technician is told is about to happen, before anybody taps anything.
     var confirmation: String {
+        if case .capturedManual(let m) = payload {
+            return "Photographed manual queued for the configured office: \(m.pageCount) pages. It stays pending until a compatible office accepts the manifest, PDF and recognised text. This does not submit it for pool review."
+        }
         if case .learningBundle(let bundle, _) = payload { return bundleConfirmation(bundle) }
         var line = "Job report ready to go by \(channel.spokenName)"
         if !recipients.isEmpty { line += " to \(recipients.joined(separator: ", "))" }
@@ -271,6 +304,7 @@ struct DeliveryRequest: Identifiable, Equatable {
         } else {
             line += " Check it on the phone and tap Send."
         }
+        if let manualAttachmentNote {line += " " + manualAttachmentNote}
         return line
     }
 }
@@ -446,6 +480,6 @@ struct ReportComposerModel: Equatable {
 
     /// Body as the composer is actually filled in, notes included.
     var filledBody: String {
-        ([body, attachmentNote, clipNote].compactMap { $0 }).joined(separator: "\n\n")
+        ([body, attachmentNote, clipNote, request.manualAttachmentNote].compactMap { $0 }).joined(separator: "\n\n")
     }
 }

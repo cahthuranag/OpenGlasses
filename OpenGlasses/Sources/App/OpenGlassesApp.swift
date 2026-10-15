@@ -1352,7 +1352,8 @@ class AppState: ObservableObject, AppStateProtocol {
             fallback: endpoint,
             officeIsDestination: { AppState.officeIsReportDestination },
             reports: reports,
-            evidence: { try await evidence.evidence(for: $0) }))
+            evidence: { try await evidence.evidence(for: $0) },
+            capturedManualAllowed: {CapturedManualOutbox.shared.allows($0)}))
     }
 
     static var officeIsReportDestination: Bool {
@@ -1365,7 +1366,9 @@ class AppState: ObservableObject, AppStateProtocol {
     /// build without the office transport.
     lazy var officeReports: OfficeReportService? = {
         guard let transport = OfficeManagedFolderMobilecoreTransport.makeIfAvailable() else { return nil }
-        return OfficeReportService(seams: .app(transport: transport))
+        var seams = OfficeReportService.Seams.app(transport:transport)
+        seams.recordAllowed = {CapturedManualOutbox.shared.allows($0)}
+        return OfficeReportService(seams:seams)
     }()
 
     /// The documents that go with a job's record, kept as the exact bytes named until the office
@@ -1375,7 +1378,8 @@ class AppState: ObservableObject, AppStateProtocol {
               let directory = OfficeReportEvidenceStore.defaultDirectory() else { return nil }
         let documents = OfficeReportDocuments.Seams.app()
         return OfficeReportEvidenceStore(directory: directory) { op in
-            try OfficeReportDocuments.render(sessionID: op.sessionId, seams: documents)
+            if op.kind == .capturedManual {return try await CapturedManualOutbox.shared.documents(for:op)}
+            return try OfficeReportDocuments.render(sessionID: op.sessionId, seams: documents)
         }
     }()
 
@@ -1695,11 +1699,14 @@ class AppState: ObservableObject, AppStateProtocol {
                 // named: record accepted is delivered, and is not yet a reason to erase.
                 // A recording the office has not acknowledged is owed too.
                 return ids.reduce(0) { $0 + QueuedRecordRows.outstandingCount(in: ops, sessionId: $1) }
-                    + (self.officeReports?.notFullyAccepted(recordIDs: Set(ids)) ?? 0)
+                    + CapturedManualOutbox.shared.unqueuedCount(sessionIDs:Set(ids))
+                    + (self.officeReports?.notFullyAccepted(recordIDs: Set(ids).union(
+                        CapturedManualOutbox.shared.captureIDs(sessionIDs:Set(ids)))) ?? 0)
                     + (self.officeJobRecordings?.unacknowledged(sessionIDs: Set(ids)) ?? 0)
             },
             eraseRecords: { [weak self] ids in
                 guard let self else { return }
+                let captureIDs = CapturedManualOutbox.shared.captureIDs(sessionIDs:Set(ids))
                 // A job's recording goes with the job: out of the office's folder first, while
                 // the phone still knows which bundles they are.
                 self.officeJobRecordings?.withdrawForRemoval(sessionIDs: Set(ids))
@@ -1709,7 +1716,8 @@ class AppState: ObservableObject, AppStateProtocol {
                     self.offlineQueue.delete(id: op.id)
                 }
                 // What this phone kept for the office about those records goes with them.
-                self.officeReports?.forget(recordIDs: Set(ids))
+                for captureID in captureIDs {CapturedManualOutbox.shared.forget(captureID)}
+                self.officeReports?.forget(recordIDs: Set(ids).union(captureIDs))
                 self.officeReportEvidence?.removeAll()
                 DeliverySettings.clearStored()
             })
@@ -1717,6 +1725,10 @@ class AppState: ObservableObject, AppStateProtocol {
     }
 
     private func configureJobSends() {
+        let manuals = CapturedManualOutbox.shared
+        manuals.queue = offlineQueue;manuals.evidence = officeReportEvidence;manuals.reports = officeReports
+        ManualCaptureService.shared.completed = { m in Task {try? await manuals.enqueue(m)} }
+        CapturedManualCatalog.shared.onForget = {manuals.forget($0)}
         jobSends.connect(.init(
             speak: { [weak self] line in await self?.speechService.speak(line, urgency: .low) },
             settings: { Config.deliverySettings },
@@ -2158,6 +2170,7 @@ class AppState: ObservableObject, AppStateProtocol {
         erasure.conversations = conversationStore
         erasure.offlineQueue = offlineQueue
         erasure.capturedManuals = CapturedManualStore.shared
+        erasure.capturedManualDeliveryErasure = {CapturedManualOutbox.shared.forget($0)}
         erasure.learningCandidates = LearningCandidateStore.shared
         erasure.learningEntries = LearningEntryStore.shared
         return MemoryFactServices(
@@ -2672,6 +2685,7 @@ class AppState: ObservableObject, AppStateProtocol {
             erasureStores.offlineQueue = offlineQueue
             erasureStores.stagedExports = StagedExportCoordinator.allFamilies
             erasureStores.capturedManuals = CapturedManualStore.shared
+            erasureStores.capturedManualDeliveryErasure = {CapturedManualOutbox.shared.forget($0)}
             erasureStores.learningCandidates = LearningCandidateStore.shared
             erasureStores.learningEntries = LearningEntryStore.shared
             replaySources.subjects = SubjectErasureCoordinator(stores: erasureStores)
@@ -4665,10 +4679,10 @@ class AppState: ObservableObject, AppStateProtocol {
         // A report prepared for the office that has to leave by the share sheet instead is rebuilt
         // for the share sheet (Plan HD): the technician picks where it goes there, so the audience
         // follows the route it actually takes. Their own "going to my office" is carried over.
-        let request: DeliveryRequest
+        var request: DeliveryRequest
         if case .workRecord(let record, let partsRequestIds) = staged.payload,
            resolution.channel != staged.channel, let transcript = staged.transcript,
-           transcript.carriesTranscript {
+           (transcript.carriesTranscript || staged.attachments.contains(where:{$0.kind == .capturedManualPDF || $0.kind == .capturedManualText})) {
             let delivery = session.reportDelivery(for: resolution.channel,
                                                   sessionId: staged.sessionId,
                                                   recipients: staged.recipients,
@@ -4683,6 +4697,7 @@ class AppState: ObservableObject, AppStateProtocol {
         } else {
             request = staged
         }
+        request = CapturedManualOutbox.shared.forPresentation(request)
         if let note = resolution.note {
             addDebugEvent(note)
             Task { await speechService.speak(note) }

@@ -122,6 +122,7 @@ final class SubjectErasureCoordinator {
         var conversations: ConversationStore?
         var offlineQueue: OfflineQueue?
         var capturedManuals: CapturedManualStore?
+        var capturedManualDeliveryErasure: ((String) -> Void)?
         var learningCandidates: LearningCandidateStore?
         var learningEntries: LearningEntryStore?
 
@@ -466,6 +467,7 @@ final class SubjectErasureCoordinator {
                 case .memoryFact: matches = false
                 }
                 if matches {
+                    stores.capturedManualDeliveryErasure?(metadata.captureID)
                     // Forget removes the entire capture, including retained revisions. Retract
                     // every derived revision even when source deletion needs an unlock/retry.
                     for document in stores.documents?.documents ?? []

@@ -72,14 +72,16 @@ final class OfficeReportEvidenceStore {
         values.isExcludedFromBackup = true
         var excluded = folder
         try? excluded.setResourceValues(values)
+        let protection: Data.WritingOptions = op.kind == .capturedManual
+            ? .completeFileProtection : .completeFileProtectionUntilFirstUserAuthentication
         for (document, attachment) in zip(rendered.documents, attachments) {
             try document.bytes.write(to: folder.appendingPathComponent(attachment.sha256),
-                                     options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                                     options: [.atomic, protection])
         }
         // The index last: a folder without one is rendered again.
         try JSONEncoder().encode(Index(transcript: rendered.transcript, attachments: attachments))
             .write(to: folder.appendingPathComponent(Self.indexName),
-                   options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                   options: [.atomic, protection])
         guard let stored = read(folder) else { throw Failure.notListable }
         return stored
     }

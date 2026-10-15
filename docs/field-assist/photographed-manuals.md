@@ -27,6 +27,12 @@ images themselves retain the photographed contents. These are local protected fi
 from device backup. Pool approval is unavailable until a compatible Office review round trip is
 supported; capturing a book does not approve it for the organisation's pool.
 
+## Delivery
+
+Organisation-owned books retain their original job when queued. A queued book is not an Office acceptance: the signed receipt must acknowledge both the saved PDF and recognised text. The production sender currently waits for compatible Office support; the signed in-memory peer is test coverage. Personal captures remain local.
+
+Ordinary reports to the Office may include saved manual files within the channel’s measured attachment budget. Messages carries recognised text only; customer reports carry neither manual file. The report says which files stayed on the phone. Saved manuals also offers explicit page/text sharing. A later policy change is checked again before a composer opens.
+
 ## Qualification record
 
 The current limits are provisional engineering defaults: 40 pages, 4 MiB per encoded image,

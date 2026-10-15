@@ -8,6 +8,17 @@ import Foundation
 /// with the same tasks and the same evidence produce the same lines, which is what makes the
 /// read-back something a technician can confirm and a reviewer can check.
 struct WorkRecord: Codable, Equatable {
+    struct CapturedManualReference: Codable, Equatable {
+        let captureID: String
+        let captureRevision: Int64
+        let bundleSHA256: String
+        let title: String
+        let originalJob: String
+        let capturedAt: Int64
+        let pageCount: Int
+        let lowConfidencePages: Int
+        let standing: String
+    }
 
     /// The machine, flattened out of the session's identity so the record stands alone.
     struct Equipment: Codable, Equatable {
@@ -116,6 +127,8 @@ struct WorkRecord: Codable, Equatable {
     /// finished task does not carry. Nil, and absent from the JSON, on a job that recorded none,
     /// so an older record encodes exactly as it did.
     var vanStock: [VanStockUse]?
+    /// Office-only references. Source serial, images and recognised text are never embedded.
+    var capturedManuals: [CapturedManualReference]?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -150,6 +163,7 @@ struct WorkRecord: Codable, Equatable {
         case teamLearnings = "team_learnings"
         case teamLearningAnswers = "team_learning_answers"
         case vanStock = "van_stock"
+        case capturedManuals = "captured_manuals"
     }
 
     // MARK: - Assembly
@@ -157,7 +171,8 @@ struct WorkRecord: Codable, Equatable {
     /// Build the record from a session. Pure: everything it needs is already on the session, so the
     /// same session always renders the same record.
     init(session: FieldSession, vaultName: String, vaultSourceNote: String? = nil,
-         usage: JobUsageSummary? = nil) {
+         usage: JobUsageSummary? = nil, capturedManuals: [CapturedManualReference]? = nil) {
+        self.capturedManuals = capturedManuals?.isEmpty == false ? capturedManuals : nil
         self.sessionId = session.id
         self.jobReference = session.jobReference
         self.vaultId = session.vaultId
@@ -239,6 +254,7 @@ struct WorkRecord: Codable, Equatable {
         teamLearnings = try c.decodeIfPresent([LearningCandidateReference].self, forKey: .teamLearnings)
         teamLearningAnswers = try c.decodeIfPresent([TeamLearningAnswer].self, forKey: .teamLearningAnswers)
         vanStock = try c.decodeIfPresent([VanStockUse].self, forKey: .vanStock)
+        capturedManuals = try c.decodeIfPresent([CapturedManualReference].self,forKey:.capturedManuals)
     }
 
     /// A summary with no requests is no summary: kept out of the record, so the synthesized encoder

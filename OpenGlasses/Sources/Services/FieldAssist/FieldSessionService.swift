@@ -219,7 +219,7 @@ final class FieldSessionService: ObservableObject {
         let record = WorkRecord(session: session, vaultName: endedVaultName,
                                 vaultSourceNote: VaultSourceBadge.forInstalledVault(id: session.vaultId)?
                                     .recordLine(vaultName: endedVaultName),
-                                usage: jobUsage(sessionId: session.id))
+                                usage: jobUsage(sessionId: session.id),capturedManuals:capturedManualReferences(for:session))
         offlineQueue?.enqueue(QueuedOp.make(workRecord: record))
         activeSession = nil
         activeVault = nil
@@ -1042,7 +1042,7 @@ final class FieldSessionService: ObservableObject {
         return WorkRecord(session: session, vaultName: name,
                           vaultSourceNote: VaultSourceBadge.forInstalledVault(id: session.vaultId)?
                               .recordLine(vaultName: name),
-                          usage: jobUsage(sessionId: session.id))
+                          usage: jobUsage(sessionId: session.id),capturedManuals:capturedManualReferences(for:session))
     }
 
     /// What a job has cost in model usage so far (Plan GD1) — every request the usage store tagged
@@ -1059,7 +1059,17 @@ final class FieldSessionService: ObservableObject {
         return WorkRecord(session: session, vaultName: name,
                           vaultSourceNote: VaultSourceBadge.forInstalledVault(id: session.vaultId)?
                               .recordLine(vaultName: name),
-                          usage: jobUsage(sessionId: session.id))
+                          usage: jobUsage(sessionId: session.id),capturedManuals:capturedManualReferences(for:session))
+    }
+
+    func capturedManualReferences(for session: FieldSession) -> [WorkRecord.CapturedManualReference] {
+        capturedManuals.eligible(for:session,vaultID:session.vaultId).compactMap { m in
+            guard let bytes = try? CapturedManualContract.canonicalBytes(m) else {return nil}
+            return .init(captureID:m.captureID,captureRevision:m.captureRevision,
+                bundleSHA256:CapturedManualContract.digest(bytes),title:m.title,originalJob:m.jobReference,
+                capturedAt:m.capturedAt,pageCount:m.pageCount,lowConfidencePages:m.lowConfidencePages,
+                standing:CapturedManualOutbox.shared.standing(m))
+        }
     }
 
     /// Jobs that ended within `window` of `now`, as `ReportTargetResolver` needs them (Plan GB P0).
@@ -1187,6 +1197,26 @@ final class FieldSessionService: ObservableObject {
                                               filename: Self.clipFilename(record: record,
                                                                           clip: clip,
                                                                           index: partition.attached.firstIndex(of: id) ?? 0))
+        }
+        // Existing report files and clips get their measured room first. Customer reports never
+        // acquire a book just because their channel happens to support attachments.
+        if transcript.audience == .office, capturedManuals.accessAllowed(),let source = capturedManuals.source {
+            var used = delivery.attachments.reduce(0) { total,file in
+                guard let size = try? file.url.resourceValues(forKeys:[.fileSizeKey]).fileSize else {return Int.max}
+                let (next,overflow) = total.addingReportingOverflow(size);return overflow ? Int.max : next
+            }
+            for m in ((try? source.manifests()) ?? []) where m.sessionID == record.sessionId
+                && m.scope == capturedManuals.scopeForVault(m.vaultID) {
+                guard let pdf = try? source.file(m,name:"pages.pdf"),let text = try? source.file(m,name:"text.md") else {continue}
+                let manual = budget.partitionManual(pdfBytes:m.pdfBytes,textBytes:m.textBytes,reservedBytes:used,officeAudience:true)
+                for file in manual.attached {
+                    let isPDF = file == .pdf
+                    delivery.attachments.append(.init(url:isPDF ? pdf : text,kind:isPDF ? .capturedManualPDF : .capturedManualText,
+                        filename:"manual-\(m.captureID)-\(m.captureRevision)." + (isPDF ? "pdf" : "md")))
+                    let (next,overflow) = used.addingReportingOverflow(isPDF ? m.pdfBytes : m.textBytes)
+                    used = overflow ? Int.max : next
+                }
+            }
         }
         return delivery
     }

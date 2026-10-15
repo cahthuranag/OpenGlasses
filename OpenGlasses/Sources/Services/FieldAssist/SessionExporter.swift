@@ -295,6 +295,10 @@ enum SessionExporter {
         if audience != .office {
             record.teamLearnings = nil
             record.teamLearningAnswers = nil
+            record.capturedManuals = nil
+        } else {
+            let references = FieldSessionService.shared.capturedManualReferences(for:session)
+            record.capturedManuals = references.isEmpty ? nil : references
         }
         return record
     }

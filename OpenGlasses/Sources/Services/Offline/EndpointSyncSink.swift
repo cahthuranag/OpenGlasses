@@ -60,6 +60,7 @@ final class EndpointSyncSink: SyncSink {
     }
 
     func deliver(_ op: QueuedOp) async -> SyncOutcome {
+        if op.kind == .capturedManual { return .waiting(reason:"photographed manuals require the signed Office records route") }
         // A clip is a file, and this sink posts JSON. Answered here rather than delegated, so a
         // configured endpoint says plainly that the video stayed behind instead of the fallback
         // marking it delivered to nowhere.

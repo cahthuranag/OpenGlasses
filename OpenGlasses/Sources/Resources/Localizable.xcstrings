@@ -131769,6 +131769,82 @@
         }
       }
     },
+    "On by default. When a task you give an agent is about something in view, or you've pinned a frame, one still from the camera goes with it to the agent endpoint you've configured. Turn this off to send agents text only." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مفعّل افتراضيًا. عندما تتعلق مهمة تعطيها لوكيل بشيء أمامك، أو عندما تكون قد ثبّتّ إطارًا، تُرسَل معها صورة ثابتة واحدة من الكاميرا إلى نقطة نهاية الوكيل التي قمت بتكوينها. أوقف هذا الخيار لإرسال النص فقط إلى الوكلاء."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activado de forma predeterminada. Cuando una tarea que le das a un agente trata sobre algo que tienes a la vista, o si fijaste un cuadro, se envía con ella una imagen fija de la cámara al endpoint de agente que hayas configurado. Desactívalo para enviar solo texto a los agentes."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activé par défaut. Quand une tâche que vous confiez à un agent porte sur quelque chose dans votre champ de vision, ou si vous avez épinglé un cadre, une image fixe de la caméra l'accompagne vers le point de terminaison d'agent que vous avez configuré. Désactivez cette option pour n'envoyer que du texte aux agents."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alapértelmezés szerint be van kapcsolva. Ha egy ügynöknek adott feladat valamire vonatkozik, ami Ön előtt van, vagy rögzített egy keretet, a kamera egy állóképe is vele megy a beállított ügynökvégpontra. Kapcsolja ki, ha csak szöveget szeretne küldeni az ügynököknek."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attivo per impostazione predefinita. Quando un'attività che affidi a un agente riguarda qualcosa che hai davanti, o se hai fissato un frame, con essa viene inviato un fotogramma della fotocamera all'endpoint dell'agente che hai configurato. Disattiva questa opzione per inviare agli agenti solo testo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルトでオンです。エージェントに渡すタスクが目の前にあるものに関する場合、またはフレームを固定している場合は、カメラの静止画が1枚、設定したエージェントのエンドポイントに一緒に送信されます。エージェントにテキストだけを送るには、これをオフにしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기본적으로 켜져 있습니다. 에이전트에게 맡긴 작업이 눈앞에 있는 무언가에 관한 것이거나 프레임을 고정해 둔 경우, 카메라 정지 이미지 한 장이 작업과 함께 구성한 에이전트 엔드포인트로 전송됩니다. 에이전트에게 텍스트만 보내려면 이 설정을 끄세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standaard aan. Als een taak die u aan een agent geeft over iets in beeld gaat, of als u een frame hebt vastgezet, gaat er één stilstaand beeld van de camera mee naar het agenteindpunt dat u hebt geconfigureerd. Zet dit uit om agenten alleen tekst te sturen."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ativado por padrão. Quando uma tarefa que você dá a um agente é sobre algo à sua vista, ou se você fixou um quadro, uma imagem estática da câmera vai junto com ela para o endpoint do agente que você configurou. Desative para enviar apenas texto aos agentes."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Включено по умолчанию. Если задача, которую вы даёте агенту, касается того, что у вас перед глазами, или вы закрепили кадр, вместе с ней на настроенную вами конечную точку агента отправляется один снимок с камеры. Выключите, чтобы отправлять агентам только текст."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认开启。当你交给代理的任务涉及眼前的事物，或你已固定某个画面时，摄像头的一张静态图像会随任务一起发送到你配置的代理端点。关闭此项可只向代理发送文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "預設開啟。當你交給代理的任務與眼前的事物有關，或你已固定某個畫面時，攝影機的一張靜態影像會隨任務一起傳送到你設定的代理端點。關閉此項即可只傳送文字給代理。"
+          }
+        }
+      }
+    },
     "On the Bar" : {
       "localizations" : {
         "ar" : {
@@ -210809,6 +210885,158 @@
         }
       }
     },
+    "The FHIR server answered and asks for a credential. Your saved credential wasn't sent: it only goes to the address it was saved with. To test this address with a credential, tap Replace and enter it." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استجاب خادم FHIR ويطلب بيانات اعتماد. لم تُرسَل بيانات الاعتماد المحفوظة لديك: فهي تُرسَل فقط إلى العنوان الذي حُفظت معه. لاختبار هذا العنوان باستخدام بيانات اعتماد، اضغط على استبدال وأدخلها."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor FHIR respondió y pide una credencial. Tu credencial guardada no se envió: solo se envía a la dirección con la que se guardó. Para probar esta dirección con una credencial, toca Reemplazar e ingrésala."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur FHIR a répondu et demande un identifiant. Votre identifiant enregistré n'a pas été envoyé : il n'est envoyé qu'à l'adresse avec laquelle il a été enregistré. Pour tester cette adresse avec un identifiant, appuyez sur Remplacer et entrez-le."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A FHIR-szerver válaszolt, és hitelesítő adatot kér. A mentett hitelesítő adat nem lett elküldve: csak arra a címre megy, amellyel elmentették. Ha hitelesítő adattal szeretné tesztelni ezt a címet, koppintson a „Cserélje ki” gombra, és adja meg."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server FHIR ha risposto e chiede una credenziale. La credenziale salvata non è stata inviata: viene inviata solo all'indirizzo con cui è stata salvata. Per provare questo indirizzo con una credenziale, tocca Sostituisci e inseriscila."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FHIRサーバーが応答し、資格情報を求めています。保存済みの資格情報は送信されていません。資格情報は保存時のアドレスにのみ送信されます。このアドレスを資格情報付きでテストするには、「置換」をタップして入力してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FHIR 서버가 응답했으며 자격 증명을 요구합니다. 저장된 자격 증명은 전송되지 않았습니다. 자격 증명은 저장할 때의 주소로만 전송됩니다. 이 주소를 자격 증명으로 테스트하려면 바꾸기를 탭하고 입력하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De FHIR-server heeft geantwoord en vraagt om een referentie. Uw opgeslagen referentie is niet verzonden: die gaat alleen naar het adres waarmee ze is opgeslagen. Om dit adres met een referentie te testen, tikt u op Vervangen en voert u die in."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O servidor FHIR respondeu e pede uma credencial. Sua credencial salva não foi enviada: ela só vai para o endereço com que foi salva. Para testar este endereço com uma credencial, toque em Substituir e insira-a."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервер FHIR ответил и запрашивает учётные данные. Сохранённые учётные данные не отправлялись: они отправляются только на адрес, с которым были сохранены. Чтобы проверить этот адрес с учётными данными, нажмите «Заменить» и введите их."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FHIR 服务器已响应，并要求提供凭证。未发送你保存的凭证：它只会发送到保存时的地址。要使用凭证测试此地址，请轻点“替换”并输入凭证。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FHIR 伺服器已回應，並要求提供憑證。未傳送你儲存的憑證：它只會傳送到儲存時的位址。若要使用憑證測試此位址，請點一下「替換」並輸入憑證。"
+          }
+        }
+      }
+    },
+    "The FHIR server answered. Your saved credential wasn't sent: it only goes to the address it was saved with." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استجاب خادم FHIR. لم تُرسَل بيانات الاعتماد المحفوظة لديك: فهي تُرسَل فقط إلى العنوان الذي حُفظت معه."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor FHIR respondió. Tu credencial guardada no se envió: solo se envía a la dirección con la que se guardó."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur FHIR a répondu. Votre identifiant enregistré n'a pas été envoyé : il n'est envoyé qu'à l'adresse avec laquelle il a été enregistré."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A FHIR-szerver válaszolt. A mentett hitelesítő adat nem lett elküldve: csak arra a címre megy, amellyel elmentették."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il server FHIR ha risposto. La credenziale salvata non è stata inviata: viene inviata solo all'indirizzo con cui è stata salvata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FHIRサーバーが応答しました。保存済みの資格情報は送信されていません。資格情報は保存時のアドレスにのみ送信されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FHIR 서버가 응답했습니다. 저장된 자격 증명은 전송되지 않았습니다. 자격 증명은 저장할 때의 주소로만 전송됩니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De FHIR-server heeft geantwoord. Uw opgeslagen referentie is niet verzonden: die gaat alleen naar het adres waarmee ze is opgeslagen."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O servidor FHIR respondeu. Sua credencial salva não foi enviada: ela só vai para o endereço com que foi salva."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервер FHIR ответил. Сохранённые учётные данные не отправлялись: они отправляются только на адрес, с которым были сохранены."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FHIR 服务器已响应。未发送你保存的凭证：它只会发送到保存时的地址。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FHIR 伺服器已回應。未傳送你儲存的憑證：它只會傳送到儲存時的位址。"
+          }
+        }
+      }
+    },
     "The file" : {
       "comment" : "Section header for the file preview in the support report.",
       "isCommentAutoGenerated" : true,
@@ -214571,6 +214799,82 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "報告附帶較小的副本。分享時會傳送原始檔案，完全按照存儲時的樣子。"
+          }
+        }
+      }
+    },
+    "The saved credential belongs to the address it was saved with, so nothing was saved. To use a new address, tap Replace and enter its credential, or clear the saved one first." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بيانات الاعتماد المحفوظة مرتبطة بالعنوان الذي حُفظت معه، لذلك لم يُحفظ أي شيء. لاستخدام عنوان جديد، اضغط على استبدال وأدخل بيانات الاعتماد الخاصة به، أو امسح بيانات الاعتماد المحفوظة أولًا."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La credencial guardada pertenece a la dirección con la que se guardó, así que no se guardó nada. Para usar una dirección nueva, toca Reemplazar e ingresa su credencial, o borra primero la guardada."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'identifiant enregistré appartient à l'adresse avec laquelle il a été enregistré, donc rien n'a été enregistré. Pour utiliser une nouvelle adresse, appuyez sur Remplacer et entrez son identifiant, ou effacez d'abord celui qui est enregistré."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A mentett hitelesítő adat ahhoz a címhez tartozik, amellyel elmentették, ezért semmi sem lett mentve. Új cím használatához koppintson a „Cserélje ki” gombra, és adja meg a hozzá tartozó hitelesítő adatot, vagy előbb törölje a mentettet."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La credenziale salvata appartiene all'indirizzo con cui è stata salvata, quindi non è stato salvato nulla. Per usare un nuovo indirizzo, tocca Sostituisci e inserisci la sua credenziale, oppure cancella prima quella salvata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みの資格情報は保存時のアドレス専用のため、何も保存されませんでした。新しいアドレスを使うには、「置換」をタップしてその資格情報を入力するか、先に保存済みの資格情報を消去してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장된 자격 증명은 저장할 때의 주소에만 사용되므로 아무것도 저장되지 않았습니다. 새 주소를 사용하려면 바꾸기를 탭하고 해당 자격 증명을 입력하거나, 먼저 저장된 자격 증명을 지우세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De opgeslagen referentie hoort bij het adres waarmee ze is opgeslagen, dus er is niets opgeslagen. Om een nieuw adres te gebruiken, tikt u op Vervangen en voert u de bijbehorende referentie in, of wist u eerst de opgeslagen referentie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A credencial salva pertence ao endereço com que foi salva, então nada foi salvo. Para usar um novo endereço, toque em Substituir e insira a credencial dele, ou apague a salva primeiro."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сохранённые учётные данные привязаны к адресу, с которым они были сохранены, поэтому ничего не сохранено. Чтобы использовать новый адрес, нажмите «Заменить» и введите учётные данные для него или сначала удалите сохранённые."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存的凭证只属于保存时的地址，因此未保存任何内容。要使用新地址，请轻点“替换”并输入该地址的凭证，或先清除已保存的凭证。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已儲存的憑證只屬於儲存時的位址，因此未儲存任何內容。若要使用新位址，請點一下「替換」並輸入該位址的憑證，或先清除已儲存的憑證。"
           }
         }
       }

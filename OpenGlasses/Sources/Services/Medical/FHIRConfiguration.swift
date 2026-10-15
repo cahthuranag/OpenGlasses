@@ -118,24 +118,9 @@ enum MedicalExportError: LocalizedError, Equatable {
     case exportSetupFailed
     case exportWriteFailed
 
-    var errorDescription: String? {
-        switch self {
-        case .serverNotConfigured:
-            return "No FHIR server is configured. Add one in Medical Export settings."
-        case .migrationPending:
-            return "Clinical credentials are still being moved to protected storage. Unlock the device, reopen the app, and try again."
-        case .credentialLocked:
-            return "Clinical credentials are unavailable while the device is locked. Unlock the device and try again."
-        case .credentialMissing:
-            return "No credential is stored for this FHIR server. Enter one in Medical Export settings."
-        case .protectedStorageUnavailable:
-            return "Protected storage is unavailable. Unlock the device and try again."
-        case .exportSetupFailed:
-            return "The export could not be given the required protection, so it was discarded."
-        case .exportWriteFailed:
-            return "The export file could not be written."
-        }
-    }
+    /// The sentence lives on ``MedicalExportFailure``, so a thrown error and a classified failure
+    /// can never word the same condition two ways.
+    var errorDescription: String? { MedicalExportFailure(self).message }
 }
 
 /// Trimmed value, or `nil` when the string is empty or whitespace only, so "cleared" and

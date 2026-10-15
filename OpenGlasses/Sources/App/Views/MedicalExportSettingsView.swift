@@ -19,6 +19,8 @@ struct MedicalExportSettingsView: View {
     @State private var testResultMessage = ""
     @State private var isTesting = false
     @State private var saveMessage: String?
+    /// A device-owner prompt for Clear is on screen; a second tap must not stack another.
+    @State private var isAuthorizingClear = false
 
     private var store: FHIRConfigurationStore { exportService.configurationStore }
 
@@ -254,16 +256,35 @@ struct MedicalExportSettingsView: View {
                     }
                     .buttonStyle(.borderless)
                     Button("Clear", role: .destructive) {
-                        store.clearCredential()
-                        tokenDraft = ""
-                        hasStoredCredential = false
-                        isReplacingCredential = false
-                        saveMessage = "Credential cleared."
+                        clearCredential()
                     }
                     .buttonStyle(.borderless)
+                    .disabled(isAuthorizingClear)
                 }
+                Text("Kept only on this phone. Clearing it asks for Face ID, Touch ID or your passcode, and also deletes any exports still waiting to be shared.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             } else {
                 SecretInputField(placeholder: "Pre-obtained OAuth token", text: $tokenDraft)
+            }
+        }
+    }
+
+    /// Clearing needs the device owner: fail-closed, so a cancelled or unavailable prompt clears
+    /// nothing, and the row says so rather than looking as if it worked.
+    private func clearCredential() {
+        guard !isAuthorizingClear else { return }
+        isAuthorizingClear = true
+        OwnerGateAuth.authorize(reason: String(localized: "Clear the FHIR credential and pending exports")) { authorization in
+            Task { @MainActor in
+                isAuthorizingClear = false
+                let outcome = exportService.clearCredentialAndPendingExports(authorization: authorization)
+                if outcome.didClear {
+                    tokenDraft = ""
+                    hasStoredCredential = false
+                    isReplacingCredential = false
+                }
+                saveMessage = outcome.message
             }
         }
     }
@@ -310,7 +331,7 @@ struct MedicalExportSettingsView: View {
             )
             saveMessage = "Configuration saved."
         } catch {
-            saveMessage = error.localizedDescription
+            saveMessage = MedicalExportFailure(error).message
         }
     }
 
@@ -319,7 +340,7 @@ struct MedicalExportSettingsView: View {
         Task {
             guard let candidate = config.endpoint(for: "metadata"),
                   let url = try? EndpointPolicy.requireOpenable(url: candidate, for: .fhirConnectionTest) else {
-                testResultMessage = "Invalid server URL."
+                testResultMessage = MedicalExportFailure.invalidServerURL.message
                 showTestResult = true
                 isTesting = false
                 return
@@ -335,6 +356,7 @@ struct MedicalExportSettingsView: View {
                 request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
 
+            // Only the status is read; a refusal's body can carry the server's own record text.
             do {
                 let (_, response) = try await URLSession.shared.data(for: request)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -342,10 +364,12 @@ struct MedicalExportSettingsView: View {
                 if (200...299).contains(status) {
                     testResultMessage = "Connected successfully (HTTP \(status)). The FHIR server is reachable and responded to the capability statement request."
                 } else {
-                    testResultMessage = "Server responded with HTTP \(status). Check your URL and authentication credentials."
+                    MedicalExportFailure.log(.connectionTest, status: status)
+                    testResultMessage = MedicalExportFailure(httpStatus: status).message
                 }
             } catch {
-                testResultMessage = "Connection failed: \(error.localizedDescription)"
+                MedicalExportFailure.log(.connectionTest, error: error)
+                testResultMessage = MedicalExportFailure(error, operation: .connectionTest).message
             }
 
             showTestResult = true

@@ -95,7 +95,7 @@ struct MedicalExportTool: NativeTool {
                 }
                 return "Export file created: \(lease.displayName) (\(format.rawValue)). It is held in protected storage for sharing and is removed once the share finishes."
             } catch {
-                return "Failed to create export file: \(error.localizedDescription)"
+                return "Failed to create export file: \(MedicalExportFailure(error).message)"
             }
 
         case "share":
@@ -116,7 +116,7 @@ struct MedicalExportTool: NativeTool {
                 }
                 return "Share sheet opening with the transcript file (\(format.rawValue)). Choose your preferred sharing method."
             } catch {
-                return "Failed to create export file for sharing: \(error.localizedDescription)"
+                return "Failed to create export file for sharing: \(MedicalExportFailure(error).message)"
             }
 
         case "status":

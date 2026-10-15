@@ -23,10 +23,14 @@ class MedicalExportService: ObservableObject {
     let configurationStore: FHIRConfigurationStore
     /// Owner of every clinical export file this service creates.
     let leases: MedicalExportLeaseCoordinator
+    /// The session FHIR submissions go out on. Injected so a test can answer them locally.
+    private let transport: URLSession
 
     init(configurationStore: FHIRConfigurationStore = .shared,
-         leases: MedicalExportLeaseCoordinator? = nil) {
+         leases: MedicalExportLeaseCoordinator? = nil,
+         transport: URLSession = .shared) {
         self.configurationStore = configurationStore
+        self.transport = transport
         // Built here rather than as a default argument: the coordinator is main-actor isolated and
         // default arguments are evaluated outside that isolation.
         self.leases = leases ?? MedicalExportLeaseCoordinator()
@@ -65,8 +69,7 @@ class MedicalExportService: ObservableObject {
         do {
             context = try configurationStore.requestContext()
         } catch {
-            return ExportResult(success: false, platform: .fhir,
-                                message: error.localizedDescription, timestamp: Date())
+            return failure(MedicalExportFailure(error))
         }
         return await exportToFHIR(transcript: transcript, duration: duration, date: date,
                                   origin: origin, context: context)
@@ -84,18 +87,18 @@ class MedicalExportService: ObservableObject {
         do {
             guard let built = try fhirSubmissionRequest(transcript: transcript, duration: duration, date: date,
                                                         origin: origin, context: context) else {
-                return ExportResult(success: false, platform: .fhir,
-                                    message: "Invalid FHIR server URL", timestamp: Date())
+                return failure(.invalidServerURL)
             }
             request = built
         } catch {
-            return ExportResult(success: false, platform: .fhir,
-                                message: "Export failed: \(error.localizedDescription)",
-                                timestamp: Date())
+            MedicalExportFailure.log(.submission, error: error)
+            return failure(MedicalExportFailure(error))
         }
 
+        // The reply body is discarded unread: a refused write's `OperationOutcome` can quote the
+        // resource it refused. Only the status decides what the wearer is told.
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await transport.data(for: request)
             let httpResponse = response as? HTTPURLResponse
             let statusCode = httpResponse?.statusCode ?? 0
 
@@ -106,15 +109,33 @@ class MedicalExportService: ObservableObject {
                 hipaaService?.log(action: "FHIR_EXPORT", detail: "status=\(statusCode)")
                 return result
             } else {
-                return ExportResult(success: false, platform: .fhir,
-                                    message: "FHIR server returned HTTP \(statusCode)",
-                                    timestamp: Date())
+                MedicalExportFailure.log(.submission, status: statusCode)
+                return failure(MedicalExportFailure(httpStatus: statusCode))
             }
         } catch {
-            return ExportResult(success: false, platform: .fhir,
-                                message: "Export failed: \(error.localizedDescription)",
-                                timestamp: Date())
+            MedicalExportFailure.log(.submission, error: error)
+            return failure(MedicalExportFailure(error, operation: .submission))
         }
+    }
+
+    private func failure(_ failure: MedicalExportFailure) -> ExportResult {
+        ExportResult(success: false, platform: .fhir, message: failure.message, timestamp: Date())
+    }
+
+    // MARK: - Clearing
+
+    /// Clear the stored FHIR credential and revoke every export still waiting to be shared,
+    /// subject to owner authorization.
+    ///
+    /// Fails **closed**, like `HIPAAComplianceService.clearAuditLog(authorization:)`: only an
+    /// explicit `.granted` clears, and there is no default argument, so no caller can clear
+    /// without having asked. Clinical identifiers stay — they are shown and edited in place.
+    @discardableResult
+    func clearCredentialAndPendingExports(authorization: OwnerAuthorization) -> FHIRCredentialClearOutcome {
+        guard authorization.isGranted else { return .kept(authorization) }
+        configurationStore.clearCredential()
+        leases.revokeAll()
+        return .cleared
     }
 
     /// The POST a FHIR submission sends, or nil when the configured endpoint is not one the app

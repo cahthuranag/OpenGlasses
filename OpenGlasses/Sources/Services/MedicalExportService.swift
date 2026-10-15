@@ -138,6 +138,112 @@ class MedicalExportService: ObservableObject {
         return .cleared
     }
 
+    // MARK: - Server settings
+
+    /// Save the FHIR server settings from the settings screen: the public configuration, an
+    /// entered credential (empty when none was typed), and the clinical identifiers.
+    ///
+    /// The stored credential stays bound to the address it was saved with
+    /// (`FHIRCredentialBinding`): a new address is refused unless a credential comes with it. The
+    /// credential is written before the address, so a failed write leaves the old pair intact
+    /// rather than the old credential pointing at the new address.
+    func saveServerSettings(_ configuration: FHIRServerConfiguration,
+                            enteredCredential: String,
+                            privateContext: FHIRPrivateContext) -> FHIRServerSaveOutcome {
+        let saved = configurationStore.configuration
+        let entered = enteredCredential.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A store that cannot say whether a credential exists is treated as holding one.
+        let credentialStored = (try? configurationStore.loadCredential(serverID: saved.serverID))
+            .map { !$0.isEmpty } ?? true
+
+        guard FHIRCredentialBinding.maySaveEndpoint(savedBaseURL: saved.baseURL,
+                                                    newBaseURL: configuration.baseURL,
+                                                    credentialStored: credentialStored,
+                                                    credentialEntered: !entered.isEmpty) else {
+            return .credentialBoundToSavedAddress
+        }
+
+        do {
+            if !entered.isEmpty {
+                try configurationStore.storeCredential(FHIRCredential(bearerToken: entered),
+                                                       serverID: configuration.serverID)
+            }
+            configurationStore.save(configuration)
+            try configurationStore.storePrivateContext(privateContext, serverID: configuration.serverID)
+            return .saved(storedCredential: !entered.isEmpty)
+        } catch {
+            return .failed(MedicalExportFailure(error))
+        }
+    }
+
+    // MARK: - Connection test
+
+    /// Ask the server typed into the settings screen for its capability statement, and say how it
+    /// went. Only the status is read; a refusal's body can carry the server's own record text.
+    ///
+    /// The stored credential goes only to the address it was saved with
+    /// (`FHIRConnectionTestPolicy`). Testing any other address sends a credential only if one was
+    /// typed for this test, and otherwise checks that the server answers, with no credential.
+    func testConnection(baseURL: String, enteredCredential: String) async -> String {
+        var candidateConfig = configurationStore.configuration
+        let savedBaseURL = candidateConfig.baseURL
+        candidateConfig.baseURL = baseURL
+        guard let candidate = candidateConfig.endpoint(for: "metadata"),
+              let url = try? EndpointPolicy.requireOpenable(url: candidate, for: .fhirConnectionTest) else {
+            return MedicalExportFailure.invalidServerURL.message
+        }
+
+        let entered = enteredCredential.trimmingCharacters(in: .whitespacesAndNewlines)
+        let credential = FHIRConnectionTestPolicy.credential(
+            savedBaseURL: savedBaseURL,
+            testedBaseURL: baseURL,
+            credentialStored: configurationStore.hasStoredCredential(),
+            credentialEntered: !entered.isEmpty)
+
+        var request = URLRequest(url: url)
+        request.setValue("application/fhir+json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 10
+
+        // Read the stored credential only here, for this one request, and only for its own address.
+        let token: String?
+        switch credential {
+        case .stored:
+            do {
+                token = try configurationStore.loadCredential(serverID: candidateConfig.serverID).bearerToken
+            } catch {
+                return MedicalExportFailure(error).message
+            }
+        case .entered: token = entered
+        case .withheld, .none: token = nil
+        }
+        if let token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        do {
+            let (_, response) = try await transport.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+            if credential == .withheld {
+                if (200...299).contains(status) {
+                    return String(localized: "The FHIR server answered. Your saved credential wasn't sent: it only goes to the address it was saved with.")
+                }
+                if status == 401 || status == 403 {
+                    return String(localized: "The FHIR server answered and asks for a credential. Your saved credential wasn't sent: it only goes to the address it was saved with. To test this address with a credential, tap Replace and enter it.")
+                }
+            }
+
+            if (200...299).contains(status) {
+                return "Connected successfully (HTTP \(status)). The FHIR server is reachable and responded to the capability statement request."
+            }
+            MedicalExportFailure.log(.connectionTest, status: status)
+            return MedicalExportFailure(httpStatus: status).message
+        } catch {
+            MedicalExportFailure.log(.connectionTest, error: error)
+            return MedicalExportFailure(error, operation: .connectionTest).message
+        }
+    }
+
     /// The POST a FHIR submission sends, or nil when the configured endpoint is not one the app
     /// may open. Split out so the body that leaves the device — origin tag included — can be read
     /// without sending it.

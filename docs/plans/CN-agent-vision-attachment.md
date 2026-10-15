@@ -148,8 +148,13 @@ The user granted "dispatch text tasks to my agent"; quietly upgrading that to "a
 head-mounted camera to the same endpoint" is a scope expansion they didn't agree to. Hence the
 distinct setting, sited next to the other Agent Mode controls with copy that says plainly what leaves
 the device. It shipped default-off; since EH P1 it defaults **on** (see *Config*), so it is now the
-way to withhold frames rather than the grant that sends them. The toggle's info and footer copy
-still describe the default-off era and need rewording to match.
+way to withhold frames rather than the grant that sends them. *Copy reworded 2026-10-16:* the
+toggle's info text and footer used to say it was off by default and that turning agents on never
+started sending pictures. Both now say it is on by default; the footer says a still goes with a task
+about something in view, or with a pinned frame, to the configured agent endpoint, and that turning
+it off sends agents text only. The footer's new string is translated into all twelve catalog
+languages; the info text is not in the catalog (`InfoToggle` shows it verbatim, like every other
+info text).
 
 **Tests:** custom-config omits the image when `imageField` is empty; OpenClaw param shape;
 default-implementation shim keeps two-argument callers working; `dispatch` honours a policy `.skip`

@@ -243,7 +243,7 @@ extension NetworkRoute {
         case .asrModelDownload: return "Download on-device speech-recognition model files."
         case .fingerspellingModelDownload: return "Download the on-device fingerspelling model files."
         case .fhirExport: return "Write an export to the operator's own FHIR record system."
-        case .fhirConnectionTest: return "Health-check the FHIR base URL and credential the operator just entered."
+        case .fhirConnectionTest: return "Health-check the FHIR base URL the operator entered. The saved credential goes only to the address it was saved with."
         case .claudeOAuthToken: return "Exchange or refresh an OAuth token for the model provider account."
         case .chatGPTOAuthToken: return "Exchange or refresh an OAuth token for the model provider account."
         case .googleOAuthToken: return "Exchange or refresh an OAuth token for the linked Google account."
@@ -450,7 +450,7 @@ extension NetworkRoute {
         case .asrModelDownload: return ["ASRModelBundle"]
         case .fingerspellingModelDownload: return ["FingerspellingModelBundle"]
         case .fhirExport: return ["MedicalExportService"]
-        case .fhirConnectionTest: return ["MedicalExportSettingsView"]
+        case .fhirConnectionTest: return ["MedicalExportService"]
         case .claudeOAuthToken: return ["ClaudeOAuthService"]
         case .chatGPTOAuthToken: return ["ChatGPTOAuthService"]
         case .googleOAuthToken: return ["GoogleOAuthService"]

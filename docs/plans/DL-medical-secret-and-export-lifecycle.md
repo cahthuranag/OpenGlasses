@@ -1,6 +1,6 @@
 # Plan DL — Medical Secret Storage and Export Lifecycle
 
-**Status:** 🚧 P0 ✅ · P1 ✅ · P2 ✅ · P3.1 ✅ · P3.2 ✅ · P3.4 in-app ✅ (2026-10-15) — P3.3's device share matrix and P3.4's public privacy-page update remain (drafted 2026-08-26)
+**Status:** 🚧 P0 ✅ · P1 ✅ · P2 ✅ · P3.1 ✅ · P3.2 ✅ · P3.4 in-app ✅ (2026-10-15) · credential bound to its saved address ✅ (2026-10-16) — P3.3's device share matrix and P3.4's public privacy-page update remain (drafted 2026-08-26)
 **Origin:** 2026-08-26 adversarial review findings 3 (High) and 10 (Medium).
 **Priority:** P0 for FHIR credentials; P1 before broader medical-export distribution.
 
@@ -195,6 +195,37 @@ default argument), and `FHIRCredentialClearOutcome` words each ending so a refus
 was cleared. A caption under the stored-credential row says where the credential is kept and what
 Clear asks for and removes. Clinical identifiers are not cleared: they are edited in place on the
 same screen. Still owed: item 3 (device share matrix) and item 4's public privacy page.
+
+**Decision, 2026-10-16 (Greig): Clear stays fail-closed.** On a phone with no passcode, "Clear FHIR
+credentials" refuses and says a passcode is needed, as the audit-log clear does. This is a
+confirmed product decision, not a gap to relax: a phone that cannot prove its owner cannot clear
+the credential.
+
+**Shipped 2026-10-16: the credential is bound to the address it was saved with.** The settings
+screen's connection test used to send the stored bearer token to whatever server address was typed
+in, saved or not, so anyone holding the unlocked phone could point the field at their own server
+and read the credential off the request. Now:
+
+- `FHIRConnectionTestPolicy` decides what a test sends. The stored credential goes only to the
+  saved address. Another address gets a credential only if one is typed for that test (Replace);
+  otherwise the test checks that the server answers and sends no `Authorization` header, and its
+  result says the saved credential was not sent. A 401/403 there reads as "asks for a credential",
+  not "refused your credential".
+- `FHIRCredentialBinding.maySaveEndpoint` keeps the pair together when saving. A new address
+  while a credential is stored is refused unless a credential is entered with it; it is not
+  silently cleared, because that would be a way round Clear's owner prompt. A store that cannot
+  say whether a credential exists counts as holding one. The credential is written before the
+  address, so a failed write never leaves the old credential pointing at the new address. Tapping
+  a platform now saves only the platform, not the typed address.
+- Addresses compare the way `FHIRServerConfiguration.endpoint(for:)` builds them: whitespace and a
+  trailing slash are folded, nothing else. A host in different case, an explicit `:443`, or another
+  scheme or path counts as a different address: at worst the credential has to be entered again,
+  and it is never sent somewhere it was not saved for.
+- The test request moved from the view into `MedicalExportService.testConnection(baseURL:enteredCredential:)`
+  on the injected session, so `NetworkRoute.fhirConnectionTest` is now owned by
+  `MedicalExportService`. `FHIRCredentialBindingTests` covers the policy table and, through a
+  recording `URLProtocol`, that an unsaved address never sees an `Authorization` header, with the
+  saved address as the positive control.
 
 1. Define user-facing errors for credential locked/missing, migration required, protected-file setup
    failure, share unavailable, FHIR rejection, and outcome-unknown network timeout. Do not echo server

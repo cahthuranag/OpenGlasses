@@ -60,6 +60,7 @@ struct VaultManagerView: View {
 
     var body: some View {
         Form {
+            PhotographedManualSection()
             Section {
                 Button {
                     importing = true

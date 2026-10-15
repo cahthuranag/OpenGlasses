@@ -127,6 +127,7 @@ final class ManualCaptureService: ObservableObject {
         guard allowed(metadata(for:manifest)) else { throw CapturedManualStore.Failure.cancelled }
         try await catalog.index(manifest)
         status = "Manual saved locally: \(manifest.pageCount) photographed pages, \(manifest.lowConfidencePages) low confidence. Text recognised from a scan; verify figures against the printed page."
+        if manifest.failedPages > 0 {status += " \(manifest.failedPages) pages could not be recognised and contribute no searchable text."}
         if manifest.recognitionFallback { status += " An unsupported language preference used automatic detection." }
         completed?(manifest)
     }

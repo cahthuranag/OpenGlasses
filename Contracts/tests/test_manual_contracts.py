@@ -17,6 +17,7 @@ SOURCES = [
     "Services/OfficeSync/OfficeManagedJobReceipt.swift",
     "Services/OfficeSync/OfficeCheckIn.swift",
     "Services/OfficeSync/OfficeReport.swift",
+    "Services/FieldAssist/CapturedManual/CapturedManualContract.swift",
     "Services/OfficeSync/OfficeBulk.swift",
     "Services/OfficeSync/OfficeJobUpdate.swift",
     "Services/OfficeSync/OfficeRecordingReceipt.swift",
@@ -28,7 +29,7 @@ SOURCES = [
     "Services/Reading/BookFileExtractor.swift",
 ]
 TESTS = ["OfficeManualAssignmentTests.swift", "OfficeManagedJobTests.swift", "OfficeManagedJobReceiptTests.swift", "OfficeManualImportTests.swift", "VaultArchiveFixtures.swift",
-         "OfficeCheckInTests.swift", "OfficeCheckInFixtures.swift", "OfficeReportTests.swift", "OfficeBulkTests.swift", "OfficeJobUpdateTests.swift", "OfficeRecordingReceiptTests.swift"]
+         "OfficeCheckInTests.swift", "OfficeCheckInFixtures.swift", "OfficeReportTests.swift", "CapturedManualContractTests.swift", "OfficeBulkTests.swift", "OfficeJobUpdateTests.swift", "OfficeRecordingReceiptTests.swift"]
 
 
 def main():

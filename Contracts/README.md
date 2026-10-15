@@ -1,6 +1,8 @@
 # FX1 manual assignment contract — draft v1
 
-Other contracts in this folder: [job file](job-file.md) (format 2: an office-assigned identifier
+Other contracts in this folder: [captured manual](captured-manual.md) (IF P0: immutable source
+manifest, shared Swift/Go checks, signed report extension and proposed reviewed-vault provenance;
+no capture or sender), [job file](job-file.md) (format 2: an office-assigned identifier
 and revision, signed over exact bytes; reference implementation, fixture and the phone's import), [office commissioning](commissioning.md) (scan to join an office),
 [office preview](office-preview.md), [recorded session](recorded-session.md) (the shared rules
 and the two signed messages have reference code and fixtures; nothing records or sends),

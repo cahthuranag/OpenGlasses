@@ -233,7 +233,8 @@ final class OfficeReportService: ObservableObject {
                 jobID: submission.jobID, jobRevision: submission.jobRevision, record: submission.record,
                 manifest: manifest, transcript: submission.transcript,
                 createdAt: Int64(submission.createdAt.timeIntervalSince1970)),
-              OfficeReport.transcriptAgrees(report, attachments: submission.evidence.map(\.attachment)),
+              OfficeReport.recordAgrees(report, record: submission.record,
+                                        attachments: submission.evidence.map(\.attachment)),
               let payload = OfficeReport.payloadBytes(report) else {
             throw Failure.notReportable("This record can't be written as a report for the office.")
         }

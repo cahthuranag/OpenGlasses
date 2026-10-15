@@ -1,13 +1,16 @@
 # Plan IF — Photographed Manuals (the binder on the bench becomes a manual the phone can read)
 
-**Status:** 📝 Drafted 2026-10-10 — nothing implemented. A technician at an older unit photographs
+**Status:** 🚧 P0 implemented 2026-10-11 — [contract](../../Contracts/captured-manual.md), shared
+Swift/Go golden and negative checks, Office-report verifier extension and
+[lifecycle inventory](IF-lifecycle-inventory.md). P1–P5 remain unbuilt. No capture or sender.
+Drafted 2026-10-10. A technician at an older unit photographs
 the pages of the paper manual that came with it; the phone recognises the text on each page on
 device, makes the pages answerable in the same job, attaches them to the job in text and image
 form, and sends them to Avenkin Office, where the organisation decides whether they join the pool
 of manuals every technician gets. The pool itself, and the review that gates it, live in the office
 (private plan, proposed FX23); the phone never publishes to the pool directly.
 **Reviewed:** 2026-10-11 against worktree `if-photographed-manuals`, `7410e1c6` (build 494).
-The design and acceptance gates below incorporate the review; nothing is implemented. This is
+The design and acceptance gates below incorporate the review; P0 implementation is recorded above. This is
 the photographed-manual draft formerly headed HW. Plan HW remains glasses stream integrity.
 **Track:** Field Assist (B2B).
 **Related:** Plan [EF](EF-scanned-manual-import.md) (per-page recognition, confidence counts, the
@@ -439,7 +442,7 @@ Nothing in this plan builds the office half; it names the contract the office wi
 
 ## Build order (one PR each)
 
-- **P0 — contracts and lifecycle inventory, headless.** `Contracts/captured-manual.md`, golden
+- **P0 — contracts and lifecycle inventory, headless (implemented 2026-10-11).** `Contracts/captured-manual.md`, golden
   fixtures and portable checks; explicit proposed extensions to office-report kinds/roles/media
   types and signed vault document provenance. Fix canonical bytes, file bounds, page mapping,
   original job/unit/ownership, policy intent, receipts, supersession lineage and peer

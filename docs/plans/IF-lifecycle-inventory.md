@@ -2,7 +2,15 @@
 
 Inventoried 2026-10-11 against merged plan commit `36855b6df` (build 494). P0 defines the source
 and report contracts and portable verifiers. Everything below identifies a later wiring gate;
-**none of these existing paths already manages photographed manuals.**
+**none of these existing paths already managed photographed manuals at that baseline.**
+
+Implementation update, 2026-10-16: P1–P5 phone code now wires the source store, page-aware
+retrieval, camera/recovery surfaces, queue/evidence erasure and departure linkage, and
+authenticated reviewed-copy Ready supersession described below. The original inventory is
+retained as the checklist against that starting point. The registry's generated privacy matrix
+includes `capturedManuals`. Production signed capture publication still denies compatibility
+until a qualified Office peer can be explicitly selected; physical-device qualification and the
+private FX23 review/pool pilot remain owed in the [device guide](../field-assist/photographed-manuals.md).
 
 ## Sources, derived copies and erasure order
 

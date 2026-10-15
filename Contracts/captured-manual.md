@@ -188,7 +188,7 @@ Intake reconciles repeated references by exact capture/revision/digest; another 
 same source revision is a conflict, never an overwrite. The Office retains approved/receipted
 bytes independently of mailbox withdrawal. Retakes/merges do not auto-dedupe by OCR text.
 
-## 6. Proposed reviewed-vault provenance (P5 interface, not active)
+## 6. Reviewed-vault provenance (P5 phone implementation; private peer qualification owed)
 
 Inside each signed archive's `VaultDocument` entry, add optional `captured_manual`:
 
@@ -196,9 +196,10 @@ Inside each signed archive's `VaultDocument` entry, add optional `captured_manua
 {
   "version": 1,
   "origins": [{"captureID": "fixture-capture-1", "captureRevision": 1,
-               "bundleSHA256": "<64 lower-case hex>"}],
+               "bundleSHA256": "<64 lower-case hex>", "pageCount": 3}],
   "pageCount": 3, "ocrPages": 2, "failedPages": 1, "lowConfidencePages": 2,
-  "pages": [{"index": 1, "originIndex": 0, "capturePage": 1, "printedPage": 41}],
+  "pages": [{"index": 1, "originIndex": 0, "capturePage": 1, "printedPage": 41,
+             "textOffset": 11, "textBytes": 57}],
   "organizationID": "fixture-organisation",
   "technician": "Fixture technician", "jobReference": "JOB-1042", "capturedAt": 1800000000,
   "reviewerID": "fixture-reviewer", "reviewerName": "Fixture reviewer", "approvedAt": 1800000120
@@ -206,15 +207,22 @@ Inside each signed archive's `VaultDocument` entry, add optional `captured_manua
 ```
 
 This illustrative shape is not a valid complete three-page example; `pages` must cover every
-physical source PDF page. Origins are unique by captureID/source revision/digest; originIndex
+physical source PDF page. Origins are unique by captureID/source revision; originIndex
 is zero-based into that list; capturePage is positive in that origin's captured page range.
+Every page of every named origin must appear exactly once before the whole source revision can
+be superseded. `textOffset`/`textBytes` select UTF-8 body bytes in the same exact `## Page N`
+furniture as §2; they are authoritative, including for empty failed pages. Printed page zero means unknown.
 Counts obey §2. An origin's complete source manifest/page count must be authenticated or retained
 at intake to validate the map. Merged manuals name every exact originating revision they replace.
 The signed archive bytes bind metadata together with extracted text and source PDF; neither a
 loose metadata sidecar nor an unauthenticated assignment can introduce an origin or approval.
 
-P5 must validate/retain this extension through archive verification, manifest, ledger, page
-mapping, Ready indexing and retriever provenance, on a second phone. It sets source type
+The phone validates/retains this extension through authenticated Office assignment, signed
+archive verification, manifest, ledger, authoritative page mapping, Ready indexing and retriever
+provenance. A signed in-memory archive round trip exercises a second simulated phone; a live
+private Office and pilot crew pass is still owed. Ordinary folder/link imports cannot establish
+approval authority: only the authenticated assignment preflight writes per-document bindings,
+and folder payloads cannot supply the reserved receipt file. It sets source type
 `vault_document_ocr`, retains the scan warning and adds the named technician/job/date/approval
 attribution. Existing archives without the optional extension remain valid and grant no source
 supersession. Malformed present metadata must fail rather than be silently ignored as legacy.

@@ -19,20 +19,21 @@ final class OfficeManualImportTests: XCTestCase {
                      publicKey: try XCTUnwrap(keys["publisherPublicKey"] as? String), status: status)
     }
     private func assignment(archive: Data? = nil, mutation: ((inout [String: Any]) -> Void)? = nil,
-                            highWater: OfficeManualAssignment.HighWater? = nil) throws -> OfficeManualAssignment.Verified {
+                            highWater: OfficeManualAssignment.HighWater? = nil,enrolmentID:String = "fixture-phone") throws -> OfficeManualAssignment.Verified {
         var envelope = try fixture("manual-assignment-v1", extension: "json")
         let seed = Data(SHA256.hash(data: Data("Avenkin public fixture office key v1".utf8)))
         let key = try Curve25519.Signing.PrivateKey(rawRepresentation: seed)
-        if archive != nil || mutation != nil {
+        if archive != nil || mutation != nil || enrolmentID != "fixture-phone" {
             let e = try JSONDecoder().decode(OfficeManualAssignment.Envelope.self, from: envelope)
             var p = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(Data(base64Encoded: e.payload))) as? [String: Any])
             if let archive { p["archiveBytes"] = archive.count; p["archiveSHA256"] = VaultArchiveReader.sha256Hex(archive) }
+            p["enrolmentID"] = enrolmentID
             mutation?(&p)
             let raw = try JSONSerialization.data(withJSONObject: p, options: [.sortedKeys])
             let signature = try key.signature(for: OfficeManualAssignment.domain + raw)
             envelope = try JSONEncoder().encode(OfficeManualAssignment.Envelope(payload: raw.base64EncodedString(), signature: signature.base64EncodedString()))
         }
-        let trust = OfficeManualAssignment.Trust(organizationID: "fixture-org", enrolmentID: "fixture-phone",
+        let trust = OfficeManualAssignment.Trust(organizationID: "fixture-org", enrolmentID: enrolmentID,
             officeID: "fixture-office", generation: 1, setID: "fixture-set", publicKey: key.publicKey.rawRepresentation,
             maximumArchiveBytes: 1_048_576)
         return try OfficeManualAssignment.verify(envelope, trust: trust, now: now, highWater: highWater)
@@ -69,6 +70,101 @@ final class OfficeManualImportTests: XCTestCase {
         XCTAssertEqual(request.receipt.archiveSHA256, prepared.archiveSHA256)
         XCTAssertEqual(request.receipt.sourceHost, "Avenkin Office")
         XCTAssertFalse(request.receipt.sourceHost.contains("://"))
+    }
+    #endif
+    #if !SWIFT_PACKAGE
+    @MainActor
+    func testReviewedCaptureRoundTripRequiresReadyThenWorksOnSecondPhone() async throws {
+        let previous = EntitlementTestScope.grant(tier:.team)
+        let enabled = UserDefaults.standard.object(forKey:"fieldAssistEnabled")
+        UserDefaults.standard.set(true,forKey:"fieldAssistEnabled")
+        let root = TeamLearningFixtures.tempDirectory("ReviewedCapture")
+        defer {
+            VaultImporter.uninstall(id:"fixture-vault");VaultRegistry.shared.reloadUserManifests();VaultRegistry.shared.resetCache()
+            try? FileManager.default.removeItem(at:root)
+            EntitlementTestScope.restore(previous)
+            if let enabled {UserDefaults.standard.set(enabled,forKey:"fieldAssistEnabled")} else {UserDefaults.standard.removeObject(forKey:"fieldAssistEnabled")}
+        }
+        VaultImporter.uninstall(id:"fixture-vault")
+        let source = try CapturedManualStore(root:root.appendingPathComponent("source"),availableBytes:{Int.max})
+        let metadata = CapturedManualStore.Metadata(captureID:"round-trip-book",revision:1,sessionID:"original-session",
+            jobReference:"JOB-IF",jobID:"",jobRevision:0,
+            scope:.init(ownershipScope:"organization",organizationID:"fixture-org",enrolmentID:"fixture-phone",vaultID:"fixture-vault"),
+            unitID:"unit",statedModel:"",confirmedModelToken:"",serial:"",title:"Pressure book",author:"Fixture technician",
+            capturedAt:now-120,policy:"jobOnly",poolIntent:"jobOnly")
+        _ = try source.begin(metadata,languages:["en-US"],fallback:false)
+        for page in 1...3 {try source.appendImage(Data("\(page)".utf8),to:metadata.key)}
+        try source.finishStaging(metadata.key)
+        let pdf = try fixture("captured-manual-pages-v1",extension:"pdf")
+        let assembler = CapturedManualAssembler(store:source,read:{data,_,_ in
+            if data == Data("2".utf8) {throw CapturedManualStore.Failure.missingPage}
+            return .init(text:"Fault RC991: wet pressure switch tubing.\nPage 41",confidence:0.9)
+        },makePDF:{_,_ in pdf},pageCount:{try CapturedManualMedia.pageCount($0)})
+        let m = try await assembler.assemble(metadata.key)
+        let review = try CapturedManualReviewTests.review(m)
+        let text = try Data(contentsOf:source.file(m,name:"text.md"))
+        var files = VaultArchiveFixture.vaultFiles(vaultId:"fixture-vault")
+        let manifest = VaultManifest(id:"fixture-vault",name:"Reviewed book",version:"1.0.0",files:["fault-codes.md"],
+            documentsDir:"documents",documents:[.init(file:"manual.md",title:"Pressure book",source:"pages.pdf",capturedManual:review)],
+            promptRules:["Never fabricate.","Cite the source."])
+        files["manifest.json"] = try JSONEncoder().encode(manifest)
+        files["documents/manual.txt"] = nil;files["documents/manual.md"] = text;files["documents/pages.pdf"] = pdf
+        let archive = try signedArchive(files:files)
+        let prepared = try prepare(archive,assignment:assignment(archive:archive))
+        let documents = TeamLearningFixtures.documentStore(in:root)
+        let catalog = CapturedManualCatalog();catalog.injectedSource = source;catalog.documents = documents;catalog.accessAllowed = {true}
+        catalog.scopeForVault = {_ in metadata.scope}
+        try await catalog.index(m)
+        let wrong = try CapturedManualReviewTests.review(m,digest:String(repeating:"0",count:64))
+        let wrongManifest = VaultManifest(id:"fixture-vault",name:"Reviewed book",version:"1.0.0",files:["fault-codes.md"],
+            documentsDir:"documents",documents:[.init(file:"manual.md",title:"Pressure book",source:"pages.pdf",capturedManual:wrong)],
+            promptRules:["Never fabricate.","Cite the source."])
+        var wrongFiles = files;wrongFiles["manifest.json"] = try JSONEncoder().encode(wrongManifest)
+        let wrongArchive = try signedArchive(files:wrongFiles)
+        let wrongPrepared = try prepare(wrongArchive,assignment:assignment(archive:wrongArchive))
+        let wrongInstalled = try await VaultLinkInstaller.install(wrongPrepared.vaultImportRequest)
+        _ = try await VaultImporter.syncDocuments(manifest:wrongInstalled.manifest,into:documents,capturedCatalog:catalog)
+        XCTAssertEqual(try source.manifests().count,1,"even Ready and identical titles/text/PDF cannot replace a different bundle digest")
+        let installed = try await VaultLinkInstaller.install(prepared.vaultImportRequest)
+        try catalog.reconcileReviewedVault("fixture-vault")
+        XCTAssertEqual(try source.manifests().count,1,"assignment and installation alone are not Ready")
+        catalog.accessAllowed = {false}
+        do {_ = try await VaultImporter.syncDocuments(manifest:installed.manifest,into:documents,capturedCatalog:catalog);XCTFail("blocked indexing must fail")} catch {}
+        XCTAssertEqual(try source.manifests().count,1,"failed indexing cannot supersede")
+        catalog.accessAllowed = {true}
+        let ledger = try await VaultImporter.syncDocuments(manifest:installed.manifest,into:documents,capturedCatalog:catalog)
+        XCTAssertEqual(ledger.entries.first?.capturedManual,review)
+        XCTAssertEqual(ledger.entries.first?.ocrPages,2)
+        XCTAssertTrue(try source.manifests().isEmpty)
+        XCTAssertFalse(documents.documents.contains {$0.id == m.documentID})
+        XCTAssertNoThrow(try source.file(m,name:"pages.pdf"))
+        let citation = CapturedManualCatalog.citationName(m)
+        XCTAssertEqual(catalog.historical(citation:citation),m,"old citations still resolve to their own immutable source")
+
+        // A second phone receives a fresh assignment for its own enrolment, with the same
+        // reviewed signed archive and no source capture. Reset only the simulated phone's index.
+        let second = try prepare(archive,assignment:assignment(archive:archive,enrolmentID:"fixture-second"))
+        _ = try await VaultLinkInstaller.install(second.vaultImportRequest)
+        try VaultDocumentLedger().save(to:VaultImporter.overlayDirectory(for:"fixture-vault"))
+        let secondDocuments = TeamLearningFixtures.documentStore(in:root)
+        let secondCatalog = CapturedManualCatalog();secondCatalog.accessAllowed = {true}
+        secondCatalog.injectedSource = try CapturedManualStore(root:root.appendingPathComponent("second-source"),availableBytes:{Int.max})
+        secondCatalog.scopeForVault = {_ in .init(ownershipScope:"organization",organizationID:"fixture-org",enrolmentID:"fixture-second",vaultID:"fixture-vault")}
+        _ = try await VaultImporter.syncDocuments(manifest:manifest,into:secondDocuments,capturedCatalog:secondCatalog)
+        let sessions = FieldSessionService(sessionsRoot:root.appendingPathComponent("sessions"))
+        sessions.capturedManuals = secondCatalog;sessions.documentStore = secondDocuments;sessions.retrievalPolicy = .init(similarityFloor:1.01)
+        _ = try sessions.startSession(vaultId:"fixture-vault",assetId:nil)
+        let reply = try await ManualLookupTool(documentStore:secondDocuments,sessionService:sessions).execute(args:["query":"RC991"])
+        XCTAssertTrue(reply.contains("text recognised from a scan"),reply)
+        XCTAssertTrue(reply.contains("photographed by Fixture technician at job JOB-IF"),reply)
+        XCTAssertTrue(reply.contains("approved by Fixture reviewer"),reply)
+        let ref = try XCTUnwrap(CitationLineParser.parse("Source: \(review.citationName(title:"Pressure book")), page 1").first)
+        let figure = try XCTUnwrap(sessions.stagedFigure(for:ref))
+        XCTAssertNotNil(sessions.sourcePDFURL(for:figure))
+        XCTAssertTrue(sessions.manualPageSheet(for:figure).reviewedPhotograph)
+        secondCatalog.accessAllowed = {false}
+        XCTAssertNil(sessions.sourcePDFURL(for:figure))
+        XCTAssertTrue(try CapturedManualStore(root:source.root,availableBytes:{Int.max}).manifests().isEmpty,"supersession survives process restart")
     }
     #endif
     func testModifiedOrTruncatedArchiveIsRefusedBeforeExtraction() throws {

@@ -7,7 +7,9 @@ extension OfficeManualImport.Prepared {
     @MainActor
     var vaultImportRequest: VaultLinkInstaller.Request {
         let receipt = VaultReceipt.make(verification: verification, host: "Avenkin Office",
-                                       now: receivedAt, archiveSHA256: archiveSHA256)
+            now:receivedAt,archiveSHA256:archiveSHA256,
+            capturedOrganizationID:capturedDocumentBindings.isEmpty ? nil : assignment.payload.organizationID,
+            capturedDocumentBindings:capturedDocumentBindings.isEmpty ? nil : capturedDocumentBindings)
         return .init(files: files, receipt: receipt)
     }
 }

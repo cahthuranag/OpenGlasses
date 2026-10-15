@@ -489,7 +489,7 @@ final class FieldSessionService: ObservableObject {
             // and ordered from it, so a citation to a manual that has gone is the last thing this
             // route may produce — verified-from-the-book has to mean a book that is still here.
             let isAvailable = VaultManualRemoval.availabilityCheck(forVault: store.manifest.id,
-                                                                   documentStore: documentStore)
+                                                                   documentStore: documentStore, capturedCatalog:capturedManuals)
             return self.retrievalNamespaces(vaultId: store.manifest.id)
                 .filter { $0.source.isReference }
                 .flatMap { space in
@@ -1548,7 +1548,7 @@ final class FieldSessionService: ObservableObject {
         }
         func ids(for space: RetrievalNamespace) -> [String]? { space.source.isReference ? documentIds : nil }
 
-        let manualAvailable = VaultManualRemoval.availabilityCheck(forVault: vaultId, documentStore: documentStore)
+        let manualAvailable = VaultManualRemoval.availabilityCheck(forVault: vaultId, documentStore: documentStore, capturedCatalog:capturedManuals)
         return VaultRetriever(query: { query, limit in
             searched.flatMap { space in
                 tagged(documentStore?.query(query, limit: limit, namespace: space.namespace,
@@ -1779,7 +1779,7 @@ final class FieldSessionService: ObservableObject {
 
         /// Whether the vault holds a page that can be rendered at all. The Markdown route holds
         /// extracted text and has none — the honest limit the vault guide names.
-        var hasSourcePage: Bool { sourceFile?.lowercased().hasSuffix(".pdf") == true }
+        var hasSourcePage: Bool { sourceFile?.lowercased().hasSuffix(".pdf") == true || documentTitle.hasPrefix("Reviewed photographed manual · ") }
     }
 
     /// The best drawing among a turn's evidence: a drawing outright, else prose that names one.
@@ -1815,7 +1815,7 @@ final class FieldSessionService: ObservableObject {
         // nobody thought of is exactly the failure removal exists to prevent.
         if let store = activeVault, let documentStore,
            !VaultManualRemoval.availabilityCheck(forVault: store.manifest.id,
-                                                 documentStore: documentStore)(last.documentId) {
+                                                 documentStore: documentStore, capturedCatalog:capturedManuals)(last.documentId) {
             lastShownFigure = nil
             return nil
         }
@@ -1847,7 +1847,15 @@ final class FieldSessionService: ObservableObject {
                   (1...m.pageCount).contains(figure.page) else { return nil }
             return try? capturedManuals.source?.file(m,name:"pages.pdf")
         }
+        if let entry = ledgerEntry(for:figure),entry.capturedManual != nil {
+            guard let store = activeVault,capturedManuals.reviewedDocumentAllowed(figure.documentId,vaultID:store.manifest.id),
+                  let document = manifestDocument(for:figure),let path = store.manifest.documentSourceRelativePath(document) else {return nil}
+            let url = VaultImporter.baselineDirectory(for:store.manifest.id).appendingPathComponent(path)
+            return FileManager.default.fileExists(atPath:url.path) ? url : nil
+        }
         guard figure.hasSourcePage, let file = figure.sourceFile, let store = activeVault else { return nil }
+        if let entry = ledgerEntry(for:figure),entry.capturedManual != nil,
+           !capturedManuals.reviewedDocumentAllowed(figure.documentId,vaultID:store.manifest.id) {return nil}
         let manifest = store.manifest
         // A manual with a removal in flight is already unavailable: its file may still be on disk
         // until cleanup finishes, and opening it would show the page a citation was told to forget.
@@ -1889,6 +1897,8 @@ final class FieldSessionService: ObservableObject {
             guard let m = capturedManuals.historical(citation: figure.documentTitle) else { return nil }
             return try? capturedManuals.source?.file(m, name: "pages.pdf")
         }
+        if let entry = ledgerEntry(for:figure),entry.capturedManual != nil,
+           let vaultID = activeVault?.manifest.id,!capturedManuals.reviewedDocumentAllowed(figure.documentId,vaultID:vaultID) {return nil}
         if let direct = sourcePDFURL(for: figure) { return direct }
         guard let store = activeVault, let document = manifestDocument(for: figure),
               !VaultManualRemoval.isPending(file: document.file, vaultId: store.manifest.id),
@@ -1950,6 +1960,9 @@ final class FieldSessionService: ObservableObject {
         guard !VaultManualRemoval.isPending(file: entry.file, vaultId: store.manifest.id) else {
             return .removed(title: entry.title)
         }
+        if entry.capturedManual != nil,!capturedManuals.reviewedDocumentAllowed(entry.documentId,vaultID:store.manifest.id) {
+            return .unknown(title:citation.title)
+        }
         return .figure(StagedFigure(documentId: entry.documentId, documentTitle: entry.title,
                                     page: max(citation.page ?? 1, 1), figure: citation.figure,
                                     sourceFile: entry.file))
@@ -1976,12 +1989,13 @@ final class FieldSessionService: ObservableObject {
         let pdf = manufacturerPDFURL(for: figure)
         let document = manifestDocument(for: figure)
         let entry = ledgerEntry(for: figure)
-        let isPDF = document?.isPDF ?? (figure.sourceFile?.lowercased().hasSuffix(".pdf") == true)
+        let reviewed = entry?.capturedManual
+        let isPDF = reviewed != nil || (document?.isPDF ?? (figure.sourceFile?.lowercased().hasSuffix(".pdf") == true))
         // The extracted-text route reads the index by document id, so it needs the availability
         // check the PDF route gets for free through `manufacturerPDFURL`: a manual whose rows have
         // gone has no pages, and one whose removal is in flight must not show the ones it still has.
         let isAvailable = activeVault.map {
-            VaultManualRemoval.availabilityCheck(forVault: $0.manifest.id, documentStore: documentStore)
+            VaultManualRemoval.availabilityCheck(forVault: $0.manifest.id, documentStore: documentStore, capturedCatalog:capturedManuals)
         }
         let pages: [ManualPageSheetModel.Page] = isPDF || isAvailable?(figure.documentId) == false ? [] :
             (documentStore?.pageTexts(documentId: figure.documentId) ?? [])
@@ -1999,9 +2013,10 @@ final class FieldSessionService: ObservableObject {
             // The document's own hash when the document is the PDF; the original's hash when the
             // PDF is bundled beside extracted text. Comparing the wrong one would report a
             // faithfully imported manual as changed.
-            ledgerHash: isPDF ? entry?.contentHash : entry?.sourceContentHash,
+            ledgerHash: reviewed != nil ? entry?.sourceContentHash : (isPDF ? entry?.contentHash : entry?.sourceContentHash),
             documentIsPDF: isPDF,
-            citedFigure: figure.figure)
+            citedFigure: figure.figure,photographed:reviewed != nil,reviewedPhotograph:reviewed != nil,
+            printedPages:Dictionary(uniqueKeysWithValues:reviewed?.pages.map {($0.index,$0.printedPage)} ?? []))
     }
 
     /// Audit: a technician opened a citation — from a chip under the answer, or by asking.

@@ -1,9 +1,8 @@
 # Plan CJ — Survey-Surfaced Hardening Sweep
 
-**Status: 🚧 Items 3–7 verified & shipped (2026-08-03); items 1–2 still in flight as separate
-sessions** (re-verified 2026-08-03: neither had landed on main — no traversal/token/rate-limit
-code in the signaling surfaces, no relative-time parsing in `TimerTool`/`AppleRemindersTool`).
-Verification notes per item below.
+**Status: 🚧 Items 2–7 verified & shipped (items 3–7 2026-08-03, item 2 2026-10-16); item 1
+still open** (re-verified 2026-08-03: no traversal/token/rate-limit code in the signaling
+surfaces). Verification notes per item below.
 
 A 2026-08-02 survey of the wider glasses-app field surfaced a set of correctness, security,
 and safety patterns worth checking ourselves against — same spirit as Plan CD
@@ -19,10 +18,27 @@ fix only what's real.
    tokens), missing per-IP rate limits on create/join. Audit `WebRTCStreamingService`, the
    Plan M reference signaling impls (`docs/webrtc/`), and `WebHUDMirrorServer`.
 
-2. **Relative-time guard** *(in flight, separate session).* When the utterance says "in 15
+2. **Relative-time guard.** When the utterance says "in 15
    minutes", parse it deterministically and override the model-computed absolute time in
    `TimerTool`/`ReminderTool` args — small/local models botch now+N arithmetic, and the MLX
    path makes this a real-world case, not a theoretical one.
+   *Verified 2026-10-16: still open — `set_timer` took the model's `seconds` and `reminder` the
+   model's absolute ISO-8601 `due_at` as given, and nothing in the app parsed a relative time.
+   Neither tool could see the wearer's words: the only utterance a tool could reach was
+   `AppState.currentTranscription`, which outlives its turn (a live session or an agent task
+   calling a tool later would read the last Direct-mode question).* **Shipped:** pure
+   `RelativeTimeParser` (English only, like the app's other utterance parsers; "in 15 minutes",
+   "in an hour and a half", "in 2 hours and 30 minutes", spelled numbers, "15 minutes from now",
+   and for timers "for 15 minutes" / "a 15 minute timer"); anything vague ("in a bit", "in a few
+   minutes", "in a second"), unit-less ("in 15"), calendar-unit ("in 2 days"), anchored elsewhere
+   ("before the meeting"), mixed with an absolute time ("tomorrow", "at 3pm") or naming two
+   different durations reads as nil. The authoritative input is the wearer's utterance for the
+   turn, bound by `ConversationTurnRunner` as the task-local `TurnUtteranceScope` around the model
+   call (voice, typed and photo turns) and read only for a `.model`-origin call — so live sessions,
+   agent tasks, skill packs, Siri Actions and tapped controls are never second-guessed.
+   `RelativeTimeGuard.decide` lets the sentence win when the model's value is more than a
+   tolerance away (timer 1 s, reminder 2 min) or unreadable; an absent value is not filled in. An
+   override logs `toolRun relativeTimeOverridden` with the tool and a disagreement class only.
 
 3. **Retrieve-or-silence citation gate (first-aid/HECA).** Rule: the assistant may only
    *speak* a safety/medical citation when retrieval actually returned the underlying text;
@@ -97,7 +113,8 @@ fix only what's real.
 ## Shape
 
 One PR, CD-style: each item lands as (verification note in this doc) + (fix + test where the
-check found a gap). Items 1–2 merge back here as status lines when their sessions land.
+check found a gap). Items 1–2 merge back here as status lines when their sessions land (item 2
+did on 2026-10-16).
 
 ## Non-goals
 

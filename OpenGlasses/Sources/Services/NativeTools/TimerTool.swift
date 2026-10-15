@@ -20,13 +20,18 @@ struct TimerTool: NativeTool {
         "required": ["seconds"]
     ]
 
+    /// The wearer's words for this call's turn, when there are any to check against.
+    var utterance: () -> String? = RelativeTimeGuard.utteranceForCurrentCall
+
     func execute(args: [String: Any]) async throws -> String {
-        let seconds: Int
-        if let s = args["seconds"] as? Int {
-            seconds = s
-        } else if let s = args["seconds"] as? Double {
-            seconds = Int(s)
-        } else {
+        // "Set a timer for 15 minutes" in the wearer's own words beats the model's conversion
+        // (see `RelativeTimeGuard`).
+        let resolution = TimerDurationResolution.resolve(modelArgument: args["seconds"],
+                                                         utterance: utterance())
+        if let disagreement = resolution.overridden {
+            RelativeTimeGuard.logOverride(tool: name, disagreement)
+        }
+        guard let seconds = resolution.seconds else {
             return "Missing timer duration."
         }
 

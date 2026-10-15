@@ -2886,6 +2886,7 @@ struct Config {
         "send_via",             // Block multi-channel messaging of PHI
         "openclaw_skills",      // No gateway skill execution with PHI
         "reading_session",      // No passive camera OCR of documents — a "book" can be a chart
+        "manual_capture",      // Paper manuals must not become clinical capture records.
         "team_learning",        // A clinical site's "learning" is a patient note wearing a different hat
     ]
 
@@ -4425,6 +4426,11 @@ struct Config {
     /// this so a lapsed entitlement disables the feature even if the toggle was left on.
     static var fieldAssistActive: Bool {
         fieldAssistEnabled && fieldAssistUnlocked
+    }
+
+    static var capturedManualsPolicy: String {
+        let fallback = FieldAssistEntitlement.shared.check(.capturedManualReview).isGranted ? "reviewToPool" : "jobOnly"
+        return PolicyEnvelope.string(.capturedManualsPolicy, stored: fallback)
     }
 
     /// Preferred vault for new Field Assist sessions (defaults to refrigeration).

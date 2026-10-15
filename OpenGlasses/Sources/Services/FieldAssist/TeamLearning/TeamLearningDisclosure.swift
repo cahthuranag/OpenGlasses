@@ -128,6 +128,8 @@ struct AnswerEvidence: Equatable {
     /// Every citation the evidence carried, in rank order.
     let citations: [String]
     let disclosure: TeamLearningDisclosure?
+    /// Distinct from crew learning and imported OEM evidence, including mixed-source answers.
+    let photographedManualBadge: Bool
 
     /// Badge the answer as a team learning.
     var teamLearningBadge: Bool { disclosure?.showsTeamLearningBadge ?? false }
@@ -140,6 +142,7 @@ struct AnswerEvidence: Equatable {
         case .insufficient: basis = .none
         }
         citations = outcome.passages.map(\.citation)
+        photographedManualBadge = outcome.passages.contains { $0.source == .capturedManual }
         self.disclosure = disclosure
     }
 }

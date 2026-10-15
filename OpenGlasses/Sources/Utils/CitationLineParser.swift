@@ -154,7 +154,7 @@ enum CitationLineParser {
         func flush() {
             defer { title = nil; page = nil; figure = nil; section = nil; isDiagram = false }
             guard let name = title?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
-                  name.count <= maxTitleLength, !nonCitations.contains(name.lowercased()) else { return }
+                  validTitleLength(name), !nonCitations.contains(name.lowercased()) else { return }
             found.append(Citation(kind: isCoreFileName(name) ? .coreFile : .manual,
                                   title: name, page: page, figure: figure,
                                   section: section, isDiagram: isDiagram))
@@ -186,6 +186,15 @@ enum CitationLineParser {
     }
 
     // MARK: - Parts
+
+    /// Capture citations carry immutable identity/digest as well as a human title and job/date.
+    /// Resolution still requires an exact saved manifest; a long ordinary sentence is not a chip.
+    static func validTitleLength(_ name: String) -> Bool {
+        if name.count <= maxTitleLength { return true }
+        return name.utf8.count <= 700 && name.hasPrefix("Photographed manual · ")
+            && name.range(of:#" · capture [A-Za-z0-9_-]+/[1-9][0-9]*/[a-f0-9]{64}$"#,
+                          options:.regularExpression) != nil
+    }
 
     /// `page 44`, or `page 44 (diagram)`. Returns the number and whether the drawing marker rode
     /// along with it.

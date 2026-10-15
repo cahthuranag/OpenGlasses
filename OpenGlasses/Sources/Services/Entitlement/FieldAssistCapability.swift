@@ -21,6 +21,8 @@ enum FieldAssistCapability: String, CaseIterable, Sendable {
     /// File what the crew works out for a supervisor to review (Plan FP). A team's capability:
     /// there is no reviewer behind a personal subscription.
     case teamLearnings
+    /// Submit a photographed manual for an organisation reviewer; local capture alone never grants it.
+    case capturedManualReview
 
     /// Capabilities one piece of evidence grants on its own. Whether the evidence is still live is
     /// the caller's business — see the set overload.
@@ -38,10 +40,10 @@ enum FieldAssistCapability: String, CaseIterable, Sendable {
             case .solo:
                 return [.bundledVaults]
             case .team:
-                return [.bundledVaults, .ownVaults, .auditedExport, .orgConfiguration, .teamLearnings]
+                return [.bundledVaults, .ownVaults, .auditedExport, .orgConfiguration, .teamLearnings, .capturedManualReview]
             case .enterprise:
                 return [.bundledVaults, .ownVaults, .auditedExport, .orgConfiguration, .everyVaultPack,
-                        .teamLearnings]
+                        .teamLearnings, .capturedManualReview]
             }
         #if DEBUG
         case .internalDeveloper:

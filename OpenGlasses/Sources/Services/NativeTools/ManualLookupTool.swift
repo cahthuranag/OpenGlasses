@@ -64,7 +64,7 @@ final class ManualLookupTool: NativeTool {
         // Published team learnings are searched beside the manuals (Plan FP P2), so a vault with
         // learnings and no manuals is still searchable; the messages below are for one with neither.
         let corpus = session.retrievableCorpus(store: store, documentStore: documentStore)
-        guard store.manifest.hasDocuments || corpus.learnings else {
+        guard store.manifest.hasDocuments || corpus.any else {
             return "The \(store.manifest.name) vault has no manuals. Its reference material is the vault core, which is already in context."
         }
         guard let documentStore else {
@@ -99,13 +99,15 @@ final class ManualLookupTool: NativeTool {
         let documentIds = documentFilter.flatMap { filter -> [String]? in
             let needle = filter.lowercased()
             guard !needle.isEmpty else { return nil }
-            let ids = documentStore.list(namespace: namespace)
+            let spaces = session.retrievalNamespaces(vaultId: store.manifest.id).filter { $0.source.isReference }
+            let ids = spaces.flatMap { documentStore.list(namespace: $0.namespace) }
                 .filter { $0.name.lowercased().contains(needle) }
                 .map(\.id)
             return ids.isEmpty ? nil : ids
         }
         if let documentFilter, !documentFilter.isEmpty, documentIds == nil {
-            let titles = documentStore.list(namespace: namespace).map { "\"\($0.name)\"" }.joined(separator: ", ")
+            let titles = session.retrievalNamespaces(vaultId: store.manifest.id).filter { $0.source.isReference }
+                .flatMap { documentStore.list(namespace: $0.namespace) }.map { "\"\($0.name)\"" }.joined(separator: ", ")
             return "No manual titled like '\(documentFilter)'. Loaded manuals: \(titles)."
         }
 

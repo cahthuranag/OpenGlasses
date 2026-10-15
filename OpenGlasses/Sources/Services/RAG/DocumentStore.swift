@@ -43,6 +43,8 @@ final class DocumentStore: ObservableObject {
         /// nil for a practice entry. Set by the same factory; `ModelScope` scores a learning by this
         /// rather than by scanning its prose (contract §7.2).
         var subjectModelToken: String?
+        /// Supplemental label only; `page` remains the physical capture index.
+        var printedPage: Int?
     }
 
     // MARK: - Published
@@ -56,6 +58,9 @@ final class DocumentStore: ObservableObject {
     private let chunker: DocumentChunker
     private let embedder: Embedder
     private let minSimilarity: Float = 0.05
+    /// Captures are never a global/personal corpus. Only the Field Assist source factory grants
+    /// access to an explicitly selected, currently eligible capture namespace.
+    var capturedNamespaceAllowed: (String) -> Bool = { _ in false }
     private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     // MARK: - Init
@@ -221,6 +226,7 @@ final class DocumentStore: ObservableObject {
     /// chunk before it has no entry here. That is why the sheet pages over these rather than over
     /// 1…N: offering a page the store holds nothing for would show a blank.
     func pageTexts(documentId: String) -> [(page: Int, text: String)] {
+        if documentId.hasPrefix("captured:"), !capturedNamespaceAllowed(documentId) { return [] }
         let sql = """
         SELECT page, text FROM doc_chunks
         WHERE document_id = '\(escapedSQL(documentId))' AND page IS NOT NULL
@@ -450,13 +456,13 @@ final class DocumentStore: ObservableObject {
     /// references, study decks) may list. A learning is the organisation's, read only through
     /// retrieval with its disclosure, never picked from a personal list.
     func listExcludingTeamLearnings() -> [DocumentRef] {
-        documents.filter { !Self.isLearningNamespace($0.namespace) }
+        documents.filter { !Self.isLearningNamespace($0.namespace) && !$0.namespace.hasPrefix("captured:") }
     }
 
     /// The personal documents surface: neither a vault's manuals nor a team-learning corpus. Both
     /// are managed from Field Assist, and neither is the wearer's to delete from a document list.
     func personalDocuments() -> [DocumentRef] {
-        documents.filter { !Self.isVaultNamespace($0.namespace) && !Self.isLearningNamespace($0.namespace) }
+        documents.filter { !Self.isVaultNamespace($0.namespace) && !Self.isLearningNamespace($0.namespace) && !$0.namespace.hasPrefix("captured:") }
     }
 
     /// Store `text` as exactly one chunk under a caller-chosen id, replacing whatever that id held
@@ -482,6 +488,41 @@ final class DocumentStore: ObservableObject {
         PrivacyLog.store(.ragDocuments, .ingested, count: 1, characters: cleaned.count,
                          detail: PrivacyToken(sourceType))
         return documents.first { $0.id == documentId }
+    }
+
+    /// IF's page-aware ingestion uses a deterministic source id. Prepare before the SQL
+    /// transaction, recheck cancellation after each yield, then publish all rows atomically.
+    @discardableResult
+    func ingestPages(documentId: String, name: String, pages: [(number: Int, text: String)],
+                     sourceType: String, namespace: String,
+                     stillAllowed: () -> Bool) async -> Bool {
+        guard let db, stillAllowed(), !Task.isCancelled else { return false }
+        let chunks = chunker.chunkPages(pages)
+        var vectors: [Data?] = []
+        for chunk in chunks {
+            guard stillAllowed(), !Task.isCancelled else { return false }
+            vectors.append(embedder.embed(chunk.text).map(vecToData))
+            await Task.yield()
+        }
+        guard stillAllowed(), !Task.isCancelled,
+              sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK else { return false }
+        var committed = false
+        defer { if !committed { sqlite3_exec(db, "ROLLBACK", nil, nil, nil) } }
+        exec("DELETE FROM doc_chunks WHERE document_id = '\(escapedSQL(documentId))'")
+        let now = Date().timeIntervalSince1970
+        insertDocument(id: documentId, name: name, sourceType: sourceType, namespace: namespace,
+                       createdAt: now, chunkCount: chunks.count, charCount: pages.reduce(0) { $0 + $1.text.count })
+        guard sqlite3_errcode(db) == SQLITE_OK || sqlite3_errcode(db) == SQLITE_DONE else { return false }
+        for (index, chunk) in chunks.enumerated() {
+            insertChunk(documentId: documentId, index: index, text: chunk.text, embedding: vectors[index],
+                        page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
+                        createdAt: now, version: vectors[index] == nil ? nil : embedder.version.tag)
+            guard sqlite3_errcode(db) == SQLITE_OK || sqlite3_errcode(db) == SQLITE_DONE else { return false }
+        }
+        guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { return false }
+        committed = true
+        refresh()
+        return true
     }
 
     // MARK: - Embedding migration
@@ -672,6 +713,7 @@ final class DocumentStore: ObservableObject {
     }
 
     private func fetchChunks(namespace: String?, documentIds: [String]?) -> [ChunkRow] {
+        if let namespace, namespace.hasPrefix("captured:"), !capturedNamespaceAllowed(namespace) { return [] }
         var sql = """
         SELECT c.id, c.document_id, d.name, c.chunk_index, c.text, c.embedding, c.page, c.section,
                c.embedding_version, c.kind, c.figure
@@ -679,6 +721,7 @@ final class DocumentStore: ObservableObject {
         """
         var clauses: [String] = []
         if let ns = namespace { clauses.append("d.namespace = '\(escapedSQL(ns))'") }
+        else { clauses.append("d.namespace NOT LIKE 'captured:%'") }
         if let ids = documentIds, !ids.isEmpty {
             let list = ids.map { "'\(escapedSQL($0))'" }.joined(separator: ", ")
             clauses.append("c.document_id IN (\(list))")

@@ -29,7 +29,11 @@ final class ManualFigureTool: NativeTool {
             ],
             "page": [
                 "type": "integer",
-                "description": "The printed page number to show, when the technician names a page rather than a figure."
+                "description": "The printed page for an imported manual, or the photographed page index for a captured manual."
+            ],
+            "document": [
+                "type": "string",
+                "description": "The photographed manual's capture id or title, to choose a book when several are available."
             ],
             "again": [
                 "type": "boolean",
@@ -63,6 +67,34 @@ final class ManualFigureTool: NativeTool {
                 return "No figure has been shown yet in this session. Name a figure or a page number."
             }
             return show(staged, session: session, opening: "Back to")
+        }
+
+        let chosen = (args["document"] as? String)?.trimmingCharacters(in:.whitespacesAndNewlines)
+        let captures = session.capturedManuals.eligible(for:session.activeSession,vaultID:store.manifest.id)
+            .filter { m in chosen == nil || chosen?.isEmpty == true || m.captureID == chosen
+                || m.title.localizedCaseInsensitiveContains(chosen!) }
+        if chosen?.isEmpty == false || !store.manifest.hasDocuments {
+            if captures.count > 1 {
+                return "Choose a photographed manual by its title or capture id before opening a page: "
+                    + captures.map { "\($0.title) (\($0.captureID))" }.joined(separator:"; ")
+            }
+            if let m = captures.first {
+                var page = Self.integer(args["page"])
+                if page == nil, let figure = args["figure"] as? String, let documentStore {
+                    page = Self.candidateLabels(for:figure).lazy.compactMap { label in
+                        documentStore.passages(figure:label,namespace:m.documentID,limit:1).first?.page
+                    }.first
+                }
+                guard let page, (1...m.pageCount).contains(page) else {
+                    return "Name a photographed page from 1 to \(m.pageCount). Printed page numbers are supplementary labels."
+                }
+                var staged = FieldSessionService.StagedFigure(documentId:m.documentID,
+                    documentTitle:CapturedManualCatalog.citationName(m),page:page,sourceFile:"pages.pdf")
+                staged.origin = session.turnAskedForPage ? .requested : .automatic
+                session.stageFigure(staged)
+                return show(staged,session:session,opening:"Photographed manual:")
+            }
+            if chosen?.isEmpty == false {return "No eligible photographed manual matches that title or capture id."}
         }
 
         guard store.manifest.hasDocuments, let documentStore else {

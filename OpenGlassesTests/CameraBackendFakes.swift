@@ -76,6 +76,10 @@ final class MockCameraBackend: GlassesCameraBackend {
         if emitsStreamingEvents { events.send(.streamingChanged(false)) }
     }
     func tearDown() async { tearDownCount += 1 }
+
+    /// Plan HJ P1: every presence the coordinator forwarded, in order.
+    private(set) var presences: [StreamEndRecoveryPolicy.Presence] = []
+    func notePresence(_ presence: StreamEndRecoveryPolicy.Presence) { presences.append(presence) }
 }
 
 /// The iPhone-camera fallback, faked.

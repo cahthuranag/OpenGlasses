@@ -426,12 +426,16 @@ struct OpenGlassesApp: App {
                 )) { _ in
                     appState.conversationStore.protectedDataWillBecomeUnavailable()
                     appState.privacyFilter.noteProtectedDataAvailable(false)   // W04.1
+                    // Plan HJ P1: a camera ladder that runs out while locked parks instead of
+                    // giving up where nobody can see it.
+                    appState.cameraService.notePresence(protectedDataAvailable: false)
                 }
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIApplication.protectedDataDidBecomeAvailableNotification
                 )) { _ in
                     appState.conversationStore.protectedDataDidBecomeAvailable()
                     appState.privacyFilter.noteProtectedDataAvailable(true)   // W04.1
+                    appState.cameraService.notePresence(protectedDataAvailable: true)   // Plan HJ P1
                     // The app event log's earlier runs, if a locked launch could not read them.
                     DiagnosticRing.shared.protectedDataDidBecomeAvailable()
                     // Retry a migration that deferred while locked, then sweep abandoned exports.
@@ -612,6 +616,9 @@ struct OpenGlassesApp: App {
             // W04.1: the blur pass is unavailable while backgrounded and through the lock-screen
             // transition, so the outbound relay drops those frames instead of publishing them raw.
             appState.privacyFilter.noteScenePhase(.init(newPhase))
+            // Plan HJ P1: the camera's stream-end table reads where the app is, and coming back to
+            // the front resumes a reconnect that parked while the phone was in a pocket.
+            appState.cameraService.notePresence(scenePhase: .init(newPhase))
             switch newPhase {
             case .background:
                 appState.skillPackSideload.handleBackground()

@@ -615,6 +615,19 @@ enum PrivacyLog {
         /// rebuild), and `seconds` the time from the end of the teardown to the first fresh
         /// picture.
         case stallEpisode
+        /// HJ P1. `streamEndDecision` is the stream-end table's answer for a wanted stream that
+        /// ended: `detail` the decision, `state` the cause, `phase` where the app was
+        /// (`foreground`, `background`, `locked`), `codec` the codec the stream was built with,
+        /// `attempt` the rung and `count` the ends in the flap window, this one included.
+        /// `streamEnded` is one end entering the ladder, with `elapsed` the time the stream had
+        /// run since it last came back. `reconnectParked` is a ladder that stopped climbing
+        /// outside the foreground and kept the intent; `reconnectUnparked` is the app coming back
+        /// to the front, with `detail` what that did (`resumeLadder`, `awaitSDKResume`,
+        /// `nothing`). `presenceChanged` is the app's presence as the camera hears it.
+        case streamEndDecision, streamEnded, reconnectParked, reconnectUnparked, presenceChanged
+        /// HJ P1, log-only. The device session's own state, with `phase` and `codec` beside it,
+        /// so a device session can say whether a session ever ends without a stream `.stopped`.
+        case sessionStateChanged
     }
 
     @discardableResult
@@ -624,7 +637,8 @@ enum PrivacyLog {
                        frameRate: Int? = nil, width: Int? = nil, height: Int? = nil,
                        attempt: Int? = nil, ofAttempts: Int? = nil, count: Int? = nil,
                        kilobytes: Int? = nil, bytes: Int? = nil, silence: Double? = nil,
-                       seconds: Double? = nil,
+                       seconds: Double? = nil, phase: PrivacyToken? = nil,
+                       codec: PrivacyToken? = nil,
                        error: SafeErrorSummary? = nil) -> PrivacyEvent {
         var fields: [PrivacyEvent.Field] = [
             .init(.source, .token(PrivacyToken(source.rawValue))),
@@ -644,6 +658,8 @@ enum PrivacyLog {
         if let bytes { fields.append(.init(.bytes, .count(bytes))) }
         if let silence { fields.append(.init(.silence, .seconds(silence))) }
         if let seconds { fields.append(.init(.elapsed, .seconds(seconds))) }
+        if let phase { fields.append(.init(.phase, .token(phase))) }
+        if let codec { fields.append(.init(.codec, .token(codec))) }
         if let error { fields.append(.init(.error, .summary(error))) }
         return emit(.init(.capture, .camera, fields))
     }
@@ -2233,6 +2249,8 @@ struct PrivacyEvent: Equatable {
         // A second duration on the one line, beside `elapsed`, which there is the time the
         // rebuild took to show a picture.
         case silence
+        // Plan HJ P1 — the codec a glasses stream was built with, beside a stream-end decision.
+        case codec
     }
 
     /// The only shapes a field value can take. There is no `case text(String)` — that absence is

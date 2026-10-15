@@ -286,6 +286,10 @@ enum PrivacyLog {
     enum ToolRunEvent: String {
         case succeeded, failed, outcomeUnknown
         case stillRunning, lateCompletion, resolvedLate, reconciled
+        /// A relative time the wearer said ("in 15 minutes") replaced the model's value for a timer
+        /// or reminder. `detail` is how far apart they were (`RelativeTimeGuard.Disagreement`);
+        /// neither value, nor the utterance, has a parameter.
+        case relativeTimeOverridden
     }
 
     @discardableResult

@@ -6406,7 +6406,8 @@ class AppState: ObservableObject, AppStateProtocol {
                             self.speechService.stopThinkingSound()
                             await self.resumeListeningOrReturnToWakeWord(ensureEngine: true)
                         },
-                        waitForAnnouncement: { await self.turnAnnouncement.waitUntilSpoken() }
+                        waitForAnnouncement: { await self.turnAnnouncement.waitUntilSpoken() },
+                        utterance: query
                     ))
                 }
                 return true
@@ -7122,7 +7123,10 @@ class AppState: ObservableObject, AppStateProtocol {
                     await connectivityHandoff.turnEnded()
                     await resumeListeningOrReturnToWakeWord(ensureEngine: true)
                 },
-                waitForAnnouncement: { [self] in await turnAnnouncement.waitUntilSpoken() }
+                waitForAnnouncement: { [self] in await turnAnnouncement.waitUntilSpoken() },
+                // The wearer's words, so a timer or reminder the model sets can be checked against
+                // them (`RelativeTimeGuard`).
+                utterance: query
             ))
         }
     }
@@ -7331,7 +7335,10 @@ class AppState: ObservableObject, AppStateProtocol {
                     speechService.stopThinkingSound()
                     await connectivityHandoff.turnEnded()   // Plan GE: apply a change that waited
                 },
-                waitForAnnouncement: { [self] in await turnAnnouncement.waitUntilSpoken() }
+                waitForAnnouncement: { [self] in await turnAnnouncement.waitUntilSpoken() },
+                // The wearer's words, so a timer or reminder the model sets can be checked against
+                // them (`RelativeTimeGuard`).
+                utterance: query
             ))
         }
         currentLLMTask = turn

@@ -40,6 +40,10 @@ enum ConversationTurnRunner {
         /// the reply or the failure line does not cut it off mid-word. The notice plays alongside
         /// the request, so by the time the model answers it has usually already finished.
         var waitForAnnouncement: @MainActor () async -> Void = {}
+        /// What the wearer said or typed to start this turn, bound around `send` as
+        /// `TurnUtteranceScope.current` so a tool the model calls can check its arguments against
+        /// the words (`RelativeTimeGuard`). Nil for a turn nobody spoke.
+        var utterance: String? = nil
     }
 
     @MainActor
@@ -51,7 +55,9 @@ enum ConversationTurnRunner {
         TurnRecorder.beginTurn()
         do {
             TurnRecorder.mark(.commit)
-            let raw = try await deps.send()
+            let raw = try await TurnUtteranceScope.$current.withValue(deps.utterance) {
+                try await deps.send()
+            }
             TurnRecorder.mark(.generationDone)
             // `postProcess` can persist memory and inject prompt state, so a response cancelled
             // while in flight must not reach it.

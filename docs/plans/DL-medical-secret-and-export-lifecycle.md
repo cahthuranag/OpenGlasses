@@ -1,6 +1,6 @@
 # Plan DL — Medical Secret Storage and Export Lifecycle
 
-**Status:** 🚧 P0 ✅ · P1 ✅ · P2 ✅ · P3 remaining (drafted 2026-08-26)
+**Status:** 🚧 P0 ✅ · P1 ✅ · P2 ✅ · P3.1 ✅ · P3.2 ✅ · P3.4 in-app ✅ (2026-10-15) — P3.3's device share matrix and P3.4's public privacy-page update remain (drafted 2026-08-26)
 **Origin:** 2026-08-26 adversarial review findings 3 (High) and 10 (Medium).
 **Priority:** P0 for FHIR credentials; P1 before broader medical-export distribution.
 
@@ -174,6 +174,27 @@ session scavenged after TTL; fresh active lease survives a concurrent scan; mali
 are untouched; background cleanup follows ownership; audit events contain no patient payload.
 
 ## P3 — Failure UX and operational verification 🟡
+
+**Shipped 2026-10-15: items 1, 2 and the in-app half of 4.** `MedicalExportFailure` is the closed
+vocabulary every FHIR and medical-export failure is worded through: an HTTP status is classified by
+class (401/403 credential refused, other 4xx document refused, 429/5xx server unavailable, anything
+else unexpected), a thrown error by its type and code, and the sentence is fixed per case. A reply
+body is never read and an error's description is never quoted; `MedicalExportError`'s own text now
+comes from the same table. A submission that times out or drops after sending is *outcome unknown*
+and says to check the record before resending; a connection test that times out is just
+unreachable. Failures are logged through `PrivacyLog.medical(.fhir, .exportFailed)` with the
+operation and a `SafeErrorSummary` only. `MedicalExportService` takes its `URLSession` by
+injection so tests answer the server locally with patient-like `OperationOutcome` bodies and
+assert none of it reaches the message or the log.
+
+The settings screen's Clear is now "clear the credential and pending exports", behind
+`OwnerGateAuth.authorize` — fail-**closed**, like the audit-log clear: a denied or cancelled
+prompt clears nothing, and so does a phone with no passcode, which cannot prove its owner. The
+decision lives in `MedicalExportService.clearCredentialAndPendingExports(authorization:)` (no
+default argument), and `FHIRCredentialClearOutcome` words each ending so a refusal says nothing
+was cleared. A caption under the stored-credential row says where the credential is kept and what
+Clear asks for and removes. Clinical identifiers are not cleared: they are edited in place on the
+same screen. Still owed: item 3 (device share matrix) and item 4's public privacy page.
 
 1. Define user-facing errors for credential locked/missing, migration required, protected-file setup
    failure, share unavailable, FHIR rejection, and outcome-unknown network timeout. Do not echo server

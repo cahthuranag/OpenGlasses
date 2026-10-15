@@ -58,9 +58,9 @@ struct AgenticFeaturesView: View {
             }
 
             if enabled {
-                // Plan CN — a separate grant from Agent Mode itself. Enabling agents authorises
-                // dispatching text tasks; sending camera frames to the same endpoint is a
-                // different promise, so it is a different switch and it starts off.
+                // Plan CN — a separate switch from Agent Mode itself, so camera frames can be
+                // withheld while text tasks still dispatch. It defaults on since Plan EH P1
+                // (`Config.agentVisionAttachmentEnabled`).
                 Section {
                     InfoToggle(
                         title: "Let Agents See",

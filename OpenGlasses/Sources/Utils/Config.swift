@@ -3403,11 +3403,10 @@ struct Config {
 
     /// Whether a delegated remote-agent task may carry a still from the wearer's camera.
     ///
-    /// **Default off, and deliberately distinct from `agentModeEnabled`.** Agent Mode bought
-    /// "dispatch text tasks to my agent"; quietly upgrading that to "and ship frames from a
-    /// head-mounted camera to the same endpoint" is a scope expansion the user never agreed to.
-    /// Default on since Plan EH P1: the gateway's `attachments` schema and its advertised
-    /// per-image ceiling answered the question CN P3 shipped default-off on.
+    /// **Deliberately distinct from `agentModeEnabled`**, so a frame can be withheld while text
+    /// tasks still dispatch. Default **on** since Plan EH P1: the gateway's `attachments` schema and
+    /// its advertised per-image ceiling answered the question CN shipped default-off on. That
+    /// reading has not yet been exercised against a live gateway; EH P4 is the check.
     @UserDefaultsBacked("agentVisionAttachmentEnabled", default: true)
     static var agentVisionAttachmentEnabled: Bool
 

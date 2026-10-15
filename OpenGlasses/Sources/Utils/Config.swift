@@ -2306,6 +2306,16 @@ struct Config {
         setSavedGateways(gateways)
     }
 
+    /// Drop a gateway's setup code: its bootstrap token is one-time, so a pairing that ended
+    /// without a device token (cancelled, timed out) stops presenting it.
+    static func clearGatewaySetupCode(gatewayId: String) {
+        var gateways = savedGateways
+        guard let idx = gateways.firstIndex(where: { $0.id == gatewayId }),
+              gateways[idx].setupCode != nil else { return }
+        gateways[idx].setupCode = nil
+        setSavedGateways(gateways)
+    }
+
     /// The stable device id for a gateway, generating + persisting one if absent.
     static func deviceId(forGateway gatewayId: String) -> String {
         var gateways = savedGateways

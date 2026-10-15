@@ -118,7 +118,7 @@ the stream. It is applied in two places, because two owners hold two different r
 - `MetaCameraBackend.startStreaming()` — owns the DAT stream itself, and releases it without ever
   publishing it as running, so the coordinator never sees the flicker.
 
-### Not fixed: a stall recovery that fails is not picked up by the reconnect ladder
+### Fixed by HJ: a stall recovery that fails is now picked up by the reconnect ladder
 
 Also named in EO's out-of-scope list. Traced here: this is not a missing release or a confused
 owner. `recoverFromStall()` runs under `isRecoveringFromStall`, and `scheduleReconnect()`
@@ -126,7 +126,10 @@ deliberately refuses to schedule while that flag is set (:940-941) — two rebui
 process-wide camera capability is how a dropped stream becomes `capabilityAlreadyActive`. What is
 missing is a *decision* about what should happen after the last recovery tier fails, which is
 stream-recovery policy and belongs to [BR](BR-realtime-and-stream-hardening.md), not to a resource
-audit. Recorded, not fixed.
+audit. Recorded here, not fixed here. **Closed by [HJ](HJ-camera-stream-end-recovery.md)
+([#739](https://github.com/straff2002/OpenGlasses/pull/739)):** the stall detector now clears the
+flag and, when the rebuild threw, hands the end to the ladder through `StreamEndRecoveryPolicy`
+with the cause `.stallRecoveryFailed` (`MetaCameraBackend`'s stall loop).
 
 ---
 

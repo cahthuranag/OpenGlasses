@@ -1072,6 +1072,15 @@ enum PrivacyLog {
         case challengeReceived, handshakeSent, authRejected
         case sessionRotated, sessionCompacted
         case devicePaired, pairingPending
+        /// The wearer started pairing (Plan AR). `peer` is the gateway being paired.
+        case pairingStarted
+        /// A pairing bootstrap ended: `detail` is `paired`, `cancelled` or `timedOut`.
+        case pairingEnded
+        /// A device token arrived and was not stored: `detail` is the policy's reason, never
+        /// anything from the frame.
+        case pairingTokenIgnored
+        /// A `res` frame that does not answer our outstanding connect request was dropped.
+        case responseUncorrelated
         case deviceEventSent
         /// An inbound `type:"req"` frame arrived before the connect handshake completed and was
         /// dropped unanswered. Carries nothing from the frame — it is attacker-controlled.

@@ -1942,6 +1942,8 @@ class AppState: ObservableObject, AppStateProtocol {
             }))
     }
     let openClawEventClient = OpenClawEventClient()
+    /// The event client's connection and pairing state, for the gateway settings (Plan AR).
+    @Published private(set) var gatewayPairing = GatewayPairingSnapshot()
     /// Remote invoke (Plan BH): gateway-initiated device commands, deny-by-default.
     lazy var remoteInvoke: RemoteInvokeService = makeRemoteInvokeService()
     let geminiLiveSession = GeminiLiveSessionManager()
@@ -3284,6 +3286,13 @@ class AppState: ObservableObject, AppStateProtocol {
             Task { @MainActor in
                 await self.triageOpenClawNotification(message)
             }
+        }
+        // Plan AR: the gateway settings show the live connection and any pairing the wearer
+        // started. The snapshot is read on the client's own thread, in step with the status.
+        openClawEventClient.onPairingStatusChange = { [weak self] status in
+            guard let self else { return }
+            let snapshot = self.openClawEventClient.pairingSnapshot(status: status)
+            Task { @MainActor in self.gatewayPairing = snapshot }
         }
         // Remote invoke (Plan BH): gateway-initiated device commands. Parser/policy/reply are
         // pure and tested; the policy denies everything while Agent Mode is off, before the

@@ -118,6 +118,24 @@ loaded. Nothing is highlighted yet. P0–P2 fix all three.
    shared link or an office distribution beyond seats the organisation says it holds. A `standard`
    document is excluded from every export, like a manual.
 
+## Amendment 2026-10-17 (from the competitor review)
+
+An electricians' code app with real traction answers US and Canadian code questions "cited to the
+article", in English and Spanish, with student and trade-school tiers, and announces each new
+edition ahead of time. Its spoken answers had not shipped by October 2026, and it does not cover
+AS/NZS 3000. Three consequences for this plan:
+
+- **Answer in the electrician's language and quote the code in the code's own.** A Spanish
+  question gets a Spanish answer, but the clause's operative words are quoted verbatim from the
+  loaded edition, with the clause number. A translated "shall" is never presented as the code's
+  text. This rides on the app's existing localisation (Plan EC), not a new pipeline.
+- **Editions are a first-class label from P3, not an afterthought.** The `edition` field, and
+  saying which edition an answer came from, ship with P3. A loaded document whose edition has a
+  known successor is flagged by HK's revision notices once HK lands.
+- **AS/NZS 3000 is the opening.** No spoken, cited assistant for the AU/NZ wiring rules was found,
+  so open question 1 leans to AS/NZS 3000 first, and Plan [IR](IR-test-sheets-from-a-photo.md)'s
+  test sheets pair with it.
+
 ## Phases (one PR each)
 
 ### P0 — Where the passage is on the page (headless core)

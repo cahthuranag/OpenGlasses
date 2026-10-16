@@ -157,6 +157,7 @@ struct ManualPageSheetModel: Equatable {
     /// page is recorded under the same label the citation used (Plan GB P1).
     let citedFigure: String?
     let photographed: Bool
+    let reviewedPhotograph: Bool
     let printedPages: [Int: Int]
 
     private(set) var route: ManualPageRoute
@@ -167,9 +168,10 @@ struct ManualPageSheetModel: Equatable {
          manufacturerPDF: URL? = nil, pdfPageCount: Int = 0,
          extractedPages: [Page] = [], publishedURL: URL? = nil,
          ledgerHash: String? = nil, documentIsPDF: Bool = false, citedFigure: String? = nil,
-         photographed: Bool = false, printedPages: [Int: Int] = [:]) {
+         photographed: Bool = false, reviewedPhotograph:Bool = false, printedPages: [Int: Int] = [:]) {
         self.citation = citation
         self.photographed = photographed
+        self.reviewedPhotograph = reviewedPhotograph
         self.printedPages = printedPages
         self.citedFigure = citedFigure
         self.documentTitle = documentTitle
@@ -216,7 +218,7 @@ struct ManualPageSheetModel: Equatable {
         switch route {
         case .manufacturerPDF:
             var parts = photographed
-                ? ["Photographed manual", "page \(paging.currentPage) of \(pdfPageCount) photographed"]
+                ? [reviewedPhotograph ? "Reviewed photographed manual" : "Photographed manual", "page \(paging.currentPage) of \(pdfPageCount) photographed"]
                 : ["Manufacturer's document", paging.title]
             if photographed, let printed = printedPages[paging.currentPage], printed > 0 { parts.append("printed page \(printed)") }
             if let clause = integrity.clause { parts.append(clause) }

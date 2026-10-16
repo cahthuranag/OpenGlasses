@@ -23,17 +23,23 @@ struct VaultReceipt: Codable, Equatable {
     let receivedAt: Date
     /// The archive's SHA-256, so "this is the thing that was reviewed" is checkable after the fact.
     let archiveSHA256: String
+    /// Set only by authenticated Office assignment + signed archive preflight, never folder import.
+    let capturedOrganizationID: String?
+    let capturedDocumentBindings: [String:String]?
 
     static let filename = "vault-received.json"
 
     init(publisherId: String?, publisherName: String?, verification: Verification,
-         sourceHost: String, receivedAt: Date, archiveSHA256: String) {
+         sourceHost: String, receivedAt: Date, archiveSHA256: String,
+         capturedOrganizationID: String? = nil,capturedDocumentBindings:[String:String]? = nil) {
         self.publisherId = publisherId
         self.publisherName = publisherName
         self.verification = verification
         self.sourceHost = sourceHost
         self.receivedAt = receivedAt
         self.archiveSHA256 = archiveSHA256
+        self.capturedOrganizationID = capturedOrganizationID
+        self.capturedDocumentBindings = capturedDocumentBindings
     }
 
     enum CodingKeys: String, CodingKey {
@@ -43,15 +49,19 @@ struct VaultReceipt: Codable, Equatable {
         case sourceHost = "source_host"
         case receivedAt = "received_at"
         case archiveSHA256 = "archive_sha256"
+        case capturedOrganizationID = "captured_organization_id"
+        case capturedDocumentBindings = "captured_document_bindings"
     }
 
     /// The receipt an outcome produces. Refusals never reach here — nothing is installed from one.
     static func make(verification: VaultArchiveVerification, host: String, now: Date,
-                     archiveSHA256: String) -> VaultReceipt {
+                     archiveSHA256: String,capturedOrganizationID:String? = nil,
+                     capturedDocumentBindings:[String:String]? = nil) -> VaultReceipt {
         let publisher = verification.verifiedPublisher
         return VaultReceipt(publisherId: publisher?.id, publisherName: publisher?.name,
                             verification: publisher == nil ? .unverified : .signed,
-                            sourceHost: host, receivedAt: now, archiveSHA256: archiveSHA256)
+                            sourceHost: host, receivedAt: now, archiveSHA256: archiveSHA256,
+                            capturedOrganizationID:capturedOrganizationID,capturedDocumentBindings:capturedDocumentBindings)
     }
 }
 

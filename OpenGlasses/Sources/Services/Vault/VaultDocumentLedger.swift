@@ -30,11 +30,13 @@ struct VaultDocumentLedger: Codable, Equatable {
         /// document bundles none. This is what "unmodified since import" is checked against, so it
         /// is recorded even though the original is never indexed (Plan EK P3).
         let sourceContentHash: String?
+        let capturedManual: CapturedManualReview?
+        let capturedBinding: String?
 
         init(file: String, title: String, documentId: String, contentHash: String, chunkCount: Int,
              ocrPages: Int? = nil, lowConfidencePages: Int? = nil,
              structuredHeadings: Int? = nil, diagramPages: Int? = nil,
-             sourceContentHash: String? = nil) {
+             sourceContentHash: String? = nil,capturedManual:CapturedManualReview? = nil,capturedBinding:String? = nil) {
             self.file = file
             self.title = title
             self.documentId = documentId
@@ -45,9 +47,10 @@ struct VaultDocumentLedger: Codable, Equatable {
             self.structuredHeadings = structuredHeadings
             self.diagramPages = diagramPages
             self.sourceContentHash = sourceContentHash
+            self.capturedManual = capturedManual;self.capturedBinding = capturedBinding
         }
 
-        var usedRecognition: Bool { (ocrPages ?? 0) > 0 }
+        var usedRecognition: Bool { capturedManual != nil || (ocrPages ?? 0) > 0 }
     }
 
     /// What the manifest wants installed, with the hash of the file as it is on disk now.
@@ -57,12 +60,16 @@ struct VaultDocumentLedger: Codable, Equatable {
         let contentHash: String
         /// Hash of the bundled original, when the document names one.
         let sourceContentHash: String?
+        let capturedManual: CapturedManualReview?
+        let capturedBinding: String?
 
-        init(file: String, title: String, contentHash: String, sourceContentHash: String? = nil) {
+        init(file: String, title: String, contentHash: String, sourceContentHash: String? = nil,
+             capturedManual:CapturedManualReview? = nil,capturedBinding:String? = nil) {
             self.file = file
             self.title = title
             self.contentHash = contentHash
             self.sourceContentHash = sourceContentHash
+            self.capturedManual = capturedManual;self.capturedBinding = capturedBinding
         }
     }
 
@@ -170,7 +177,8 @@ struct VaultDocumentLedger: Codable, Equatable {
             // technician holding it, even when the extracted text is byte-identical, and the ledger
             // hash it is checked against has to be the one recorded for the file that is there now.
             if want.contentHash == entry.contentHash && want.title == entry.title
-                && want.sourceContentHash == entry.sourceContentHash {
+                && want.sourceContentHash == entry.sourceContentHash
+                && want.capturedManual == entry.capturedManual && want.capturedBinding == entry.capturedBinding {
                 plan.unchanged.append(entry)
             } else {
                 plan.toForget.append(entry)

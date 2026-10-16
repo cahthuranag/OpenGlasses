@@ -191,6 +191,7 @@ enum CitationLineParser {
     /// Resolution still requires an exact saved manifest; a long ordinary sentence is not a chip.
     static func validTitleLength(_ name: String) -> Bool {
         if name.count <= maxTitleLength { return true }
+        if name.hasPrefix("Reviewed photographed manual · "),name.utf8.count <= 1_200 {return true}
         return name.utf8.count <= 700 && name.hasPrefix("Photographed manual · ")
             && name.range(of:#" · capture [A-Za-z0-9_-]+/[1-9][0-9]*/[a-f0-9]{64}$"#,
                           options:.regularExpression) != nil

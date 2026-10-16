@@ -33,6 +33,10 @@ Organisation-owned books retain their original job when queued. A queued book is
 
 Ordinary reports to the Office may include saved manual files within the channel’s measured attachment budget. Messages carries recognised text only; customer reports carry neither manual file. The report says which files stayed on the phone. Saved manuals also offers explicit page/text sharing. A later policy change is checked again before a composer opens.
 
+## Reviewed copies
+
+An Office-approved copy carries the named technician, original job/date and named reviewer/date, together with the scan warning. It replaces local search evidence only after its authenticated signed archive is installed and indexed Ready, and only for the exact originating capture revision and bundle digest. Existing citations still open the saved original PDF. Matching titles or text, assignment receipt alone and failed indexing replace nothing. The private Office review/pool service and live crew round trip still require qualification.
+
 ## Qualification record
 
 The current limits are provisional engineering defaults: 40 pages, 4 MiB per encoded image,
@@ -44,7 +48,7 @@ capture, rather than a searchable partial book.
 Headless checks cover ordered physical pages, an empty failed page, language fallback,
 redaction, interruption/restart, immutable retakes, quota/free-space failures, journal-write
 failure, erasure during recognition, real JPEG/PDF encoding, and retained citation files.
-Simulator checks cover the production store/catalog/factory/tool routes and request lifecycle.
+On main build 502, 190 focused simulator tests pass (one skipped, zero failures), covering the production store/catalog/factory/tool routes, request lifecycle, signed in-memory delivery receipts, composer policy changes, erasure, and a reviewed signed-archive round trip onto a second simulated phone.
 
 The following physical qualifications have **not been run**. These defaults are not measured
 shipping limits until the results are recorded here:

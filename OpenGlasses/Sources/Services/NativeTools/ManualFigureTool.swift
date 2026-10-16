@@ -113,7 +113,7 @@ final class ManualFigureTool: NativeTool {
         // caption is exactly the kind of thing a technician asks for again after the manual it was
         // printed in has been taken out of the vault.
         let isAvailable = VaultManualRemoval.availabilityCheck(forVault: store.manifest.id,
-                                                               documentStore: documentStore)
+                                                               documentStore: documentStore, capturedCatalog:session.capturedManuals)
         var passage: VaultRetriever.Passage?
         if let requestedFigure, !requestedFigure.isEmpty {
             for label in Self.candidateLabels(for: requestedFigure) {

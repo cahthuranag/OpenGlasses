@@ -52,8 +52,8 @@ struct VaultRetriever {
         let similarity: Float
         /// Similarity plus the token boost — the ranking key.
         let score: Float
-        /// Code-like tokens from the request found verbatim in this passage.
-        let matchedTokens: [String]
+        /// Code-like tokens — and clause numbers — from the request found verbatim in this passage.
+        var matchedTokens: [String]
         /// Subtracted from `score` when this passage names a model the session is not working on
         /// (Plan EL §4). Kept beside `score` rather than folded into it so a passage's own strength
         /// stays readable in a log or a test while the ranking reflects the machine in the room.
@@ -69,6 +69,9 @@ struct VaultRetriever {
         /// its contract §7.1 citation name, so `citation` renders it unchanged.
         var source: RetrievalSource = .manual
         var printedPage: Int?
+        /// How the passage relates to a clause number the request named (Plan IN P3a), when it
+        /// does. Ranks the clause's own text ahead of passages that only cite it.
+        var clauseMatch: ClauseReference.Match?
 
         typealias Source = RetrievalSource
 
@@ -122,6 +125,9 @@ struct VaultRetriever {
     /// Exact whole-token search, for the code-like tokens the embedder cannot represent — a bare
     /// "ZX9" has no word vector, so without this a fault-code query would retrieve nothing.
     typealias TokenSearch = (_ token: String, _ limit: Int) -> [DocumentStore.Passage]
+    /// Search by clause number (Plan IN P3a), the clause's own text first — see
+    /// `DocumentStore.passages(clause:)`.
+    typealias ClauseSearch = (_ clause: String, _ limit: Int) -> [DocumentStore.Passage]
 
     /// Whether a document (by id) was read by recognition. Nil means "unknown", treated as no.
     typealias Provenance = (_ documentId: String) -> Bool
@@ -183,17 +189,20 @@ struct VaultRetriever {
 
     var query: QueryFunction
     var tokenSearch: TokenSearch?
+    var clauseSearch: ClauseSearch?
     var provenance: Provenance?
     var availability: Availability?
     var policy = RetrievalEvidencePolicy()
     var modelScope: ModelScope?
 
     init(query: @escaping QueryFunction, tokenSearch: TokenSearch? = nil,
+         clauseSearch: ClauseSearch? = nil,
          provenance: Provenance? = nil, availability: Availability? = nil,
          policy: RetrievalEvidencePolicy = RetrievalEvidencePolicy(),
          modelScope: ModelScope? = nil) {
         self.query = query
         self.tokenSearch = tokenSearch
+        self.clauseSearch = clauseSearch
         self.provenance = provenance
         self.availability = availability
         self.policy = policy
@@ -206,9 +215,14 @@ struct VaultRetriever {
             .filter { !$0.isEmpty }
         guard !parts.isEmpty else { return .insufficient(reason: RetrievalEvidencePolicy.insufficientSentence) }
 
+        // Clause numbers the technician named ("clause 3.9.4.2", "rule 26-700") are matched whole
+        // (Plan IN P3a); their pieces are kept out of the per-token boost, or "26-700" would boost
+        // every passage that prints a 26.
+        let clauses = ClauseReference.references(in: request.turn ?? "")
         // Boost tokens: anything code-like the technician said or the camera read.
         let boostTokens = Array(Set(
-            CodeTokenizer.codeTokens(from: request.turn ?? "") + CodeTokenizer.codeTokens(from: request.ocrText ?? "")
+            CodeTokenizer.codeTokens(from: ClauseReference.removingReferences(from: request.turn ?? ""))
+                + CodeTokenizer.codeTokens(from: request.ocrText ?? "")
         )).sorted()
 
         // Query each part; the OCR part is queried as its tokens joined so a whole nameplate
@@ -222,19 +236,42 @@ struct VaultRetriever {
         }
 
         var merged: [String: Passage] = [:]
-        func consider(_ raw: DocumentStore.Passage) {
+        func consider(_ raw: DocumentStore.Passage, foundForClause searched: String? = nil) {
             let key = "\(raw.documentId)#\(raw.chunkIndex)"
-            let matched = boostTokens.filter { CodeTokenizer.contains(raw.text, token: $0) }
-            let candidate = scored(raw, matched: matched)
-            if let existing = merged[key], existing.rankScore >= candidate.rankScore { return }
+            var matched = boostTokens.filter { CodeTokenizer.contains(raw.text, token: $0) }
+            var clauseMatch = raw.clauseMatch
+            for clause in clauses {
+                // A continuation chunk need not print the number; the clause search vouches for it.
+                let match = ClauseReference.match(clause, in: raw.text, section: raw.section)
+                    ?? (clause == searched ? raw.clauseMatch : nil)
+                guard let match else { continue }
+                matched.append(clause)
+                clauseMatch = max(clauseMatch ?? match, match)
+            }
+            var candidate = scored(raw, matched: matched)
+            candidate.clauseMatch = clauseMatch
+            if let existing = merged[key] {
+                // Two routes reached the same chunk: keep the better score, and everything either
+                // route knew about why it matched.
+                var kept = existing.rankScore >= candidate.rankScore ? existing : candidate
+                kept.matchedTokens = Array(Set(existing.matchedTokens + candidate.matchedTokens)).sorted()
+                kept.clauseMatch = [existing.clauseMatch, candidate.clauseMatch].compactMap { $0 }.max()
+                merged[key] = kept
+                return
+            }
             merged[key] = candidate
         }
         for q in queries {
-            query(q, max(request.limit * 2, 4)).forEach(consider)
+            query(q, max(request.limit * 2, 4)).forEach { consider($0) }
         }
         if let tokenSearch {
             for token in boostTokens {
-                tokenSearch(token, max(request.limit * 2, 4)).forEach(consider)
+                tokenSearch(token, max(request.limit * 2, 4)).forEach { consider($0) }
+            }
+        }
+        if let clauseSearch {
+            for clause in clauses {
+                clauseSearch(clause, max(request.limit * 2, 4)).forEach { consider($0, foundForClause: clause) }
             }
         }
 
@@ -253,8 +290,23 @@ struct VaultRetriever {
         // gone" rather than a quotation from it.
         let candidates = availability.map { check in Array(merged.values).filter { check($0.documentId) } }
             ?? Array(merged.values)
-        let ranked = candidates.filter { !$0.matchedTokens.isEmpty }.sorted(by: precedes)
-            + candidates.filter { $0.matchedTokens.isEmpty }.sorted(by: precedes)
+        //
+        // A clause number ranks above both (Plan IN P3a), by how the passage holds the clause: the
+        // passage that starts it, then its subclauses, then the text that carries it on, then the
+        // passages that only cite it. Without a clause in the request every passage is in group 0
+        // or 1, which is the ordering above unchanged.
+        func group(_ p: Passage) -> Int {
+            (p.clauseMatch?.rawValue ?? 0) * 2 + (p.matchedTokens.isEmpty ? 0 : 1)
+        }
+        let ranked = candidates.sorted { a, b in
+            if group(a) != group(b) { return group(a) > group(b) }
+            if !clauses.isEmpty, a.clauseMatch != nil, b.clauseMatch != nil {
+                let offsets = (ClauseReference.offset(of: clauses, in: a.text),
+                               ClauseReference.offset(of: clauses, in: b.text))
+                if offsets.0 != offsets.1 { return offsets.0 < offsets.1 }
+            }
+            return precedes(a, b)
+        }
         // The lexical criterion compares a passage against everything that was searched, not just
         // the spoken turn: a nameplate's words and the running procedure step are as much a part of
         // what was asked as the sentence is.

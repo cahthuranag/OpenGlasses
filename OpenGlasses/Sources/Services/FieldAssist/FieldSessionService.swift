@@ -1559,6 +1559,11 @@ final class FieldSessionService: ObservableObject {
                 tagged(documentStore?.passages(containingToken: token, namespace: space.namespace,
                                                documentIds: ids(for: space), limit: limit) ?? [], space)
             }
+        }, clauseSearch: { clause, limit in
+            searched.flatMap { space in
+                tagged(documentStore?.passages(clause: clause, namespace: space.namespace,
+                                               documentIds: ids(for: space), limit: limit) ?? [], space)
+            }
         }, provenance: { documentId in
             if documentId.hasPrefix("captured:") { return true }
             return manualNamespaces.contains { namespace in

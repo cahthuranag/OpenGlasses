@@ -45,6 +45,10 @@ final class DocumentStore: ObservableObject {
         var subjectModelToken: String?
         /// Supplemental label only; `page` remains the physical capture index.
         var printedPage: Int?
+        /// Set by a clause search only (Plan IN P3a): how this chunk relates to the clause it was
+        /// found for. Carried rather than recomputed because a continuation chunk need not print
+        /// the clause number at all.
+        var clauseMatch: ClauseReference.Match?
     }
 
     // MARK: - Published
@@ -179,6 +183,49 @@ final class DocumentStore: ObservableObject {
                     text: $0.text, similarity: 0, page: $0.page, section: $0.section,
                     kind: $0.kind, figure: $0.figure)
         }
+    }
+
+    /// Passages that carry a clause number (Plan IN P3a), the clause's own text first: chunks that
+    /// start it, then chunks that start a subclause of it, then the chunk after each of those and
+    /// the rest of its section, then the chunks that cite it — within a group, the chunk that holds
+    /// the number earliest first (see `ClauseReference.offset`), then document order.
+    ///
+    /// The order is the point. A code book cites its busiest clauses dozens of times, and the
+    /// token search's document order would fill the limit with the contents page and early
+    /// cross-references before it reached the clause.
+    func passages(clause: String, namespace: String? = nil,
+                  documentIds: [String]? = nil, limit: Int = 8) -> [Passage] {
+        guard !clause.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+        let rows = fetchChunks(namespace: namespace, documentIds: documentIds)
+        var matched: [String: (row: ChunkRow, match: ClauseReference.Match)] = [:]
+        for row in rows {
+            if let match = ClauseReference.match(clause, in: row.text, section: row.section) {
+                matched[row.id] = (row, match)
+            }
+        }
+        // The chunk after one that starts the clause carries its text on, whether or not it prints
+        // the number again.
+        let byPosition = Dictionary(rows.map { ("\($0.documentId)#\($0.chunkIndex)", $0) },
+                                    uniquingKeysWith: { first, _ in first })
+        for (_, hit) in matched where hit.match >= .startsSubclause {
+            guard let next = byPosition["\(hit.row.documentId)#\(hit.row.chunkIndex + 1)"] else { continue }
+            if (matched[next.id]?.match ?? .cites) <= .cites { matched[next.id] = (next, .continues) }
+        }
+        return matched.values
+            .sorted {
+                if $0.match != $1.match { return $0.match > $1.match }
+                let a = ClauseReference.offset(of: [clause], in: $0.row.text)
+                let b = ClauseReference.offset(of: [clause], in: $1.row.text)
+                if a != b { return a < b }
+                return ($0.row.documentName, $0.row.chunkIndex) < ($1.row.documentName, $1.row.chunkIndex)
+            }
+            .prefix(max(limit, 1))
+            .map {
+                Passage(documentId: $0.row.documentId, documentName: $0.row.documentName,
+                        chunkIndex: $0.row.chunkIndex, text: $0.row.text, similarity: 0, page: $0.row.page,
+                        section: $0.row.section, kind: $0.row.kind, figure: $0.row.figure,
+                        clauseMatch: $0.match)
+            }
     }
 
     /// Chunks whose stored caption is `label` ("Figure 58"), case-insensitively — how a figure a

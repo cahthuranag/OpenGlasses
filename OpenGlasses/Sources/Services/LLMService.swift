@@ -2315,6 +2315,17 @@ class LLMService: ObservableObject {
         TurnRecorder.noteReasoning(resolution.token)
     }
 
+    /// A Responses turn held commentary-phase messages back from its reply
+    /// (`ResponsesTranslator.parseOutput`): how many, and whether an answer or a tool call was
+    /// left — `noAnswer` is a turn whose only text was the model's interim note, now an empty
+    /// reply. Counts and a fixed token only, never the withheld words.
+    static func noteWithheldCommentary(_ count: Int, answered: Bool, toolCalls: Int, provider: LLMProvider) {
+        guard count > 0 else { return }
+        let outcome = answered ? "answered" : (toolCalls > 0 ? "toolCall" : "noAnswer")
+        PrivacyLog.model(.commentaryWithheld, provider: PrivacyToken(provider.rawValue),
+                         count: count, detail: PrivacyToken(outcome))
+    }
+
     /// Whether a provider reaching the OpenAI-compatible path can be handed a `tools` payload.
     ///
     /// This is an exhaustive switch on purpose. The bug it exists to prevent (issue 427) was a
@@ -2850,6 +2861,8 @@ class LLMService: ObservableObject {
                 }
                 PrivacyLog.model(.toolCallsParsed, provider: PrivacyToken(provider.rawValue),
                                  count: parsed.toolCalls.count)
+                Self.noteWithheldCommentary(parsed.withheldCommentary, answered: !parsed.text.isEmpty,
+                                            toolCalls: parsed.toolCalls.count, provider: provider)
                 self.recordUsage(provider: provider, model: config.model, json: responseJSON)
                 return AssistantTurn(text: parsed.text, toolCalls: parsed.toolCalls,
                                      payload: parsed.rawOutputItems)
@@ -2973,6 +2986,8 @@ class LLMService: ObservableObject {
                 // executed" bugs get caught.
                 PrivacyLog.model(.toolCallsParsed, provider: PrivacyToken("chatgpt"),
                                  count: parsed.toolCalls.count)
+                Self.noteWithheldCommentary(parsed.withheldCommentary, answered: !parsed.text.isEmpty,
+                                            toolCalls: parsed.toolCalls.count, provider: .chatgpt)
                 self.recordUsage(provider: .chatgpt, model: config.model, json: responseJSON)
                 return AssistantTurn(text: parsed.text, toolCalls: parsed.toolCalls, payload: responseJSON)
             },

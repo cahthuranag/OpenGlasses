@@ -3998,6 +3998,10 @@ class AppState: ObservableObject, AppStateProtocol {
         wakeWordService.glassesTurnState = { [weak self] in
             (stoodDown: self?.glassesStoodDown ?? false, worn: self?.glassesService.isWorn)
         }
+        // A backgrounded turn keeps the live hands-free idle session rather than re-tune it, which
+        // iOS refuses from the background (`TurnMicHandoff.sessionSwitch`). Only `.active` counts
+        // as the foreground: an inactive app is on its way to the lock screen.
+        wakeWordService.appInForeground = { UIApplication.shared.applicationState == .active }
 
         wakeWordService.onWakeWordDetected = { [weak self] matchedPhrase in
             Task { @MainActor in

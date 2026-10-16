@@ -85,6 +85,12 @@ class WakeWordService: NSObject, ObservableObject {
     /// (nil when unknown). Injected by `AppState`.
     var glassesTurnState: @MainActor () -> (stoodDown: Bool, worn: Bool?) = { (false, nil) }
 
+    /// Whether the app is in the foreground (`UIApplication.applicationState == .active`), read
+    /// when a turn takes its conversation session (`TurnMicHandoff.sessionSwitch`). Injected by
+    /// `AppState`; defaults to "foreground" so the service keeps working standalone and in tests
+    /// with the reconfigure it has always done.
+    var appInForeground: @MainActor () -> Bool = { true }
+
     /// The session coordinator. A closure so tests inject a fresh one over a fake session and the
     /// shared one is never touched there.
     var sessionCoordinator: () -> AudioSessionCoordinator = { .shared }
@@ -313,7 +319,9 @@ class WakeWordService: NSObject, ObservableObject {
             PrivacyLog.audio(.wakeWord, .otherAudioHeld, count: pauseHoldCount)
             return
         }
-        await applyConversationRoute()
+        let keptIdleSession = await applyConversationRoute()
+        // A kept idle session is mixable: nothing was paused, and its own line says so.
+        guard !keptIdleSession else { return }
         let session = AVAudioSession.sharedInstance()
         PrivacyLog.audio(.wakeWord, .otherAudioPaused,
                          route: PrivacyToken(session.currentRoute.outputs.first?.portType.rawValue ?? "none"))
@@ -321,7 +329,13 @@ class WakeWordService: NSObject, ObservableObject {
 
     /// Reconfigure for the conversation mic and prefer its port. Shared by the first pause hold and
     /// by a follow-up taking the hands-free link back after a full-quality reply.
-    private func applyConversationRoute() async {
+    ///
+    /// Backgrounded with the idle listener already live on the wanted Bluetooth port, the session
+    /// is not re-tuned at all (`TurnMicHandoff.sessionSwitch`): iOS refuses that from the
+    /// background and the refusal costs the turn its glasses mic. Returns true when the idle
+    /// session was kept.
+    @discardableResult
+    private func applyConversationRoute() async -> Bool {
         if turnSwitchStartedAt == nil { turnSwitchStartedAt = Date() }
         // The engine will reconfigure under this switch; the turn's hand-off rebuilds it on the
         // live input, so the configuration-change observer stands back meanwhile.
@@ -341,13 +355,23 @@ class WakeWordService: NSObject, ObservableObject {
         // straight after it is the switch settling, not the glasses leaving.
         let portSeenBeforeSwitch = wanted != .phone
             && (preferredPort(for: wanted, in: session) != nil || resolvedInput(session) == wanted)
-        // Omitting mixWithOthers/duckOthers causes iOS to interrupt (pause) other audio apps.
-        // .default (NOT .measurement): .measurement disables system audio processing/gain, which
-        // makes TTS playback extremely quiet on the iPhone speaker.
-        // BJ PR2: the blocking setCategory→setActive runs off-main through the coordinator's
-        // `reconfigure` (no deactivate-first, no fallback — the hand-tuned options are preserved).
-        // A refusal (backgrounded: cannotInterruptOthers) is logged and retried once mixable.
-        await reconfigureForConversation(on: wanted)
+        // Backgrounded on a live hands-free idle session: keep it. Any re-tune from here is
+        // refused and leaves the port unlisted (tester report, 2026-10-16).
+        let sessionSwitch = TurnMicHandoff.sessionSwitch(
+            wanted: wanted, appInForeground: appInForeground(),
+            portSeenBeforeSwitch: portSeenBeforeSwitch, engineRunning: audioEngine?.isRunning == true)
+        switch sessionSwitch {
+        case .keepIdleSession:
+            PrivacyLog.audio(.wakeWord, .conversationKeptIdleSession, route: PrivacyToken(wanted.rawValue))
+        case .reconfigure:
+            // Omitting mixWithOthers/duckOthers causes iOS to interrupt (pause) other audio apps.
+            // .default (NOT .measurement): .measurement disables system audio processing/gain,
+            // which makes TTS playback extremely quiet on the iPhone speaker.
+            // BJ PR2: the blocking setCategory→setActive runs off-main through the coordinator's
+            // `reconfigure` (no deactivate-first, no fallback — the hand-tuned options are
+            // preserved). A refusal is logged and retried once mixable.
+            await reconfigureForConversation(on: wanted)
+        }
         var available = wanted == .phone || preferredPort(for: wanted, in: session) != nil
         if TurnMicHandoff.shouldRecheckPort(wanted: wanted, portAvailable: available,
                                             portSeenBeforeSwitch: portSeenBeforeSwitch) {
@@ -373,14 +397,19 @@ class WakeWordService: NSObject, ObservableObject {
         } else {
             preferConfiguredMicIfAvailable(session, route: target)
         }
+        return sessionSwitch == .keepIdleSession
     }
 
-    /// The conversation session for `route`: non-mixable first, as always. If iOS refuses it —
-    /// in the background a non-mixable activation fails with `cannotInterruptOthers` — the failure
-    /// is logged and the same route is asked for once more mixable
-    /// (`MicRoutePolicy.conversationRetryOptions`), so the turn keeps its hands-free mic rather
-    /// than reading the port as gone and dropping to the phone. A second failure is logged too and
-    /// the caller carries on with whatever the session now lists, as before.
+    /// The conversation session for `route`: non-mixable first, as always. If iOS refuses it, the
+    /// failure is logged and the same route is asked for once more mixable
+    /// (`MicRoutePolicy.conversationRetryOptions`). A second failure is logged too and the caller
+    /// carries on with whatever the session now lists, as before.
+    ///
+    /// The mixable retry does **not** rescue a backgrounded turn: on device both attempts are
+    /// refused with `cannotInterruptOthers` and the hands-free port drops out of the list. That
+    /// case never gets here — `applyConversationRoute` keeps the live idle session instead
+    /// (`TurnMicHandoff.sessionSwitch`). The retry remains for a refusal in the foreground, and
+    /// for a backgrounded turn with no live hands-free session to keep.
     private func reconfigureForConversation(on route: MicRoute) async {
         let options = MicRoutePolicy.conversationCategoryOptions(for: route)
         do {

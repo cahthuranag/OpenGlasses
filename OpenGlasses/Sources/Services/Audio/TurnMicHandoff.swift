@@ -91,6 +91,38 @@ enum TurnMicHandoff {
         wanted != .phone && !portAvailable && portSeenBeforeSwitch
     }
 
+    /// How a turn reaches its conversation session.
+    enum SessionSwitch: Equatable {
+        /// Re-tune the session to the conversation shape: non-mixable (other audio pauses), then
+        /// once mixable if that is refused (`MicRoutePolicy.conversationRetryOptions`).
+        case reconfigure
+        /// Leave the live idle session exactly as it is — mixable, hands-free allowed, the
+        /// glasses' mic already the input — and only prefer the route's port.
+        case keepIdleSession
+    }
+
+    /// Whether a turn re-tunes the session or keeps the idle one it already has.
+    ///
+    /// From the background (phone locked, in a pocket) iOS refuses to re-tune an active session
+    /// in place: on a tester's iPhone (iOS 27.2) both the non-mixable conversation shape *and*
+    /// the mixable retry — option for option the idle hold that was already active — failed with
+    /// `cannotInterruptOthers`, and the refused attempt left the hands-free port out of
+    /// `availableInputs`, so the turn and its reply went to the phone mic and loudspeaker in the
+    /// pocket. A fresh activation after a real hand-back succeeds there; a re-tune of the live
+    /// session does not. So when the app is not in the foreground and the idle listener is
+    /// running on a session that already lists the wanted Bluetooth route's port (the wake phrase
+    /// was heard on it moments ago), the turn keeps that session: request and reply stay on the
+    /// glasses, at the cost of not pausing other audio.
+    ///
+    /// Everything else reconfigures as before: the foreground (where pausing other audio works
+    /// and is wanted), the phone route, and a backgrounded turn whose port was not live (an idle
+    /// phone-mic session lists no hands-free inputs, so there is nothing to keep).
+    static func sessionSwitch(wanted: MicRoute, appInForeground: Bool, portSeenBeforeSwitch: Bool,
+                              engineRunning: Bool) -> SessionSwitch {
+        guard wanted != .phone, !appInForeground, portSeenBeforeSwitch, engineRunning else { return .reconfigure }
+        return .keepIdleSession
+    }
+
     enum State: Equatable {
         /// The route has been asked for; `currentRoute.inputs` does not show it yet.
         case waitingForRoute

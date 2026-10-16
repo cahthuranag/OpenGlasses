@@ -45,6 +45,7 @@ struct PhotographedManualSection: View {
 
 struct PhotographedManualsView: View {
     @ObservedObject private var captures = ManualCaptureService.shared
+    @ObservedObject private var outbox = CapturedManualOutbox.shared
     @State private var manuals:[CapturedManualContract.Manifest] = []
     @State private var unfinished:[CapturedManualStore.Draft] = []
     @State private var error:String?
@@ -56,7 +57,7 @@ struct PhotographedManualsView: View {
             ForEach(manuals,id:\.documentID) { m in
                 VStack(alignment:.leading,spacing:6) {
                     Text(m.title).font(.headline)
-                    Text("\(m.pageCount) photographed pages · \(m.lowConfidencePages) low confidence · local, unreviewed").font(.caption)
+                    Text("\(m.pageCount) photographed pages · \(m.lowConfidencePages) low confidence · unreviewed · \(outbox.standing(m))").font(.caption)
                     HStack {
                         if CapturedManualCatalog.mayUse {Button("View pages") {selected = m}}
                         Button("Forget",role:.destructive) {deleting = m.captureID}
@@ -99,6 +100,7 @@ struct PhotographedManualsView: View {
 private struct CapturedManualPageView:View {
     let manifest:CapturedManualContract.Manifest
     @State private var url:URL?
+    @State private var textURL:URL?
     @State private var error:String?
     var body:some View {
         VStack {
@@ -108,12 +110,22 @@ private struct CapturedManualPageView:View {
             if let url {CapturePDFView(url:url)}
         }
         .navigationTitle(manifest.title)
+        .toolbar {
+            if let url {ShareLink("Share photographed pages",item:url)}
+            if let textURL {ShareLink("Share recognised text",item:textURL)}
+        }
         .task {
             guard CapturedManualCatalog.mayUse,
                   manifest.scope == CapturedManualCatalog.scope(vaultID:manifest.vaultID),let store = CapturedManualStore.shared else {
                 error = "These photographed pages are unavailable under the current policy.";return
             }
-            do {url = try await Task.detached(priority:.utility) {try store.file(manifest,name:"pages.pdf")}.value}
+            do {
+                let files = try await Task.detached(priority:.utility) {
+                    (try store.file(manifest,name:"pages.pdf"),try store.file(manifest,name:"text.md"))
+                }.value
+                guard CapturedManualCatalog.mayUse,manifest.scope == CapturedManualCatalog.scope(vaultID:manifest.vaultID) else {return}
+                url = files.0;textURL = files.1
+            }
             catch {self.error = "These photographed pages are unavailable or have changed."}
         }
     }

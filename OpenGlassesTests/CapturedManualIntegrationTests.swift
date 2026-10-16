@@ -126,4 +126,28 @@ final class CapturedManualIntegrationTests: XCTestCase {
         let figure = try XCTUnwrap(sessions.stagedFigure)
         XCTAssertEqual(figure.page,2);XCTAssertNotNil(sessions.sourcePDFURL(for:figure))
     }
+    func testComposerRechecksCapturePolicyAndCustomerAudienceBeforePresentingFiles() async throws {
+        let m = try await capture()
+        let record = try XCTUnwrap(sessions.workRecord())
+        let files: [DeliveryRequest.Attachment] = [
+            .init(url:try source.file(m,name:"pages.pdf"),kind:.capturedManualPDF,filename:"pages.pdf"),
+            .init(url:try source.file(m,name:"text.md"),kind:.capturedManualText,filename:"text.md")
+        ]
+        let office = ReportTranscriptPolicy.decide(channel:.email,recipients:["office@example.test"],carriesFiles:true,
+            context:.init(officeAddresses:["office@example.test"]),choice:.standard)
+        let request = DeliveryRequest.make(record:record,channel:.email,recipients:["office@example.test"],attachments:files,transcript:office)
+        let outbox = CapturedManualOutbox();outbox.source = {self.source}
+        outbox.presentationAllowed = {_ in self.access}
+        XCTAssertEqual(outbox.forPresentation(request).attachments.count,2)
+        access = false
+        let denied = outbox.forPresentation(request)
+        XCTAssertTrue(denied.attachments.isEmpty)
+        XCTAssertTrue(denied.body.contains("stayed on this phone"))
+        if case .workRecord(let redacted,_) = denied.payload {XCTAssertNil(redacted.capturedManuals)}
+        access = true
+        let customer = DeliveryRequest.make(record:record,channel:.email,recipients:["customer@example.test"],attachments:files)
+        XCTAssertTrue(outbox.forPresentation(customer).attachments.isEmpty)
+        try source.forget(m.captureID)
+        XCTAssertTrue(outbox.forPresentation(request).attachments.isEmpty,"a forgotten source cannot leave through a staged request")
+    }
 }

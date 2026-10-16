@@ -29,7 +29,7 @@ struct QueuedRecordRow: Identifiable, Equatable {
 enum QueuedRecordRows {
 
     /// The op kinds this screen is about. Everything else stays in the general queue list.
-    static let kinds: Set<OpKind> = [.workRecord, .partsRequest]
+    static let kinds: Set<OpKind> = [.workRecord, .partsRequest, .capturedManual]
 
     /// States that mean "this has not reached anybody". `done` rows are tombstones and are not
     /// outstanding; `inFlight` is, because a flush that dies mid-delivery re-arms it as pending.
@@ -56,6 +56,11 @@ enum QueuedRecordRows {
 
     static func row(for op: QueuedOp) -> QueuedRecordRow? {
         switch op.kind {
+        case .capturedManual:
+            guard let m = try? CapturedManualContract.read(op.payload) else {return unreadable(op)}
+            return QueuedRecordRow(id:op.id,kind:op.kind,state:op.state,sessionId:m.sessionID,
+                jobReference:m.jobReference,title:"Photographed manual — \(m.pageCount) pages",
+                detail:"Original job \(m.jobReference); waiting for signed Office acceptance",attempts:op.attempts,record:nil)
         case .workRecord:
             guard let record = try? decoder().decode(WorkRecord.self, from: op.payload) else {
                 return unreadable(op)

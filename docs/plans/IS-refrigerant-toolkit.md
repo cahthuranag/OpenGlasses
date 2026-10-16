@@ -1,6 +1,6 @@
 # Plan IS — Refrigerant Toolkit (gauges to an answer, full P-T tables, EPA 608 flags, a door-sticker diagram)
 
-**Status:** 📝 Drafted 2026-10-17 — nothing implemented. The EPA 608 reference was corrected
+**Status:** 📝 Drafted 2026-10-17, P4–P6 added the same day — nothing implemented. The EPA 608 reference was corrected
 separately, in [#753](https://github.com/straff2002/OpenGlasses/pull/753).
 **Track:** Field Assist (B2B), HVAC/R.
 **Related:** Plan [structured vision](structured-vision-assessment.md) (AD: `instrument_reading`,
@@ -140,6 +140,66 @@ found it wrong. That fix is #753.
 - **Exit tests:** capture scoped to the unit and the job; the source line; nothing kept after the
   job unless the office approves it.
 
+### P4 — Superheat and subcooling read together, and the other calculations
+
+*(Added 2026-10-17 from a review of the topics HVAC technicians look up most.)*
+
+- `RefrigerantCircuitDiagnosis` (pure): given superheat and subcooling (and, where known, suction
+  and head pressure, metering type TXV/EEV or fixed orifice, and the evaporator's airflow), it
+  returns the quadrant and the vault's candidate causes in order. The quadrants are high or low
+  superheat crossed with high or low subcooling, plus normal. Each cause carries the next
+  measurement that tells it from its neighbours. `domain_calc` appends it whenever it has computed
+  both numbers.
+  It never names one cause as *the* fault. It says "points to", lists the alternatives, and names
+  the check that would decide.
+- The table of quadrants and causes is vault content (`superheat_subcool.md`), not code, so a
+  partner or an organisation can correct it. The vault-content review that started this phase
+  rewrites that table from cited sources.
+- New `domain_calc` operations, each with its formula and source in the answer:
+  - `target_superheat` (fixed orifice): from indoor wet bulb and outdoor dry bulb, by the
+    manufacturer's chart where the vault carries it. A generic chart is used only if a cited,
+    redistributable one is found, and the answer says which.
+  - `condensing_split`: saturated condensing temperature from head pressure (P0's bubble
+    point), minus outdoor air temperature, compared with the unit's design split when the vault
+    has it.
+  - `delta_t`: return minus supply air temperature, judged against a target only from the
+    manufacturer's data or a calculation from the sensible heat ratio and airflow, never against
+    a fixed 20 °F.
+- **Exit tests:** every quadrant with TXV and fixed-orifice variants; "unknown metering type" asks;
+  the calculations against worked examples; no fixed delta-T target anywhere in the output.
+
+### P5 — More instrument readings
+
+- `UnitNormalizer` and `InstrumentPlausibility` gain microns (vacuum), inches of water column
+  (static pressure), microamps (flame rectification), microfarads (capacitance, judged against
+  the rated value and its printed tolerance) and ppm (CO, from a combustion analyser).
+- An evacuation reading sequence: the micron reading at isolation, then again after a timed
+  standing period, judged against the procedure's own pass figure (the vault's, never a number the
+  model supplies).
+- A CO reading above the vault's action threshold is a safety flag, spoken at once and recorded,
+  like the vault's other safety reminders.
+- **Exit tests:** normaliser corpus ("500 microns", "0.5 in wc", "2.1 µA", "45/5 µF", "CO 120
+  ppm"); capacitor tolerance; the decay sequence; the CO flag.
+
+### P6 — A starter set of diagnostic procedures
+
+- New bundled procedures for the refrigeration vault, written by us and reviewed by a working HVAC
+  technician before they ship. None are copied from anyone's articles, and each cites the vault
+  files it uses:
+  - evacuation and vacuum decay test;
+  - run capacitor test (bench and under load);
+  - flame sensor (microamps first, then clean);
+  - contactor test;
+  - control board inputs and outputs, before replacement;
+  - short cycling;
+  - frozen evaporator coil;
+  - heat pump defrost;
+  - thermostat wiring and the C wire.
+- Each uses P4's and P5's readings and calculations where they fit, and ends in the work record
+  like today's procedures.
+- **Exit tests:** every procedure passes `validateProcedureGraph`; every step that opens the
+  refrigerant circuit carries the recovery safety note; every citation resolves to a vault file.
+
 ## Acceptance
 
 - With the camera on a manifold on an R-410A rooftop unit, "what's my superheat and subcool?" gives
@@ -150,6 +210,10 @@ found it wrong. That fix is #753.
   rate against 10% and names the 30 days. On a residential split it says the leak-repair rule
   doesn't apply.
 - No P-T number is spoken without a source, and no refrigerant is assumed.
+- With superheat 22 °F and subcooling 4 °F on a TXV system, the answer names the likely low charge,
+  the alternatives, and the check that decides between them.
+- "500 microns, then 1,400 after ten minutes" is judged against the evacuation procedure's own
+  pass figure and recorded.
 
 ## Open questions for the owner
 

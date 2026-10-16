@@ -1491,6 +1491,13 @@ enum PrivacyLog {
         // A backgrounded turn kept the live idle hands-free session as it was rather than re-tune
         // it (iOS refuses that from the background); the route token only.
         case conversationKeptIdleSession
+        // A backgrounded turn handed the session back and activated it afresh in the hands-free
+        // shape instead of re-tuning it in place; the route token and an outcome token
+        // (`activated`, `failed`, `deferred`).
+        case conversationFreshActivation
+        // A follow-up took the conversation's Bluetooth mic back from the phone; the configured
+        // route token and the route the follow-up landed on.
+        case turnMicRetaken
     }
 
     @discardableResult

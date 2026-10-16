@@ -6218,8 +6218,9 @@ class AppState: ObservableObject, AppStateProtocol {
             // Someone else ended the conversation while we were suspended; they own the teardown.
             guard inConversation else { return }
             // Plan GU §4: after a full-quality reply the hands-free link was released; take it
-            // back (switch first, then listen) before the follow-up records.
-            await wakeWordService.retakeConversationMicIfReleased()
+            // back (switch first, then listen) before the follow-up records. Likewise when the
+            // conversation landed on the phone from the background and the app is now in front.
+            await wakeWordService.retakeConversationMicIfNeeded()
             guard inConversation else { return }
             isListening = true
             // CO Item 4: if what we just said was a question, give the user room to think before
@@ -7525,7 +7526,8 @@ class AppState: ObservableObject, AppStateProtocol {
             conversationRoute: route,
             displayGlasses: glassesDisplay.isDisplayActive,
             realtime: geminiLiveSession.isActive || openAIRealtimeSession.isActive,
-            carPlay: wakeWordService.carPlayMode))
+            carPlay: wakeWordService.carPlayMode,
+            backgrounded: !wakeWordService.appInForeground()))
         return decision
     }
 

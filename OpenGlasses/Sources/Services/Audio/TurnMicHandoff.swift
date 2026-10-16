@@ -99,6 +99,11 @@ enum TurnMicHandoff {
         /// Leave the live idle session exactly as it is — mixable, hands-free allowed, the
         /// glasses' mic already the input — and only prefer the route's port.
         case keepIdleSession
+        /// Stop the engine, hand the session back (a real deactivation), and activate it afresh
+        /// in the mixable hands-free shape the idle Bluetooth hold uses; then prefer the route's
+        /// port. If that activation is refused the idle shape is put back and the turn goes to
+        /// the phone, as before.
+        case freshActivation
     }
 
     /// Whether a turn re-tunes the session or keeps the idle one it already has.
@@ -114,13 +119,53 @@ enum TurnMicHandoff {
     /// was heard on it moments ago), the turn keeps that session: request and reply stay on the
     /// glasses, at the cost of not pausing other audio.
     ///
+    /// A backgrounded turn with nothing live to keep — the idle listener on the phone's own mic,
+    /// the default (`WakeListenMic.iPhone`), lists no hands-free inputs at all — still cannot be
+    /// re-tuned there. What does work from the background is a **fresh** activation after a real
+    /// deactivation: on the same device, every conversation's hand-back (engine stopped, session
+    /// deactivated with notify) was followed by the idle hands-free shape activating cleanly with
+    /// the phone locked, engine up on the glasses' 16 kHz input a second later. So such a turn
+    /// takes that path (`.freshActivation`) — but only when `sessionFreeToHandBack`: nothing else
+    /// rides the session (no TTS or other coexisting rider, no shared-tap consumer such as a
+    /// recording or captions, which a deactivation would cut off) and no realtime session or
+    /// expert call owns it (`HandBackDecision.decide(...) == .deactivate`).
+    ///
     /// Everything else reconfigures as before: the foreground (where pausing other audio works
-    /// and is wanted), the phone route, and a backgrounded turn whose port was not live (an idle
-    /// phone-mic session lists no hands-free inputs, so there is nothing to keep).
+    /// and is wanted), the phone route, and a backgrounded turn whose session is not free to hand
+    /// back (it keeps today's attempt, and the phone if that is refused).
     static func sessionSwitch(wanted: MicRoute, appInForeground: Bool, portSeenBeforeSwitch: Bool,
-                              engineRunning: Bool) -> SessionSwitch {
-        guard wanted != .phone, !appInForeground, portSeenBeforeSwitch, engineRunning else { return .reconfigure }
-        return .keepIdleSession
+                              engineRunning: Bool, sessionFreeToHandBack: Bool) -> SessionSwitch {
+        guard wanted != .phone, !appInForeground else { return .reconfigure }
+        if portSeenBeforeSwitch && engineRunning { return .keepIdleSession }
+        return sessionFreeToHandBack ? .freshActivation : .reconfigure
+    }
+
+    /// Whether a follow-up turn takes the conversation's Bluetooth mic back from the phone.
+    ///
+    /// A conversation whose first turn landed on the phone used to keep it for every follow-up:
+    /// the route was decided once, at the first pause hold, and never looked at again. On a
+    /// tester's iPhone a locked-phone turn went to the phone mic and loudspeaker, the app was
+    /// brought to the front 20 seconds later, and the three follow-ups after it all stayed on the
+    /// phone with the glasses connected and in use. So at each follow-up's start the turn is
+    /// re-read: it retakes the conversation mic when
+    ///
+    /// - this conversation's turn is on the phone (`turnMic == .phone`) although the wearer's
+    ///   conversation mic is Bluetooth,
+    /// - the app is in the foreground now, where the switch is allowed,
+    /// - the phone was not chosen in the foreground — a turn put on the phone there saw the port
+    ///   missing (or fell back at the deadline) with nothing stopping the switch, and is not
+    ///   re-asked on every follow-up of the same conversation; it was chosen from the background,
+    ///   where the switch itself was what failed,
+    /// - and the glasses are not stood down or off the face *now*: those still mean the phone.
+    ///
+    /// Whether the port is really there is the retake's own question — it goes the ordinary way
+    /// (`target` with the port read after the switch) and lands on the phone again if it is not.
+    static func shouldRetakeAfterPhoneTurn(turnMic: MicRoute?, micRoute: MicRoute, glassesStoodDown: Bool,
+                                           glassesWorn: Bool?, appInForeground: Bool,
+                                           phoneChosenInForeground: Bool) -> Bool {
+        guard turnMic == .phone, micRoute != .phone, appInForeground, !phoneChosenInForeground else { return false }
+        return target(micRoute: micRoute, glassesStoodDown: glassesStoodDown, glassesWorn: glassesWorn,
+                      routePortAvailable: true) != .phone
     }
 
     enum State: Equatable {

@@ -63,12 +63,16 @@ enum ReplyRoutePolicy {
         /// A realtime session owns its own audio.
         var realtime: Bool = false
         var carPlay: Bool = false
+        /// The app is not in the foreground. Releasing the link re-tunes the live session in place,
+        /// which iOS refuses from the background: the refusal used to be ignored and the stop
+        /// listener moved to the phone mic while the reply stayed on the call link — held on it.
+        var backgrounded: Bool = false
     }
 
     static func decide(_ inputs: Inputs) -> ReplyRoute {
         // Nothing to release on the phone, and the exclusions keep their own audio.
-        guard inputs.conversationRoute != .phone,
-              !inputs.displayGlasses, !inputs.realtime, !inputs.carPlay else { return .holdCallLink }
+        guard inputs.conversationRoute != .phone, !inputs.displayGlasses, !inputs.realtime,
+              !inputs.carPlay, !inputs.backgrounded else { return .holdCallLink }
         switch inputs.mode {
         case .callQuality:
             return .holdCallLink

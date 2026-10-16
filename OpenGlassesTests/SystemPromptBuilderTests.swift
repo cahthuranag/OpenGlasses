@@ -103,13 +103,16 @@ final class SystemPromptBuilderTests: XCTestCase {
 
     /// A tester asked whether the wake phrase is heard with the phone locked in a pocket, and the
     /// model, with no facts, said to keep the app open. The guide now says what the app does: the
-    /// wake phrase works locked while listening is on; the glasses carry the turn when the idle
-    /// listener waits on them (`WakeListenMic.sameAsMicrophone`, `TurnMicHandoff.sessionSwitch`);
-    /// they stand down when taken off (`GlassesSleepPolicy.doffGraceSeconds`).
+    /// wake phrase works locked while listening is on; the glasses carry a locked turn whichever
+    /// mic waits for the phrase (`TurnMicHandoff.sessionSwitch`: the idle session kept, or a fresh
+    /// one from the default phone-mic listener); glasses holding the idle mic stand down when
+    /// taken off (`GlassesSleepPolicy.doffGraceSeconds`).
     func testTheGuideSaysWhatListeningDoesWithThePhoneLocked() {
         let guide = SystemPromptBuilder.appGuide(appName: "Avenkin")
         XCTAssertTrue(guide.contains("works with the phone locked or in a pocket"))
         XCTAssertTrue(guide.contains("(not push-to-talk)"))
+        XCTAssertTrue(guide.contains("with the glasses as the microphone the request and the reply go through the glasses there too"),
+                      "not only with Same as Microphone: the default iPhone listener reaches the glasses too")
         XCTAssertTrue(guide.contains("Settings > \(SettingsCatalog.category(.devices).title) > Glasses > Listen for the wake word on"))
         XCTAssertTrue(guide.contains(WakeListenMic.sameAsMicrophone.label))
         XCTAssertTrue(guide.contains("On \(WakeListenMic.iPhone.label), the default"))

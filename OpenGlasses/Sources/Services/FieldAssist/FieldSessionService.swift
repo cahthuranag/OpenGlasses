@@ -483,17 +483,23 @@ final class FieldSessionService: ObservableObject {
     var partsVerifier: PartsVerifier {
         let store = activeVault
         let documentStore = self.documentStore
-        return PartsVerifier(index: partsIndex) { token in
-            guard let store, store.manifest.hasDocuments, let documentStore else { return [] }
+        return PartsVerifier(index: partsIndex) { [weak self] token in
+            guard let self, let store, let documentStore else { return [] }
             // The same availability check the retriever runs. A part number is written into a task
             // and ordered from it, so a citation to a manual that has gone is the last thing this
             // route may produce — verified-from-the-book has to mean a book that is still here.
             let isAvailable = VaultManualRemoval.availabilityCheck(forVault: store.manifest.id,
                                                                    documentStore: documentStore)
-            return documentStore.passages(containingToken: token,
-                                          namespace: DocumentStore.vaultNamespace(store.manifest.id),
-                                          limit: 3)
-                .filter { isAvailable($0.documentId) }
+            return self.retrievalNamespaces(vaultId: store.manifest.id)
+                .filter { $0.source.isReference }
+                .flatMap { space in
+                    documentStore.passages(containingToken: token, namespace: space.namespace, limit: 3)
+                        .filter { passage in
+                            space.source == .capturedManual
+                                ? self.capturedManuals.available(passage.documentId, session: self.activeSession, vaultID: store.manifest.id)
+                                : isAvailable(passage.documentId)
+                        }
+                }
         }
     }
 
@@ -1297,10 +1303,16 @@ final class FieldSessionService: ObservableObject {
     /// Setting a store adopts that store's embedding backend's measured gate defaults — similarity
     /// means something different on each backend, so the gate cannot be one constant. Assign
     /// `retrievalPolicy` after the store to override (tests pin a floor of 0 or 1.01 this way).
+    var capturedManuals = CapturedManualCatalog.shared
     var documentStore: DocumentStore? {
         didSet {
             guard let documentStore else { return }
             retrievalPolicy = .default(for: documentStore.embeddingModelId)
+            capturedManuals.documents = documentStore
+            documentStore.capturedNamespaceAllowed = { [weak self] namespace in
+                guard let self, let session = self.activeSession else { return false }
+                return self.capturedManuals.available(namespace, session: session, vaultID: session.vaultId)
+            }
         }
     }
     /// The evidence gate for per-turn manual retrieval. Injectable so tests can pin the floor.
@@ -1451,14 +1463,18 @@ final class FieldSessionService: ObservableObject {
             namespaces.append(RetrievalNamespace(namespace: DocumentStore.learningNamespace(vaultId),
                                                  source: .teamLearning))
         }
+        namespaces += capturedManuals.eligible(for: activeSession, vaultID: vaultId)
+            .map { RetrievalNamespace(namespace: CapturedManualCatalog.namespace($0), source: .capturedManual) }
         return namespaces
     }
 
     /// What a vault has to retrieve from: imported manuals, published learnings, or neither.
     func retrievableCorpus(store: VaultStore, documentStore: DocumentStore?) -> (manuals: Bool, learnings: Bool, any: Bool) {
         guard let documentStore else { return (false, false, false) }
-        let manuals = store.manifest.hasDocuments
-            && documentStore.documentCount(namespace: DocumentStore.vaultNamespace(store.manifest.id)) > 0
+        let manuals = (store.manifest.hasDocuments
+            && documentStore.documentCount(namespace: DocumentStore.vaultNamespace(store.manifest.id)) > 0)
+            || retrievalNamespaces(vaultId: store.manifest.id).filter { $0.source == .capturedManual }
+                .contains { documentStore.documentCount(namespace: $0.namespace) > 0 }
         let learnings = retrievalNamespaces(vaultId: store.manifest.id)
             .filter { $0.source == .teamLearning }
             .contains { documentStore.documentCount(namespace: $0.namespace) > 0 }
@@ -1479,7 +1495,7 @@ final class FieldSessionService: ObservableObject {
                        namespaces: [RetrievalNamespace]? = nil) -> VaultRetriever {
         let vaultId = store.manifest.id
         let all = namespaces ?? retrievalNamespaces(vaultId: vaultId)
-        let searched = documentIds == nil ? all : all.filter { $0.source == .manual }
+        let searched = documentIds == nil ? all : all.filter { $0.source.isReference }
         let manualNamespaces = searched.filter { $0.source == .manual }.map(\.namespace)
         let learningNamespaces = searched.filter { $0.source == .teamLearning }.map(\.namespace)
         let entries = learningEntries
@@ -1488,6 +1504,11 @@ final class FieldSessionService: ObservableObject {
             passages.map { raw in
                 var passage = raw
                 passage.source = space.source
+                if space.source == .capturedManual, let page = raw.page {
+                    passage.printedPage = capturedManuals.eligible(for:activeSession,vaultID:vaultId)
+                        .first { $0.documentID == raw.documentId }?.pages.first { $0.index == page }
+                        .flatMap { $0.printedPage > 0 ? $0.printedPage : nil }
+                }
                 if space.source == .teamLearning {
                     passage.subjectModelToken = entries?.entry(forDocumentId: raw.documentId).map { $0.subject.modelToken }
                         ?? LearningCorpus.subjectModelToken(fromDocumentText: raw.text)
@@ -1495,7 +1516,7 @@ final class FieldSessionService: ObservableObject {
                 return passage
             }
         }
-        func ids(for space: RetrievalNamespace) -> [String]? { space.source == .manual ? documentIds : nil }
+        func ids(for space: RetrievalNamespace) -> [String]? { space.source.isReference ? documentIds : nil }
 
         let manualAvailable = VaultManualRemoval.availabilityCheck(forVault: vaultId, documentStore: documentStore)
         return VaultRetriever(query: { query, limit in
@@ -1509,11 +1530,16 @@ final class FieldSessionService: ObservableObject {
                                                documentIds: ids(for: space), limit: limit) ?? [], space)
             }
         }, provenance: { documentId in
-            manualNamespaces.contains { namespace in
+            if documentId.hasPrefix("captured:") { return true }
+            return manualNamespaces.contains { namespace in
                 documentStore?.list(namespace: namespace).first { $0.id == documentId }?.sourceType
                     == VaultImporter.recognisedSourceType
             }
-        }, availability: { documentId in
+        }, availability: { [weak self] documentId in
+            if documentId.hasPrefix("captured:") {
+                return self?.capturedManuals.available(documentId, session: self?.activeSession, vaultID: vaultId) == true
+                    && documentStore?.documents.contains { $0.id == documentId } == true
+            }
             if learningNamespaces.contains(where: { namespace in
                 documentStore?.list(namespace: namespace).contains { $0.id == documentId } ?? false
             }) { return true }
@@ -1591,7 +1617,8 @@ final class FieldSessionService: ObservableObject {
 
     /// Whether the active vault has manuals available to search.
     var activeVaultHasManuals: Bool {
-        guard let store = activeVault, store.manifest.hasDocuments, let documentStore else { return false }
+        guard let store = activeVault, let documentStore,
+              retrievableCorpus(store: store, documentStore: documentStore).manuals else { return false }
         return documentStore.documentCount(namespace: DocumentStore.vaultNamespace(store.manifest.id)) > 0
     }
 
@@ -1743,6 +1770,12 @@ final class FieldSessionService: ObservableObject {
     @discardableResult
     func restageLastFigure(origin: PageOrigin = .requested) -> StagedFigure? {
         guard var last = lastShownFigure else { return nil }
+        if last.documentId.hasPrefix("captured:") {
+            guard capturedManuals.historical(citation: last.documentTitle) != nil,
+                  manufacturerPDFURL(for: last) != nil else { return nil }
+            last.origin = origin; last.presentOnPhone = true; stageFigure(last)
+            return last
+        }
         // Put back on the phone, whatever the turn that found it did with it (Plan GB P1).
         last.origin = origin
         last.presentOnPhone = true
@@ -1764,6 +1797,12 @@ final class FieldSessionService: ObservableObject {
     /// document ledger so the page can be found again. Nil when the passage names no page.
     func makeStagedFigure(for passage: VaultRetriever.Passage?, vaultId: String) -> StagedFigure? {
         guard let passage, let page = passage.page else { return nil }
+        if passage.source == .capturedManual {
+            guard let m = capturedManuals.historical(citation:passage.documentName),
+                  (1...m.pageCount).contains(page) else { return nil }
+            return StagedFigure(documentId:m.documentID,documentTitle:passage.documentName,
+                                page:page,figure:passage.figure,sourceFile:"pages.pdf")
+        }
         let file = VaultImporter.documentLedger(for: vaultId)
             .entries.first { $0.documentId == passage.documentId }?.file
         return StagedFigure(documentId: passage.documentId, documentTitle: passage.documentName,
@@ -1773,6 +1812,11 @@ final class FieldSessionService: ObservableObject {
     /// The PDF in the vault's read-only baseline that a staged figure's page comes from, or nil
     /// when the document was imported as text (or is no longer installed).
     func sourcePDFURL(for figure: StagedFigure) -> URL? {
+        if figure.documentId.hasPrefix("captured:") {
+            guard let m = capturedManuals.historical(citation:figure.documentTitle),
+                  (1...m.pageCount).contains(figure.page) else { return nil }
+            return try? capturedManuals.source?.file(m,name:"pages.pdf")
+        }
         guard figure.hasSourcePage, let file = figure.sourceFile, let store = activeVault else { return nil }
         let manifest = store.manifest
         // A manual with a removal in flight is already unavailable: its file may still be on disk
@@ -1811,6 +1855,10 @@ final class FieldSessionService: ObservableObject {
     /// otherwise the original bundled beside the extracted text (`source`). Nil when the vault
     /// holds neither — which is what "Original not bundled in this vault" is telling the reader.
     func manufacturerPDFURL(for figure: StagedFigure) -> URL? {
+        if figure.documentId.hasPrefix("captured:") {
+            guard let m = capturedManuals.historical(citation: figure.documentTitle) else { return nil }
+            return try? capturedManuals.source?.file(m, name: "pages.pdf")
+        }
         if let direct = sourcePDFURL(for: figure) { return direct }
         guard let store = activeVault, let document = manifestDocument(for: figure),
               !VaultManualRemoval.isPending(file: document.file, vaultId: store.manifest.id),
@@ -1848,6 +1896,15 @@ final class FieldSessionService: ObservableObject {
     /// chip can only ever open the document it names. A manual with a removal in flight resolves as
     /// removed rather than as a page, because its file may still be on disk until cleanup finishes.
     func resolveCitation(_ citation: Citation) -> CitationResolution {
+        if citation.title.hasPrefix("Photographed manual · ") {
+            guard let m = capturedManuals.historical(citation: citation.title),
+                  let page = citation.page, (1...m.pageCount).contains(page),
+                  (try? capturedManuals.source?.file(m, name: "pages.pdf")) != nil else {
+                return .unknown(title: citation.title)
+            }
+            return .figure(StagedFigure(documentId: m.documentID, documentTitle: citation.title,
+                                        page: page, sourceFile: "pages.pdf"))
+        }
         guard citation.kind == .manual, let store = activeVault else {
             return .unknown(title: citation.title)
         }
@@ -1879,6 +1936,13 @@ final class FieldSessionService: ObservableObject {
     /// pages it can turn to, the hash the manufacturer's file is checked against, and the
     /// manufacturer's published copy when the manifest names one.
     func manualPageSheet(for figure: StagedFigure) -> ManualPageSheetModel {
+        if let m = capturedManuals.historical(citation: figure.documentTitle) {
+            let pdf = try? capturedManuals.source?.file(m, name: "pages.pdf")
+            return ManualPageSheetModel(citation: figure.citation, documentTitle: m.title,
+                citedPage: figure.page, manufacturerPDF: pdf, pdfPageCount: m.pageCount,
+                ledgerHash: m.pdfSHA256, documentIsPDF: true, photographed: true,
+                printedPages: Dictionary(uniqueKeysWithValues: m.pages.map { ($0.index, $0.printedPage) }))
+        }
         let pdf = manufacturerPDFURL(for: figure)
         let document = manifestDocument(for: figure)
         let entry = ledgerEntry(for: figure)
@@ -2490,6 +2554,14 @@ final class FieldSessionService: ObservableObject {
         for id in erasable {
             let directory = sessionsRoot.appendingPathComponent(id, isDirectory: true)
             if (try? FileManager.default.removeItem(at: directory)) != nil { removed += 1 }
+        }
+        _ = try? capturedManuals.source?.deleteMatching { metadata, _ in
+            guard erasable.contains(metadata.sessionID) else { return false }
+            for document in self.documentStore?.documents ?? []
+                where document.id.hasPrefix("captured:\(metadata.captureID):") {
+                self.documentStore?.forget(documentId:document.id)
+            }
+            return true
         }
         history.removeAll { erasable.contains($0.id) }
         return removed

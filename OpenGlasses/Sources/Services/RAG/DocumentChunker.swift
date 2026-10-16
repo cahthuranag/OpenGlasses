@@ -75,6 +75,19 @@ struct DocumentChunker {
         var figure: String?
     }
 
+    /// IF: source page indices are authoritative. Chunk each body independently so short or
+    /// empty pages and recognised footer numbers cannot merge or renumber a captured page.
+    func chunkPages(_ pages: [(number: Int, text: String)]) -> [Chunk] {
+        var result: [Chunk] = []
+        for page in pages {
+            for chunk in chunk(page.text) {
+                result.append(Chunk(index: result.count, text: chunk.text, page: page.number,
+                                    section: chunk.section, kind: chunk.kind, figure: chunk.figure))
+            }
+        }
+        return result
+    }
+
     func chunk(_ raw: String) -> [Chunk] {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return [] }

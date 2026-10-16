@@ -21,6 +21,7 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     case organizationReportRecipients
     /// Transcripts in reports to the office: `always` or `never` (Plan HD).
     case organizationReportTranscriptInternal
+    case capturedManualsPolicy
     /// The organisation's accent, locked: every screen takes it and the picker is read-only.
     /// To offer a colour the technician may change, the profile sets `accentColorName` instead.
     case organizationAccentColor
@@ -90,7 +91,7 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     var kind: Kind {
         switch self {
         case .organizationDisplayName, .organizationJobSigningKey, .organizationJobReportChannel,
-             .organizationReportTranscriptInternal, .organizationAccentColor, .technicianDisplayName:
+             .organizationReportTranscriptInternal, .organizationAccentColor, .technicianDisplayName, .capturedManualsPolicy:
             return .profileOwned(.string)
         case .organizationReportRecipients:
             return .profileOwned(.strings)
@@ -129,6 +130,8 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
             return nil
         case (.organizationJobReportChannel, .string(let raw)):
             return DeliveryChannel(rawValue: raw) == nil ? "not a delivery channel this build knows" : nil
+        case (.capturedManualsPolicy, .string(let raw)):
+            return ["off", "jobOnly", "reviewToPool"].contains(raw) ? nil : "not a photographed-manual policy"
         case (.organizationReportTranscriptInternal, .string(let raw)):
             // Deny by default: a value this build does not know is a named drop, never a guess.
             return ReportTranscriptPolicy.InternalRule(rawValue: raw) == nil

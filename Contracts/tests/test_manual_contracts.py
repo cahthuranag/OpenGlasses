@@ -6,6 +6,7 @@ archive, manifest or ZIP verification are used; the app UI/installer is outside 
 """
 from pathlib import Path
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -18,6 +19,8 @@ SOURCES = [
     "Services/OfficeSync/OfficeCheckIn.swift",
     "Services/OfficeSync/OfficeReport.swift",
     "Services/FieldAssist/CapturedManual/CapturedManualContract.swift",
+    "Services/FieldAssist/CapturedManual/CapturedManualAccess.swift",
+    "Services/RAG/DocumentChunker.swift",
     "Services/FieldAssist/CapturedManual/CapturedManualStore.swift",
     "Services/FieldAssist/CapturedManual/CapturedManualAssembler.swift",
     "Services/Security/SecretPatterns.swift",
@@ -32,7 +35,7 @@ SOURCES = [
     "Services/Reading/BookFileExtractor.swift",
 ]
 TESTS = ["OfficeManualAssignmentTests.swift", "OfficeManagedJobTests.swift", "OfficeManagedJobReceiptTests.swift", "OfficeManualImportTests.swift", "VaultArchiveFixtures.swift",
-         "OfficeCheckInTests.swift", "OfficeCheckInFixtures.swift", "OfficeReportTests.swift", "CapturedManualContractTests.swift", "CapturedManualStoreTests.swift", "OfficeBulkTests.swift", "OfficeJobUpdateTests.swift", "OfficeRecordingReceiptTests.swift"]
+         "OfficeCheckInTests.swift", "OfficeCheckInFixtures.swift", "OfficeReportTests.swift", "CapturedManualContractTests.swift", "CapturedManualStoreTests.swift", "CapturedManualRetrievalTests.swift", "OfficeBulkTests.swift", "OfficeJobUpdateTests.swift", "OfficeRecordingReceiptTests.swift"]
 
 
 def main():
@@ -46,6 +49,11 @@ def main():
         tests.mkdir(parents=True)
         for path in SOURCES:
             shutil.copyfile(ROOT / "OpenGlasses/Sources" / path, source / Path(path).name)
+        structure = (ROOT / "OpenGlasses/Sources/Services/Vault/ManualStructure.swift").read_text()
+        marker = re.search(r'    static let diagramMarker = "[^"\n]*"', structure)
+        assert marker, "portable chunker marker must match the production extractor"
+        (source / "ManualStructureMarker.swift").write_text(
+            'import Foundation\nenum ManualStructure {\n' + marker.group() + '\n}\n')
         for name in TESTS:
             shutil.copyfile(ROOT / "OpenGlassesTests" / name, tests / name)
         shutil.copytree(ROOT / "Contracts/fixtures", tests / "Fixtures")

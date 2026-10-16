@@ -156,6 +156,8 @@ struct ManualPageSheetModel: Equatable {
     /// The caption the citation named on the cited page ("Figure 65"), when it named one — so the
     /// page is recorded under the same label the citation used (Plan GB P1).
     let citedFigure: String?
+    let photographed: Bool
+    let printedPages: [Int: Int]
 
     private(set) var route: ManualPageRoute
     var integrity: ManualPageIntegrity = .unknown
@@ -164,8 +166,11 @@ struct ManualPageSheetModel: Equatable {
     init(citation: String, documentTitle: String, citedPage: Int,
          manufacturerPDF: URL? = nil, pdfPageCount: Int = 0,
          extractedPages: [Page] = [], publishedURL: URL? = nil,
-         ledgerHash: String? = nil, documentIsPDF: Bool = false, citedFigure: String? = nil) {
+         ledgerHash: String? = nil, documentIsPDF: Bool = false, citedFigure: String? = nil,
+         photographed: Bool = false, printedPages: [Int: Int] = [:]) {
         self.citation = citation
+        self.photographed = photographed
+        self.printedPages = printedPages
         self.citedFigure = citedFigure
         self.documentTitle = documentTitle
         self.manufacturerPDF = manufacturerPDF
@@ -210,7 +215,10 @@ struct ManualPageSheetModel: Equatable {
     var headerLine: String {
         switch route {
         case .manufacturerPDF:
-            var parts = ["Manufacturer's document", paging.title]
+            var parts = photographed
+                ? ["Photographed manual", "page \(paging.currentPage) of \(pdfPageCount) photographed"]
+                : ["Manufacturer's document", paging.title]
+            if photographed, let printed = printedPages[paging.currentPage], printed > 0 { parts.append("printed page \(printed)") }
             if let clause = integrity.clause { parts.append(clause) }
             return parts.joined(separator: " \u{00B7} ")
         case .extractedText:

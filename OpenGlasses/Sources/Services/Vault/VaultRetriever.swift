@@ -9,6 +9,9 @@ enum RetrievalSource: String, Equatable, Codable, Sendable {
     case manual
     /// An approved team learning published for the vault (`learning:<id>`).
     case teamLearning
+    case capturedManual
+
+    var isReference: Bool { self != .teamLearning }
 }
 
 /// Retrieves reference-tier passages for a Field Assist turn and decides, deterministically,
@@ -65,6 +68,7 @@ struct VaultRetriever {
         /// The manual, or an approved team learning (Plan FP P2). A learning's `documentName` is
         /// its contract §7.1 citation name, so `citation` renders it unchanged.
         var source: RetrievalSource = .manual
+        var printedPage: Int?
 
         typealias Source = RetrievalSource
 
@@ -85,7 +89,7 @@ struct VaultRetriever {
         /// diagram and "page 44" of a procedure are read very differently.
         var citation: String {
             var parts = [documentName]
-            if let page { parts.append("page \(page)") }
+            if let page { parts.append("page \(page)" + (printedPage.map { " (printed \($0))" } ?? "")) }
             if kind == .diagram {
                 guard let figure, !figure.isEmpty else {
                     return parts.joined(separator: ", ") + " (diagram)"
@@ -269,8 +273,8 @@ struct VaultRetriever {
                        text: raw.text, page: raw.page, section: raw.section,
                        similarity: raw.similarity, score: raw.similarity + boost, matchedTokens: matched,
                        modelPenalty: penalty,
-                       recognisedFromScan: raw.source == .manual && (provenance?(raw.documentId) ?? false),
-                       kind: raw.kind, figure: raw.figure, source: raw.source)
+                       recognisedFromScan: raw.source.isReference && (provenance?(raw.documentId) ?? false),
+                       kind: raw.kind, figure: raw.figure, source: raw.source, printedPage:raw.printedPage)
     }
 
     // MARK: - Rendering
@@ -315,14 +319,16 @@ struct VaultRetriever {
         if case .teamLearningOnly = outcome { return (.teamLearningOnly(selected), notice) }
         // A bounded `.sufficient` keeps its promise: a learning is never sufficient alone, so a
         // budget that kept only learnings demotes the outcome rather than relabelling it.
-        guard selected.contains(where: { $0.source == .manual }) else { return (.teamLearningOnly(selected), notice) }
+        guard selected.contains(where: { $0.source.isReference }) else { return (.teamLearningOnly(selected), notice) }
         return (.sufficient(selected), notice)
     }
 
     /// One numbered passage as the model reads it: a team learning is labelled as one before its
     /// text, so it is never read as the manual's words.
     static func passageLine(_ index: Int, _ p: Passage) -> String {
-        let label = p.source == .teamLearning ? Passage.teamLearningLabel + " " : (p.kindLabel.map { $0 + " " } ?? "")
+        let label = p.source == .teamLearning ? Passage.teamLearningLabel + " "
+            : (p.source == .capturedManual ? "PHOTOGRAPHED MANUAL (unreviewed; original job/date in citation) " : "")
+                + (p.kindLabel.map { $0 + " " } ?? "")
         return "[\(index + 1)] \(label)\(p.text)\nSource: \(p.citation)"
             + (p.recognisedFromScan ? " " + Passage.provenanceNote : "")
     }
@@ -526,13 +532,13 @@ struct RetrievalEvidencePolicy: Equatable {
         let evidence = ranked.filter { isEvidence($0, bestSimilarity: best, queryTerms: queryTerms) }
         guard !evidence.isEmpty else { return .insufficient(reason: Self.insufficientSentence) }
         let take = max(limit, 1)
-        guard let bestManual = evidence.first(where: { $0.source == .manual }) else {
+        guard let bestManual = evidence.first(where: { $0.source.isReference }) else {
             return .teamLearningOnly(Array(evidence.prefix(take)))
         }
         var chosen = Array(evidence.prefix(take))
         // The limit must not cut the one passage that makes this sufficient: if learnings filled
         // every slot, the last of them gives way to the best manual passage.
-        if !chosen.contains(where: { $0.source == .manual }) { chosen[chosen.count - 1] = bestManual }
+        if !chosen.contains(where: { $0.source.isReference }) { chosen[chosen.count - 1] = bestManual }
         return .sufficient(chosen)
     }
 }

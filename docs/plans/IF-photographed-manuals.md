@@ -4,7 +4,7 @@
 Swift/Go golden and negative checks, Office-report verifier extension and
 [lifecycle inventory](IF-lifecycle-inventory.md). P1 durable capture core implemented 2026-10-15: protected staging, resumable redacted
 checkpoints, immutable atomic bundles, lifecycle tombstones and erasure linkage. The portable
-contract/core suite passes 64 tests. P2–P5 remain unbuilt; camera UI and sender are not yet active.
+contract/core suite passes 64 tests. P2 retrieval core is implemented (2026-10-16): captured-only prompt/manual/equipment lookup, exact scope, physical page routing and retained citations pass focused simulator checks. P3–P5 remain unbuilt on this phase branch; camera UI and sender are not yet active.
 Drafted 2026-10-10. A technician at an older unit photographs
 the pages of the paper manual that came with it; the phone recognises the text on each page on
 device, makes the pages answerable in the same job, attaches them to the job in text and image
@@ -457,7 +457,7 @@ Nothing in this plan builds the office half; it names the contract the office wi
   Add capture/document/job linkage, tombstone/cancellation and SensitiveStore/subject/departure
   erasure seams. Test interrupted recovery, filesystem failures and late callbacks. Nothing is
   indexed or queued until a complete validated revision commits atomically.
-- **P2 — retrieval, evidence and page core, headless.** Explicit page-aware ingest/retract,
+- **P2 — retrieval, evidence and page core, headless (implemented 2026-10-16).** Explicit page-aware ingest/retract,
   eligible namespaces in the existing FP factory, captured-only corpus/title/equipment gates,
   reference-evidence classification, both provenance notes, source-aware HUD/work-record
   evidence, capture citation/page models, and the pure supersession state machine. Add capability

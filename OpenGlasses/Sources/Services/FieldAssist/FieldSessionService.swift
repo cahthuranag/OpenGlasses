@@ -874,6 +874,43 @@ final class FieldSessionService: ObservableObject {
         return updated
     }
 
+    /// The technician said the final check passed — "the test run was fine, the furnace is
+    /// working" — as the job closes. Recorded where the report can show it.
+    ///
+    /// A check already owed closes on it, confirmed. Otherwise, once a repair is done and nothing
+    /// has verified it, the check goes on the job as a done "Verify: …" task with their words: a
+    /// tester's report listed two ignitor replacements and not the test run that proved them.
+    /// Nothing is recorded when no work was done, or a check already passed.
+    @discardableResult
+    func recordPassedFinalCheck(note: String, now: Date = Date()) -> FieldSession.Task? {
+        let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let job = activeSession, !note.isEmpty else { return nil }
+        if let owed = job.openVerifications.last {
+            return try? completeTask(id: owed.id, note: note, confirmed: true)
+        }
+        let repaired = job.tasks.contains { $0.status == .done && !$0.isVerificationTask }
+        let alreadyVerified = job.tasks.contains { $0.verification?.isVerified == true }
+        guard repaired, !alreadyVerified else { return nil }
+        let check = FieldSession.Task(
+            title: Self.finalCheckTitle, origin: .operatorAdded, status: .done,
+            completionNote: note, createdAt: now, acceptedAt: now, completedAt: now,
+            verification: VerificationRequirement(instruction: "Operational test after the repair",
+                                                  verifiedAt: now))
+        mutateSession {
+            $0.tasks.append(check)
+            $0.taskEquipmentScopes[check.id] = $0.continuityScope
+        }
+        logger?.append(.init(timestamp: now, kind: .taskCompleted, text: check.title, payload: [
+            "task_id": AnyCodable(check.id),
+            "status": AnyCodable(FieldSession.Task.Status.done.rawValue),
+            "note": AnyCodable(note),
+            "origin": AnyCodable("final_check")
+        ]))
+        return check
+    }
+
+    static let finalCheckTitle = "Verify: operational test"
+
     /// A procedure a task started has reached its end: the outcome closes the task, so nobody has
     /// to remember to say "done" twice.
     private func closeTaskForProcedure(id procedureId: String?, outcome: String, confirmed: Bool = true) {
@@ -1287,7 +1324,11 @@ final class FieldSessionService: ObservableObject {
                 let owner = finishedLogger ?? deliveryLogger
                     ?? SessionLogger(session: stored,
                                      root: sessionsRoot.appendingPathComponent(stored.id, isDirectory: true))
-                let updated = owner.updateSession(markSent)
+                // From the stored record, whichever logger writes it: the job as it ended — its
+                // number, outcome, end time and conversation — with only the parts marked sent.
+                var updated = stored
+                markSent(&updated)
+                owner.updateSession { $0 = updated }
                 history = history.replacingFirst(matching: stored.id, with: updated)
             }
         }

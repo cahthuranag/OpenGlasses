@@ -232,6 +232,37 @@ func runToolLoop(
         adapter.appendToolResults(outcomes)
     }
 
+    // The budget is spent, but the tools already ran: a task closed, a part was requested, a
+    // message went out. Throwing here reported the turn as a server failure and threw away the
+    // only words that would have told the technician what had just been done on their behalf. One
+    // more request puts it into words; anything it asks to run is answered, not run.
+    try Task.checkCancellation()
+    let wrapUp = try await adapter.performTurn()
     setStatus(.idle)
-    throw LLMError.invalidResponse("\(adapter.label) (tool call loop exceeded)")
+    if wrapUp.toolCalls.isEmpty {
+        return try adapter.finalize(wrapUp)
+    }
+    PrivacyLog.model(.toolBudgetSpent, count: wrapUp.toolCalls.count,
+                     detail: PrivacyToken(adapter.label))
+    adapter.appendAssistantToolCall(wrapUp)
+    adapter.appendToolResults(wrapUp.toolCalls.map {
+        ToolDispatchOutcome(invocation: $0,
+                            outcome: .failedBeforeExecution(reason: ToolLoopBudget.notRun($0.name)),
+                            yieldReason: nil)
+    })
+    let said = wrapUp.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    return try adapter.finalize(AssistantTurn(text: said.isEmpty ? ToolLoopBudget.spokenFallback : said))
+}
+
+/// What a turn says when it has used every tool round it is allowed.
+enum ToolLoopBudget {
+    /// The model's answer to a call made after the budget was spent. Nothing ran.
+    static func notRun(_ name: String) -> String {
+        "'\(name)' was not run: this turn has used all its tool calls. Nothing happened. Tell the "
+            + "user what was done so far and ask before doing more."
+    }
+
+    /// Spoken when the wrap-up request still produced no words of its own.
+    static let spokenFallback = "I've done several steps on that and stopped there. "
+        + "Ask me what was done, or tell me what to do next."
 }

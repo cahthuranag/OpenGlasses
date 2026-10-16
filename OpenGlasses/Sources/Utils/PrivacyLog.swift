@@ -1553,6 +1553,9 @@ enum PrivacyLog {
         // once more, and a turn whose thinking blocks were dropped rather than replayed over a
         // changed prefix. Model and call-site tokens and counts only.
         case structuredRetry, thinkingDropped
+        // A turn used every tool round it is allowed and its wrap-up still asked for tools: those
+        // calls were answered, not run. Count and provider label only.
+        case toolBudgetSpent
     }
 
     /// How an utterance was classified. The utterance itself, and the classifier's free-form

@@ -320,7 +320,8 @@ final class ManualCitationSheetTests: XCTestCase {
 
         // The turn that asked — retrieval reads it before the model calls the tool (Plan GB P1).
         _ = service.promptContext(turn: "show me page 2")
-        let answer = try await tool.execute(args: ["page": 2])
+        // Three fixture manuals have a page 2: naming one is what opens it (ManualDocumentChoice).
+        let answer = try await tool.execute(args: ["page": 2, "document": Self.pdfManual])
         XCTAssertTrue(answer.contains("page 2"), answer)
         let log = try logLines(of: service)
         XCTAssertTrue(log.contains("citation_opened"), log)

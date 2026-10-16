@@ -25,6 +25,8 @@ struct Citation: Equatable, Hashable, Identifiable {
     let title: String
     /// The printed page number, when the citation names one.
     let page: Int?
+    /// The last page of a range the citation names (`pages 64–65`); nil for a single page.
+    let throughPage: Int?
     /// "Figure 58" / "Table 16", when the citation names a caption.
     let figure: String?
     /// The `§Section` a prose passage was cited by.
@@ -32,11 +34,12 @@ struct Citation: Equatable, Hashable, Identifiable {
     /// A drawing with no caption — cited `page 44 (diagram)`.
     let isDiagram: Bool
 
-    init(kind: Kind, title: String, page: Int? = nil, figure: String? = nil,
+    init(kind: Kind, title: String, page: Int? = nil, throughPage: Int? = nil, figure: String? = nil,
          section: String? = nil, isDiagram: Bool = false) {
         self.kind = kind
         self.title = title
         self.page = page
+        self.throughPage = (page != nil && (throughPage ?? 0) > (page ?? 0)) ? throughPage : nil
         self.figure = figure
         self.section = section
         self.isDiagram = isDiagram
@@ -46,7 +49,11 @@ struct Citation: Equatable, Hashable, Identifiable {
     /// document the answer did not name.
     var label: String {
         var parts = [title]
-        if let page { parts.append("page \(page)") }
+        if let page, let throughPage {
+            parts.append("pages \(page)\u{2013}\(throughPage)")
+        } else if let page {
+            parts.append("page \(page)")
+        }
         if let figure, !figure.isEmpty {
             parts.append(figure)
         } else if let section, !section.isEmpty {
@@ -134,6 +141,12 @@ enum CitationLineParser {
     /// (`Title, page 44, Figure 58`), so the parts are grouped rather than split: a part that names
     /// a page, a caption or a section belongs to the citation before it, and anything else starts
     /// a new one.
+    ///
+    /// Semicolons separate citations. Read as commas, "Installation Instructions, page 47; Service
+    /// Manual, page 20" lost the second title inside "page 47; Service Manual" and the last page
+    /// overwrote the first: a tester's job saved "Installation Instructions, page 20", a page the
+    /// answer never cited. A group that opens on a page carries the title before it ("Service
+    /// Manual, page 20; page 21"), and a second page for one title is a second citation.
     static func citations(inBody body: String) -> [Citation] {
         // A team learning's name is cited whole: everything from its prefix to the end of the line
         // is one citation, so a comma in the approver's role cannot split it into a "manual".
@@ -146,26 +159,40 @@ enum CitationLineParser {
         }
         var found: [Citation] = []
         var title: String?
+        var lastTitle: String?
         var page: Int?
+        var throughPage: Int?
         var figure: String?
         var section: String?
         var isDiagram = false
 
         func flush() {
-            defer { title = nil; page = nil; figure = nil; section = nil; isDiagram = false }
+            defer { title = nil; page = nil; throughPage = nil; figure = nil; section = nil; isDiagram = false }
             guard let name = title?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
                   validTitleLength(name), !nonCitations.contains(name.lowercased()) else { return }
             found.append(Citation(kind: isCoreFileName(name) ? .coreFile : .manual,
-                                  title: name, page: page, figure: figure,
+                                  title: name, page: page, throughPage: throughPage, figure: figure,
                                   section: section, isDiagram: isDiagram))
         }
 
-        for raw in body.components(separatedBy: ",") {
+        let groups = body.components(separatedBy: ";")
+        for group in groups {
+            flush()
+            for (index, raw) in group.components(separatedBy: ",").enumerated() {
             let part = raw.trimmingCharacters(in: CharacterSet(charactersIn: " \t.;"))
             guard !part.isEmpty else { continue }
-            if let (number, diagram) = pageNumber(part) {
+            let attaches = pageNumber(part) != nil || part.hasPrefix("§") || isCaption(part)
+                || part.lowercased() == "(diagram)"
+            if index == 0, attaches, title == nil, let lastTitle { title = lastTitle }
+            if let (number, through, diagram) = pageRange(part) {
                 if title == nil { continue }   // "page 4" with nothing to belong to
+                if page != nil {               // a second page for the same title: its own citation
+                    let same = title
+                    flush()
+                    title = same
+                }
                 page = number
+                throughPage = through
                 isDiagram = isDiagram || diagram
             } else if part.hasPrefix("§") {
                 if title == nil { continue }
@@ -179,6 +206,8 @@ enum CitationLineParser {
             } else {
                 flush()
                 title = part
+                lastTitle = part
+            }
             }
         }
         flush()
@@ -200,11 +229,24 @@ enum CitationLineParser {
     /// `page 44`, or `page 44 (diagram)`. Returns the number and whether the drawing marker rode
     /// along with it.
     static func pageNumber(_ part: String) -> (page: Int, isDiagram: Bool)? {
+        pageRange(part).map { ($0.page, $0.isDiagram) }
+    }
+
+    /// `page 44`, `pages 64–65`, `pp. 64-65`: the first page, the last when it is a range, and the
+    /// drawing marker.
+    static func pageRange(_ part: String) -> (page: Int, through: Int?, isDiagram: Bool)? {
         let lower = part.lowercased()
-        guard lower.hasPrefix("page ") || lower.hasPrefix("pages ") || lower.hasPrefix("p. ") else { return nil }
+        guard lower.hasPrefix("page ") || lower.hasPrefix("pages ") || lower.hasPrefix("p. ")
+                || lower.hasPrefix("pp. ") else { return nil }
         guard let match = part.range(of: #"\d+"#, options: .regularExpression),
               let number = Int(part[match]) else { return nil }
-        return (number, lower.contains("(diagram)"))
+        var through: Int?
+        let rest = part[match.upperBound...]
+        if let range = rest.range(of: #"^\s*(?:-|\u{2013}|\u{2014}|to)\s*(\d+)"#, options: .regularExpression),
+           let last = rest[range].range(of: #"\d+"#, options: .regularExpression) {
+            through = Int(rest[range][last])
+        }
+        return (number, through, lower.contains("(diagram)"))
     }
 
     /// `Figure 58` / `Table 16`, as the extractor writes a caption.

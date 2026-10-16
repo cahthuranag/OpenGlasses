@@ -185,22 +185,54 @@ final class ToolLoopDriverTests: XCTestCase {
         }
     }
 
-    func testLoopThrowsWhenIterationsExhausted() async {
+    /// The budget is spent but the tools already ran, so the turn is put into words rather than
+    /// thrown away as a server failure — and a call the wrap-up asks for is answered, not run.
+    func testExhaustedLoopWrapsUpWithoutRunningMoreTools() async throws {
         let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
-        // Every turn calls a tool → the loop never reaches a final answer.
+        var executed = 0
+        // Every turn calls a tool → the loop never reaches a final answer by itself.
         let adapter = makeScriptedAdapter(
             turns: [AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "1", name: "loop", arguments: [:])])],
+            execute: { name, _, _, _ in executed += 1; return .completed("ok:\(name)") },
             history: history, statuses: statuses
         )
-        do {
-            _ = try await runToolLoop(maxIterations: 3, adapter: adapter,
-                                      setStatus: { statuses.value.append($0) })
-            XCTFail("expected an error when iterations are exhausted")
-        } catch {
-            // Dispatched exactly maxIterations times.
-            XCTAssertEqual(history.value.filter { $0.hasPrefix("results:") }.count, 3)
-            XCTAssertEqual(statuses.value.last, .idle)
-        }
+        let result = try await runToolLoop(maxIterations: 3, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+        XCTAssertEqual(executed, 3, "dispatched exactly maxIterations times, never in the wrap-up")
+        XCTAssertEqual(result, ToolLoopBudget.spokenFallback)
+        XCTAssertEqual(history.value.filter { $0.hasPrefix("results:") }.count, 4,
+                       "the wrap-up's calls get answers so the history stays well-formed")
+        XCTAssertEqual(history.value.last, "final:\(ToolLoopBudget.spokenFallback)")
+        XCTAssertEqual(statuses.value.last, .idle)
+    }
+
+    func testExhaustedLoopUsesTheWrapUpAnswerWhenItHasOne() async throws {
+        let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
+        let call = AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "1", name: "task", arguments: [:])])
+        let adapter = makeScriptedAdapter(
+            turns: [call, call, AssistantTurn(text: "Closed the ignitor task.")],
+            history: history, statuses: statuses
+        )
+        let result = try await runToolLoop(maxIterations: 2, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+        XCTAssertEqual(result, "Closed the ignitor task.")
+        XCTAssertEqual(history.value.filter { $0.hasPrefix("results:") }.count, 2)
+    }
+
+    func testWrapUpCallsAreAnsweredAsNotRun() async throws {
+        var appended: [ToolDispatchOutcome] = []
+        let call = AssistantTurn(text: "Done so far.", toolCalls: [ToolInvocation(id: "1", name: "task", arguments: [:])])
+        let adapter = ProviderLoopAdapter(
+            label: "Test",
+            dispatcher: ToolDispatcher(execute: { _, _, _, _ in .completed("ok") }, onStatus: { _ in }),
+            performTurn: { call },
+            appendAssistantToolCall: { _ in },
+            appendToolResults: { appended = $0 },
+            finalize: { $0.text }
+        )
+        let result = try await runToolLoop(maxIterations: 1, adapter: adapter, setStatus: { _ in })
+        XCTAssertEqual(result, "Done so far.", "the wrap-up's own words are kept")
+        XCTAssertEqual(appended.map(\.outcome), [.failedBeforeExecution(reason: ToolLoopBudget.notRun("task"))])
     }
 }
 

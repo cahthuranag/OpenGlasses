@@ -12,10 +12,15 @@ final class FieldSessionTool: NativeTool {
     /// identically however the job was started — tool call, quick action, or (P2) the Job tab.
     /// Nil in headless contexts, where the service call alone is the whole behaviour.
     private let flow: GuidedJobFlow?
+    /// The technician's words this turn, read when a job ends: a passed test said in the same
+    /// breath as "close the job" goes on the record even when the model leaves `test_result` out.
+    private let currentUtterance: @MainActor () -> String?
 
-    init(service: FieldSessionService? = nil, flow: GuidedJobFlow? = nil) {
+    init(service: FieldSessionService? = nil, flow: GuidedJobFlow? = nil,
+         currentUtterance: @escaping @MainActor () -> String? = { TechnicianWords.current() }) {
         sessionService = service
         self.flow = flow
+        self.currentUtterance = currentUtterance
     }
 
     let name = "field_session"
@@ -119,6 +124,10 @@ final class FieldSessionTool: NativeTool {
             "outcome": [
                 "type": "string",
                 "description": "On 'end': 'resolved' (default), 'escalated', 'deferred', or 'cancelled'."
+            ],
+            "test_result": [
+                "type": "string",
+                "description": "On 'end': what the technician said about the final test or check, in their words (\"test run fine, furnace is working\"). Omit when they said nothing about one."
             ],
             "reason": [
                 "type": "string",
@@ -320,7 +329,7 @@ final class FieldSessionTool: NativeTool {
         if let said, !said.isEmpty {
             let index = service.modelIndex
             let resolution = EquipmentRecognition.resolve(stated: said, index: index)
-            let fragments = resolution.model == nil ? index.match(fragment: said) : []
+            let fragments = resolution.isCovered ? [] : index.match(fragment: said)
             if let model = fragments.first, fragments.count == 1 {
                 identity = EquipmentIdentity(
                     model: model, token: model.name, source: .spoken, statedModel: said,
@@ -387,6 +396,10 @@ final class FieldSessionTool: NativeTool {
     private func endSession(args: [String: Any], service: FieldSessionService) async -> String {
         let outcomeRaw = (args["outcome"] as? String) ?? "resolved"
         let outcome = FieldSession.Outcome(rawValue: outcomeRaw) ?? .resolved
+        if outcome == .resolved, let passed = Self.passedTest(stated: args["test_result"] as? String,
+                                                              said: currentUtterance()) {
+            service.recordPassedFinalCheck(note: passed)
+        }
         do {
             // Through the flow when there is one: finishing the job is one of the two things that
             // really do end its conversation (Plan FO P1), and the flow's close sequence is the one
@@ -407,6 +420,23 @@ final class FieldSessionTool: NativeTool {
         } catch {
             return "Could not end session: \(error.localizedDescription)"
         }
+    }
+
+    /// The words that say the final check passed: the model's `test_result` when it passed one
+    /// that reads as a pass, else the technician's own sentence when it does. A test that failed
+    /// or was not mentioned records nothing.
+    /// The technician's sentence also has to be about a test — "the customer is fine with it"
+    /// passes nothing.
+    static func passedTest(stated: String?, said: String?) -> String? {
+        if let stated = stated?.trimmingCharacters(in: .whitespacesAndNewlines), !stated.isEmpty,
+           TaskCompletionStatement.statesPassedCheck(stated) {
+            return stated
+        }
+        if let said = said?.trimmingCharacters(in: .whitespacesAndNewlines), !said.isEmpty,
+           TaskCompletionStatement.statesPassedCheck(said), TaskCompletionStatement.mentionsCheck(said) {
+            return said
+        }
+        return nil
     }
 
     private func statusSummary(service: FieldSessionService) async -> String {

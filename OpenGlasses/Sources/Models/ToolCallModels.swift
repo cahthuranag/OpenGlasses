@@ -142,7 +142,7 @@ enum ToolDeclarations {
     /// either. Sorted by name (P5) so the declaration list is byte-stable turn to turn and the
     /// provider's prompt cache can reuse it; `allTools` iterates a dictionary.
     @MainActor
-    private static func nativeToolDeclarations(registry: NativeToolRegistry?) -> [[String: Any]] {
+    static func nativeToolDeclarations(registry: NativeToolRegistry?) -> [[String: Any]] {
         guard let registry else { return [] }
         // Plan GD3: during a Field Assist job the field-mode profile narrows the list — read here,
         // on the main actor, as HIPAA mode is.
@@ -183,6 +183,10 @@ enum ToolDeclarations {
                                 fieldJobActive: Bool = false,
                                 fieldProfileEnabled: Bool = false) -> [String] {
         let allowed = names.filter { name in
+            // Plan IU: the lookup tool is declared by the on-demand exposure alone
+            // (`exposedDeclarations`), never as part of the full list, so a full-exposure request
+            // is byte-for-byte what it was before the tool existed.
+            guard name != ToolLookupTool.toolName else { return false }
             guard isEnabled(name) else { return false }
             return !(hipaaMode && hipaaDisabled.contains(name))
         }.sorted()
@@ -213,10 +217,45 @@ enum ToolDeclarations {
         }
     }
 
+    /// The generic native + MCP declarations a request carries (Plan IU).
+    ///
+    /// `declaring` nil is full exposure: every declarable tool, native sorted then MCP sorted —
+    /// exactly what every provider sent before on-demand schemas existed. Otherwise only the named
+    /// tools, plus `lookup_tools` among the native ones, in the same order, so a round's list is
+    /// byte-stable until something new is looked up.
+    @MainActor
+    static func exposedDeclarations(registry: NativeToolRegistry?, mcpClient: MCPClient?,
+                                    declaring: Set<String>?) -> [[String: Any]] {
+        let native = nativeToolDeclarations(registry: registry)
+        let mcp = mcpToolDeclarations(mcpClient: mcpClient)
+        guard let declaring else { return native + mcp }
+        func keep(_ decl: [String: Any]) -> Bool {
+            (decl["name"] as? String).map(declaring.contains) ?? false
+        }
+        var nativeKept = native.filter(keep)
+        if let lookup = registry?.tool(named: ToolLookupTool.toolName) {
+            nativeKept.append(["name": lookup.name, "description": lookup.description,
+                               "parameters": lookup.parametersSchema] as [String: Any])
+            nativeKept.sort { ($0["name"] as? String ?? "") < ($1["name"] as? String ?? "") }
+        }
+        return nativeKept + mcp.filter(keep)
+    }
+
+    /// Every name the model could be declared right now — native and MCP, without the lookup tool
+    /// or the OpenClaw `execute` — and the serialized size of their full declarations, which is
+    /// what Automatic measures against the context window (Plan IU).
+    @MainActor
+    static func availableToolSet(registry: NativeToolRegistry?, mcpClient: MCPClient?) -> (names: [String], bytes: Int) {
+        let all = exposedDeclarations(registry: registry, mcpClient: mcpClient, declaring: nil)
+        let bytes = (try? JSONSerialization.data(withJSONObject: all, options: [.sortedKeys]))?.count ?? 0
+        return (all.compactMap { $0["name"] as? String }, bytes)
+    }
+
     /// Anthropic tool format for the Messages API
     @MainActor
-    static func anthropicTools(registry: NativeToolRegistry?, includeOpenClaw: Bool, mcpClient: MCPClient? = nil) -> [[String: Any]] {
-        var tools: [[String: Any]] = (nativeToolDeclarations(registry: registry) + mcpToolDeclarations(mcpClient: mcpClient)).map { decl in
+    static func anthropicTools(registry: NativeToolRegistry?, includeOpenClaw: Bool, mcpClient: MCPClient? = nil,
+                               declaring: Set<String>? = nil) -> [[String: Any]] {
+        var tools: [[String: Any]] = exposedDeclarations(registry: registry, mcpClient: mcpClient, declaring: declaring).map { decl in
             [
                 "name": decl["name"] as! String,
                 "description": decl["description"] as! String,
@@ -239,8 +278,9 @@ enum ToolDeclarations {
 
     /// OpenAI / Groq / Custom tool format
     @MainActor
-    static func openAITools(registry: NativeToolRegistry?, includeOpenClaw: Bool, mcpClient: MCPClient? = nil) -> [[String: Any]] {
-        var tools: [[String: Any]] = (nativeToolDeclarations(registry: registry) + mcpToolDeclarations(mcpClient: mcpClient)).map { decl in
+    static func openAITools(registry: NativeToolRegistry?, includeOpenClaw: Bool, mcpClient: MCPClient? = nil,
+                            declaring: Set<String>? = nil) -> [[String: Any]] {
+        var tools: [[String: Any]] = exposedDeclarations(registry: registry, mcpClient: mcpClient, declaring: declaring).map { decl in
             [
                 "type": "function",
                 "function": [
@@ -316,8 +356,9 @@ enum ToolDeclarations {
 
     /// Gemini REST API tool format
     @MainActor
-    static func geminiRESTTools(registry: NativeToolRegistry?, includeOpenClaw: Bool, mcpClient: MCPClient? = nil) -> [[String: Any]] {
-        var declarations = nativeToolDeclarations(registry: registry) + mcpToolDeclarations(mcpClient: mcpClient)
+    static func geminiRESTTools(registry: NativeToolRegistry?, includeOpenClaw: Bool, mcpClient: MCPClient? = nil,
+                                declaring: Set<String>? = nil) -> [[String: Any]] {
+        var declarations = exposedDeclarations(registry: registry, mcpClient: mcpClient, declaring: declaring)
         if includeOpenClaw {
             declarations.append(execute)
         }

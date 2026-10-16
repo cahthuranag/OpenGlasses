@@ -5,6 +5,9 @@ import Foundation
 final class NativeToolRegistry {
     private var tools: [String: any NativeTool] = [:]
     let myDayService: MyDayService
+    /// Where `lookup_tools` finds the MCP client, whose offered tools it may also describe (Plan
+    /// IU). Set by `NativeToolRouter.init`, which owns the client; nil leaves the lookup native-only.
+    var mcpClientSource: (@MainActor () -> MCPClient?)?
 
     init(locationService: LocationService, conversationStore: ConversationStore? = nil,
          faceRecognitionService: FaceRecognitionService? = nil, cameraService: CameraService? = nil,
@@ -284,6 +287,11 @@ final class NativeToolRegistry {
         var discoveryTool = DiscoverCapabilitiesTool()
         discoveryTool.toolRegistry = self
         register(discoveryTool)
+        // Plan IU: full definitions on demand. Declared only when a turn's exposure is core, and
+        // never listed as a tool of its own (`toolNames`, `ToolDeclarations.declarableNames`).
+        var lookupTool = ToolLookupTool()
+        lookupTool.toolRegistry = self
+        register(lookupTool)
         register(ChineseAppsTool())
         register(AsianMessagingTool())
 
@@ -364,6 +372,8 @@ final class NativeToolRegistry {
     /// HIPAA mode automatically excludes tools that could leak PHI.
     var toolNames: [String] {
         Array(tools.keys).filter { name in
+            // Plan IU: infrastructure for on-demand definitions, not a tool the prompt lists.
+            guard name != ToolLookupTool.toolName else { return false }
             guard Config.isToolEnabled(name) else { return false }
             if Config.hipaaMode, Config.hipaaDisabledTools.contains(name) { return false }
             return true

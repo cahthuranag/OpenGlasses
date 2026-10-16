@@ -3506,6 +3506,32 @@ struct Config {
         return AppAccent.hexValue(raw) == nil ? nil : raw
     }
 
+    // MARK: - Tool definitions on demand (Plan IU)
+
+    /// When the request sends only a core set of full tool definitions and the model looks up the
+    /// rest (`ToolExposurePolicy`). The organisation's pin wins; otherwise the wearer's choice,
+    /// Automatic by default. Read once at the start of a turn: a turn in flight keeps its mode.
+    static var toolDefinitionsMode: ToolDefinitionsMode {
+        organizationToolDefinitionsMode ?? userToolDefinitionsMode
+    }
+
+    /// The wearer's own choice, whatever the organisation pinned.
+    static var userToolDefinitionsMode: ToolDefinitionsMode {
+        UserDefaults.standard.string(forKey: "toolDefinitionsMode").flatMap(ToolDefinitionsMode.init(rawValue:))
+            ?? .automatic
+    }
+
+    static func setToolDefinitionsMode(_ mode: ToolDefinitionsMode) {
+        UserDefaults.standard.set(mode.rawValue, forKey: "toolDefinitionsMode")
+    }
+
+    /// The mode the organisation's profile pins, or nil — no profile, or one that does not say.
+    /// Written only by a profile; there is no setter on purpose.
+    static var organizationToolDefinitionsMode: ToolDefinitionsMode? {
+        let stored = UserDefaults.standard.string(forKey: "organizationToolDefinitionsMode") ?? ""
+        return ToolDefinitionsMode(rawValue: PolicyEnvelope.string(.organizationToolDefinitionsMode, stored: stored))
+    }
+
     // MARK: - Mic Route (Plan CL P3)
 
     /// Unified capture route: phone / glasses / headset. Migrates the old

@@ -14,6 +14,9 @@ struct ToolsSettingsView: View {
 
     private var allTools: [(name: String, displayName: String, description: String, params: [String: Any])] {
         appState.nativeToolRouter.registry.allTools
+            // Plan IU: `lookup_tools` is infrastructure for on-demand definitions, not a tool to
+            // switch off — turning it off would leave the model unable to reach the rest.
+            .filter { $0.name != ToolLookupTool.toolName }
             .filter { adminGate.presentation(.tool($0.name)).isShown }
             .map { (name: $0.name, displayName: Self.displayName(for: $0.name), description: $0.description, params: $0.parametersSchema) }
             .sorted { $0.displayName < $1.displayName }

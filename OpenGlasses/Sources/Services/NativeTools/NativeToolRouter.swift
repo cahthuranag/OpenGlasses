@@ -100,6 +100,8 @@ final class NativeToolRouter: ToolExecutionAuthority {
     init(registry: NativeToolRegistry, openClawBridge: OpenClawBridge? = nil) {
         self.registry = registry
         self.openClawBridge = openClawBridge
+        // Plan IU: `lookup_tools` may describe the MCP tools this router offers, never others.
+        registry.mcpClientSource = { [weak self] in self?.mcpClient }
     }
 
     // MARK: - Dispatch profile (W04.4)

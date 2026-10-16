@@ -2,7 +2,9 @@
 
 **Status:** 🚧 P0 implemented 2026-10-11 — [contract](../../Contracts/captured-manual.md), shared
 Swift/Go golden and negative checks, Office-report verifier extension and
-[lifecycle inventory](IF-lifecycle-inventory.md). P1–P5 remain unbuilt. No capture or sender.
+[lifecycle inventory](IF-lifecycle-inventory.md). P1 durable capture core implemented 2026-10-15: protected staging, resumable redacted
+checkpoints, immutable atomic bundles, lifecycle tombstones and erasure linkage. The portable
+contract/core suite passes 64 tests. P2–P5 remain unbuilt; camera UI and sender are not yet active.
 Drafted 2026-10-10. A technician at an older unit photographs
 the pages of the paper manual that came with it; the phone recognises the text on each page on
 device, makes the pages answerable in the same job, attaches them to the job in text and image
@@ -449,7 +451,7 @@ Nothing in this plan builds the office half; it names the contract the office wi
   compatibility before building queue producers. Inventory erasure, departure, page lookup and
   all retrieval gates against build 494. This phase defines interfaces; no phone sender or
   office implementation is claimed.
-- **P1 — durable capture core, headless.** Manifest/store/assembler, ordered image staging,
+- **P1 — durable capture core, headless (implemented 2026-10-15).** Manifest/store/assembler, ordered image staging,
   protected/no-backup checkpointing, injectable languages/limits/thermal policy, redaction before
   persistence, printed-number finder, byte-stable `text.md`/PDF, page map and bundle digests.
   Add capture/document/job linkage, tombstone/cancellation and SensitiveStore/subject/departure

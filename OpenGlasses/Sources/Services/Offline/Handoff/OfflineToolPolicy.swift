@@ -57,6 +57,7 @@ enum OfflineToolPolicy {
         "list_saved_locations": .local,
         "lookup_contact": .local,
         "manage_schedule": .local,
+        "manual_capture": .local,         // camera request, recognition and saved pages stay on the phone
         "manual_figure": .local,
         "manual_lookup": .local,
         "memory_search": .local,

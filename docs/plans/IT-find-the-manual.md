@@ -146,12 +146,20 @@ browser route.
   existing catalogue verifier.
 - The starter entries from [IT-starter-directory.md](IT-starter-directory.md), each `link` or `siteOnly` at first. Settings › Field Assist › Manufacturer manuals
   lists them: tap opens the site in the browser. That alone is useful on day one.
+- **The link in a job appears only when nothing on the phone covers the unit.** When the unit's
+  brand is known (nameplate or vault) and `EquipmentIdentity.isOutOfVault` is true, meaning no
+  loaded, photographed or fetched manual matches the model, the Job tab shows "Manuals on
+  <manufacturer>'s site", with the model filled in where the entry allows it. When a manual
+  already covers the unit, there's no link: the answer and the page come from what is loaded. The
+  directory stays reachable from Settings, and from the manual viewer as "Check <manufacturer>'s
+  site for a newer copy", for someone who wants it.
 - `ManufacturerMatch` (pure): from a nameplate's brand text or a vault model's manufacturer to a
   directory entry, using the brand aliases (Bryant → Carrier, Ruud → Rheem, Luxaire → Johnson
   Controls).
 - The schema in `Contracts/manufacturer-directory.md` with golden and negative fixtures, shared
   with the office's checks.
-- **Exit tests:** decoder refusals by name; signature verification; brand alias resolution; every
+- **Exit tests:** the Job-tab link appears for an out-of-vault unit of a known brand and never
+  for a unit a loaded manual covers; decoder refusals by name; signature verification; brand alias resolution; every
   entry's URLs are https and on a host the entry lists; the shared fixtures decode identically.
 
 ### P1 — Open, download, share to the app (and fetch where allowed)

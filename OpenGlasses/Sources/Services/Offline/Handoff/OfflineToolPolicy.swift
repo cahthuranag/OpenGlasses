@@ -56,6 +56,7 @@ enum OfflineToolPolicy {
         "list_notes": .local,
         "list_saved_locations": .local,
         "lookup_contact": .local,
+        "lookup_tools": .local,           // the app's own tool definitions (Plan IU)
         "manage_schedule": .local,
         "manual_capture": .local,         // camera request, recognition and saved pages stay on the phone
         "manual_figure": .local,

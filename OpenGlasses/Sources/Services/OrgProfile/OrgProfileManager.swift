@@ -907,6 +907,7 @@ extension SettingKey {
         case .organizationReportTranscriptInternal: return "Whether reports to the office carry the transcript"
         case .organizationAccentColor: return "The app's accent colour"
         case .technicianDisplayName: return "Your name, as your team sees it"
+        case .organizationToolDefinitionsMode: return "When the assistant looks up tool definitions on demand"
         default: return rawValue
         }
     }

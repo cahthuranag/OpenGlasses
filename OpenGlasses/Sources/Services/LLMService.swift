@@ -446,7 +446,7 @@ class LLMService: ObservableObject {
     /// location, skills, job and manual context, …) — so a route that can place the tail after the
     /// history keeps its cacheable prefix byte-identical turn to turn. `.combined` is the old
     /// single string, head first.
-    private static func buildSystemPrompt(locationContext: String?, includeTools: Bool, includeOpenClaw: Bool, hasImage: Bool, nativeToolNames: [String] = [], nativeToolDescriptions: [(name: String, description: String)] = [], gatewayToolNames: [String] = [], memoryContext: String? = nil, agentContext: String? = nil, playbookContext: String? = nil, nowPlayingContext: String? = nil, shortcutsContext: String? = nil, promptSections: ConversationClassifier.PromptSections? = nil, turn: String? = nil, device: AssistantIdentity.Device) async -> PromptLayout {
+    private static func buildSystemPrompt(locationContext: String?, includeTools: Bool, includeOpenClaw: Bool, hasImage: Bool, nativeToolNames: [String] = [], nativeToolDescriptions: [(name: String, description: String)] = [], onDemandToolGuide: String? = nil, gatewayToolNames: [String] = [], memoryContext: String? = nil, agentContext: String? = nil, playbookContext: String? = nil, nowPlayingContext: String? = nil, shortcutsContext: String? = nil, promptSections: ConversationClassifier.PromptSections? = nil, turn: String? = nil, device: AssistantIdentity.Device) async -> PromptLayout {
         // Agent personality mode: soul.md + skills.md + memory.md replace the standard prompt
         var prompt: String
         if Config.agentModeEnabled, let agentContext, !agentContext.isEmpty {
@@ -510,6 +510,11 @@ class LLMService: ObservableObject {
                 // list can't drift from the real tool set or from the Gemini Live prompt.
                 if !nativeToolDescriptions.isEmpty {
                     toolSection += "\n\n" + SystemPromptBuilder.toolLines(nativeToolDescriptions)
+                }
+                // Plan IU: on-demand definitions — how to get one, and a summary of every tool that
+                // may need looking up. Nil on full exposure, so that prompt is byte-for-byte as before.
+                if let onDemandToolGuide {
+                    toolSection += "\n\n" + onDemandToolGuide
                 }
                 // Plan BM P4: domains the model must route through a tool, never self-answer.
                 let routingRules = SystemPromptBuilder.routingRules(toolNames: nativeToolNames)
@@ -699,6 +704,77 @@ class LLMService: ObservableObject {
         return PromptInjectionPolicy.wrap(toolName: toolName, content: content)
     }
 
+    // MARK: - On-demand tool schemas (Plan IU)
+
+    /// Tools this conversation has used or looked up. Under core exposure they are declared in
+    /// full from the next model round on, so a tool the model reached once stays reachable without
+    /// another lookup. Cleared with the conversation.
+    private(set) var toolExposureMemory: Set<String> = []
+
+    /// Decide this turn's exposure and log it — counts and tokens only.
+    private func resolveToolExposure(config: ModelConfig, includeOpenClaw: Bool) -> ToolExposureTurn {
+        let registry = nativeToolRouter?.registry
+        let available = ToolDeclarations.availableToolSet(registry: registry, mcpClient: nativeToolRouter?.mcpClient)
+        let provider = config.llmProvider
+        let catalogContext = provider == .chatgpt
+            ? ChatGPTContextCatalog.context(model: config.model, accountID: ChatGPTOAuthService.shared.accountID)
+            : nil
+        let window = ModelContextWindow.resolve(provider: provider, model: config.model,
+                                                baseURL: config.baseURL, chatGPTCatalogContext: catalogContext)
+        let core = ToolExposureCore.names(fieldJobActive: FieldToolProfile.fieldJobActive,
+                                          accessibilityMode: Config.accessibilityModeEnabled)
+        let decision = ToolExposurePolicy.decide(mode: Config.toolDefinitionsMode, available: available.names,
+                                                 fullSetBytes: available.bytes, contextWindow: window?.tokens,
+                                                 core: core, remembered: toolExposureMemory)
+        // Schemas the first request carries: the declared set, the lookup tool when on demand,
+        // and OpenClaw's `execute`, which is never on demand.
+        let lookup = decision.exposure == .core && registry?.tool(named: ToolLookupTool.toolName) != nil ? 1 : 0
+        let gateway = includeOpenClaw ? 1 : 0
+        PrivacyLog.model(.toolExposure, provider: PrivacyToken(provider.rawValue),
+                         model: PrivacyToken(config.model),
+                         count: decision.declared.count + lookup + gateway,
+                         total: decision.available.count + gateway,
+                         tokens: decision.fullSetTokens,
+                         detail: PrivacyToken(decision.exposure.rawValue),
+                         reason: PrivacyToken(decision.reason.rawValue))
+        return ToolExposureTurn(decision: decision)
+    }
+
+    /// The prompt's on-demand block for a core-exposure turn, nil on full exposure.
+    private func onDemandToolGuide(for decision: ToolExposureDecision, nativeToolNames: [String]) -> String? {
+        guard decision.exposure == .core, let registry = nativeToolRouter?.registry else { return nil }
+        let core = ToolExposureCore.names(fieldJobActive: FieldToolProfile.fieldJobActive,
+                                          accessibilityMode: Config.accessibilityModeEnabled)
+        let native = registry.toolDescriptions(for: nativeToolNames.filter { decision.available.contains($0) && !core.contains($0) })
+        let nativeSet = Set(nativeToolNames)
+        let mcpNames = decision.available.subtracting(nativeSet).sorted()
+        return SystemPromptBuilder.onDemandToolGuide(native: native, mcpNames: mcpNames)
+    }
+
+    /// The names this model round declares — nil for every tool — recorded on the turn so the
+    /// dispatcher's safety net judges a call against the list it was written against.
+    private func roundToolFilter() -> Set<String>? {
+        guard let turn = ToolExposureScope.turn else { return nil }
+        let names = ToolExposurePolicy.roundDeclared(turn.decision, promoted: toolExposureMemory)
+        turn.declaredThisRound = names
+        return names
+    }
+
+    /// The tool loop's round limit. A turn on demand may spend a round looking a tool up and one
+    /// on a call the safety net turned back, so it gets two more.
+    private var toolLoopIterations: Int {
+        ToolExposureScope.turn?.decision.exposure == .core ? maxToolCallIterations + 2 : maxToolCallIterations
+    }
+
+    /// Promote `names` for the rest of the conversation, logging how many were new.
+    private func promoteTools(_ names: [String], reason: String) {
+        let added = names.filter { !toolExposureMemory.contains($0) }
+        guard !added.isEmpty else { return }
+        toolExposureMemory.formUnion(added)
+        PrivacyLog.model(.toolExposure, count: added.count, detail: PrivacyToken("added"),
+                         reason: PrivacyToken(reason))
+    }
+
     /// The shared tool-dispatch step used by every provider's tool loop (Plan BG P3): native tools
     /// via `NativeToolRouter`, else the OpenClaw bridge, else a failure. Status transitions flow to
     /// the published `toolCallStatus`. Yield detection and the parse-error path live in the
@@ -708,6 +784,18 @@ class LLMService: ObservableObject {
             execute: { [weak self] name, args, rawArgs, callID in
                 guard let self else {
                     return .failedBeforeExecution(reason: "Service unavailable")
+                }
+                // Plan IU safety net: a call to a tool the model may have but whose definition this
+                // round did not carry is not run on arguments written without the schema. Nothing
+                // happens, the definition rides on the next request, and the model calls again.
+                if let turn = ToolExposureScope.turn,
+                   ToolExposurePolicy.isUndeclaredCall(name, declaredThisRound: turn.declaredThisRound,
+                                                       available: turn.decision.available) {
+                    self.promoteTools([name], reason: "undeclaredCall")
+                    TurnRecorder.noteToolCall(name: self.nativeToolRouter?.registry.tool(named: name) != nil
+                                                  ? name : "unrecognised tool",
+                                              outcome: "not declared")
+                    return .failedBeforeExecution(reason: ToolExposurePolicy.undeclaredCallMessage(name))
                 }
                 let outcome: ToolExecutionOutcome
                 if let router = self.nativeToolRouter {
@@ -728,6 +816,17 @@ class LLMService: ObservableObject {
                 let known = self.nativeToolRouter?.registry.tool(named: name) != nil
                 TurnRecorder.noteToolCall(name: known ? name : "unrecognised tool",
                                           outcome: LLMService.traceOutcome(outcome))
+                // Plan IU: what a lookup returned, and any tool the model reached, stay declared for
+                // the rest of the conversation.
+                if let available = ToolExposureScope.turn?.decision.available {
+                    if name == ToolLookupTool.toolName, case .completed = outcome {
+                        self.promoteTools(ToolLookupTool.returnedNames(
+                            requested: ToolExposurePolicy.requestedNames(args), declarable: available),
+                                          reason: "lookup")
+                    } else if available.contains(name) {
+                        self.toolExposureMemory.insert(name)
+                    }
+                }
                 return outcome
             },
             onStatus: { [weak self] status in self?.toolCallStatus = status }
@@ -890,6 +989,9 @@ class LLMService: ObservableObject {
         // Plan FY F3: the device this turn is on, read once here and passed to whichever prompt
         // tier answers.
         let device = Self.deviceInUse()
+        // Plan IU: how much of the tool set this turn declares in full, decided once here — a turn
+        // in flight keeps the mode it started with. Only where machine-readable schemas ride along.
+        var exposureTurn: ToolExposureTurn?
         if isOnDevice {
             fullPrompt = await Self.leanOnDevicePrompt(
                 locationContext: locationContext, memoryContext: memoryContext,
@@ -904,8 +1006,12 @@ class LLMService: ObservableObject {
                                                            customEndpointRejectsTools: Self.customEndpointRejectsTools)
             let nativeToolDescriptions = schemasAttached
                 ? [] : (nativeToolRouter?.registry.toolDescriptions(for: nativeToolNames) ?? [])
+            if schemasAttached && effectiveIncludeTools {
+                exposureTurn = resolveToolExposure(config: modelConfig, includeOpenClaw: includeOpenClaw)
+            }
+            let onDemandGuide = exposureTurn.flatMap { onDemandToolGuide(for: $0.decision, nativeToolNames: nativeToolNames) }
             let gatewayToolNames = openClawBridge?.availableToolNames ?? []
-            let layout = await Self.buildSystemPrompt(locationContext: locationContext, includeTools: includeTools, includeOpenClaw: includeOpenClaw, hasImage: imageData != nil, nativeToolNames: nativeToolNames, nativeToolDescriptions: nativeToolDescriptions, gatewayToolNames: gatewayToolNames, memoryContext: memoryContext, agentContext: agentContext, playbookContext: playbookContext, nowPlayingContext: nowPlayingContext, shortcutsContext: shortcutsContext, promptSections: promptSections, turn: text, device: device)
+            let layout = await Self.buildSystemPrompt(locationContext: locationContext, includeTools: includeTools, includeOpenClaw: includeOpenClaw, hasImage: imageData != nil, nativeToolNames: nativeToolNames, nativeToolDescriptions: nativeToolDescriptions, onDemandToolGuide: onDemandGuide, gatewayToolNames: gatewayToolNames, memoryContext: memoryContext, agentContext: agentContext, playbookContext: playbookContext, nowPlayingContext: nowPlayingContext, shortcutsContext: shortcutsContext, promptSections: promptSections, turn: text, device: device)
             if provider == .openai || provider == .anthropic {
                 fullPrompt = layout.stable
                 volatileTail = layout.volatile
@@ -981,20 +1087,24 @@ class LLMService: ObservableObject {
         // for every provider, since the history is shared and the next turn may be anyone's.
         conversationHistory = HistoryHygiene.stripThinkingBlocks(conversationHistory)
 
-        let rawResponse: String
-        switch provider {
-        case .anthropic:
-            rawResponse = try await sendAnthropic(text, systemPrompt: fullPrompt, volatileTail: volatileTail, config: modelConfig, includeTools: effectiveIncludeTools, imageData: turnImage, smallContext: smallContext, onToken: onToken, onStreamReset: onStreamReset)
-        case .chatgpt:
-            rawResponse = try await sendChatGPT(text, systemPrompt: fullPrompt, config: modelConfig, includeTools: effectiveIncludeTools, imageData: turnImage, smallContext: smallContext, onToken: onToken, onStreamReset: onStreamReset)
-        case .gemini, .geminiVertex:
-            rawResponse = try await sendGemini(text, systemPrompt: fullPrompt, config: modelConfig, includeTools: effectiveIncludeTools, imageData: turnImage, smallContext: smallContext)
-        case .local:
-            rawResponse = try await sendLocal(text, systemPrompt: fullPrompt, config: modelConfig, includeTools: includeTools, imageData: turnImage, onToken: onToken)
-        case .appleOnDevice:
-            rawResponse = try await sendAppleOnDevice(text, systemPrompt: fullPrompt)
-        case .openai, .groq, .deepseek, .mistral, .zai, .qwen, .minimax, .xai, .openrouter, .custom:
-            rawResponse = try await sendOpenAICompatible(text, systemPrompt: fullPrompt, volatileTail: volatileTail, config: modelConfig, includeTools: effectiveIncludeTools, imageData: turnImage, smallContext: smallContext, onToken: onToken, onStreamReset: onStreamReset)
+        // Plan IU: the provider loops and the tool dispatcher read this turn's exposure from here.
+        let promptForTurn = fullPrompt
+        let tailForTurn = volatileTail
+        let rawResponse: String = try await ToolExposureScope.$turn.withValue(exposureTurn) {
+            switch provider {
+            case .anthropic:
+                return try await sendAnthropic(text, systemPrompt: promptForTurn, volatileTail: tailForTurn, config: modelConfig, includeTools: effectiveIncludeTools, imageData: turnImage, smallContext: smallContext, onToken: onToken, onStreamReset: onStreamReset)
+            case .chatgpt:
+                return try await sendChatGPT(text, systemPrompt: promptForTurn, config: modelConfig, includeTools: effectiveIncludeTools, imageData: turnImage, smallContext: smallContext, onToken: onToken, onStreamReset: onStreamReset)
+            case .gemini, .geminiVertex:
+                return try await sendGemini(text, systemPrompt: promptForTurn, config: modelConfig, includeTools: effectiveIncludeTools, imageData: turnImage, smallContext: smallContext)
+            case .local:
+                return try await sendLocal(text, systemPrompt: promptForTurn, config: modelConfig, includeTools: includeTools, imageData: turnImage, onToken: onToken)
+            case .appleOnDevice:
+                return try await sendAppleOnDevice(text, systemPrompt: promptForTurn)
+            case .openai, .groq, .deepseek, .mistral, .zai, .qwen, .minimax, .xai, .openrouter, .custom:
+                return try await sendOpenAICompatible(text, systemPrompt: promptForTurn, volatileTail: tailForTurn, config: modelConfig, includeTools: effectiveIncludeTools, imageData: turnImage, smallContext: smallContext, onToken: onToken, onStreamReset: onStreamReset)
+            }
         }
 
         // Local reasoning models (LFM2.5) are stripped at the generate layer —
@@ -1274,6 +1384,7 @@ class LLMService: ObservableObject {
 
     func clearHistory() {
         conversationHistory.removeAll()
+        toolExposureMemory.removeAll()   // Plan IU: what was looked up belongs to the conversation
         jobHistoryFloor.historyReplaced(sessionId: FieldSessionService.shared.activeSession?.id)
     }
 
@@ -1283,6 +1394,7 @@ class LLMService: ObservableObject {
     /// preserving key signals from earlier messages.
     func loadConversationHistory(_ messages: [(role: String, content: String)]) {
         conversationHistory.removeAll()
+        toolExposureMemory.removeAll()   // Plan IU
         for msg in messages {
             conversationHistory.append(["role": msg.role, "content": msg.content])
         }
@@ -2051,9 +2163,10 @@ class LLMService: ObservableObject {
                 var tools: [[String: Any]] = []
                 if includeTools {
                     let includeOpenClaw = Config.isOpenClawAgentActive && self.openClawBridge != nil
+                    let declaring = self.roundToolFilter()   // Plan IU: nil = every tool
                     let (toolsData, mcpToolCount): (Data, Int) = await MainActor.run {
                         let mcpClient = self.nativeToolRouter?.mcpClient
-                        let tools = ToolDeclarations.anthropicTools(registry: self.nativeToolRouter?.registry, includeOpenClaw: includeOpenClaw, mcpClient: mcpClient)
+                        let tools = ToolDeclarations.anthropicTools(registry: self.nativeToolRouter?.registry, includeOpenClaw: includeOpenClaw, mcpClient: mcpClient, declaring: declaring)
                         let data = (try? JSONSerialization.data(withJSONObject: tools, options: [.sortedKeys])) ?? Data()
                         return (data, ToolDeclarations.mcpToolDeclarations(mcpClient: mcpClient).count)
                     }
@@ -2216,7 +2329,7 @@ class LLMService: ObservableObject {
             }
         )
 
-        return try await runToolLoop(maxIterations: maxToolCallIterations, adapter: adapter,
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: adapter,
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -2519,8 +2632,9 @@ class LLMService: ObservableObject {
 
                 if includeTools && providerSupportsTools {
                     let includeOpenClaw = Config.isOpenClawAgentActive && self.openClawBridge != nil
+                    let declaring = self.roundToolFilter()   // Plan IU: nil = every tool
                     let toolsData: Data = await MainActor.run {
-                        let tools = ToolDeclarations.openAITools(registry: self.nativeToolRouter?.registry, includeOpenClaw: includeOpenClaw, mcpClient: self.nativeToolRouter?.mcpClient)
+                        let tools = ToolDeclarations.openAITools(registry: self.nativeToolRouter?.registry, includeOpenClaw: includeOpenClaw, mcpClient: self.nativeToolRouter?.mcpClient, declaring: declaring)
                         return (try? JSONSerialization.data(withJSONObject: tools, options: [.sortedKeys])) ?? Data()
                     }
                     let tools = (try? JSONSerialization.jsonObject(with: toolsData)) as? [[String: Any]] ?? []
@@ -2737,7 +2851,7 @@ class LLMService: ObservableObject {
             }
         )
 
-        return try await runToolLoop(maxIterations: maxToolCallIterations, adapter: adapter,
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: adapter,
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -2790,18 +2904,18 @@ class LLMService: ObservableObject {
         let recovery = ResponsesContextRecovery()
         let toolsAttached = includeTools
             && Self.providerSupportsTools(provider, customEndpointRejectsTools: Self.customEndpointRejectsTools)
-        // Sorted keys, as on Chat Completions: the same bytes feed the cache key.
-        var toolsData = Data()
-        var chatTools: [[String: Any]]?
-        if toolsAttached {
-            let includeOpenClaw = Config.isOpenClawAgentActive && openClawBridge != nil
+        // Sorted keys, as on Chat Completions: the same bytes feed the cache key. Built per round
+        // (Plan IU): a tool looked up in one round is declared in the next.
+        let includeOpenClaw = Config.isOpenClawAgentActive && openClawBridge != nil
+        func roundTools() -> (tools: [[String: Any]]?, data: Data) {
+            guard toolsAttached else { return (nil, Data()) }
             let tools = ToolDeclarations.openAITools(registry: nativeToolRouter?.registry,
                                                      includeOpenClaw: includeOpenClaw,
-                                                     mcpClient: nativeToolRouter?.mcpClient)
-            toolsData = (try? JSONSerialization.data(withJSONObject: tools, options: [.sortedKeys])) ?? Data()
-            chatTools = (try? JSONSerialization.jsonObject(with: toolsData)) as? [[String: Any]] ?? []
+                                                     mcpClient: nativeToolRouter?.mcpClient,
+                                                     declaring: roundToolFilter())
+            let data = (try? JSONSerialization.data(withJSONObject: tools, options: [.sortedKeys])) ?? Data()
+            return ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? [], data)
         }
-        let tools = chatTools
         let baseOutputCap = smallContext ? (imageData != nil ? Self.smallContextVisionMaxTokens : Config.maxTokens) : (includeTools ? 1024 : Config.maxTokens)
         let limit = RequestContextBudget.resolve(model: config.model, endpoint: endpoint)
         let label = provider.displayName
@@ -2825,6 +2939,7 @@ class LLMService: ObservableObject {
                     request.setValue("Avenkin", forHTTPHeaderField: "X-Title")
                 }
 
+                let (tools, toolsData) = roundTools()
                 // GB's request copy, then its prompt parts (the omission note depends on the copy).
                 let historySlice = self.requestHistory(for: provider, smallContext: smallContext)
                 let system = self.requestSystemParts(stable: systemPrompt, volatileTail: volatileTail)
@@ -2911,7 +3026,7 @@ class LLMService: ObservableObject {
                 return turn.text
             }
         )
-        return try await runToolLoop(maxIterations: maxToolCallIterations, adapter: adapter,
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: adapter,
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -2951,12 +3066,13 @@ class LLMService: ObservableObject {
             conversationHistory.append(["role": "user", "content": text])
         }
 
-        var chatTools: [[String: Any]]?
-        if includeTools {
-            let includeOpenClaw = Config.isOpenClawAgentActive && openClawBridge != nil
-            chatTools = ToolDeclarations.openAITools(registry: nativeToolRouter?.registry, includeOpenClaw: includeOpenClaw, mcpClient: nativeToolRouter?.mcpClient)
+        // Built per round (Plan IU): a tool looked up in one round is declared in the next.
+        let includeOpenClaw = Config.isOpenClawAgentActive && openClawBridge != nil
+        func roundTools() -> [[String: Any]]? {
+            guard includeTools else { return nil }
+            return ToolDeclarations.openAITools(registry: nativeToolRouter?.registry, includeOpenClaw: includeOpenClaw,
+                                                mcpClient: nativeToolRouter?.mcpClient, declaring: roundToolFilter())
         }
-        let tools = chatTools
 
         let adapter = ProviderLoopAdapter(
             label: "ChatGPT",
@@ -2969,6 +3085,7 @@ class LLMService: ObservableObject {
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 ChatGPTAuth.apply(credential: token, accountID: accountID, to: &request)
+                let tools = roundTools()
                 let limit = RequestContextBudget.resolve(
                     model: config.model, endpoint: endpoint,
                     catalogContext: ChatGPTContextCatalog.context(model: config.model, accountID: accountID))
@@ -3033,7 +3150,7 @@ class LLMService: ObservableObject {
                 return turn.text
             }
         )
-        return try await runToolLoop(maxIterations: maxToolCallIterations, adapter: adapter,
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: adapter,
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -3628,8 +3745,9 @@ class LLMService: ObservableObject {
 
                 if includeTools {
                     let includeOpenClaw = Config.isOpenClawAgentActive && self.openClawBridge != nil
+                    let declaring = self.roundToolFilter()   // Plan IU: nil = every tool
                     let toolsData: Data = await MainActor.run {
-                        let tools = ToolDeclarations.geminiRESTTools(registry: self.nativeToolRouter?.registry, includeOpenClaw: includeOpenClaw, mcpClient: self.nativeToolRouter?.mcpClient)
+                        let tools = ToolDeclarations.geminiRESTTools(registry: self.nativeToolRouter?.registry, includeOpenClaw: includeOpenClaw, mcpClient: self.nativeToolRouter?.mcpClient, declaring: declaring)
                         return (try? JSONSerialization.data(withJSONObject: tools, options: [.sortedKeys])) ?? Data()
                     }
                     let tools = (try? JSONSerialization.jsonObject(with: toolsData)) as? [[String: Any]] ?? []
@@ -3746,7 +3864,7 @@ class LLMService: ObservableObject {
             }
         )
 
-        return try await runToolLoop(maxIterations: maxToolCallIterations, adapter: adapter,
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: adapter,
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -4014,6 +4132,13 @@ class LLMService: ObservableObject {
             let toolNames = Self.localToolNames(registered: router.registry.toolNames,
                                                 offlineHandoff: offlineHandoffTurn)
             fullPrompt += Self.localToolInstructions(toolNames: toolNames)
+            // Plan IU: the on-device path is outside the setting — it has always carried its own
+            // reduced list, names only, smaller than any core set. Logged so the report says so.
+            PrivacyLog.model(.toolExposure, provider: PrivacyToken(config.llmProvider.rawValue),
+                             model: PrivacyToken(config.model), count: toolNames.count,
+                             total: router.registry.toolNames.count,
+                             detail: PrivacyToken(ToolExposure.core.rawValue),
+                             reason: PrivacyToken(ToolExposureReason.onDevice.rawValue))
         }
 
         // Build history — last 3 exchanges for local models (context is precious; the

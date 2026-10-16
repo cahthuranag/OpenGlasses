@@ -319,7 +319,7 @@ struct SiriActionEditorView: View {
     /// offered at all — picking one would only ever end in a refusal.
     private var availableToolNames: [String] {
         (AppStateProvider.shared?.nativeToolRegistry.allTools.map(\.name) ?? [])
-            .filter { !ComposedToolPolicy.isRestrictedTarget($0) }
+            .filter { !ComposedToolPolicy.isRestrictedTarget($0) && $0 != ToolLookupTool.toolName }
             .sorted()
     }
 

@@ -235,6 +235,7 @@ let allowList: [String: String] = [
     "fieldAssistDefaultMode": "default:string",
     "supportReportEmail": "default:string",
     "organizationAccentColor": "owned:string",
+    "organizationToolDefinitionsMode": "owned:string",
     "accentColorName": "default:string",
 ]
 

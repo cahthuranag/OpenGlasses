@@ -99,6 +99,54 @@ final class TurnMicHandoffTests: XCTestCase {
         XCTAssertLessThan(total, TurnMicHandoff.deadline)
     }
 
+    // MARK: - Keeping the idle session in the background
+
+    /// Locked phone, idle listener live on the glasses' hands-free port: no re-tune at all — iOS
+    /// refuses it from the background and the refusal costs the turn its glasses mic.
+    func testABackgroundedTurnOnALiveHandsFreeSessionKeepsIt() {
+        for route in [MicRoute.glasses, .headset] {
+            XCTAssertEqual(TurnMicHandoff.sessionSwitch(wanted: route, appInForeground: false,
+                                                        portSeenBeforeSwitch: true, engineRunning: true),
+                           .keepIdleSession, "\(route)")
+        }
+    }
+
+    func testTheForegroundStillReconfigures() {
+        XCTAssertEqual(TurnMicHandoff.sessionSwitch(wanted: .glasses, appInForeground: true,
+                                                    portSeenBeforeSwitch: true, engineRunning: true),
+                       .reconfigure, "in the foreground the non-mixable switch works and pauses other audio")
+    }
+
+    func testABackgroundedTurnWithNothingLiveToKeepReconfigures() {
+        XCTAssertEqual(TurnMicHandoff.sessionSwitch(wanted: .glasses, appInForeground: false,
+                                                    portSeenBeforeSwitch: false, engineRunning: true),
+                       .reconfigure, "an idle phone-mic session lists no hands-free port")
+        XCTAssertEqual(TurnMicHandoff.sessionSwitch(wanted: .glasses, appInForeground: false,
+                                                    portSeenBeforeSwitch: true, engineRunning: false),
+                       .reconfigure, "no running engine: the session may not be active, nothing to keep")
+        XCTAssertEqual(TurnMicHandoff.sessionSwitch(wanted: .phone, appInForeground: false,
+                                                    portSeenBeforeSwitch: true, engineRunning: true),
+                       .reconfigure, "the phone route leaves the hands-free shape")
+    }
+
+    /// Only one combination keeps the session.
+    func testKeepingIsTheSingleBackgroundedLiveBluetoothCase() {
+        for route in MicRoute.allCases {
+            for foreground in [false, true] {
+                for seen in [false, true] {
+                    for running in [false, true] {
+                        let step = TurnMicHandoff.sessionSwitch(wanted: route, appInForeground: foreground,
+                                                                portSeenBeforeSwitch: seen, engineRunning: running)
+                        let expected: TurnMicHandoff.SessionSwitch =
+                            route != .phone && !foreground && seen && running ? .keepIdleSession : .reconfigure
+                        XCTAssertEqual(step, expected,
+                                       "\(route) foreground=\(foreground) seen=\(seen) running=\(running)")
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Sequencing
 
     func testRouteThenFramesThenTheTurn() {

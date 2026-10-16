@@ -1488,6 +1488,9 @@ enum PrivacyLog {
         // A turn whose conversation mic is Bluetooth put on the phone, with the reason token
         // (`stoodDown`, `notWorn`, `portUnavailable`).
         case turnMicOnPhone
+        // A backgrounded turn kept the live idle hands-free session as it was rather than re-tune
+        // it (iOS refuses that from the background); the route token only.
+        case conversationKeptIdleSession
     }
 
     @discardableResult
@@ -1529,6 +1532,9 @@ enum PrivacyLog {
         case apiError, streamError, streamRetry, requestFailed
         case toolCallsParsed, toolCallDropped, toolsPayloadRejected, yieldedToHuman
         case emptyCompletion, imageSkipped, reasoningProduced, reasoningResolved, reasoningRetried
+        // A Responses turn's commentary-phase messages held back from the reply: a count and an
+        // outcome token (`answered`, `toolCall`, `noAnswer`), never the text.
+        case commentaryWithheld
         // Plan GC — the OpenAI endpoint a turn took, and a Responses refusal retried on Chat
         // Completions. Endpoint and reason tokens only.
         case routeSelected, routeFallback

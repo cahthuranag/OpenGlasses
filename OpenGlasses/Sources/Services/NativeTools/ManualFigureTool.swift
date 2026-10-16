@@ -33,7 +33,7 @@ final class ManualFigureTool: NativeTool {
             ],
             "document": [
                 "type": "string",
-                "description": "The photographed manual's capture id or title, to choose a book when several are available."
+                "description": "Which manual, when the technician names one: its title or part of it (\"service manual\", \"installation instructions\"), or a photographed manual's capture id. A page number alone is ambiguous when several manuals are loaded."
             ],
             "again": [
                 "type": "boolean",
@@ -46,10 +46,15 @@ final class ManualFigureTool: NativeTool {
     private let documentStore: DocumentStore?
     /// Session to stage on; nil means the shared service. Injectable for tests.
     private let injectedSession: FieldSessionService?
+    /// The technician's words this turn: "page 34 of the service manual" names the book even when
+    /// the call leaves `document` out.
+    private let currentUtterance: @MainActor () -> String?
 
-    init(documentStore: DocumentStore?, sessionService: FieldSessionService? = nil) {
+    init(documentStore: DocumentStore?, sessionService: FieldSessionService? = nil,
+         currentUtterance: @escaping @MainActor () -> String? = { TechnicianWords.current() }) {
         self.documentStore = documentStore
         self.injectedSession = sessionService
+        self.currentUtterance = currentUtterance
     }
 
     func execute(args: [String: Any]) async throws -> String {
@@ -94,7 +99,10 @@ final class ManualFigureTool: NativeTool {
                 session.stageFigure(staged)
                 return show(staged,session:session,opening:"Photographed manual:")
             }
-            if chosen?.isEmpty == false {return "No eligible photographed manual matches that title or capture id."}
+            // A name that is no photograph may still be an imported manual's title.
+            if chosen?.isEmpty == false, !store.manifest.hasDocuments {
+                return "No eligible photographed manual matches that title or capture id."
+            }
         }
 
         guard store.manifest.hasDocuments, let documentStore else {
@@ -114,24 +122,37 @@ final class ManualFigureTool: NativeTool {
         // printed in has been taken out of the vault.
         let isAvailable = VaultManualRemoval.availabilityCheck(forVault: store.manifest.id,
                                                                documentStore: documentStore, capturedCatalog:session.capturedManuals)
+        // Every manual's copy of the page or caption, then the one the technician meant. The store
+        // orders by document name, so "page 34" alone always opened the Installation Instructions
+        // — twice, for a technician who had said "page 34 of the service manual" both times.
         var passage: VaultRetriever.Passage?
         if let requestedFigure, !requestedFigure.isEmpty {
+            var lastProblem: String?
             for label in Self.candidateLabels(for: requestedFigure) {
-                if let hit = documentStore.passages(figure: label, namespace: namespace, limit: 4)
-                    .first(where: { isAvailable($0.documentId) }) {
-                    passage = Self.retrieved(hit)
-                    break
+                let hits = documentStore.passages(figure: label, namespace: namespace, limit: 40)
+                    .filter { isAvailable($0.documentId) }
+                guard !hits.isEmpty else { continue }
+                switch ManualDocumentChoice.pick(hits, document: chosen, said: currentUtterance()) {
+                case .found(let hit): passage = Self.retrieved(hit)
+                case .problem(let sentence): lastProblem = sentence.replacingOccurrences(of: "{what}", with: label)
                 }
+                if passage != nil { break }
             }
+            if passage == nil, let lastProblem { return lastProblem }
             guard passage != nil else {
                 return "No \(requestedFigure) in the manuals loaded for this vault. Ask for it by page number, or search the manuals with manual_lookup."
             }
         } else if let requestedPage {
-            guard let hit = documentStore.passages(onPage: requestedPage, namespace: namespace, limit: 4)
-                .first(where: { isAvailable($0.documentId) }) else {
+            let hits = documentStore.passages(onPage: requestedPage, namespace: namespace, limit: 40)
+                .filter { isAvailable($0.documentId) }
+            guard !hits.isEmpty else {
                 return "Nothing is stored for page \(requestedPage) of the loaded manuals."
             }
-            passage = Self.retrieved(hit)
+            switch ManualDocumentChoice.pick(hits, document: chosen, said: currentUtterance()) {
+            case .found(let hit): passage = Self.retrieved(hit)
+            case .problem(let sentence):
+                return sentence.replacingOccurrences(of: "{what}", with: "Page \(requestedPage)")
+            }
         } else {
             return "Name the figure to show (\"Figure 58\"), a page number, or ask for the last one again."
         }
@@ -200,5 +221,84 @@ final class ManualFigureTool: NativeTool {
                                chunkIndex: p.chunkIndex, text: p.text, page: p.page, section: p.section,
                                similarity: p.similarity, score: p.similarity, matchedTokens: [],
                                kind: p.kind, figure: p.figure)
+    }
+}
+
+/// Which loaded manual a request means (a tester's job 1028).
+///
+/// Two manuals both have a page 34. Asked for "page 34 of the service manual", the tool opened the
+/// Installation Instructions' page 34 twice, because it never chose: it took the first copy the
+/// store returned. The book is chosen from the call's `document`, else from the technician's own
+/// words, and when neither names one and the page is in several books the question goes back.
+///
+/// Pure over passages and strings.
+enum ManualDocumentChoice {
+
+    enum Outcome: Equatable {
+        case found(DocumentStore.Passage)
+        /// What to say instead. `{what}` stands for the page or caption asked for.
+        case problem(String)
+    }
+
+    static func pick(_ hits: [DocumentStore.Passage], document: String?, said: String?) -> Outcome {
+        let names = orderedNames(hits)
+        guard let first = hits.first else { return .problem("Nothing is stored for {what} of the loaded manuals.") }
+        if let document = document?.trimmingCharacters(in: .whitespacesAndNewlines), !document.isEmpty {
+            guard let hit = hits.first(where: { matches($0.documentName, requested: document) }) else {
+                return .problem("{what} is not in a manual called \"\(document)\". It is in "
+                                + names.joined(separator: "; ") + ".")
+            }
+            return .found(hit)
+        }
+        guard names.count > 1 else { return .found(first) }
+        if let said, let named = named(in: said, among: names),
+           let hit = hits.first(where: { $0.documentName == named }) {
+            return .found(hit)
+        }
+        return .problem("{what} is in more than one manual: " + names.joined(separator: "; ")
+                        + ". Ask the technician which, then call again with 'document'. Nothing was opened.")
+    }
+
+    /// Whether `requested` names the manual called `documentName`: part of its title ("service
+    /// manual"), every word of the request in the title, or its initials as the vault writes them
+    /// ("SM", "II").
+    static func matches(_ documentName: String, requested: String) -> Bool {
+        let title = documentName.lowercased(), wanted = requested.lowercased()
+        if title.contains(wanted) { return true }
+        let titleWords = Set(words(title))
+        let wantedWords = words(wanted).filter { $0.count >= 3 && !filler.contains($0) }
+        if !wantedWords.isEmpty, wantedWords.allSatisfy({ titleWords.contains($0) }) { return true }
+        return initials(documentName) == requested.uppercased().filter(\.isLetter)
+    }
+
+    /// The one manual the technician's sentence names by a word that tells the manuals apart —
+    /// "service", "installation" — or nil when it names none, or several.
+    static func named(in said: String, among names: [String]) -> String? {
+        let spoken = Set(words(said.lowercased()))
+        let wordsByName = names.map { ($0, Set(words($0.lowercased()))) }
+        let shared = wordsByName.map(\.1).reduce(wordsByName.first?.1 ?? []) { $0.intersection($1) }
+        let named = wordsByName.filter { _, titleWords in
+            !titleWords.subtracting(shared).subtracting(generic).filter { $0.count >= 3 }
+                .isDisjoint(with: spoken)
+        }
+        return named.count == 1 ? named[0].0 : nil
+    }
+
+    private static let filler: Set<String> = ["the", "of", "and", "page", "manual's"]
+    /// Words that do not tell one book from another in speech: "the manual" is any of them.
+    private static let generic: Set<String> = ["manual", "manuals", "guide", "book", "the", "and", "for"]
+
+    private static func words(_ text: String) -> [String] {
+        text.split(whereSeparator: { !($0.isLetter || $0.isNumber || $0 == "'") }).map(String.init)
+    }
+
+    /// "SLP99UHVK Service Manual" → "SM": the title's words, the model-like ones left out.
+    private static func initials(_ title: String) -> String {
+        String(words(title).filter { !$0.contains(where: \.isNumber) }.compactMap(\.first)).uppercased()
+    }
+
+    private static func orderedNames(_ hits: [DocumentStore.Passage]) -> [String] {
+        var seen = Set<String>()
+        return hits.map(\.documentName).filter { seen.insert($0).inserted }
     }
 }

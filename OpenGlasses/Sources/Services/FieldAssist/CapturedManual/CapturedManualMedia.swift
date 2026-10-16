@@ -89,6 +89,41 @@ enum CapturedManualMedia {
         guard let bytes = document.dataRepresentation(), bytes.count <= CapturedManualContract.maximumPDFBytes else {
             throw CapturedManualStore.Failure.limits
         }
+        return try pinDates(bytes,to:date)
+    }
+    /// Some PDFKit releases rewrite Info dates during serialization, ignoring the attributes
+    /// above. Patch only the two unique date literals in our own unencrypted encoder output,
+    /// preserving their byte widths so every cross-reference offset remains valid. Ambiguous
+    /// or changed encoder output fails closed, and the final parsed dates must verify.
+    static func pinDates(_ data:Data,to date:Date) throws -> Data {
+        let formatter = DateFormatter();formatter.locale = Locale(identifier:"en_US_POSIX")
+        formatter.calendar = Calendar(identifier:.gregorian);formatter.timeZone = TimeZone(secondsFromGMT:0)
+        formatter.dateFormat = "yyyyMMddHHmmss"
+        let digits = Data(formatter.string(from:date).utf8)
+        guard digits.count == 14 else {throw CapturedManualStore.Failure.unavailable}
+        var bytes = data
+        for key in ["/CreationDate","/ModDate"] {
+            let name = Data(key.utf8)
+            guard let field = bytes.range(of:name),
+                  bytes.range(of:name,in:field.upperBound..<bytes.endIndex) == nil else {throw CapturedManualStore.Failure.unavailable}
+            var start = field.upperBound
+            while start < bytes.endIndex && [9,10,12,13,32].contains(bytes[start]) {start += 1}
+            guard start < bytes.endIndex,bytes[start] == 40 else {throw CapturedManualStore.Failure.unavailable}
+            start += 1
+            guard let end = bytes[start...].firstIndex(of:41),end - start <= 32 else {throw CapturedManualStore.Failure.unavailable}
+            let original = bytes.subdata(in:start..<end)
+            guard original.count >= 16,original.prefix(2) == Data("D:".utf8),
+                  original.dropFirst(2).prefix(14).allSatisfy({(48...57).contains($0)}),
+                  original.dropFirst(16).allSatisfy({(48...57).contains($0) || [90,43,45,39].contains($0)}) else {throw CapturedManualStore.Failure.unavailable}
+            // Retain the encoder's timezone spelling/width, but make it UTC for the frozen digits.
+            let suffix = original.dropFirst(16).map {(48...57).contains($0) ? UInt8(48) : $0}
+            bytes.replaceSubrange(start..<end,with:Data("D:".utf8) + digits + Data(suffix))
+        }
+        guard bytes.count == data.count,let verified = PDFDocument(data:bytes),
+              [PDFDocumentAttribute.creationDateAttribute,.modificationDateAttribute].allSatisfy({ key in
+                  guard let saved = verified.documentAttributes?[key] as? Date else {return false}
+                  return abs(saved.timeIntervalSince(date)) < 1
+              }) else {throw CapturedManualStore.Failure.unavailable}
         return bytes
     }
     static func pageCount(_ bytes: Data) throws -> Int {

@@ -36,6 +36,21 @@ final class CapturedManualMediaTests:XCTestCase {
         XCTAssertEqual(pdf.pageCount,3)
         let date = try XCTUnwrap(pdf.documentAttributes?[PDFDocumentAttribute.creationDateAttribute] as? Date)
         XCTAssertEqual(date.timeIntervalSince1970,Double(m.capturedAt),accuracy:1)
+        let modified = try XCTUnwrap(pdf.documentAttributes?[PDFDocumentAttribute.modificationDateAttribute] as? Date)
+        XCTAssertEqual(modified.timeIntervalSince1970,Double(m.capturedAt),accuracy:1)
+        // Exercise the post-serialization repair even on PDFKit releases that honor attributes.
+        pdf.documentAttributes = [PDFDocumentAttribute.creationDateAttribute:Date(timeIntervalSince1970:1),
+                                  PDFDocumentAttribute.modificationDateAttribute:Date(timeIntervalSince1970:2)]
+        let rewritten = try XCTUnwrap(pdf.dataRepresentation())
+        let pinned = try CapturedManualMedia.pinDates(rewritten,to:Date(timeIntervalSince1970:Double(m.capturedAt)))
+        XCTAssertEqual(pinned.count,rewritten.count,"cross-reference byte offsets must not move")
+        XCTAssertEqual(try CapturedManualMedia.pageCount(pinned),3)
+        let repaired = try XCTUnwrap(PDFDocument(data:pinned))
+        for key in [PDFDocumentAttribute.creationDateAttribute,.modificationDateAttribute] {
+            let saved = try XCTUnwrap(repaired.documentAttributes?[key] as? Date)
+            XCTAssertEqual(saved.timeIntervalSince1970,Double(m.capturedAt),accuracy:1)
+        }
+        XCTAssertThrowsError(try CapturedManualMedia.pinDates(rewritten + Data("/CreationDate".utf8),to:date))
         XCTAssertNil(jpeg.range(of:Data("GPSLatitude".utf8)))
         #if os(iOS)
         XCTAssertEqual(try root.resourceValues(forKeys:[.isExcludedFromBackupKey]).isExcludedFromBackup,true)

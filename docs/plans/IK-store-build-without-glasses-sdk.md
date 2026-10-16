@@ -2,8 +2,9 @@
 
 **Status:** 📝 Drafted 2026-10-16 — nothing implemented.
 **Track:** Distribution (both the consumer app and Field Assist).
-**Related:** Plan [IL](IL-technician-app.md) (the licence-only technician app, which ships this same
-variant), Plan [FY](FY-rename-to-avenkin.md) (the listing and the decision not to tie the name to the
+**Related:** Plan [IL](IL-technician-app.md) (the licence-only technician app; since 2026-10-17 it
+keeps the glasses, with the owner renewing the Meta registration if required, and uses this variant
+only if Meta needs approval before a public listing), Plan [FY](FY-rename-to-avenkin.md) (the listing and the decision not to tie the name to the
 hardware), Plan [CT](CT-org-configuration-profiles.md) (the restricted edition), Plan
 [DQ](DQ-third-party-telemetry-opt-out.md) (the SDK's telemetry opt-out and its guard tests), Plan
 [HX](HX-glasses-link-and-device-state.md) (the link seam this plan stubs), Plan
@@ -192,5 +193,7 @@ reviewer cannot test, and no Bluetooth usage string that names glasses the app c
 1. Decision 1: is the same app record acceptable to Meta, or should the glasses beta move to its
    own bundle id?
 2. Decision 4b: EVEN G2 in the first store build, or hidden until after first review?
-3. Which goes to the store first: the paid consumer listing, the free technician app (Plan IL), or
-   both together? This plan serves either; IL depends on it.
+3. Is this plan still needed? Since 2026-10-17 the technician app (Plan IL) keeps the glasses, with
+   the owner renewing the Meta registration if required, so this variant matters only if Meta
+   needs approval before a public listing, or if the paid consumer app should reach the store
+   without glasses. If neither applies, it stays drafted and unscheduled.

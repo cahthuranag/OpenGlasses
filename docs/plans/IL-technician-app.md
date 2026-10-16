@@ -1,15 +1,17 @@
 # Plan IL — The Technician App (a free download, unlocked by the organisation's licence)
 
-**Status:** 📝 Drafted 2026-10-16 — nothing implemented. The product name is not chosen yet (see
-"Name").
+**Status:** 📝 Drafted 2026-10-16, revised 2026-10-17 by the owner: **nothing works without a licence
+code.** No demo mode; a prospect gets a pilot code. Glasses stay in, with the owner renewing the
+Meta registration if required. Nothing implemented. The product name is not chosen yet (see "Name").
 **Track:** Field Assist (B2B) distribution.
-**Depends on:** Plan [IK](IK-store-build-without-glasses-sdk.md) P0–P2 (the build without the
-glasses SDK; this app ships that variant until Meta approves the release channel).
+**Depends on:** nothing unbuilt. Plan [IK](IK-store-build-without-glasses-sdk.md) (a build without
+the glasses SDK) is the fallback only if Meta will not let this app be published with the SDK
+(decision 5).
 **Related:** Plan [CT](CT-org-configuration-profiles.md) (the Field Assist edition inside the main
 app, which is the runtime shape this app fixes in place), Plan
 [EE](EE-field-assist-commercial-licensing.md) (tiers and Guideline 3.1.3(c)), Plan
 [EI](EI-licence-issuance-portal.md) (a partner issues codes), Plan
-[FR](FR-fictional-example-vault.md) (the fictional vault a reviewer or a prospect can try), Plan
+[FR](FR-fictional-example-vault.md) (the fictional vault, as the App Reviewer's licence content), Plan
 [FY](FY-rename-to-avenkin.md) (the listing, and why a bundle id is permanent), Plan
 [IP](IP-organisation-feature-switches.md) (what an organisation has switched on).
 **Origin:** The owner and a partner, 2026-10-16. The paid consumer app on the store is the wrong
@@ -32,9 +34,12 @@ A second app on the store, "[Product] by Avenkin":
 - **Field Assist only.** The Job tab, Modes, vaults and manuals, procedures, the debrief, van
   stock, team learnings, the office connection, CarPlay jobs and the watch. No Chat tab, personas,
   music, home, health or fitness, and no Medical Compliance.
-- **Something to try before a licence.** With no code it opens the fictional example vault (Plan
-  FR) in a demo job. A prospect, or an App Reviewer, can ask it a question about an invented furnace
-  with their phone and earbuds, which is what the partner's customers will want to do first.
+- **Nothing without a licence.** Before activation the app shows one screen: scan the licence QR
+  or enter the code. Every feature, tool, tab, setting and service, including the assistant itself,
+  stays behind that screen. A prospect trying it with their own phone and earbuds, as the partner's
+  customers will want to, gets a pilot code from the vendor or the partner. That is the existing
+  `plan: "pilot"` code with a 60–90 day expiry (Plan EE), issued through Plan EI. The trial is then
+  the real product with the organisation's own vault, not a demo.
 - **The same engine.** One source tree, the same tests. The technician app is a second target with
   its own `Info.plist`, entitlements, icon and compile condition. It is not a fork.
 
@@ -82,14 +87,32 @@ who buys for themselves. Nothing is taken out of it.
    who has both apps has two separate sets of jobs. Sharing an App Group across two products would
    tie their release trains together, and an organisation's data should not sit inside a consumer
    app's container.
-4. **Demo mode is the fictional vault, read-only.** No licence: one bundled fictional vault, a demo
-   job that is never sent anywhere, no office connection, no team learnings, no van stock. The
-   reviewer note gives a demo licence code for everything else.
-5. **The glasses arrive with Meta's approval, as in the main app.** The technician app ships IK's
-   store variant. When the release channel is approved it gets the SDK the same way the main app
-   does, and its own Meta app registration.
+4. **A hard licence wall, enforced at launch and not only in the UI** (owner, 2026-10-17). With no
+   valid licence evidence the app constructs no assistant, wake word, tool registry, camera,
+   location or network client, only the activation screen and `LicenseService`. The activation
+   screen is the QR scanner (the existing CT enrolment scan) and a code field. The wall is a single
+   `ActivationGate` checked where `AppState` starts its services, so a missed `if` in a view cannot
+   leak a feature. A test boots the app state with no licence and asserts nothing else started.
+5. **The glasses stay in.** The technician app links the Meta SDK like the main app and gets its
+   own Meta app registration under its own bundle id, which the owner registers, and renews if
+   Meta requires. A licence-gated app's users are an organisation's technicians, which is the
+   population a release channel is meant for. If Meta still requires approval before the app may
+   be listed publicly, the app ships Plan IK's variant until it is granted.
 6. **The watch comes in P3, not at launch.** Its companion id is tied to the host app. The first
    release has no watch app, and a second watch target follows once the first review has passed.
+7. **When a licence lapses, the work stays readable and nothing new starts.** Expiry closes the
+   wall again for new jobs and the assistant, but the technician's finished jobs stay readable, and
+   reports already composed can still be sent. Losing an unsent job report because the invoice was
+   late would hurt the customer, not the organisation that let the licence lapse. Renewal is a new
+   code, scanned or entered on the same screen.
+8. **App Review gets a review licence code, and the listing says who the app is for.** The review
+   notes carry a code (tier `team`, `plan: "review"`, a short expiry) whose content is the fictional
+   vault (Plan FR), so no customer's manuals are ever in a review build. The listing says the app is
+   for service organisations that hold an Avenkin licence, and any such organisation can buy one.
+   That addresses the "limited audience" question App Review asks of apps built for a single company
+   (the alternative channel for those is a custom app through Apple Business Manager, which this is
+   not).
+
 
 ## Name
 
@@ -131,36 +154,42 @@ xcstrings scripted-edit rules).
   the main app). Target `AvenkinField`: the same sources minus the inventory's path exclusions,
   `SWIFT_ACTIVE_COMPILATION_CONDITIONS: AVENKIN_TECHNICIAN_APP`, its own
   `AvenkinField/Info.plist` (committed; only the usage strings a technician app needs: microphone,
-  speech, camera, photos, location for job start and end, Bluetooth for headsets and EVEN, local
-  network for the office), its own entitlements (App Group, CarPlay voice) and the IK store
-  variant (no glasses SDK).
+  speech, camera, photos, location for job start and end, Bluetooth for headsets and glasses, local
+  network for the office), its own entitlements (App Group, CarPlay voice, and the Wi-Fi
+  entitlements the glasses SDK needs), the glasses SDK and its own `MWDAT` registration keys. Plan
+  IK's variant can be composed instead (decision 5).
 - `#if AVENKIN_TECHNICIAN_APP` at the registration points: the edition is fixed to
   `.fieldAssist`, `Config.fieldAssistEnabled` is forced on and hidden, consumer tools are not
   registered, the Chat tab and personas do not exist, and Settings shows the Field Assist and
   Devices & Privacy categories only.
 - **Exit tests:** both targets build. A technician-target test bundle runs the Field Assist,
   vault, job, office and learnings suites. `nm` on the binary finds no `StoreKit`, `HealthKit`,
-  `HomeKit` or `MusicKit` symbol and no `MWDAT` symbol. The main app's suite is unchanged.
+  `HomeKit` or `MusicKit` symbol. The main app's suite is unchanged.
 
 ### P2 — First run without a licence, and with one
 
-- Onboarding for the technician app: "Set up with my company" (scan the setup QR or enter the
-  code, through the existing `LicenseService.activate` and CT enrolment) or "Try it" (the
-  fictional vault demo of decision 4). No consumer pages.
-- Demo mode: a `DemoEntitlement` that grants `bundledVaults` for the fictional vault only, with
-  every send route refused by name ("Demo jobs are not sent anywhere"). It is evidence of its own
-  kind in `FieldAssistEntitlementEvaluator`, so a demo can never satisfy a capability check meant
-  for a licence.
-- A licence that expires drops back to demo mode with the technician's jobs intact and readable.
-- **Exit test:** a headless test drives both paths. A demo job cannot be delivered, synced or
-  exported to the office. An activated licence opens the organisation's vaults and features
-  (through Plan IP's switches once that lands).
+- `ActivationGate` (decision 4): the one place that decides whether the app is activated, from
+  `FieldAssistEntitlementEvaluator`'s licence evidence only (this binary has no StoreKit evidence).
+  `AppState` asks it before starting any service. Activation runs through the existing
+  `LicenseService.activate`, and a profile QR runs the CT enrolment, which carries the licence.
+  Onboarding is the activation screen, then the existing Field Assist pages (headset, microphone,
+  the organisation's name). There are no consumer pages and no "skip".
+- The lapsed state (decision 7): finished jobs readable, composed reports sendable, everything else
+  behind the wall, and the renewal screen.
+- Camera permission for the QR scan is the only permission asked before activation. Microphone,
+  speech, location and Bluetooth are asked after, when the feature that needs them first runs.
+- **Exit tests:** with no licence, booting `AppState` starts no service but `LicenseService`, and
+  every tool call, App Intent, Siri phrase, CarPlay scene and URL scheme route is refused by name
+  (an exhaustive list test over the registered intents, scenes and URL handlers). A valid code opens
+  the organisation's vaults and features (through Plan IP's switches once that lands). An expired
+  code keeps finished jobs readable and lets a composed report send, but starts nothing new.
 
 ### P3 — Name, icon, listing, watch, submission
 
 - The chosen name in `CFBundleDisplayName`, `BrandName.productName`, the icon set, the launch
   screen and the catalogue. The App Store listing, the privacy nutrition label (recomputed:
-  smaller than the main app's), the support URL, and review notes with a demo code.
+  smaller than the main app's), the support URL, and review notes with the review licence code
+  (decision 8).
 - The watch app as a second watch target tied to the technician app (decision 6), if the first
   review has passed.
 - `Scripts/release-dossier.sh` learns the second target.
@@ -172,8 +201,8 @@ xcstrings scripted-edit rules).
 
 - A technician at a partner's customer installs the app from the store, scans the organisation's
   QR, and runs a job by voice with AirPods without seeing a purchase screen or a consumer feature.
-- A prospect with no code asks the demo about the fictional furnace and gets a cited answer, and
-  nothing they do leaves the phone.
+- With no code, the app does nothing but ask for one: no assistant, no tool, no Siri phrase, no
+  CarPlay scene. A prospect with a pilot code gets the real product for the pilot's length.
 - Every Field Assist test passes in both targets, and the main app is unchanged for its users.
 
 ## Open questions for the owner
@@ -183,5 +212,7 @@ xcstrings scripted-edit rules).
 2. Decision 2: the bundle id.
 3. Should an organisation's existing main-app installs be able to move their jobs into the
    technician app (an export and import of the job store), or do they start fresh?
-4. Timing against Plan IK: submit the technician app first (free, organisation-driven, the
-   partner's rollout) or the paid consumer listing first?
+4. Decision 5: does Meta's registration for this app allow a public App Store listing with the SDK
+   linked, or is approval needed first (in which case the first release ships Plan IK's variant)?
+5. Decision 7: is "finished jobs readable, composed reports sendable" right for a lapsed licence,
+   or should a lapse lock everything, as activation does?

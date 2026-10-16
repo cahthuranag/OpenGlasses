@@ -15,9 +15,10 @@ final class TaskTool: NativeTool {
     one; 'decline' ("skip that", "no") and 'defer' ("later", "next visit") keep it on the record as \
     recommended-but-not-done; 'start' picks up a task accepted earlier; 'done' closes the task the \
     technician is working on, with 'completion_note' for what they said they did ("replaced the \
-    ignitor, 47 ohms before"); 'abandon' gives one up; 'add' with 'title' records work the \
-    technician did that nobody recommended ("add a task: cleaned the condensate trap") and starts \
-    it immediately. Omit 'task_id' and the verb applies to the task in progress, or to the latest \
+    ignitor, 47 ohms before") — only once they have said the work is done: a reading or a finding \
+    is not a repair, and 'done' is refused until they say so; 'abandon' gives one up; 'add' with \
+    'title' records work the technician did that nobody recommended ("add a task: cleaned the \
+    condensate trap") and starts it immediately — work already on the job is not added twice. Omit 'task_id' and the verb applies to the task in progress, or to the latest \
     recommendation when none is running. Pass 'read_back' to hear the whole job so far. Repeat the \
     confirmation this returns to the technician. Requires an active session.
     """
@@ -59,9 +60,14 @@ final class TaskTool: NativeTool {
 
     /// Session to act on; nil means the shared service. Injectable for tests.
     private let injectedSession: FieldSessionService?
+    /// The technician's words this turn, read at execution time. Nil (nothing spoken or typed)
+    /// leaves the completion gate out of the way.
+    private let currentUtterance: @MainActor () -> String?
 
-    init(sessionService: FieldSessionService? = nil) {
+    init(sessionService: FieldSessionService? = nil,
+         currentUtterance: @escaping @MainActor () -> String? = { TechnicianWords.current() }) {
         self.injectedSession = sessionService
+        self.currentUtterance = currentUtterance
     }
 
     private var session: FieldSessionService { injectedSession ?? .shared }
@@ -101,6 +107,14 @@ final class TaskTool: NativeTool {
         let title = (args["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !title.isEmpty else {
             return "Say what the task is — \"add a task: cleaned the condensate trap\"."
+        }
+        // The same work already on this unit is that task, not a second one: one repair reported
+        // twice put two completed replacements on the report. Another unit's is its own work.
+        if let job = session.activeSession, let existing = job.tasks.last(where: {
+            $0.status != .declined && $0.status != .abandoned && job.belongsToCurrentEquipment($0)
+                && TaskTitleMatch.isSameWork($0.title, title)
+        }) {
+            return sameWork(existing)
         }
         do {
             let task = try session.addOperatorTask(
@@ -171,6 +185,9 @@ final class TaskTool: NativeTool {
         }
         let note = (args["completion_note"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let verified = (args["verified"] as? Bool) ?? false
+        if verb == "done", let refusal = completionRefusal(task: task, verified: verified) {
+            return refusal
+        }
         do {
             let closed = verb == "done"
                 ? try session.completeTask(id: task.id, note: note, confirmed: verified)
@@ -189,6 +206,47 @@ final class TaskTool: NativeTool {
             return line
         } catch {
             return error.localizedDescription
+        }
+    }
+
+    /// Why `done` may not close `task` on what the technician said this turn, or nil when it may.
+    ///
+    /// A check closes on the technician saying it passed; any other task on them saying the work
+    /// is done. The note the model writes is not evidence — it wrote "Replaced hot-surface
+    /// ignitor" for a technician who had only measured one.
+    private func completionRefusal(task: FieldSession.Task, verified: Bool) -> String? {
+        guard let said = currentUtterance()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !said.isEmpty else { return nil }
+        if task.isVerificationTask || verified {
+            guard !TaskCompletionStatement.statesPassedCheck(said) else { return nil }
+            return "Not closed: the technician has not said '\(task.title)' passed. Ask how the "
+                + "check went, and close it with verified true when they say it passed. "
+                + VerificationRequirement.notYetVerified
+        }
+        guard !TaskCompletionStatement.states(said, completing: task.title) else { return nil }
+        return "Not closed: the technician has not said '\(task.title)' is done — what they said "
+            + "is not a finished repair. It stays \(task.status.rawValue). Close it when they tell "
+            + "you the work is finished, in their words."
+    }
+
+    /// What `add` says when the work is already on the job — and, when that task is still open,
+    /// what it did with it instead.
+    private func sameWork(_ existing: FieldSession.Task) -> String {
+        switch existing.status {
+        case .done:
+            return "'\(existing.title)' is already on this job as done, so it was not added again. "
+                + "Nothing changed."
+        case .inProgress:
+            return "'\(existing.title)' is already on this job and in progress, so it was not added "
+                + "again. Say 'done' on it when the technician says it is finished."
+        default:
+            do {
+                let started = try session.startTask(id: existing.id)
+                return "'\(started.title)' was already on this job, so it was started rather than "
+                    + "added again. Say 'done' on it when the technician says it is finished."
+            } catch {
+                return error.localizedDescription
+            }
         }
     }
 

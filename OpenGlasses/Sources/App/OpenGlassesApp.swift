@@ -1177,6 +1177,10 @@ class AppState: ObservableObject, AppStateProtocol {
         }
     }
     @Published var currentTranscription: String = ""
+    /// The words that opened the turn in flight. Unlike `currentTranscription`, a spoken "yes" to a
+    /// confirmation card does not replace it, so a tool later in the same turn still reads what the
+    /// technician asked for (`TechnicianWords`).
+    private(set) var turnUtterance: String = ""
     @Published var lastResponse: String = ""
     /// In-flight assistant reply for the Chat tab, streamed token-by-token where the provider
     /// supports it (on-device models today). The Chat thread renders this as a live bubble, then
@@ -6718,6 +6722,7 @@ class AppState: ObservableObject, AppStateProtocol {
         }
 
         currentTranscription = text
+        turnUtterance = text
         isListening = false
         errorMessage = nil
         speechService.playEndListeningTone()
@@ -7164,6 +7169,7 @@ class AppState: ObservableObject, AppStateProtocol {
         guard !query.isEmpty else { return }
 
         currentTranscription = query
+        turnUtterance = query
         isListening = false
         errorMessage = nil
 

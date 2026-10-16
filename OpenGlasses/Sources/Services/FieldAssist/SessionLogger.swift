@@ -10,7 +10,10 @@ import Foundation
 /// The append-only design preserves a defensible audit trail for compliance use cases
 /// (EPA 608 refrigerant recovery, warranty submissions, work-order records).
 final class SessionLogger {
-    let session: FieldSession
+    /// The record as last written. Kept current by `updateSession`: an updater applied to the copy
+    /// taken when the logger was made rewrote a finished job as it stood at its start — no job
+    /// number, still in progress, no conversation — and dropped it from the Jobs list.
+    private(set) var session: FieldSession
     let root: URL
 
     private let logURL: URL
@@ -286,6 +289,7 @@ final class SessionLogger {
     func updateSession(_ updater: (inout FieldSession) -> Void) -> FieldSession {
         var copy = session
         updater(&copy)
+        session = copy
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = .prettyPrinted

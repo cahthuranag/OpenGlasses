@@ -80,6 +80,17 @@ final class ProposeTaskTool: NativeTool {
             return FieldSessionError.recommendationNeedsCitation.localizedDescription
         }
 
+        // "Recommend once per thing to be done": work already on this unit, open or finished, is
+        // not recommended a second time.
+        if let job = session.activeSession, let existing = job.tasks.last(where: {
+            ($0.status.isOpen || $0.status == .done) && job.belongsToCurrentEquipment($0)
+                && TaskTitleMatch.isSameWork($0.title, title)
+        }) {
+            let state = existing.status == .done ? "done" : existing.status.rawValue
+            return "'\(existing.title)' is already on this job (\(state), task \(existing.id)), so it "
+                + "was not recommended again. Use the task tool on it instead."
+        }
+
         let parts = session.partsVerifier.verify(all: Self.partNumbers(args["parts"]))
         let procedureId = (args["procedure_id"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)

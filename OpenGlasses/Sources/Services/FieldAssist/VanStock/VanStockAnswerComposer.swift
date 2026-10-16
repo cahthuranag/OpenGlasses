@@ -48,6 +48,17 @@ struct VanStockAnswerComposer {
         "Nothing on the van list matches \(reference). Nothing was changed."
     }
 
+    /// A check that found nothing. It ends the search: a tester's "do I have a flame sensor in my
+    /// truck" was looked up five times under five names, used the turn's every tool round and
+    /// failed without an answer. The list was searched by number and by name both.
+    func notCarried(_ reference: String) -> String {
+        "Nothing on the van list matches \(reference), by part number or by name: as far as the van "
+            + "log knows, there is none on the van. Say so — do not look it up again under another "
+            + "name unless the technician gives one. "
+            + "Offer to ask the office for one, and request it only if the technician says yes. "
+            + "Nothing was changed."
+    }
+
     func emptyVan() -> String {
         "The van list is empty: nothing has been loaded or counted yet. The technician can say what "
             + "they have loaded, count what is on the shelves, or import a spreadsheet from the Van stock "

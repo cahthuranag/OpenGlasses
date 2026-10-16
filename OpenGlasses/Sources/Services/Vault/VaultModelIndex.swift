@@ -39,6 +39,103 @@ struct VaultModelIndex: Equatable {
 
     var isEmpty: Bool { models.isEmpty }
 
+    /// The series every model section belongs to: the start all their names share (`SLP99UH` for
+    /// `SLP99UH070XV36BK` … `SLP99UH135XV60DK`), when there are several sections and it is long
+    /// enough to be a product line rather than a manufacturer's letter. A vault written for a whole
+    /// series covers a member the model list does not detail; nil when the sections share nothing.
+    var seriesStem: String? {
+        let names = seriesNames
+        guard names.count >= 2, var stem = names.first else { return nil }
+        for name in names.dropFirst() {
+            while !name.hasPrefix(stem) { stem.removeLast() }
+        }
+        guard stem.count >= Self.seriesMinimumLength, stem.contains(where: \.isNumber),
+              stem.contains(where: \.isLetter) else { return nil }
+        return stem
+    }
+
+    static let seriesMinimumLength = 5
+
+    /// The section names the series is read from: those that are one model number (a heading such
+    /// as `R-454B (A2L) refrigerant detection` is a topic, not a model), in the largest group that
+    /// starts alike. A tie between groups is no series.
+    private var seriesNames: [String] {
+        let single = models.map(\.name)
+            .filter { !$0.contains(where: \.isWhitespace) }
+            .map(EquipmentRecognition.normalised)
+            .filter { $0.count > Self.seriesMinimumLength }
+        let groups = Dictionary(grouping: single) { String($0.prefix(Self.seriesMinimumLength)) }
+            .values.sorted { $0.count > $1.count }
+        guard let largest = groups.first, largest.count >= 2 else { return [] }
+        if groups.count > 1, groups[1].count == largest.count { return [] }
+        return largest
+    }
+
+    /// What every listed name looks like after the stem, position by position: the character
+    /// itself where all of them agree (`XV`, the closing `K`), else digit or letter. Nil when the
+    /// names differ in length or in kind at a position — no shape to hold a stranger to.
+    private var seriesShape: [ShapeSlot]? {
+        guard let stem = seriesStem else { return nil }
+        let rests = seriesNames.map { Array($0.dropFirst(stem.count)) }
+        guard let length = rests.first?.count, length > 0, rests.allSatisfy({ $0.count == length }) else {
+            return nil
+        }
+        var shape: [ShapeSlot] = []
+        for position in 0..<length {
+            let column = rests.map { $0[position] }
+            if Set(column).count == 1 {
+                shape.append(.literal(column[0]))
+            } else if column.allSatisfy(\.isNumber) {
+                shape.append(.digit)
+            } else if column.allSatisfy(\.isLetter) {
+                shape.append(.letter)
+            } else {
+                return nil
+            }
+        }
+        return shape
+    }
+
+    private enum ShapeSlot: Equatable {
+        case literal(Character), digit, letter
+
+        func admits(_ character: Character) -> Bool {
+            switch self {
+            case .literal(let expected): return character == expected
+            case .digit: return character.isNumber
+            case .letter: return character.isLetter
+            }
+        }
+    }
+
+    /// The series `token` is a member of: the stem, then the series' own shape — said whole, or
+    /// one character short as a model is often said (`…36B` for `…36BK`). `SLP99UH090XV36BK` is a
+    /// member; `SLP99UH070XB36B` is not, because every listed model has `XV` there, and a changed
+    /// letter is another product (Job 1011).
+    func series(of token: String) -> String? {
+        guard let stem = seriesStem, let shape = seriesShape else { return nil }
+        let wanted = EquipmentRecognition.normalised(token)
+        guard wanted.hasPrefix(stem) else { return nil }
+        let rest = Array(wanted.dropFirst(stem.count))
+        guard rest.count == shape.count || rest.count == shape.count - 1, !rest.isEmpty else { return nil }
+        return zip(shape, rest).allSatisfy { $0.admits($1) } ? stem : nil
+    }
+
+    /// A series member named in a sentence, as said — including one the transcriber split at the
+    /// series name ("SLP 99UH090XV36BK"), joined back up.
+    func seriesMember(in text: String) -> String? {
+        guard seriesStem != nil else { return nil }
+        let words = text.split(whereSeparator: { !($0.isLetter || $0.isNumber || $0 == "-") }).map(String.init)
+        for (i, word) in words.enumerated() {
+            if series(of: word) != nil, Self.isModelLike(word) { return word }
+            if i + 1 < words.count {
+                let joined = word + words[i + 1]
+                if series(of: joined) != nil, Self.isModelLike(joined) { return joined }
+            }
+        }
+        return nil
+    }
+
     // MARK: - Building
 
     init(store: VaultStore) {
@@ -182,6 +279,7 @@ struct VaultModelIndex: Equatable {
     func isKnown(token: String) -> Bool {
         let needle = token.uppercased()
         if vaultTokens.contains(needle) { return true }
+        if series(of: needle) != nil { return true }
         return !resolve(token: needle).isEmpty
     }
 

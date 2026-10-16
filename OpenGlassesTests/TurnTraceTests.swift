@@ -115,6 +115,26 @@ final class TurnTraceTests: XCTestCase {
         XCTAssertEqual(turn.failure?.category, .offline)
     }
 
+    /// The turn that closes a job ends its conversation and the job before it seals; it still
+    /// belongs to both. A turn that starts a job takes the ids it ends with.
+    func testATurnThatClosesTheJobKeepsTheJobItBeganIn() {
+        var sunk: [TurnTimeline] = []
+        TurnRecorder.traceSink = { sunk.append($0) }
+        var context: (threadId: String?, fieldSessionId: String?) = ("thread-1027", "job-1027")
+        TurnRecorder.traceContext = { context }
+
+        TurnRecorder.beginTurn()
+        context = (nil, nil)            // field_session end: the job and its thread close mid-turn
+        TurnRecorder.endTurn()
+
+        TurnRecorder.beginTurn()
+        context = ("thread-2", "job-2") // a turn that opens a job
+        TurnRecorder.endTurn()
+
+        XCTAssertEqual(sunk.map(\.threadId), ["thread-1027", "thread-2"])
+        XCTAssertEqual(sunk.map(\.fieldSessionId), ["job-1027", "job-2"])
+    }
+
     func testTheTranscriberIsClaimedWithTheSpeechEndAndNotInheritedByALaterTurn() {
         var sunk: [TurnTimeline] = []
         TurnRecorder.traceSink = { sunk.append($0) }

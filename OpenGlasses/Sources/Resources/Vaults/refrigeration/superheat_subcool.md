@@ -21,27 +21,29 @@ Both use values from the PT chart for the refrigerant in question (`pt_charts.md
 4. Clamp a calibrated pipe thermometer on the liquid line within 6 inches of the condenser exit.
 5. Read liquid-line pressure → convert to saturation temp via PT chart.
 6. `subcool = saturation_temp − measured_liquid_line_temp`.
-7. Target: most manufacturers spec **8-12°F subcool**. Always confirm against the nameplate sticker — Carrier 30RB and many newer units publish unit-specific target subcool.
+7. Target: the unit's own specification, from the nameplate or installation manual. Commonly 8–14°F, but specifications vary widely (one manufacturer lists 5–7°F for a TXV condenser), so never charge to a generic number when the unit's figure is available.
 
 ## Measurement procedure (fixed-orifice / cap-tube systems — target superheat)
 
 1. Same setup as above, but clamp thermometer on the suction line 6 inches from the compressor.
 2. Read suction pressure → saturation temp via PT chart.
 3. `superheat = measured_suction_line_temp − saturation_temp`.
-4. Target superheat depends on indoor wet-bulb and outdoor dry-bulb. Use the manufacturer's superheat chart, or as a rough field starting point:
-   - 75°F indoor / 80°F outdoor: ~15°F superheat
-   - 75°F indoor / 95°F outdoor: ~10°F superheat
-   - 80°F indoor / 95°F outdoor: ~8°F superheat
+4. Target superheat comes from a chart: indoor return-air wet-bulb and outdoor dry-bulb (in the shade, at the condenser inlet) give the target. Use the manufacturer's chart for the unit; generic charts are a fallback only. Targets are typically 5–25°F and rise as indoor wet-bulb rises. A blank cell in the chart means the system is outside its design range and no target applies.
+5. Measured superheat above target → add refrigerant; below target → recover. The target moves as indoor wet-bulb changes during charging, so re-check it.
 
 ## Interpretation cheat sheet
 
-| Subcool | Superheat | Likely diagnosis |
-|---------|-----------|------------------|
-| Low (<5°F) | High (>20°F) | Undercharge |
-| High (>15°F) | Low (<5°F) | Overcharge |
-| Low | Low | Restricted metering device + overcharge — investigate further |
-| High | High | Restricted liquid line / metering device starvation |
-| Normal | Normal | Charge is correct — look elsewhere for the complaint (airflow, sensors, controls) |
+Check airflow, filters, coils and your instruments first: poor airflow makes every number below misleading. A TXV/EEV holds superheat roughly constant, so read charge from **subcooling**. A fixed orifice lets superheat float with load and charge, so read charge from **superheat**; its subcooling swings with load.
+
+| Superheat | Subcooling | Points to | Then check |
+|-----------|------------|-----------|------------|
+| High | Low | Undercharge / leak | Find the leak before adding refrigerant |
+| High | High | Restriction on the high side: liquid-line restriction (drier, screen, kinked copper) or a metering device restricting (small or blocked piston, TXV closed or bulb lost its charge). Suction reads low, so it mimics undercharge | Temperature drop across the drier; don't add refrigerant |
+| Low | High | Overcharge (on a TXV it shows mainly as high subcooling and high head) | Rule out a dirty or blocked condenser and low condenser airflow before recovering any charge |
+| Low | Low | Metering device overfeeding (TXV stuck open, oversized or unseated piston); also an inefficient compressor or reversing-valve bypass | Suction and head pressure, compressor amps |
+| Normal | Normal | Charge is probably right — look at airflow, controls and sensors | — |
+
+Low suction pressure with **low** superheat usually means the evaporator is starved of heat — low airflow or load (dirty filter or coil, restricted return, wrong blower speed, low return-air temperature) — not a charge problem. High head pressure with **high** subcooling points to overcharge, a dirty or blocked condenser, or non-condensables. Suction pressure alone is not a reliable sign of low charge.
 
 ## Common mistakes
 
@@ -56,3 +58,7 @@ Charging adjustments require connecting a refrigerant cylinder. Before opening t
 - Confirm proper PPE (refrigerant gloves, eye protection).
 - Verify refrigerant in the cylinder matches the unit nameplate.
 - Recover refrigerant per EPA 608 if the circuit must be opened for component access (see `epa_608.md`).
+
+## Sources (checked 2026-10-17; next review 2027-04)
+
+HVAC School (circuit diagnosis, overcharge, target superheat); Contracting Business (superheat and subcooling diagnostics); ACCA (non-condensables case); Goodman IO-348M. The unit's own documentation takes precedence.

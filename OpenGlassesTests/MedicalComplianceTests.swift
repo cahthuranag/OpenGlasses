@@ -73,8 +73,9 @@ final class MedicalComplianceTests: XCTestCase {
         // reading_session: passive camera OCR of whatever is in front of the wearer — a "book"
         // can be a patient chart (Plan BT review remediation).
         // team_learning: a clinical site's "learning" is a patient note (Plan FP P1).
+        // manual_capture: photographed pages must not become clinical capture records (Plan IF).
         let expected: Set<String> = ["web_search", "send_message", "send_via", "openclaw_skills",
-                                     "reading_session", "team_learning"]
+                                     "reading_session", "team_learning", "manual_capture"]
         XCTAssertEqual(Config.hipaaDisabledTools, expected)
     }
 

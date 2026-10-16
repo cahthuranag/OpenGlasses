@@ -70,8 +70,4 @@ Significant departure from these ranges (with the unit running, stabilized) sugg
 
 ## Diagnostic interpretation
 
-- **Low suction pressure + low superheat** → likely overcharge or restricted metering device.
-- **Low suction pressure + high superheat** → likely undercharge or restricted suction.
-- **High discharge pressure + low subcool** → undercharge or non-condensables.
-- **High discharge pressure + high subcool** → overcharge, condenser airflow restriction, or non-condensables.
-- **Normal pressures + high superheat + low subcool** → undercharge (often the answer).
+Read superheat and subcooling together — see the cheat sheet in `superheat_subcool.md`. Pressures alone are not a reliable diagnosis.

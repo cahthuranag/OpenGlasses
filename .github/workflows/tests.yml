@@ -36,6 +36,9 @@ on:
       - '*.html'
       - '.well-known/**'
       - 'activation/**'
+      # Bundled app content is Markdown too (vault files, guides): `**.md` above would skip the
+      # suite for a vault change. A `!` entry in paths-ignore re-includes, and the last match wins.
+      - '!OpenGlasses/Sources/Resources/**'
   push:
     branches: [main]
     paths-ignore:
@@ -46,6 +49,9 @@ on:
       - '*.html'
       - '.well-known/**'
       - 'activation/**'
+      # Bundled app content is Markdown too (vault files, guides): `**.md` above would skip the
+      # suite for a vault change. A `!` entry in paths-ignore re-includes, and the last match wins.
+      - '!OpenGlasses/Sources/Resources/**'
 
 # A PR run is obsolete the moment a newer commit lands on the same branch, but without a
 # concurrency group the superseded run still bills a full ~17-minute macOS slot. Twelve August

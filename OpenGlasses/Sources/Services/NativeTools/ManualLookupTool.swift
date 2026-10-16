@@ -11,8 +11,9 @@ import Foundation
 final class ManualLookupTool: NativeTool {
     let name = "manual_lookup"
     let description = """
-    Search the OEM manuals loaded into the active Field Assist vault for a fault code, model, \
-    component, or procedure. Pass 'query' with what to look for, or omit it (or set 'use_camera') \
+    Search the OEM manuals and code books loaded into the active Field Assist vault for a fault \
+    code, model, component, procedure, or a clause or rule number (pass it as printed, e.g. \
+    "clause 3.9.4.2", "rule 26-700", "section 110.26"). Pass 'query' with what to look for, or omit it (or set 'use_camera') \
     to read a nameplate / fault display through the camera (the glasses when connected, otherwise the phone) and search on what it says. \
     Returns the matching manual passages, each with a Source line naming the manual and page — \
     cite those lines. If it reports that the manuals do not cover the question, or that they are \
@@ -24,7 +25,7 @@ final class ManualLookupTool: NativeTool {
         "properties": [
             "query": [
                 "type": "string",
-                "description": "What to look up in the manuals (a fault code, model number, component, or question)."
+                "description": "What to look up in the manuals (a fault code, model number, component, clause number, or question)."
             ],
             "document": [
                 "type": "string",

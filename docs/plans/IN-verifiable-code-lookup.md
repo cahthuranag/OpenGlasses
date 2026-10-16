@@ -1,6 +1,7 @@
 # Plan IN — Code Lookup You Can Verify (open the cited page on request, the passage highlighted, editions compared)
 
-**Status:** 📝 Drafted 2026-10-16 — nothing implemented.
+**Status:** 🚧 P3a shipped 2026-10-17 (clause numbers found by number, the clause's own text
+first); P0–P2, the rest of P3, and P4 unbuilt.
 **Track:** Field Assist (B2B): a regulations vertical for electricians, and every manual user gets
 the highlight.
 **Related:** Plans [ED](ED-vault-manual-retrieval.md) / [EJ](EJ-manual-retrieval-fidelity.md)
@@ -187,6 +188,38 @@ AS/NZS 3000. Three consequences for this plan:
   3.9.4; "show me the page" opens book B at the right page with the passage highlighted. "Show me
   the relevant pages" opens all three cited pages in order. A bare `manual_figure(page:)` without a
   document refuses by name when two documents have that page.
+
+### P3a — Find a clause by its number ✅ (2026-10-17)
+
+Pulled forward for the partner's electrician's test, because it fails on the first question he is
+likely to ask. Before it, "what does clause 3.9.4.2 say" had no exact match at all:
+`CodeTokenizer` keeps a decimal whole and never boosts on one (a reading, GB P1), and it split
+"26-700" at the hyphen, so a rule number boosted every passage that printed a 26 or a 700. The
+answer came from the embedder alone, which ranks a clause and its cross-references alike.
+
+- `ClauseReference` (pure) recognises a clause in the question: two or more dots ("3.9.4.2"), any
+  dotted or hyphenated number after a clause word ("clause 3.9", "rule 26-700", "section 110.26",
+  "§ 210.8"), a dotted number with a subdivision ("210.8(A)"), and a bare `NN-NNN` rule. A spoken
+  "3 point 9 point 4" or "26 dash 700" reads the same. A one-dot number alone, a voltage range
+  ("208-230"), a model ("30RB-060") and a date are not clauses. Its pieces stay out of the token
+  boost.
+- Matching is the whole printed number with number-aware edges ("3.9.4" is not in "13.9.4",
+  "2.3.9.4" or "3.9.40"), and grades how the passage holds it: **starts** it (number then a
+  capitalised title, at a line or sentence start), starts a **subclause**, **continues** it (the
+  chunk after the heading, or a later chunk of its section), or **cites** it. A contents page
+  (entries run together with their page numbers, or dot leaders) only cites.
+- `DocumentStore.passages(clause:)` returns that order, and `VaultRetriever` ranks clause hits ahead
+  of code-token hits ahead of semantic ones. A book cross-references its busiest clauses dozens of
+  times, so the token search's document order filled the limit before reaching the clause. Without
+  a clause in the question the ranking is unchanged.
+- `manual_lookup`'s description names clause numbers, so the model passes them as printed.
+- **Tests:** `ClauseReferenceTests`. They cover recognition, readings that are not clauses, edges,
+  starts against cites, contents pages, a 30-citation fixture where the old token search misses the
+  clause and the new one leads with it and its continuation, and the ranking without a clause
+  unchanged.
+- **Not in P3a:** the citation still names the PDF page and the detected section heading. Clause
+  headings in the `NN-NNN` form are not detected as sections, so a CEC rule cites its page only.
+  Printed-page citations, the `standard` kind and the answer rules stay in P3.
 
 ### P3 — Standards as a document kind
 

@@ -198,6 +198,26 @@ final class ManualFigureTests: XCTestCase {
         XCTAssertNil(service.stagedFigure, "opening a job asked for no page")
     }
 
+    /// Field report, build 497: "check page 34 of the service manual" searched 34 as a code, and
+    /// "why did you open installation, I said page 34" — a request for a page — opened the table
+    /// that search found instead. Here the drawing's "120 VAC" label plays the table cell.
+    func testANamedPageIsAPlaceNotACodeAndNoOtherPageOpensForIt() async throws {
+        let store = makeStore()
+        let service = try await startSession(store: store, withTextManual: false)
+
+        let named = try XCTUnwrap(service.promptContext(turn: "show me page 120 of the manual"))
+        XCTAssertFalse(named.contains("wiring diagram, Figure 3"), "page 120 is not a search for 120")
+        XCTAssertNil(service.stagedFigure)
+
+        // Asked for a page, found the drawing on another one: it does not open.
+        _ = service.promptContext(turn: "show me page 5, the one with 24VAXC")
+        XCTAssertNil(service.stagedFigure, "the page named was 5; the drawing is on 2")
+        // Asked for the drawing's own page: it does.
+        _ = service.promptContext(turn: "show me page 2, the one with 24VAXC")
+        XCTAssertEqual(service.stagedFigure?.figure, "Figure 3")
+        XCTAssertEqual(service.stagedFigure?.presentOnPhone, true)
+    }
+
     func testAJobNumberIsNotSearchedAsACode() async throws {
         let store = makeStore()
         let service = try await startSession(store: store, withTextManual: false)

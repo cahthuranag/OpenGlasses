@@ -1497,7 +1497,9 @@ final class FieldSessionService: ObservableObject {
         let decision = FigureAutoOpenPolicy.decide(
             turnKind: kind,
             passageKind: candidate.map { $0.kind == .diagram ? .diagram : .captioned },
-            tokenHits: candidate?.matchedTokens ?? [])
+            tokenHits: candidate?.matchedTokens ?? [],
+            namedPages: PageReference.pages(in: searchTurn),
+            passagePage: candidate?.page)
         var staged = decision.stagesFigure ? makeStagedFigure(for: candidate, vaultId: store.manifest.id) : nil
         staged?.origin = kind == .showMe ? .requested : .automatic
 
@@ -1613,6 +1615,11 @@ final class FieldSessionService: ObservableObject {
             searched.flatMap { space in
                 tagged(documentStore?.passages(clause: clause, namespace: space.namespace,
                                                documentIds: ids(for: space), limit: limit) ?? [], space)
+            }
+        }, termSearch: { query, limit in
+            searched.flatMap { space in
+                tagged(documentStore?.passages(sharingTermsWith: query, limit: limit, namespace: space.namespace,
+                                               documentIds: ids(for: space)) ?? [], space)
             }
         }, provenance: { documentId in
             if documentId.hasPrefix("captured:") { return true }

@@ -187,6 +187,43 @@ final class DocumentStore: ObservableObject {
         }
     }
 
+    /// Passages sharing the most [[LexicalSupport]] content terms with `text`, most first, ties
+    /// broken by embedding similarity — the lexical route beside `query(_:)`, for the passage an
+    /// embedder cannot see. A sentence model reads a long run of manual text poorly: on the device
+    /// the Lennox flame-sensor section, which uses nearly every word of "how to test the flame
+    /// sensor readings or signal", scored below a page of diagnostic-code rows (build 497).
+    ///
+    /// Prose only, like `query`, and a passage must share at least one term. Its `similarity` is
+    /// the real cosine where the stored vector is current (0 otherwise, which the next `query`
+    /// heals), so the evidence gate judges it exactly as it judges a semantic hit.
+    func passages(sharingTermsWith text: String, limit: Int = 8, namespace: String? = nil,
+                  documentIds: [String]? = nil,
+                  kinds: Set<DocumentChunker.Kind> = [.prose]) -> [Passage] {
+        let terms = LexicalSupport.contentTerms(text)
+        guard !terms.isEmpty else { return [] }
+        let current = embedder.version
+        let qv = embedder.embed(text)
+        let scored = fetchChunks(namespace: namespace, documentIds: documentIds)
+            .filter { kinds.contains($0.kind) }
+            .compactMap { row -> (row: ChunkRow, shared: Int, similarity: Float)? in
+                let shared = LexicalSupport.sharedTermCount(text: row.text, queryTerms: terms)
+                guard shared > 0 else { return nil }
+                var similarity: Float = 0
+                if let qv, let vector = row.embedding,
+                   EmbeddingMigrationPolicy.action(stored: EmbeddingVersion(tag: row.embeddingVersion),
+                                                   current: current) == .reuse {
+                    similarity = Embedder.cosineSimilarity(qv, vector)
+                }
+                return (row, shared, similarity)
+            }
+            .sorted { $0.shared != $1.shared ? $0.shared > $1.shared : $0.similarity > $1.similarity }
+        return scored.prefix(max(limit, 1)).map {
+            Passage(documentId: $0.row.documentId, documentName: $0.row.documentName,
+                    chunkIndex: $0.row.chunkIndex, text: $0.row.text, similarity: $0.similarity,
+                    page: $0.row.page, section: $0.row.section, kind: $0.row.kind, figure: $0.row.figure)
+        }
+    }
+
     /// Passages that carry a clause number (Plan IN P3a), the clause's own text first: chunks that
     /// start it, then chunks that start a subclause of it, then the chunk after each of those and
     /// the rest of its section, then the chunks that cite it — within a group, the chunk that holds

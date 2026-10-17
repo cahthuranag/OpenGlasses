@@ -65,6 +65,10 @@ final class RetrievalGateCalibrationTests: XCTestCase {
               anchors: [serviceManual: [63], installation: [61]]),
         .init(query: "high fire manifold pressure",
               anchors: [serviceManual: [65, 66, 67], installation: [62, 63, 64]]),
+        // Field report, build 497: asked on a job, answered by neither route the device had — its
+        // sentence embedder ranked the flame-sensor section 159th.
+        .init(query: "And how to test the flame sensor readings or signal",
+              anchors: [serviceManual: [34], installation: [64]]),
     ]
 
     /// Questions these two manuals do not answer: other manufacturers, other equipment, figures the
@@ -162,8 +166,10 @@ final class RetrievalGateCalibrationTests: XCTestCase {
     }
 
     private func retriever(over store: DocumentStore, policy: RetrievalEvidencePolicy) -> VaultRetriever {
+        // The shipped routes: the embedding query, the exact-token search and the lexical route.
         VaultRetriever(query: { query, limit in store.query(query, limit: limit) },
                        tokenSearch: { token, limit in store.passages(containingToken: token, limit: limit) },
+                       termSearch: { query, limit in store.passages(sharingTermsWith: query, limit: limit) },
                        provenance: nil,
                        policy: policy)
     }

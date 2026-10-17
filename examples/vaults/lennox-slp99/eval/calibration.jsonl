@@ -1,0 +1,39 @@
+// The Lennox SLP99 calibration set in the local eval's answer-key form: the in-scope questions of
+// RetrievalGateCalibrationTests with the pages that answer them, then the out-of-scope ones.
+// RetrievalGateCalibrationTests checks the two stay the same. Run it with Scripts/retrieval-eval.
+{"q": "what is the manifold pressure on high fire", "pages": {"SLP99UHVK Service Manual": [65, 66, 67], "SLP99UHVK Installation Instructions": [62, 63, 64]}}
+{"q": "how do I measure the gas supply pressure at the valve", "pages": {"SLP99UHVK Service Manual": [64, 65], "SLP99UHVK Installation Instructions": [62]}}
+{"q": "what flame signal in microamps should I read at the sensor", "pages": {"SLP99UHVK Service Manual": [34], "SLP99UHVK Installation Instructions": [64]}}
+{"q": "how long is the pre-purge before the ignitor warm up begins", "pages": {"SLP99UHVK Service Manual": [15, 76, 77], "SLP99UHVK Installation Instructions": [65, 66]}}
+{"q": "how do I prime the condensate trap with water", "pages": {"SLP99UHVK Service Manual": [63], "SLP99UHVK Installation Instructions": [61]}}
+{"q": "what is the correct heating temperature rise for this furnace", "pages": {"SLP99UHVK Service Manual": [2, 69], "SLP99UHVK Installation Instructions": [65]}}
+{"q": "how do I configure the unit size code on the integrated control", "pages": {"SLP99UHVK Service Manual": [30], "SLP99UHVK Installation Instructions": [70]}}
+{"q": "which propane conversion kit does this furnace need", "pages": {"SLP99UHVK Service Manual": [67], "SLP99UHVK Installation Instructions": [64]}}
+{"q": "what high altitude pressure switch is required above seven thousand feet", "pages": {"SLP99UHVK Service Manual": [67], "SLP99UHVK Installation Instructions": [64]}}
+{"q": "how do I clock the gas meter to check the input rate", "pages": {"SLP99UHVK Service Manual": [65], "SLP99UHVK Installation Instructions": [62]}}
+{"q": "what external static pressure range does the blower cover", "pages": {"SLP99UHVK Service Manual": [4], "SLP99UHVK Installation Instructions": [48, 56]}}
+{"q": "how do I inspect the heat exchanger during annual maintenance", "pages": {"SLP99UHVK Installation Instructions": [67, 68]}}
+{"q": "pre-purge time", "pages": {"SLP99UHVK Service Manual": [15, 76, 77], "SLP99UHVK Installation Instructions": [65, 66]}}
+{"q": "flame signal microamps", "pages": {"SLP99UHVK Service Manual": [34], "SLP99UHVK Installation Instructions": [64]}}
+{"q": "condensate trap priming", "pages": {"SLP99UHVK Service Manual": [63], "SLP99UHVK Installation Instructions": [61]}}
+{"q": "trap water amount", "pages": {"SLP99UHVK Service Manual": [63], "SLP99UHVK Installation Instructions": [61]}}
+{"q": "high fire manifold pressure", "pages": {"SLP99UHVK Service Manual": [65, 66, 67], "SLP99UHVK Installation Instructions": [62, 63, 64]}}
+{"q": "And how to test the flame sensor readings or signal", "pages": {"SLP99UHVK Service Manual": [34], "SLP99UHVK Installation Instructions": [64]}}
+{"q": "what is the torque for the blower wheel set screw", "outOfScope": true}
+{"q": "how do I replace the heat exchanger on a Carrier 58MVB", "outOfScope": true}
+{"q": "how do I charge the refrigerant on the outdoor unit", "outOfScope": true}
+{"q": "how do I reset the defrost board on a heat pump", "outOfScope": true}
+{"q": "what size ductwork do I need for a large two storey house", "outOfScope": true}
+{"q": "what is the weather forecast for tomorrow afternoon", "outOfScope": true}
+{"q": "how do I wire a Trane XR95 two stage thermostat", "outOfScope": true}
+{"q": "what is the seasonal efficiency rating of a Goodman condenser", "outOfScope": true}
+{"q": "how much does a replacement inducer motor cost to buy", "outOfScope": true}
+{"q": "what oil does the York chiller pump take", "outOfScope": true}
+{"q": "how do I bleed the radiators on a hydronic boiler", "outOfScope": true}
+{"q": "what is the warranty claim procedure for Rheem parts", "outOfScope": true}
+{"q": "compressor amp draw", "outOfScope": true}
+{"q": "refrigerant charge weight", "outOfScope": true}
+{"q": "defrost board wiring", "outOfScope": true}
+{"q": "duct sizing chart", "outOfScope": true}
+{"q": "what is the defrost board wiring on a Trane XR15", "outOfScope": true}
+{"q": "which pressure switch does a Goodman GMVC96 take", "outOfScope": true}

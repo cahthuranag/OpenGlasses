@@ -268,8 +268,10 @@ used as a pointer the model can follow than as a passage.
   | 3 terms at 0.75 (shipped, = `nl-word`) | 15 | 6 | 2 |
 
   Hit@1 and hit@4 are identical for every row on both sets. The plan's rule was shipped as
-  specified; whether to trade some out-of-scope refusals for fewer wrong "not covered" replies
-  (3 terms at 0.6) is for the owner. P2–P4 attack the cause, the misses themselves.
+  specified. **Decided 2026-10-17 (owner):** keep 3 terms at 0.75, and reword the refusal so a miss
+  is not presented as silence: `RetrievalEvidencePolicy.insufficientSentence` now tells the model to
+  say it couldn't find the answer in the manuals — never that they don't cover it — and to ask for
+  the model number or different words. P2–P4 attack the cause, the misses themselves.
 - **Tests:** `VaultManualRetrievalTests` (the per-backend defaults; a synthetic sentence-model
   distribution where the floor answers an out-of-scope question and the new gate refuses it while
   a short in-scope question still leads with its passage), `RetrievalGateCalibrationTests` (the

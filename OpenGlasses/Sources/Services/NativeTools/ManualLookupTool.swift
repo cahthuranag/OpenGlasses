@@ -44,14 +44,19 @@ final class ManualLookupTool: NativeTool {
     private let ocr: OCRService
     /// Session to read the active vault from; nil means the shared service. Injectable for tests.
     private let injectedSession: FieldSessionService?
+    /// The technician's words this turn. "What did the 2021 code say" asks for an older edition
+    /// even when the model's query leaves the year out (Plan IV P2).
+    private let currentUtterance: @MainActor () -> String?
 
     init(documentStore: DocumentStore?, cameraService: (any FilteredStillProviding)? = nil,
          ocr: OCRService = OCRService(),
-         sessionService: FieldSessionService? = nil) {
+         sessionService: FieldSessionService? = nil,
+         currentUtterance: @escaping @MainActor () -> String? = { TechnicianWords.current() }) {
         self.documentStore = documentStore
         self.cameraService = cameraService
         self.ocr = ocr
         self.injectedSession = sessionService
+        self.currentUtterance = currentUtterance
     }
 
     func execute(args: [String: Any]) async throws -> String {
@@ -122,7 +127,12 @@ final class ManualLookupTool: NativeTool {
         }
 
         // The shared factory: manuals and the vault's published team learnings, each tagged.
-        let retriever = session.makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds)
+        // The newest edition unless the query or the technician's words reach past it. A
+        // `document` the model passed is its own choice and is searched as named.
+        let editionRequest = EditionRequest.parse([query, currentUtterance()].compactMap { $0 }.joined(separator: " "),
+                                                  editions: session.documentEditions(of: store))
+        let retriever = session.makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds,
+                                              editionRequest: editionRequest)
         let outcome = retriever.retrieve(.init(turn: query, ocrText: ocrText,
                                                procedureStep: nil, limit: session.manualPassageLimit))
         let disclosure = session.noteRetrieval(outcome)
@@ -134,6 +144,9 @@ final class ManualLookupTool: NativeTool {
         var result = VaultRetriever.toolResult(outcome, query: label, leadIn: disclosure?.leadIn)
         if !outcome.answers {
             result += "\n\n" + Self.missGuidance(misses: session.noteManualLookupMiss())
+        }
+        if documentIds == nil, let note = session.editionNote(for: editionRequest, store: store) {
+            result += "\n\n" + note
         }
         if let ocrText {
             result = "Read from the label: \(ocrText.replacingOccurrences(of: "\n", with: " "))\n\n" + result

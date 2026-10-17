@@ -53,9 +53,14 @@ struct RetrievalEvalMain {
                 fail("RETRIEVAL_EVAL_GATE is \"floor\" or \"<terms>,<fraction>\"")
             }
         }
+        // A vault holding a work in more than one edition answers from the newest unless the
+        // question reaches past it, as the app's retrieval factory does.
+        let documents = manifestDocuments(in: vault)
+        let editions = DocumentEditions(entries: documents.map { (title: $0.title, kind: $0.kind, edition: $0.edition) })
+        let open = RetrievalEvidencePolicy(similarityFloor: 0)
         let report = RetrievalEval.run(questions,
-                                       gated: RetrievalEval.retriever(over: store, policy: policy),
-                                       open: RetrievalEval.retriever(over: store, policy: RetrievalEvidencePolicy(similarityFloor: 0)),
+                                       gatedFor: { RetrievalEval.retriever(over: store, policy: policy, editions: editions, turn: $0) },
+                                       openFor: { RetrievalEval.retriever(over: store, policy: open, editions: editions, turn: $0) },
                                        store: store)
         let label = (env["RETRIEVAL_EVAL_LABEL"] ?? "local vault") + (env["RETRIEVAL_EVAL_GATE"].map { " gate=\($0)" } ?? "")
         for line in report.lines(label: label, embedder: embedder.modelId) {
@@ -63,12 +68,12 @@ struct RetrievalEvalMain {
         }
     }
 
-    struct Document { let title: String; let url: URL }
+    struct Document { let title: String; let url: URL; let kind: String?; let edition: String? }
 
     /// The manifest's documents, read with only the fields this needs.
     static func manifestDocuments(in vault: URL) -> [Document] {
         struct Manifest: Decodable {
-            struct Entry: Decodable { let file: String; let title: String }
+            struct Entry: Decodable { let file: String; let title: String; let kind: String?; let edition: String? }
             let documents: [Entry]?
             let documents_dir: String?
         }
@@ -77,7 +82,9 @@ struct RetrievalEvalMain {
             fail("no readable manifest.json in the vault folder")
         }
         let dir = manifest.documents_dir.map { vault.appendingPathComponent($0, isDirectory: true) } ?? vault
-        return (manifest.documents ?? []).map { Document(title: $0.title, url: dir.appendingPathComponent($0.file)) }
+        return (manifest.documents ?? []).map {
+            Document(title: $0.title, url: dir.appendingPathComponent($0.file), kind: $0.kind, edition: $0.edition)
+        }
     }
 
     static func fail(_ message: String) -> Never {

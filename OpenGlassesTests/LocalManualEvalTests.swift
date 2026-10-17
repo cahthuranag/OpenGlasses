@@ -56,9 +56,12 @@ final class LocalManualEvalTests: XCTestCase {
 
         let store = makeStore(chunker: DocumentChunker())
         let (service, vaultStore) = try await installAndStart(URL(fileURLWithPath: vaultPath), store: store)
-        let gated = service.manualRetriever(store: vaultStore)
-        let open = RetrievalEval.retriever(over: store, policy: RetrievalEvidencePolicy(similarityFloor: 0))
-        let report = RetrievalEval.run(questions, gated: gated, open: open, store: store)
+        let editions = service.documentEditions(of: vaultStore)
+        let report = RetrievalEval.run(
+            questions,
+            gatedFor: { service.manualRetriever(store: vaultStore, editionRequest: EditionRequest.parse($0, editions: editions)) },
+            openFor: { RetrievalEval.retriever(over: store, policy: RetrievalEvidencePolicy(similarityFloor: 0), editions: editions, turn: $0) },
+            store: store)
         for line in report.lines(label: env["RETRIEVAL_EVAL_LABEL"] ?? "local vault", embedder: Embedder().modelId) {
             print(line)
         }
@@ -68,34 +71,34 @@ final class LocalManualEvalTests: XCTestCase {
     // MARK: - The core, on synthetic fixtures
 
     /// A clause-numbered fixture: two rules, each printed as its own line after a group heading, a
-    /// table, and a page that only cites a rule.
+    /// table, and a page that only cites a rule. Every rule, table and sentence is invented.
     private static let codeText = """
         Page 1
 
-        Wiring methods
-        99-100 Conductors in raceways
-        Conductors installed in a raceway shall be of a type approved for the location.
+        Fittings
+        99-100 Brackets on rails
+        A bracket on a rail must carry the rail maker's own mark.
         Page 2
 
-        Receptacles
-        99-200 Receptacles for dwelling units
-        Each kitchen counter receptacle shall be protected by a ground fault circuit interrupter.
+        Sockets
+        99-200 Sockets near sinks
+        A socket beside a sink needs a test button the user can reach.
         Page 3
 
-        Table 99 Conditions of use for communication cables
-        Plenum spaces require a cable marked for plenum use.
+        Table 99 Conditions of use for portable lamps
+        A portable lamp used outdoors shall be marked for wet locations.
         Page 4
 
-        Where a receptacle is installed outdoors, see Rule 99-200 for the dwelling unit requirements.
+        For a socket on a patio, see Rule 99-200 for the sink rule as well.
         """
 
     func testAnswerKeyLinesAreReadAndCommentsSkipped() {
         let key = """
             // a comment
-            {"q": "what protects a kitchen receptacle", "rules": ["99-200"]}
+            {"q": "what does a sink socket need", "rules": ["99-200"]}
 
             {"q": "what torque for the set screw", "outOfScope": true}
-            {"q": "plenum cable", "tables": ["Table 99"], "multi": false, "doubt": true}
+            {"q": "portable lamp", "tables": ["Table 99"], "multi": false, "doubt": true}
             {"q": "flame signal", "pages": {"Fixture Manual": [34]}}
             not json
             {"rules": ["1-000"]}
@@ -110,9 +113,9 @@ final class LocalManualEvalTests: XCTestCase {
     }
 
     func testARuleCitedIsNotTheRulePrinted() {
-        XCTAssertTrue(RetrievalEval.printsAsHeading("99-200", in: "Receptacles 99-200 Receptacles for dwelling units Each", section: nil),
+        XCTAssertTrue(RetrievalEval.printsAsHeading("99-200", in: "Sockets 99-200 Sockets near sinks A socket", section: nil),
                       "after a group heading, joined by a space, the rule still prints as a heading")
-        XCTAssertFalse(RetrievalEval.printsAsHeading("99-200", in: "installed outdoors, see Rule 99-200 for the dwelling", section: nil))
+        XCTAssertFalse(RetrievalEval.printsAsHeading("99-200", in: "on a patio, see Rule 99-200 for the sink rule", section: nil))
         XCTAssertFalse(RetrievalEval.printsAsHeading("99-200", in: "in accordance with Rules 99-200 and 99-202", section: nil))
         XCTAssertTrue(RetrievalEval.printsAsHeading("Table 99", in: "Table 99 Conditions of use", section: nil))
         XCTAssertFalse(RetrievalEval.printsAsHeading("Table 99", in: "see Table 99 Conditions", section: nil))
@@ -124,10 +127,10 @@ final class LocalManualEvalTests: XCTestCase {
         let gated = RetrievalEval.retriever(over: store, policy: RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 1))
         let open = RetrievalEval.retriever(over: store, policy: RetrievalEvidencePolicy(similarityFloor: 0))
         let questions = RetrievalEval.loadAnswerKey("""
-            {"q": "rule 99-200 kitchen counter receptacle ground fault", "rules": ["99-200"]}
-            {"q": "plenum cable marked for plenum use", "tables": ["Table 99"]}
+            {"q": "rule 99-200 sink socket test button", "rules": ["99-200"]}
+            {"q": "portable lamp marked for wet locations", "tables": ["Table 99"]}
             {"q": "weather forecast tomorrow afternoon", "outOfScope": true}
-            {"q": "conductors in a raceway approved for the location", "rules": ["98-999"], "doubt": true}
+            {"q": "bracket on a rail with the maker's mark", "rules": ["98-999"], "doubt": true}
             """)
         let report = RetrievalEval.run(questions, gated: gated, open: open, store: store)
         XCTAssertEqual(report.scored, 3)
@@ -150,7 +153,7 @@ final class LocalManualEvalTests: XCTestCase {
         _ = await store.ingest(name: "Fixture Code", text: Self.codeText, sourceType: "text")
         let gated = RetrievalEval.retriever(over: store, policy: RetrievalEvidencePolicy(similarityFloor: 0))
         let questions = RetrievalEval.loadAnswerKey("""
-            {"q": "plenum cable marked for plenum use", "pages": {"Fixture Code": [3]}}
+            {"q": "portable lamp marked for wet locations", "pages": {"Fixture Code": [3]}}
             """)
         let report = RetrievalEval.run(questions, gated: gated, open: gated, store: store)
         XCTAssertEqual(report.hit4, 1)
@@ -177,7 +180,7 @@ final class LocalManualEvalTests: XCTestCase {
         let (service, vaultStore) = try await installAndStart(vault, store: store)
         let session = service.manualRetriever(store: vaultStore)
         let storeOnly = RetrievalEval.retriever(over: store, policy: service.retrievalPolicy)
-        for turn in ["rule 99-200 kitchen counter receptacle", "plenum cable", "Table 99", "conductors in a raceway",
+        for turn in ["rule 99-200 sink socket", "portable lamp", "Table 99", "bracket on a rail",
                      "what torque for the blower wheel set screw"] {
             let a = session.retrieve(.init(turn: turn, limit: 4))
             let b = storeOnly.retrieve(.init(turn: turn, limit: 4))

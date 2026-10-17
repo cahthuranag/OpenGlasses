@@ -67,6 +67,24 @@ enum RetrievalEval {
                        policy: policy)
     }
 
+    /// The same routes, searching only what the newest-edition default (or the question's own
+    /// reach past it) allows — the filter `makeRetriever` applies (Plan IV P2), for a runner with
+    /// no session.
+    @MainActor
+    static func retriever(over store: DocumentStore, policy: RetrievalEvidencePolicy,
+                          editions: DocumentEditions, turn: String) -> VaultRetriever {
+        guard let titles = editions.searchableTitles(for: EditionRequest.parse(turn, editions: editions),
+                                                     among: store.documents.map(\.name)) else {
+            return retriever(over: store, policy: policy)
+        }
+        let ids = store.documents.filter { titles.contains($0.name) }.map(\.id)
+        return VaultRetriever(query: { query, limit in store.query(query, limit: limit, documentIds: ids) },
+                              tokenSearch: { token, limit in store.passages(containingToken: token, documentIds: ids, limit: limit) },
+                              clauseSearch: { clause, limit in store.passages(clause: clause, documentIds: ids, limit: limit) },
+                              termSearch: { query, limit in store.passages(sharingTermsWith: query, limit: limit, documentIds: ids) },
+                              policy: policy)
+    }
+
     // MARK: - Scoring
 
     /// Why a question missed hit@4, first class that fits, in this order.
@@ -142,8 +160,17 @@ enum RetrievalEval {
     @MainActor
     static func run(_ questions: [Question], gated: VaultRetriever, open: VaultRetriever,
                     store: DocumentStore, classifyMisses: Bool = true) -> Report {
+        run(questions, gatedFor: { _ in gated }, openFor: { _ in open }, store: store, classifyMisses: classifyMisses)
+    }
+
+    /// The same, with a retriever per question: the session's factory reads the question to
+    /// choose an edition (Plan IV P2), so the runner hands it each one.
+    @MainActor
+    static func run(_ questions: [Question], gatedFor: (String) -> VaultRetriever, openFor: (String) -> VaultRetriever,
+                    store: DocumentStore, classifyMisses: Bool = true) -> Report {
         var report = Report()
         for q in questions {
+            let gated = gatedFor(q.q), open = openFor(q.q)
             if q.outOfScope == true {
                 report.outOfScope += 1
                 if !gated.retrieve(.init(turn: q.q, limit: 4)).isSufficient { report.refused += 1 }

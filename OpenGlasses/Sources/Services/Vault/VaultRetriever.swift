@@ -69,6 +69,10 @@ struct VaultRetriever {
         /// its contract §7.1 citation name, so `citation` renders it unchanged.
         var source: RetrievalSource = .manual
         var printedPage: Int?
+        /// The passage's edition, when the turn asked for an older edition or to compare (Plan IV
+        /// P2). The model is told it before the text, and the `Source:` line stays the document's
+        /// own title, so a citation still opens its page.
+        var editionLabel: String?
         /// How the passage relates to a clause number the request named (Plan IN P3a), when it
         /// does. Ranks the clause's own text ahead of passages that only cite it.
         var clauseMatch: ClauseReference.Match?
@@ -225,7 +229,7 @@ struct VaultRetriever {
         // every passage that prints a 26.
         let clauses = ClauseReference.references(in: request.turn ?? "")
         // Boost tokens: anything code-like the technician said or the camera read, and any word
-        // they said in capitals ("CXWT"). A page they named is where to look, not something to
+        // they said in capitals ("QXRT"). A page they named is where to look, not something to
         // look for, so its number is not one of them.
         let spokenTurn = PageReference.removingReferences(from: ClauseReference.removingReferences(from: request.turn ?? ""))
         let designations = Set(CodeTokenizer.capitalisedDesignations(from: spokenTurn))
@@ -249,8 +253,8 @@ struct VaultRetriever {
         // is on hundreds of pages and the first four pages of the book took them. It neither ranks
         // a passage first nor carries one past the gate. A number that names few passages ("what
         // does the 120 VAC output feed" on a drawing) is kept. A code or a designation is kept
-        // however often it is printed — two editions of a code book print "CXWT" ten times
-        // between them — but when it overflows the search, the passages kept for it are the ones
+        // however often it is printed — a cord type recurs in every table that lists it, and
+        // again in each edition of a book — but when it overflows the search, the passages kept for it are the ones
         // that share the most of the question's words, not the first in page order. A word in
         // capitals counts only when the search finds it at all.
         let searchLimit = max(request.limit * 2, 4)
@@ -414,7 +418,8 @@ struct VaultRetriever {
                        similarity: raw.similarity, score: raw.similarity + boost, matchedTokens: matched,
                        modelPenalty: penalty,
                        recognisedFromScan: raw.source.isReference && (provenance?(raw.documentId) ?? false),
-                       kind: raw.kind, figure: raw.figure, source: raw.source, printedPage:raw.printedPage)
+                       kind: raw.kind, figure: raw.figure, source: raw.source, printedPage:raw.printedPage,
+                       editionLabel: raw.editionLabel)
     }
 
     // MARK: - Rendering
@@ -469,6 +474,7 @@ struct VaultRetriever {
         let label = p.source == .teamLearning ? Passage.teamLearningLabel + " "
             : (p.source == .capturedManual ? "PHOTOGRAPHED MANUAL (unreviewed; original job/date in citation) " : "")
                 + (p.kindLabel.map { $0 + " " } ?? "")
+                + (p.editionLabel.map { "(edition: \($0)) " } ?? "")
         return "[\(index + 1)] \(label)\(p.text)\nSource: \(p.citation)"
             + (p.recognisedFromScan ? " " + Passage.provenanceNote : "")
     }

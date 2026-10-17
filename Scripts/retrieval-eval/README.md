@@ -44,8 +44,8 @@ test is the wrong test) and `doubt` (the expected answer itself is uncertain).
 The answer key is a JSON-lines file, one question per line. Lines starting with `//` are comments.
 
 ```
-{"q": "what protects a kitchen counter receptacle", "rules": ["99-200"]}
-{"q": "which cable may run in a plenum", "tables": ["Table 99"], "multi": false}
+{"q": "what does a sink socket need", "rules": ["99-200"]}
+{"q": "which lamp may be used outdoors", "tables": ["Table 99"], "multi": false}
 {"q": "how do I test the flame sensor", "pages": {"SLP99UHVK Service Manual": [34]}}
 {"q": "what is the torque for the blower wheel set screw", "outOfScope": true}
 ```

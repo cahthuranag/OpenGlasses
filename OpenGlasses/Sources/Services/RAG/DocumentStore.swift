@@ -690,8 +690,12 @@ final class DocumentStore: ObservableObject {
     // MARK: - Passage locations (Plan IN P0)
 
     /// Bumped when what the chunker records about a chunk's place changes, so stored rows are
-    /// located again — the `EmbeddingVersion` pattern, for positions rather than vectors.
-    nonisolated static let locationVersion = 1
+    /// located again — the `EmbeddingVersion` pattern, for positions rather than vectors. 2: the
+    /// chunker keeps line breaks between sentences and chunks a clause-numbered document at its
+    /// clause headings (Plan IV P3), so a stored document whose text now chunks differently is
+    /// re-chunked under its own id by `PassageLocationMigration`, and one that chunks the same only
+    /// has its positions rewritten.
+    nonisolated static let locationVersion = 2
 
     /// One chunk's text and place, for the highlight. Its own query rather than `fetchChunks`,
     /// which decodes every embedding in the namespace to answer for one row.

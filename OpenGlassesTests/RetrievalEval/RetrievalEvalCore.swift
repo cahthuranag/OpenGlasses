@@ -52,6 +52,18 @@ enum RetrievalEval {
         }
     }
 
+    /// The chunker a runner indexes with: the shipped one, or an earlier behaviour to measure a
+    /// chunking change against (`RETRIEVAL_EVAL_CHUNKER`): "spaces" joins every sentence with a
+    /// space and never splits at clause headings (before Plan IV P3), "linebreaks" keeps line
+    /// breaks but doesn't split. Index each variant into its own work folder.
+    static func chunker(named name: String?) -> DocumentChunker {
+        switch name {
+        case "spaces": return DocumentChunker(keepsLineBreaks: false, chunksAtClauseHeadings: false)
+        case "linebreaks": return DocumentChunker(keepsLineBreaks: true, chunksAtClauseHeadings: false)
+        default: return DocumentChunker()
+        }
+    }
+
     // MARK: - The retriever under test
 
     /// The shipped retrieval routes over one store, with the given gate — the routes
@@ -112,6 +124,10 @@ enum RetrievalEval {
         var inScopeRefused = 0
         var misses: [MissClass: Int] = [:]
         var multiQuestions = 0, multiMisses = 0
+        /// Distinct expected rule numbers the documents print as a heading, and how many of those
+        /// no chunk is graded as starting (`ClauseReference` `.starts`) — the measure of whether
+        /// a rule's own text can be found by its number.
+        var rulesPrinted = 0, rulesNeverStarting = 0
         var doubtQuestions = 0, doubtMisses = 0
 
         var missCount: Int { scored - hit4 }
@@ -129,6 +145,9 @@ enum RetrievalEval {
                     return "\(c.rawValue) \(n) (\(Int((100 * Double(n) / Double(missCount)).rounded()))%)"
                 }
                 out.append("[EVAL]   misses \(missCount): " + parts.joined(separator: " · "))
+            }
+            if rulesPrinted > 0 {
+                out.append("[EVAL]   rules printed as a heading \(rulesPrinted), never graded as starting \(rulesNeverStarting)")
             }
             if multiQuestions + doubtQuestions > 0 {
                 out.append("[EVAL]   overlays: multi-rule or calculation \(multiQuestions) (\(multiMisses) missed) · "
@@ -191,6 +210,16 @@ enum RetrievalEval {
             if q.doubt == true { report.doubtMisses += 1 }
             guard classifyMisses else { continue }
             report.misses[classify(q, top4: top4, gated: gated, open: open, store: store), default: 0] += 1
+        }
+        if classifyMisses {
+            let rules = Set(questions.filter { $0.outOfScope != true }.flatMap { $0.rules ?? [] }).filter(looksLikeClause)
+            for rule in rules where !ownPassages(Question(q: "", rules: [rule]), store: store).isEmpty {
+                report.rulesPrinted += 1
+                let starts = store.passages(containingToken: rule, limit: Int.max).contains {
+                    ClauseReference.match(rule, in: $0.text, section: $0.section) == .starts
+                }
+                if !starts { report.rulesNeverStarting += 1 }
+            }
         }
         return report
     }

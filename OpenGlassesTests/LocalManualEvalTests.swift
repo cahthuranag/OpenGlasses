@@ -54,7 +54,7 @@ final class LocalManualEvalTests: XCTestCase {
         let questions = RetrievalEval.loadAnswerKey(try String(contentsOfFile: keyPath, encoding: .utf8))
         XCTAssertFalse(questions.isEmpty, "the answer key has no questions")
 
-        let store = makeStore(chunker: DocumentChunker())
+        let store = makeStore(chunker: RetrievalEval.chunker(named: env["RETRIEVAL_EVAL_CHUNKER"]))
         let (service, vaultStore) = try await installAndStart(URL(fileURLWithPath: vaultPath), store: store)
         let editions = service.documentEditions(of: vaultStore)
         let report = RetrievalEval.run(

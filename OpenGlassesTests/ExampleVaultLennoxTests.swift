@@ -647,8 +647,11 @@ final class ExampleVaultLennoxTests: XCTestCase {
             // The page behind the chip is the page the sentence came from, not a page with the
             // same number in another manual.
             let text = try XCTUnwrap(sheet.currentText, citation.label)
-            let firstSentence = passage.text.prefix(40).trimmingCharacters(in: .whitespacesAndNewlines)
-            XCTAssertTrue(text.contains(firstSentence),
+            // Compared word for word: a chunk keeps the line breaks between its sentences, and the
+            // page's stored text is rebuilt from its chunks' words joined by spaces.
+            func words(_ s: Substring) -> String { s.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+            let firstSentence = words(passage.text.prefix(40))
+            XCTAssertTrue(words(Substring(text)).contains(firstSentence),
                           "\(citation.label) opens a page that does not contain its passage")
         }
 

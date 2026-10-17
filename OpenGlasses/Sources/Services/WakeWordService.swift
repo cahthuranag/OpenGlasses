@@ -103,6 +103,10 @@ class WakeWordService: NSObject, ObservableObject {
     private var turnEngine = TurnEngineOwnership()
     /// The mic the current conversation records on, once its hand-off is done.
     private(set) var turnMicRoute: MicRoute?
+    /// Whether this conversation's turn was put on the phone while the app was in the foreground
+    /// (`TurnMicHandoff.shouldRetakeAfterPhoneTurn`: a phone chosen in the background, where the
+    /// switch itself is what fails, is asked again at the next follow-up in the foreground).
+    private(set) var turnPhoneChosenInForeground = false
     /// A turn's hand-off is rebuilding the engine itself; the configuration-change observer stands
     /// back while it does.
     private var handOffInProgress = false
@@ -319,23 +323,25 @@ class WakeWordService: NSObject, ObservableObject {
             PrivacyLog.audio(.wakeWord, .otherAudioHeld, count: pauseHoldCount)
             return
         }
-        let keptIdleSession = await applyConversationRoute()
-        // A kept idle session is mixable: nothing was paused, and its own line says so.
-        guard !keptIdleSession else { return }
+        let sessionSwitch = await applyConversationRoute()
+        // A kept idle session, or one activated afresh in the background, is mixable: nothing was
+        // paused, and its own line says so.
+        guard sessionSwitch == .reconfigure else { return }
         let session = AVAudioSession.sharedInstance()
         PrivacyLog.audio(.wakeWord, .otherAudioPaused,
                          route: PrivacyToken(session.currentRoute.outputs.first?.portType.rawValue ?? "none"))
     }
 
     /// Reconfigure for the conversation mic and prefer its port. Shared by the first pause hold and
-    /// by a follow-up taking the hands-free link back after a full-quality reply.
+    /// by a follow-up taking the hands-free link back (after a full-quality reply, or a phone turn).
     ///
-    /// Backgrounded with the idle listener already live on the wanted Bluetooth port, the session
-    /// is not re-tuned at all (`TurnMicHandoff.sessionSwitch`): iOS refuses that from the
-    /// background and the refusal costs the turn its glasses mic. Returns true when the idle
-    /// session was kept.
+    /// Backgrounded, the session is never re-tuned in place (`TurnMicHandoff.sessionSwitch`): iOS
+    /// refuses that from the background and the refusal costs the turn its glasses mic. With the
+    /// idle listener already live on the wanted Bluetooth port the session is kept as it is;
+    /// otherwise — the idle listener on the phone's mic — it is handed back and activated afresh
+    /// in the hands-free shape when nothing else rides it. Returns how the session was reached.
     @discardableResult
-    private func applyConversationRoute() async -> Bool {
+    private func applyConversationRoute() async -> TurnMicHandoff.SessionSwitch {
         if turnSwitchStartedAt == nil { turnSwitchStartedAt = Date() }
         // The engine will reconfigure under this switch; the turn's hand-off rebuilds it on the
         // live input, so the configuration-change observer stands back meanwhile.
@@ -356,13 +362,19 @@ class WakeWordService: NSObject, ObservableObject {
         let portSeenBeforeSwitch = wanted != .phone
             && (preferredPort(for: wanted, in: session) != nil || resolvedInput(session) == wanted)
         // Backgrounded on a live hands-free idle session: keep it. Any re-tune from here is
-        // refused and leaves the port unlisted (tester report, 2026-10-16).
+        // refused and leaves the port unlisted (tester report, 2026-10-16). Backgrounded on the
+        // phone-mic idle session, with nothing else riding it: hand it back and activate afresh.
+        let foreground = appInForeground()
         let sessionSwitch = TurnMicHandoff.sessionSwitch(
-            wanted: wanted, appInForeground: appInForeground(),
-            portSeenBeforeSwitch: portSeenBeforeSwitch, engineRunning: audioEngine?.isRunning == true)
+            wanted: wanted, appInForeground: foreground,
+            portSeenBeforeSwitch: portSeenBeforeSwitch, engineRunning: audioEngine?.isRunning == true,
+            sessionFreeToHandBack: !carPlayMode && sessionFreeToHandBack())
+        var freshlyActivated = false
         switch sessionSwitch {
         case .keepIdleSession:
             PrivacyLog.audio(.wakeWord, .conversationKeptIdleSession, route: PrivacyToken(wanted.rawValue))
+        case .freshActivation:
+            freshlyActivated = await freshConversationActivation(on: wanted)
         case .reconfigure:
             // Omitting mixWithOthers/duckOthers causes iOS to interrupt (pause) other audio apps.
             // .default (NOT .measurement): .measurement disables system audio processing/gain,
@@ -373,8 +385,10 @@ class WakeWordService: NSObject, ObservableObject {
             await reconfigureForConversation(on: wanted)
         }
         var available = wanted == .phone || preferredPort(for: wanted, in: session) != nil
+        // A fresh hands-free activation counts as having seen the port: the hand-back logs show
+        // it listed at once, and a moment's lag there is the activation settling.
         if TurnMicHandoff.shouldRecheckPort(wanted: wanted, portAvailable: available,
-                                            portSeenBeforeSwitch: portSeenBeforeSwitch) {
+                                            portSeenBeforeSwitch: portSeenBeforeSwitch || freshlyActivated) {
             for _ in 0..<TurnMicHandoff.portRecheckAttempts where !available {
                 try? await Task.sleep(nanoseconds: UInt64(TurnMicHandoff.portRecheckInterval * 1_000_000_000))
                 available = preferredPort(for: wanted, in: session) != nil
@@ -388,6 +402,9 @@ class WakeWordService: NSObject, ObservableObject {
                              detail: PrivacyToken(reason.rawValue))
         }
         turnMicRoute = target
+        // Where the phone was chosen decides whether a follow-up asks again
+        // (`TurnMicHandoff.shouldRetakeAfterPhoneTurn`).
+        turnPhoneChosenInForeground = target == .phone && foreground
         // Cheap, non-blocking route hints stay inline.
         if MicRoutePolicy.shouldOverrideToSpeaker(outputs: session.currentRoute.outputs.map(\.portType)) {
             try? session.overrideOutputAudioPort(.speaker)
@@ -397,7 +414,60 @@ class WakeWordService: NSObject, ObservableObject {
         } else {
             preferConfiguredMicIfAvailable(session, route: target)
         }
-        return sessionSwitch == .keepIdleSession
+        return sessionSwitch
+    }
+
+    /// Whether a deactivation would cut nothing else off (`HandBackDecision`): no realtime
+    /// session or expert call owns the session, no coexisting rider (TTS, live translation) and
+    /// no shared-tap consumer is on it.
+    private func sessionFreeToHandBack() -> Bool {
+        let activity = sessionCoordinator().audioActivity
+        return HandBackDecision.decide(owner: activity.owner, coexisting: activity.coexisting,
+                                       sharedConsumersActive: sharedConsumersActive) == .deactivate
+    }
+
+    /// `TurnMicHandoff.SessionSwitch.freshActivation`: a backgrounded turn whose session cannot be
+    /// re-tuned in place (the idle listener on the phone's mic) gets a fresh one instead — engine
+    /// stopped (deactivating with running I/O fails; the recognizer state and the forwarders
+    /// survive for `handOffMic`'s rebuild), the session handed back through the coordinator so
+    /// the lease ledger stays right, then ownership re-assumed and the mixable hands-free shape
+    /// activated: option for option the idle Bluetooth hold, the shape a fresh activation is seen
+    /// to succeed in with the phone locked. A non-mixable activation is refused from the
+    /// background, so other audio is not paused. Returns whether the activation succeeded.
+    ///
+    /// If iOS refuses even that, the idle shape the session had is put back so the turn still has
+    /// a session to record on — the phone, as before. If something claimed the session between the
+    /// decision and the hand-back, it is left alone and today's re-tune is attempted.
+    private func freshConversationActivation(on route: MicRoute) async -> Bool {
+        let restorePlan = appliedIdlePlan ?? currentIdlePlan()
+        stopEngineKeepingRecognition()
+        let decision = await sessionCoordinator().handBack(sessionLease, sharedConsumersActive: sharedConsumersActive)
+        guard decision == .deactivate else {
+            PrivacyLog.audio(.wakeWord, .conversationFreshActivation, route: PrivacyToken(route.rawValue),
+                             detail: PrivacyToken("deferred"))
+            await reconfigureForConversation(on: route)
+            return false
+        }
+        sessionLease = sessionCoordinator().assumeOwnership(.wakeWord)
+        do {
+            try await sessionCoordinator().reconfigure(
+                category: .playAndRecord, mode: .default,
+                options: MicRoutePolicy.categoryOptions(for: route, mixWithOthers: true))
+            PrivacyLog.audio(.wakeWord, .conversationFreshActivation, route: PrivacyToken(route.rawValue),
+                             detail: PrivacyToken("activated"))
+            return true
+        } catch {
+            PrivacyLog.audio(.wakeWord, .conversationFreshActivation, route: PrivacyToken(route.rawValue),
+                             detail: PrivacyToken("failed"), error: SafeErrorSummary(error))
+        }
+        do {
+            try await sessionCoordinator().reconfigure(category: .playAndRecord, mode: restorePlan.mode,
+                                                       options: restorePlan.categoryOptions)
+        } catch {
+            PrivacyLog.audio(.wakeWord, .sessionConfigureFailed, route: PrivacyToken(route.rawValue),
+                             detail: PrivacyToken("idleRestore"), error: SafeErrorSummary(error))
+        }
+        return false
     }
 
     /// The conversation session for `route`: non-mixable first, as always. If iOS refuses it, the
@@ -406,10 +476,10 @@ class WakeWordService: NSObject, ObservableObject {
     /// carries on with whatever the session now lists, as before.
     ///
     /// The mixable retry does **not** rescue a backgrounded turn: on device both attempts are
-    /// refused with `cannotInterruptOthers` and the hands-free port drops out of the list. That
-    /// case never gets here — `applyConversationRoute` keeps the live idle session instead
-    /// (`TurnMicHandoff.sessionSwitch`). The retry remains for a refusal in the foreground, and
-    /// for a backgrounded turn with no live hands-free session to keep.
+    /// refused with `cannotInterruptOthers` and the hands-free port drops out of the list. Those
+    /// turns mostly never get here — `applyConversationRoute` keeps the live idle session, or
+    /// activates a fresh one (`TurnMicHandoff.sessionSwitch`). The retry remains for a refusal in
+    /// the foreground, and for a backgrounded turn whose session something else still rides.
     private func reconfigureForConversation(on route: MicRoute) async {
         let options = MicRoutePolicy.conversationCategoryOptions(for: route)
         do {
@@ -503,6 +573,7 @@ class WakeWordService: NSObject, ObservableObject {
             break
         }
         turnMicRoute = nil
+        turnPhoneChosenInForeground = false
         turnSwitchStartedAt = nil
         callLinkReleasedForReply = false
     }
@@ -1179,6 +1250,7 @@ class WakeWordService: NSObject, ObservableObject {
         let elapsed = Date().timeIntervalSince(began)
         let ms = Int((elapsed * 1000).rounded())
         if fellBack {
+            turnPhoneChosenInForeground = appInForeground()
             PrivacyLog.audio(.wakeWord, .turnMicFellBack, route: PrivacyToken(route.rawValue), milliseconds: ms)
             return
         }
@@ -1255,7 +1327,7 @@ class WakeWordService: NSObject, ObservableObject {
     /// Plan GU §4 — a reply in full quality: release the hands-free link (A2DP output only,
     /// non-mixable so other audio stays paused) and move the engine to the phone mic, where the
     /// stop phrase and barge-in listen. The next follow-up takes the link back
-    /// (`retakeConversationMicIfReleased`). No-op unless the policy chose `.fullQuality` and the
+    /// (`retakeConversationMicIfNeeded`). No-op unless the policy chose `.fullQuality` and the
     /// conversation is on a Bluetooth mic.
     func applyReplyRoute(_ route: ReplyRoute) async {
         guard route == .fullQuality, !carPlayMode, pauseHoldCount > 0,
@@ -1273,10 +1345,33 @@ class WakeWordService: NSObject, ObservableObject {
         PrivacyLog.audio(.wakeWord, .replyRouteSelected, detail: PrivacyToken("fullQuality"))
     }
 
-    /// A follow-up after a full-quality reply: take the conversation mic back before recording.
-    func retakeConversationMicIfReleased() async {
-        guard callLinkReleasedForReply else { return }
-        callLinkReleasedForReply = false
+    /// A follow-up is about to record: take the conversation mic back first when it was let go —
+    /// after a full-quality reply released the hands-free link, or when the conversation landed
+    /// on the phone from the background and the app is now in front
+    /// (`TurnMicHandoff.shouldRetakeAfterPhoneTurn`). Switch first, then listen, exactly like the
+    /// first turn. At the turn boundary rather than the moment the app comes to the front: a
+    /// reply playing or a request being dictated is never moved under the wearer.
+    func retakeConversationMicIfNeeded() async {
+        if callLinkReleasedForReply {
+            callLinkReleasedForReply = false
+            await retakeConversationMic()
+            return
+        }
+        guard !carPlayMode, pauseHoldCount > 0 else { return }
+        let configured = wakeListenInputs().micRoute
+        let glasses = glassesTurnState()
+        guard TurnMicHandoff.shouldRetakeAfterPhoneTurn(
+            turnMic: turnMicRoute, micRoute: configured, glassesStoodDown: glasses.stoodDown,
+            glassesWorn: glasses.worn, appInForeground: appInForeground(),
+            phoneChosenInForeground: turnPhoneChosenInForeground) else { return }
+        // A loudspeaker override left from the phone turn would hold the reply there.
+        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
+        await retakeConversationMic()
+        PrivacyLog.audio(.wakeWord, .turnMicRetaken, route: PrivacyToken(configured.rawValue),
+                         detail: PrivacyToken((turnMicRoute ?? .phone).rawValue))
+    }
+
+    private func retakeConversationMic() async {
         if recognitionTask != nil { pauseRecognitionForSharedEngine() }
         turnSwitchStartedAt = Date()
         await applyConversationRoute()

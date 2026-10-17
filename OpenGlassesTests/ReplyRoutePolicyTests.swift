@@ -6,10 +6,10 @@ final class ReplyRoutePolicyTests: XCTestCase {
 
     private func decide(_ mode: ReplyAudioMode, measured: Double? = nil, threshold: Double = 0.7,
                         route: MicRoute = .glasses, display: Bool = false, realtime: Bool = false,
-                        carPlay: Bool = false) -> ReplyRoute {
+                        carPlay: Bool = false, backgrounded: Bool = false) -> ReplyRoute {
         ReplyRoutePolicy.decide(.init(mode: mode, measuredSwitchSeconds: measured, thresholdSeconds: threshold,
                                       conversationRoute: route, displayGlasses: display,
-                                      realtime: realtime, carPlay: carPlay))
+                                      realtime: realtime, carPlay: carPlay, backgrounded: backgrounded))
     }
 
     func testCallQualityHoldsTheLink() {
@@ -36,6 +36,8 @@ final class ReplyRoutePolicyTests: XCTestCase {
             XCTAssertEqual(decide(mode, measured: 0.1, display: true), .holdCallLink)
             XCTAssertEqual(decide(mode, measured: 0.1, realtime: true), .holdCallLink)
             XCTAssertEqual(decide(mode, measured: 0.1, carPlay: true), .holdCallLink)
+            XCTAssertEqual(decide(mode, measured: 0.1, backgrounded: true), .holdCallLink,
+                           "the release is a re-tune, which iOS refuses from the background")
         }
     }
 

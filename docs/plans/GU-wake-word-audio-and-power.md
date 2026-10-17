@@ -389,7 +389,7 @@ Deviations and decisions made while building:
    while idle re-applies the idle plan.
 4. **Reply audio** (answer 4) is built now rather than in P3: the setting, `ReplyRoutePolicy`, the
    measurement, and the routing (`applyReplyRoute` releases HFP for A2DP output and moves the engine to
-   the phone mic for the stop listener; `retakeConversationMicIfReleased` re-takes the link before a
+   the phone mic for the stop listener; `retakeConversationMicIfNeeded` re-takes the link before a
    follow-up records). The default stays *Call quality*. **Device-pending:** the release runs in the stop
    listener's task alongside the reply's start, so the first part of a full-quality reply may play on
    the call link (step 10); barge-in on the phone mic while the glasses play the reply; the follow-up
@@ -405,6 +405,22 @@ Deviations and decisions made while building:
    capability is only readable on an active Bluetooth input.
 9. **Not built:** the reserve-posture Home card suggesting push-to-talk (§6). The posture flags exist and the
    phone-mic override is wired; the card waits for P2's battery numbers.
+10. **A locked phone (2026-10-16/17, from a tester's build 497 reports):** iOS refuses to re-tune an active
+   session from the background — the non-mixable conversation shape *and* the mixable retry fail with
+   `cannotInterruptOthers`, and the hands-free port drops out of the list — so a wake-word turn with the
+   phone in a pocket went to the phone mic and loudspeaker. `TurnMicHandoff.sessionSwitch` now picks how a
+   turn reaches its session: in the background with the idle listener live on the wanted port it **keeps**
+   that session (`conversationKeptIdleSession`); with the idle listener on the phone's mic (the default) it
+   stops the engine, hands the session back and **activates afresh** in the mixable hands-free shape — the
+   activation the same device was seen to allow after every conversation's hand-back
+   (`conversationFreshActivation`, outcome token) — unless a rider, a shared-tap consumer or a live session
+   is on it; a refused activation puts the idle shape back and the turn goes to the phone. A conversation
+   that still landed on the phone from the background retakes its Bluetooth mic at the next follow-up once
+   the app is in front (`shouldRetakeAfterPhoneTurn`, `turnMicRetaken`); a phone chosen in the foreground,
+   stood-down or doffed glasses are not re-asked. A full-quality reply is held on the call link while the
+   app is in the background (`ReplyRoutePolicy`'s `backgrounded` exclusion): its release is a re-tune too.
+   Either backgrounded path leaves other audio playing (mixable). **Device-pending:** a locked-phone turn
+   with the default iPhone idle mic, and a follow-up after unlocking.
 
 ## Risks
 

@@ -101,50 +101,121 @@ final class TurnMicHandoffTests: XCTestCase {
 
     // MARK: - Keeping the idle session in the background
 
+    private func sessionSwitch(_ route: MicRoute, foreground: Bool = false, seen: Bool = true,
+                               running: Bool = true, free: Bool = true) -> TurnMicHandoff.SessionSwitch {
+        TurnMicHandoff.sessionSwitch(wanted: route, appInForeground: foreground, portSeenBeforeSwitch: seen,
+                                     engineRunning: running, sessionFreeToHandBack: free)
+    }
+
     /// Locked phone, idle listener live on the glasses' hands-free port: no re-tune at all — iOS
     /// refuses it from the background and the refusal costs the turn its glasses mic.
     func testABackgroundedTurnOnALiveHandsFreeSessionKeepsIt() {
         for route in [MicRoute.glasses, .headset] {
-            XCTAssertEqual(TurnMicHandoff.sessionSwitch(wanted: route, appInForeground: false,
-                                                        portSeenBeforeSwitch: true, engineRunning: true),
-                           .keepIdleSession, "\(route)")
+            XCTAssertEqual(sessionSwitch(route), .keepIdleSession, "\(route)")
+            XCTAssertEqual(sessionSwitch(route, free: false), .keepIdleSession,
+                           "keeping touches nothing, so a rider on the session does not matter")
         }
     }
 
     func testTheForegroundStillReconfigures() {
-        XCTAssertEqual(TurnMicHandoff.sessionSwitch(wanted: .glasses, appInForeground: true,
-                                                    portSeenBeforeSwitch: true, engineRunning: true),
-                       .reconfigure, "in the foreground the non-mixable switch works and pauses other audio")
+        for seen in [false, true] {
+            XCTAssertEqual(sessionSwitch(.glasses, foreground: true, seen: seen), .reconfigure,
+                           "in the foreground the non-mixable switch works and pauses other audio")
+        }
     }
 
-    func testABackgroundedTurnWithNothingLiveToKeepReconfigures() {
-        XCTAssertEqual(TurnMicHandoff.sessionSwitch(wanted: .glasses, appInForeground: false,
-                                                    portSeenBeforeSwitch: false, engineRunning: true),
-                       .reconfigure, "an idle phone-mic session lists no hands-free port")
-        XCTAssertEqual(TurnMicHandoff.sessionSwitch(wanted: .glasses, appInForeground: false,
-                                                    portSeenBeforeSwitch: true, engineRunning: false),
-                       .reconfigure, "no running engine: the session may not be active, nothing to keep")
-        XCTAssertEqual(TurnMicHandoff.sessionSwitch(wanted: .phone, appInForeground: false,
-                                                    portSeenBeforeSwitch: true, engineRunning: true),
-                       .reconfigure, "the phone route leaves the hands-free shape")
+    // MARK: - A fresh activation in the background (the phone-mic idle listener)
+
+    /// The default idle listener is the phone's own mic: its session lists no hands-free port, so
+    /// there is nothing to keep — and a re-tune is refused. A fresh activation after a hand-back is
+    /// what the background allows.
+    func testABackgroundedTurnFromThePhoneMicIdleListenerActivatesAfresh() {
+        for route in [MicRoute.glasses, .headset] {
+            XCTAssertEqual(sessionSwitch(route, seen: false), .freshActivation, "\(route)")
+            XCTAssertEqual(sessionSwitch(route, seen: true, running: false), .freshActivation,
+                           "a hold with no running engine has nothing live to keep either")
+        }
     }
 
-    /// Only one combination keeps the session.
-    func testKeepingIsTheSingleBackgroundedLiveBluetoothCase() {
+    /// A deactivation would cut off whatever else rides the session (a reply playing, a recording,
+    /// captions) or a realtime session's audio: today's attempt, and the phone if it is refused.
+    func testASessionSomethingElseRidesIsNotHandedBack() {
+        XCTAssertEqual(sessionSwitch(.glasses, seen: false, free: false), .reconfigure)
+    }
+
+    func testThePhoneRouteNeverChangesHow() {
+        for foreground in [false, true] {
+            for seen in [false, true] {
+                XCTAssertEqual(sessionSwitch(.phone, foreground: foreground, seen: seen), .reconfigure,
+                               "the phone route leaves the hands-free shape")
+            }
+        }
+    }
+
+    /// Every combination: keeping needs a live port and engine, a fresh activation a free session,
+    /// and both only in the background on a Bluetooth route.
+    func testTheSessionSwitchTable() {
         for route in MicRoute.allCases {
             for foreground in [false, true] {
                 for seen in [false, true] {
                     for running in [false, true] {
-                        let step = TurnMicHandoff.sessionSwitch(wanted: route, appInForeground: foreground,
-                                                                portSeenBeforeSwitch: seen, engineRunning: running)
-                        let expected: TurnMicHandoff.SessionSwitch =
-                            route != .phone && !foreground && seen && running ? .keepIdleSession : .reconfigure
-                        XCTAssertEqual(step, expected,
-                                       "\(route) foreground=\(foreground) seen=\(seen) running=\(running)")
+                        for free in [false, true] {
+                            let step = sessionSwitch(route, foreground: foreground, seen: seen,
+                                                     running: running, free: free)
+                            let expected: TurnMicHandoff.SessionSwitch
+                            if route == .phone || foreground {
+                                expected = .reconfigure
+                            } else if seen && running {
+                                expected = .keepIdleSession
+                            } else {
+                                expected = free ? .freshActivation : .reconfigure
+                            }
+                            XCTAssertEqual(step, expected, "\(route) foreground=\(foreground) seen=\(seen) "
+                                           + "running=\(running) free=\(free)")
+                        }
                     }
                 }
             }
         }
+    }
+
+    // MARK: - A follow-up retaking the glasses after a phone turn
+
+    private func retakes(turnMic: MicRoute? = .phone, micRoute: MicRoute = .glasses, stoodDown: Bool = false,
+                         worn: Bool? = true, foreground: Bool = true, chosenInForeground: Bool = false) -> Bool {
+        TurnMicHandoff.shouldRetakeAfterPhoneTurn(turnMic: turnMic, micRoute: micRoute,
+                                                  glassesStoodDown: stoodDown, glassesWorn: worn,
+                                                  appInForeground: foreground,
+                                                  phoneChosenInForeground: chosenInForeground)
+    }
+
+    /// The tester's report: a locked-phone turn landed on the phone, the app came to the front,
+    /// and every follow-up stayed on the phone with the glasses connected.
+    func testAFollowUpInTheForegroundRetakesAPhoneTurnFromTheBackground() {
+        XCTAssertTrue(retakes())
+        XCTAssertTrue(retakes(worn: nil), "unknown wear is not off the face")
+        XCTAssertTrue(retakes(micRoute: .headset, worn: nil))
+    }
+
+    func testStillInTheBackgroundTheFollowUpStaysOnThePhone() {
+        XCTAssertFalse(retakes(foreground: false), "the switch is what fails there; the turn goes on as it is")
+    }
+
+    func testAPhoneChosenInTheForegroundIsNotAskedAgain() {
+        XCTAssertFalse(retakes(chosenInForeground: true),
+                       "the port was missing (or the hand-off timed out) with nothing stopping the switch")
+    }
+
+    func testStoodDownOrOffTheFaceStillMeansThePhone() {
+        XCTAssertFalse(retakes(stoodDown: true))
+        XCTAssertFalse(retakes(worn: false))
+        XCTAssertTrue(retakes(micRoute: .headset, worn: false), "wear is the glasses', not a headset's")
+    }
+
+    func testNothingToRetake() {
+        XCTAssertFalse(retakes(turnMic: .glasses), "already on the conversation mic")
+        XCTAssertFalse(retakes(turnMic: nil), "no conversation")
+        XCTAssertFalse(retakes(micRoute: .phone), "the wearer chose the phone")
     }
 
     // MARK: - Sequencing

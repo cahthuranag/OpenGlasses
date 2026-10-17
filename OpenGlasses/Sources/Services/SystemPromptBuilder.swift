@@ -55,10 +55,11 @@ enum SystemPromptBuilder {
         The one exception: a better-sounding built-in voice is downloaded in the iPhone's Settings > Accessibility > \
         Spoken Content > Voices, and then picked under iOS Voice in the app.
         You cannot change these settings yourself. Some are hidden in Simple Mode or on a phone an organisation manages.
-        Listening: while listening is on (not push-to-talk), the wake phrase works with the phone locked or in a pocket. \
-        With Settings > \(title(.devices)) > Glasses > Listen for the wake word on set to Same as Microphone and the glasses \
-        as the microphone, the request and the reply go through the glasses, and glasses taken off for \(Int(GlassesSleepPolicy.doffGraceSeconds)) seconds stop \
-        listening until they are put back on. On iPhone, the default, the phone's own mic listens.
+        Listening: while listening is on (not push-to-talk), the wake phrase works with the phone locked or in a pocket, \
+        and with the glasses as the microphone the request and the reply go through the glasses there too. \
+        Settings > \(title(.devices)) > Glasses > Listen for the wake word on picks the mic that waits for the wake phrase: \
+        On iPhone, the default, the phone's own mic listens; Same as Microphone holds the glasses' mic open instead, and \
+        glasses taken off for \(Int(GlassesSleepPolicy.doffGraceSeconds)) seconds then stop listening until they are put back on.
         """
     }
 

@@ -1380,7 +1380,6 @@ final class FieldSessionService: ObservableObject {
     var documentStore: DocumentStore? {
         didSet {
             guard let documentStore else { return }
-            retrievalPolicy = .default(for: documentStore.embeddingModelId)
             capturedManuals.documents = documentStore
             documentStore.capturedNamespaceAllowed = { [weak self] namespace in
                 guard let self, let session = self.activeSession else { return false }
@@ -1388,8 +1387,22 @@ final class FieldSessionService: ObservableObject {
             }
         }
     }
-    /// The evidence gate for per-turn manual retrieval. Injectable so tests can pin the floor.
-    var retrievalPolicy = RetrievalEvidencePolicy()
+    /// The evidence gate for per-turn manual retrieval: the measured default for the model that
+    /// answers for the store, unless a test pins one (assigning pins it).
+    var retrievalPolicy: RetrievalEvidencePolicy {
+        get { pinnedRetrievalPolicy ?? .default(for: documentStore?.embeddingModelId ?? "") }
+        set { pinnedRetrievalPolicy = newValue }
+    }
+    private var pinnedRetrievalPolicy: RetrievalEvidencePolicy?
+
+    /// The gate for one vault: the measured default for the model its manuals are indexed with
+    /// now (Plan IV P4) — the contextual model's once a vault is on it, the standard model's while
+    /// it isn't — unless a test pins one.
+    func retrievalPolicy(forVault vaultId: String) -> RetrievalEvidencePolicy {
+        if let pinnedRetrievalPolicy { return pinnedRetrievalPolicy }
+        guard let documentStore else { return RetrievalEvidencePolicy() }
+        return .default(for: documentStore.servingModelId(namespace: DocumentStore.vaultNamespace(vaultId)))
+    }
     /// How many manual passages a turn may carry.
     var manualPassageLimit = 4
 
@@ -1692,7 +1705,7 @@ final class FieldSessionService: ObservableObject {
                 documentStore?.list(namespace: namespace).contains { $0.id == documentId } ?? false
             }) { return true }
             return manualAvailable(documentId)
-        }, policy: retrievalPolicy, modelScope: retrievalModelScope)
+        }, policy: retrievalPolicy(forVault: vaultId), modelScope: retrievalModelScope)
     }
 
     // MARK: - Team learnings at answer time (Plan FP P2)

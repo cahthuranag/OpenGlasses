@@ -660,11 +660,19 @@ struct RetrievalEvidencePolicy: Equatable {
     ///   measured and buy back refusals only by answering out-of-scope questions again (one shared
     ///   term: 1 in-scope and 6 of 18 out-of-scope refused; 3 terms at 0.6: 4 and 14). The two
     ///   backends share one rule because the criterion reads words, not cosines.
-    /// - `nl-contextual` — **unmeasured — a phone run is pending.** Left at the floor rather than
-    ///   guessed.
+    /// - `nl-contextual` — **measured** (Plan IV P4, the device's framework model run on a Mac):
+    ///   three shared terms, scaled 0.6. The bare floor refused none of the 18 out-of-scope Lennox
+    ///   questions. Swept on both sets, 0.6 refuses 12 of them with no in-scope question refused
+    ///   and recall unchanged (Lennox 0.94, code book hit@4 0.53); 0.75, the other models' rule,
+    ///   refuses 14 but turns away one in-scope question and drops Lennox recall to 0.89. Looser
+    ///   settings refuse 2–7. This model ranks the answering passage high enough that the stricter
+    ///   rule only costs answers.
     static func `default`(for modelId: String) -> RetrievalEvidencePolicy {
         if modelId.hasPrefix("nl-word") || modelId.hasPrefix("nl-sentence") {
             return RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.75)
+        }
+        if modelId.hasPrefix("nl-contextual") {
+            return RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.6)
         }
         return RetrievalEvidencePolicy()
     }

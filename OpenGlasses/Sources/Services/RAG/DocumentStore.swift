@@ -111,9 +111,13 @@ final class DocumentStore: ObservableObject {
         insertDocument(id: docId, name: safeName, sourceType: sourceType, namespace: namespace,
                        createdAt: now, chunkCount: chunks.count, charCount: cleaned.count)
 
-        let versionTag = embedder.version.tag
+        // A vault manual is embedded with the model its vault is served by (Plan IV P4), so it
+        // never joins an index another model built; everything else keeps the store's embedder.
+        let chunkEmbedder = ingestEmbedder(namespace: namespace)
+        let versionTag = chunkEmbedder.version.tag
+        let started = Date()
         for chunk in chunks {
-            let embedding = embedder.embed(chunk.text)
+            let embedding = chunkEmbedder.embed(chunk.text)
             insertChunk(documentId: docId, index: chunk.index, text: chunk.text,
                         embedding: embedding.map(vecToData), page: chunk.page, section: chunk.section,
                         kind: chunk.kind, figure: chunk.figure,
@@ -129,6 +133,11 @@ final class DocumentStore: ObservableObject {
         // came out of how much text.
         PrivacyLog.store(.ragDocuments, .ingested, count: chunks.count,
                          characters: cleaned.count, detail: PrivacyToken(sourceType))
+        if Self.isVaultNamespace(namespace) {
+            PrivacyLog.store(.ragDocuments, .indexed, count: chunks.count,
+                             detail: PrivacyToken(Self.modelClass(chunkEmbedder.modelId)),
+                             durationMs: Int(Date().timeIntervalSince(started) * 1000))
+        }
         return documents.first { $0.id == docId }
     }
 
@@ -142,11 +151,25 @@ final class DocumentStore: ObservableObject {
     func query(_ text: String, limit: Int = 4, namespace: String? = nil, documentIds: [String]? = nil,
                kinds: Set<DocumentChunker.Kind> = [.prose]) -> [Passage] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let qv = embedder.embed(trimmed) else { return [] }
+        guard !trimmed.isEmpty else { return [] }
+        let rows = fetchChunks(namespace: namespace, documentIds: documentIds).filter { kinds.contains($0.kind) }
+        let vaultQuery = QueryVectors(text: trimmed, store: self)
+        let qv = rows.contains { !Self.isVaultNamespace($0.namespace) } ? embedder.embed(trimmed) : nil
 
         let current = embedder.version
-        let rows = fetchChunks(namespace: namespace, documentIds: documentIds).filter { kinds.contains($0.kind) }
         let scored = rows.compactMap { row -> Passage? in
+            // A vault manual's chunk is compared with the question embedded by the model that
+            // embedded the chunk (Plan IV P4) and is never re-embedded here: its re-index runs in
+            // the background into a separate column and swaps in whole.
+            if Self.isVaultNamespace(row.namespace) {
+                guard let emb = row.embedding, let q = vaultQuery.vector(forVersionTag: row.embeddingVersion) else { return nil }
+                let sim = Embedder.cosineSimilarity(q, emb)
+                guard sim > minSimilarity else { return nil }
+                return Passage(documentId: row.documentId, documentName: row.documentName,
+                               chunkIndex: row.chunkIndex, text: row.text, similarity: sim,
+                               page: row.page, section: row.section, kind: row.kind, figure: row.figure)
+            }
+            guard let qv else { return nil }
             // A chunk embedded by a different model can't be compared against `qv`. Re-embed it from
             // its text with the active model and persist the result, so the store self-heals after a
             // model swap (lazy migration). Compatible chunks use their stored vector as-is.
@@ -170,6 +193,7 @@ final class DocumentStore: ObservableObject {
                            chunkIndex: row.chunkIndex, text: row.text, similarity: sim,
                            page: row.page, section: row.section, kind: row.kind, figure: row.figure)
         }
+        vaultQuery.logTimings()
         return Array(scored.sorted { $0.similarity > $1.similarity }.prefix(limit))
     }
 
@@ -205,14 +229,19 @@ final class DocumentStore: ObservableObject {
         let terms = LexicalSupport.contentTerms(text)
         guard !terms.isEmpty else { return [] }
         let current = embedder.version
-        let qv = embedder.embed(text)
-        let scored = fetchChunks(namespace: namespace, documentIds: documentIds)
-            .filter { kinds.contains($0.kind) }
+        let rows = fetchChunks(namespace: namespace, documentIds: documentIds).filter { kinds.contains($0.kind) }
+        let vaultQuery = QueryVectors(text: text, store: self)
+        let qv = rows.contains { !Self.isVaultNamespace($0.namespace) } ? embedder.embed(text) : nil
+        let scored = rows
             .compactMap { row -> (row: ChunkRow, shared: Int, similarity: Float)? in
                 let shared = LexicalSupport.sharedTermCount(text: row.text, queryTerms: terms)
                 guard shared > 0 else { return nil }
                 var similarity: Float = 0
-                if let qv, let vector = row.embedding,
+                if Self.isVaultNamespace(row.namespace) {
+                    if let vector = row.embedding, let q = vaultQuery.vector(forVersionTag: row.embeddingVersion) {
+                        similarity = Embedder.cosineSimilarity(q, vector)
+                    }
+                } else if let qv, let vector = row.embedding,
                    EmbeddingMigrationPolicy.action(stored: EmbeddingVersion(tag: row.embeddingVersion),
                                                    current: current) == .reuse {
                     similarity = Embedder.cosineSimilarity(qv, vector)
@@ -635,7 +664,7 @@ final class DocumentStore: ObservableObject {
     var outdatedChunkCount: Int {
         let current = embedder.version
         return fetchChunks(namespace: nil, documentIds: nil).reduce(0) { acc, row in
-            row.embedding == nil ? acc
+            row.embedding == nil || Self.isVaultNamespace(row.namespace) ? acc
                 : EmbeddingMigrationPolicy.action(stored: EmbeddingVersion(tag: row.embeddingVersion),
                                                   current: current) == .reembed ? acc + 1 : acc
         }
@@ -647,8 +676,9 @@ final class DocumentStore: ObservableObject {
     @discardableResult
     func reindexOutdated(progress: ((Int, Int) -> Void)? = nil) async -> Int {
         let current = embedder.version
+        // A vault's manuals have their own model and their own re-index (`upgradeVaultEmbeddings`).
         let rows = fetchChunks(namespace: nil, documentIds: nil)
-            .filter { $0.embedding != nil &&
+            .filter { $0.embedding != nil && !Self.isVaultNamespace($0.namespace) &&
                 EmbeddingMigrationPolicy.action(stored: EmbeddingVersion(tag: $0.embeddingVersion),
                                                 current: current) == .reembed }
         var done = 0
@@ -685,6 +715,242 @@ final class DocumentStore: ObservableObject {
         sqlite3_bind_text(stmt, 2, versionTag, -1, SQLITE_TRANSIENT)
         sqlite3_bind_text(stmt, 3, chunkId, -1, SQLITE_TRANSIENT)
         _ = sqlite3_step(stmt)
+    }
+
+    // MARK: - A vault's own embedding model (Plan IV P4)
+
+    /// The model a vault's manuals are indexed with going forward — `Embedder.fieldAssist()` in
+    /// the app (the contextual model when it is switched on and present), injected by tests. Nil
+    /// means the store's own embedder. Every other namespace always uses the store's embedder.
+    var fieldAssistEmbedder: Embedder?
+
+    /// The model new vault manuals are indexed with.
+    var vaultTargetEmbedder: Embedder { fieldAssistEmbedder ?? embedder }
+
+    /// The models a vault chunk's version can be matched to, for embedding a question the same way.
+    private var knownEmbedders: [Embedder] {
+        var list = [embedder]
+        if let fieldAssistEmbedder { list.append(fieldAssistEmbedder) }
+        list.append(standardEmbedder)
+        return list
+    }
+
+    private lazy var standardEmbedder = Embedder(preference: .standard)
+
+    /// An embedder that produces `tag`, or nil when none of the known models does — a chunk the
+    /// question cannot be compared with, which is left out of the similarity search (the exact-
+    /// token and lexical routes still reach it).
+    func embedderProducing(versionTag tag: String?) -> Embedder? {
+        guard let tag else { return nil }
+        return knownEmbedders.first { $0.isAvailable && $0.version.tag == tag }
+    }
+
+    /// The version most of a namespace's chunks carry: the index that answers for it now.
+    func servingVersionTag(namespace: String, excluding documentId: String? = nil) -> String? {
+        var sql = """
+        SELECT c.embedding_version, COUNT(*) AS n FROM doc_chunks c JOIN documents d ON c.document_id = d.id
+        WHERE d.namespace = '\(escapedSQL(namespace))' AND c.embedding IS NOT NULL AND c.embedding_version IS NOT NULL
+        """
+        if let documentId { sql += " AND c.document_id != '\(escapedSQL(documentId))'" }
+        sql += " GROUP BY c.embedding_version ORDER BY n DESC LIMIT 1"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0) else { return nil }
+        return String(cString: raw)
+    }
+
+    /// The model id that answers for a namespace now — what the evidence gate is chosen by.
+    func servingModelId(namespace: String) -> String {
+        guard Self.isVaultNamespace(namespace) else { return embedder.modelId }
+        if let tag = servingVersionTag(namespace: namespace), let version = EmbeddingVersion(tag: tag) {
+            return version.modelId
+        }
+        return vaultTargetEmbedder.modelId
+    }
+
+    /// The embedder a document joining `namespace` is embedded with: a vault's serving model while
+    /// the vault has an index and that model is here, its target otherwise; the store's embedder
+    /// for every other namespace. A vault mid-way through a re-index keeps one model per index.
+    func ingestEmbedder(namespace: String, excluding documentId: String? = nil) -> Embedder {
+        guard Self.isVaultNamespace(namespace) else { return embedder }
+        if let tag = servingVersionTag(namespace: namespace, excluding: documentId),
+           let serving = embedderProducing(versionTag: tag) {
+            return serving
+        }
+        return vaultTargetEmbedder
+    }
+
+    /// The question embedded once per model a vault's chunks use, for one search.
+    struct QueryVectors {
+        let text: String
+        let store: DocumentStore
+        private final class Cache { var vectors: [String: [Float]?] = [:]; var milliseconds: [String: Int] = [:] }
+        private let cache = Cache()
+
+        init(text: String, store: DocumentStore) {
+            self.text = text
+            self.store = store
+        }
+
+        @MainActor func vector(forVersionTag tag: String?) -> [Float]? {
+            guard let tag else { return nil }
+            if let known = cache.vectors[tag] { return known }
+            guard let embedder = store.embedderProducing(versionTag: tag) else {
+                cache.vectors[tag] = .some(nil)
+                return nil
+            }
+            let started = Date()
+            let vector = embedder.embed(text)
+            cache.vectors[tag] = vector
+            cache.milliseconds[tag] = Int(Date().timeIntervalSince(started) * 1000)
+            return vector
+        }
+
+        /// One line per model used: how long embedding the question took. Never the question.
+        @MainActor func logTimings() {
+            for (tag, ms) in cache.milliseconds {
+                PrivacyLog.store(.ragDocuments, .queryEmbedded,
+                                 detail: PrivacyToken(DocumentStore.modelClass(EmbeddingVersion(tag: tag)?.modelId ?? "")),
+                                 durationMs: ms)
+            }
+        }
+    }
+
+    /// The model family for a log line — a closed set, never the full identifier.
+    nonisolated static func modelClass(_ modelId: String) -> String {
+        if modelId.hasPrefix("nl-contextual") { return "contextual" }
+        if modelId.hasPrefix("nl-sentence") { return "sentence" }
+        if modelId.hasPrefix("nl-word") { return "word" }
+        return "other"
+    }
+
+    /// How a vault re-index went.
+    enum UpgradeOutcome: Equatable {
+        /// Every chunk already carries the target model's vectors.
+        case current
+        /// The new index was completed and swapped in.
+        case completed(chunks: Int)
+        /// Stopped part-way (the app went to the background, the setting changed); the vectors
+        /// built so far are kept, and the next run carries on from them.
+        case interrupted(done: Int, total: Int)
+    }
+
+    /// Re-index a vault's manuals with `target`, resumably, without disturbing search.
+    ///
+    /// New vectors go into a pending column chunk by chunk; the index that answers is untouched
+    /// until every chunk of the vault has its new vector, and then all of them swap in one
+    /// transaction. A run that stops part-way keeps what it built, and the next run embeds only
+    /// what is still missing. `progress` reports (manual title, chunks done, chunks to do).
+    func upgradeVaultEmbeddings(namespace: String, to target: Embedder,
+                                progress: ((String, Int, Int) -> Void)? = nil,
+                                shouldContinue: () -> Bool = { true }) async -> UpgradeOutcome {
+        guard Self.isVaultNamespace(namespace), target.isAvailable else { return .current }
+        let tag = target.version.tag
+        let started = Date()
+        var embedded = 0
+        for _ in 0..<3 {
+            let todo = pendingWork(namespace: namespace, targetTag: tag)
+            if todo.total == 0 {
+                exec("UPDATE doc_chunks SET pending_embedding = NULL, pending_version = NULL WHERE document_id IN "
+                     + "(SELECT id FROM documents WHERE namespace = '\(escapedSQL(namespace))')")
+                return embedded > 0 ? .completed(chunks: embedded) : .current
+            }
+            var done = todo.total - todo.missing.count
+            for row in todo.missing {
+                guard shouldContinue(), !Task.isCancelled else { return .interrupted(done: done, total: todo.total) }
+                writePending(chunkId: row.id, vector: target.embed(row.text), versionTag: tag)
+                done += 1
+                embedded += 1
+                progress?(row.title, done, todo.total)
+                await Task.yield()
+            }
+            guard shouldContinue(), !Task.isCancelled else { return .interrupted(done: done, total: todo.total) }
+            // Swap only if nothing joined the vault meanwhile; otherwise go round and embed it too.
+            if pendingWork(namespace: namespace, targetTag: tag).missing.isEmpty {
+                guard swapPending(namespace: namespace, targetTag: tag) else { return .interrupted(done: done, total: todo.total) }
+                refresh()
+                PrivacyLog.store(.ragDocuments, .reembedded, count: embedded, total: todo.total,
+                                 detail: PrivacyToken(Self.modelClass(target.modelId)),
+                                 durationMs: Int(Date().timeIntervalSince(started) * 1000))
+                return .completed(chunks: embedded)
+            }
+        }
+        return .interrupted(done: embedded, total: embedded)
+    }
+
+    /// The vault's chunks not yet on `targetTag`, and of those, the ones with no pending vector.
+    private func pendingWork(namespace: String, targetTag: String) -> (total: Int, missing: [(id: String, title: String, text: String)]) {
+        let sql = """
+        SELECT c.id, d.name, c.text, c.pending_version FROM doc_chunks c JOIN documents d ON c.document_id = d.id
+        WHERE d.namespace = ? AND (c.embedding_version IS NULL OR c.embedding_version != ?)
+        ORDER BY d.name, c.chunk_index
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return (0, []) }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, namespace, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, targetTag, -1, SQLITE_TRANSIENT)
+        var total = 0
+        var missing: [(id: String, title: String, text: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            total += 1
+            let pending = sqlite3_column_type(stmt, 3) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 3))
+            guard pending != targetTag else { continue }
+            missing.append((String(cString: sqlite3_column_text(stmt, 0)), String(cString: sqlite3_column_text(stmt, 1)),
+                            String(cString: sqlite3_column_text(stmt, 2))))
+        }
+        return (total, missing)
+    }
+
+    private func writePending(chunkId: String, vector: [Float]?, versionTag: String) {
+        let sql = "UPDATE doc_chunks SET pending_embedding = ?, pending_version = ? WHERE id = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        if let vector {
+            let data = vecToData(vector)
+            _ = data.withUnsafeBytes { sqlite3_bind_blob(stmt, 1, $0.baseAddress, Int32(data.count), SQLITE_TRANSIENT) }
+        } else {
+            sqlite3_bind_null(stmt, 1)
+        }
+        sqlite3_bind_text(stmt, 2, versionTag, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 3, chunkId, -1, SQLITE_TRANSIENT)
+        _ = sqlite3_step(stmt)
+    }
+
+    /// Every pending vector of the vault becomes its index, in one transaction.
+    private func swapPending(namespace: String, targetTag: String) -> Bool {
+        guard exec("BEGIN IMMEDIATE") else { return false }
+        let inVault = "document_id IN (SELECT id FROM documents WHERE namespace = '\(escapedSQL(namespace))')"
+        let tag = escapedSQL(targetTag)
+        let ok = exec("""
+            UPDATE doc_chunks SET embedding = pending_embedding,
+                embedding_version = CASE WHEN pending_embedding IS NULL THEN NULL ELSE pending_version END,
+                pending_embedding = NULL, pending_version = NULL
+            WHERE \(inVault) AND pending_version = '\(tag)'
+            """)
+        guard ok, exec("COMMIT") else { exec("ROLLBACK"); return false }
+        return true
+    }
+
+    /// How far a vault's re-index has got: chunks on the target model or with a pending vector
+    /// for it, of all its chunks. For the indexing screen and the tests.
+    func upgradeProgress(namespace: String, targetTag: String) -> (done: Int, total: Int) {
+        let work = pendingWork(namespace: namespace, targetTag: targetTag)
+        let all = documentChunkCount(namespace: namespace)
+        return (all - work.missing.count, all)
+    }
+
+    private func documentChunkCount(namespace: String) -> Int {
+        let sql = """
+        SELECT COUNT(*) FROM doc_chunks c JOIN documents d ON c.document_id = d.id WHERE d.namespace = ?
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, namespace, -1, SQLITE_TRANSIENT)
+        return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int(stmt, 0)) : 0
     }
 
     // MARK: - Passage locations (Plan IN P0)
@@ -774,10 +1040,11 @@ final class DocumentStore: ObservableObject {
     /// changed since import). The id is kept so the ledger, citations and evidence still name it.
     @discardableResult
     func rechunk(documentId: String, chunks: [DocumentChunker.Chunk]) async -> Bool {
-        guard !chunks.isEmpty, storedNamespace(documentId: documentId) != nil else { return false }
+        guard !chunks.isEmpty, let namespace = storedNamespace(documentId: documentId) else { return false }
+        let chunkEmbedder = ingestEmbedder(namespace: namespace, excluding: documentId)
         var vectors: [Data?] = []
         for chunk in chunks {
-            vectors.append(embedder.embed(chunk.text).map(vecToData))
+            vectors.append(chunkEmbedder.embed(chunk.text).map(vecToData))
             await Task.yield()
         }
         guard exec("BEGIN IMMEDIATE") else { return false }
@@ -786,7 +1053,7 @@ final class DocumentStore: ObservableObject {
         for (index, chunk) in chunks.enumerated() {
             insertChunk(documentId: documentId, index: chunk.index, text: chunk.text, embedding: vectors[index],
                         page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
-                        createdAt: now, version: vectors[index] == nil ? nil : embedder.version.tag,
+                        createdAt: now, version: vectors[index] == nil ? nil : chunkEmbedder.version.tag,
                         location: chunk)
         }
         exec("UPDATE documents SET chunk_count = \(chunks.count) WHERE id = '\(escapedSQL(documentId))'")
@@ -889,6 +1156,10 @@ final class DocumentStore: ObservableObject {
         exec("ALTER TABLE doc_chunks ADD COLUMN page_end INTEGER")
         exec("ALTER TABLE doc_chunks ADD COLUMN sentences TEXT")
         exec("ALTER TABLE doc_chunks ADD COLUMN location_version INTEGER")
+        // A vault manual's next index, built beside the one that answers until it is complete
+        // (Plan IV P4).
+        exec("ALTER TABLE doc_chunks ADD COLUMN pending_embedding BLOB")
+        exec("ALTER TABLE doc_chunks ADD COLUMN pending_version TEXT")
         // The printed page each physical page carries, where the PDF or its header says (decision 4).
         exec("""
         CREATE TABLE IF NOT EXISTS doc_page_labels (
@@ -968,6 +1239,7 @@ final class DocumentStore: ObservableObject {
         let id: String
         let documentId: String
         let documentName: String
+        var namespace: String = ""
         let chunkIndex: Int
         let text: String
         let embedding: [Float]?
@@ -982,7 +1254,7 @@ final class DocumentStore: ObservableObject {
         if let namespace, namespace.hasPrefix("captured:"), !capturedNamespaceAllowed(namespace) { return [] }
         var sql = """
         SELECT c.id, c.document_id, d.name, c.chunk_index, c.text, c.embedding, c.page, c.section,
-               c.embedding_version, c.kind, c.figure
+               c.embedding_version, c.kind, c.figure, d.namespace
         FROM doc_chunks c JOIN documents d ON c.document_id = d.id
         """
         var clauses: [String] = []
@@ -1014,7 +1286,9 @@ final class DocumentStore: ObservableObject {
             let version = sqlite3_column_type(stmt, 8) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 8)) : nil
             let kindTag = sqlite3_column_type(stmt, 9) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 9)) : nil
             let figure = sqlite3_column_type(stmt, 10) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 10)) : nil
-            rows.append(ChunkRow(id: id, documentId: docId, documentName: name, chunkIndex: idx, text: text,
+            let rowNamespace = sqlite3_column_type(stmt, 11) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 11)) : ""
+            rows.append(ChunkRow(id: id, documentId: docId, documentName: name, namespace: rowNamespace,
+                                 chunkIndex: idx, text: text,
                                  embedding: emb, page: page, section: section, embeddingVersion: version,
                                  kind: kindTag.flatMap(DocumentChunker.Kind.init(rawValue:)) ?? .prose,
                                  figure: figure))

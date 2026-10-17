@@ -3893,6 +3893,15 @@ struct Config {
 
     static func setContextualEmbeddingEnabled(_ enabled: Bool) { contextualEmbeddingEnabled = enabled }
 
+    /// Field Assist's manual search uses the contextual model (Plan IV P4) — **on by default**,
+    /// for the vault manuals only; everything else keeps the switch above. Settings › Field Assist
+    /// shows it as "Smarter manual search". Turning it either way re-indexes the vault manuals
+    /// once in the background, and search keeps answering from the old index until the new one
+    /// is complete. Until the model's asset is on the device the manuals stay on the standard
+    /// model.
+    @UserDefaultsBacked("fieldAssistContextualSearchEnabled", default: true)
+    static var fieldAssistContextualSearchEnabled: Bool
+
     // MARK: - Model pricing overrides (Plan AU — Settings editor)
 
     /// User edits to the bundled `ModelPricing` table (USD per 1M tokens), keyed by

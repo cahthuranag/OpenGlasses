@@ -1853,6 +1853,9 @@ enum PrivacyLog {
         case recordWritten, writeFailed, cleared, evicted, deleteFailed
         case migrated, legacyRetired, legacyRetireFailed
         case ingested, reembedded, appended, recovered
+        /// A vault manual indexed, and a question embedded for a vault search (Plan IV P4): how
+        /// many chunks, which model family, how long. Never a title or a question.
+        case indexed, queryEmbedded
         /// A distillation pass over the knowledge graph: how many rows it changed, of how many
         /// considered. Counts only — which fact was promoted or retired is the wearer's content.
         case distilled
@@ -1866,11 +1869,12 @@ enum PrivacyLog {
                       slot: PrivacyToken? = nil, scope: StoreScope? = nil,
                       count: Int? = nil, total: Int? = nil, characters: Int? = nil,
                       bytes: Int? = nil, detail: PrivacyToken? = nil,
-                      error: SafeErrorSummary? = nil) -> PrivacyEvent {
+                      error: SafeErrorSummary? = nil, durationMs: Int? = nil) -> PrivacyEvent {
         var fields: [PrivacyEvent.Field] = [
             .init(.store, .token(PrivacyToken(store.rawValue))),
             .init(.event, .token(PrivacyToken(event.rawValue))),
         ]
+        if let durationMs { fields.append(.init(.duration, .milliseconds(durationMs))) }
         if let slot { fields.append(.init(.slot, .token(slot))) }
         if let scope { fields.append(.init(.scope, .token(PrivacyToken(scope.rawValue)))) }
         if let count { fields.append(.init(.count, .count(count))) }

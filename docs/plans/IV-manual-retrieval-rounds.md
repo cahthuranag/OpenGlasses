@@ -3,7 +3,8 @@
 **Status:** 🚧 P0–P3 shipped 2026-10-17/18: both measurements run as a process, on both
 embedders; the device's evidence gate carries the lexical criterion; the newest edition answers
 and an older one only when asked; chunks keep their line breaks and a clause-numbered document is
-chunked at its clauses. P4–P5 are unbuilt.
+chunked at its clauses; Field Assist searches manuals with the contextual model by default.
+P5 is unbuilt; P4 owes a phone run.
 **Track:** Field Assist (B2B): every vault with manuals, and the regulations vertical in particular.
 **Related:** Plans [ED](ED-vault-manual-retrieval.md) / [EJ](EJ-manual-retrieval-fidelity.md)
 (manual retrieval and its evidence gate), [EK](EK-manual-structure-and-figures.md) (structure from
@@ -429,6 +430,91 @@ used as a pointer the model can follow than as a passage.
   in vault setup.
 - **Exit:** device numbers for both sets on both models recorded in this plan; the default flips
   only if neither set drops; the gate for `nl-contextual` refuses at least what P1's does.
+
+#### What shipped in P4 (2026-10-18)
+
+**Owner decisions:** the contextual model is **on by default for Field Assist only**, meaning the
+vault manuals, and every other embedding user keeps its model. A visible switch, "Smarter manual
+search", in Settings › Field Assist turns it off. The release notes flag the one-time re-index and
+the possible model download.
+
+- **One model per index.** Vault manuals (the `vault:` namespaces) are indexed with
+  `Embedder.fieldAssist()`: the contextual model while the switch is on (the default,
+  `Config.fieldAssistContextualSearchEnabled`) and its asset is on the device, the standard model
+  otherwise. Every chunk keeps its `EmbeddingVersion`. A vault question is embedded with the model
+  of the chunk it is compared with, never another, and a vault chunk is never re-embedded inline
+  during a search. Personal documents, memory and learnings keep the store's embedder, and the
+  app-wide re-index leaves vault chunks alone.
+- **Fallback.** Without the asset (offline, a failed request) a vault indexes and answers with the
+  standard model and stays searchable. `VaultEmbeddingUpgrade` asks for the asset and re-indexes
+  once it arrives. The same path runs when the switch changes either way.
+- **Resumable, and the old index answers until the new one is whole.** New vectors go into a
+  pending column chunk by chunk; when every chunk of a vault has one, they swap in one transaction.
+  A run stopped by the app leaving, the switch changing or a newer run keeps what it built, and
+  the next embeds only what is missing. A manual imported mid-way joins the index that answers and
+  is picked up by the next pass. Progress shows through `VaultIndexingMonitor`, where every other
+  index shows. Each vault runs under its operation lock, after IN P0's location migration.
+- **Input length.** The contextual model reads at most 256 tokens and drops the rest silently.
+  After P3, the longest chunks are about 700 characters, and of the 200 longest a sixth reached the
+  limit (32 in the code book, 39 in the Lennox service manual). A text the model would cut is now
+  split at a sentence (else a word) and the pieces' token vectors pooled, so nothing is lost
+  (`ContextualInput`).
+- **The gate follows the serving model.** The session picks a vault's gate by the model its
+  manuals are indexed with now (`retrievalPolicy(forVault:)`), so it changes the moment the
+  re-index swaps in. `nl-contextual` is calibrated: three shared terms, scaled 0.6.
+- **Timing in support reports.** For a vault manual's indexing and for each question embedded for
+  a vault search, the log records chunk counts, model family and milliseconds, never a title or a
+  question. A completed re-index logs its chunk count and duration.
+- **Measured** (the device's framework models on a Mac, stable answer key, P3's chunker):
+
+  | | Sentence model (shipped before) | Contextual model (now the default) |
+  |---|---|---|
+  | Code book, newest edition: hit@1 / hit@4 | 0.26 / 0.44 | **0.32 / 0.53** |
+  | Code book, both editions: hit@1 / hit@4 | 0.26 / 0.44 | **0.32 / 0.53** |
+  | Code book in-scope refused | 2 of 68 | 0 of 68 |
+  | Lennox recall@4 / hit@1 | 0.56 / 0.39 | **0.94 / 0.67** |
+  | Lennox refused, out-of-scope / in-scope | 15 / 6 of 18 | 12 / 0 of 18 |
+
+  The simulator's tests don't set Field Assist's model, so they run on the store's own embedder.
+  This round that came back as the sentence model, and it gave exactly the sentence column (Lennox
+  0.56 / 0.39 with 15 / 6 refused, code book 0.26 / 0.44). In earlier rounds the simulator had only
+  the word model.
+
+  **The gate sweep** on the contextual model (hit@4 identical on the code book in every row):
+
+  | Gate | Lennox out-of-scope refused | Lennox in-scope refused | Lennox recall@4 | Code book in-scope refused |
+  |---|---|---|---|---|
+  | floor only | 0 | 0 | 0.94 | 0 |
+  | 1 term | 2 | 0 | 0.94 | 0 |
+  | 2 terms (fraction 0 / 0.5) | 5 / 4 | 0 | 0.94 | 0 |
+  | 3 terms at 0.5 | 7 | 0 | 0.94 | 0 |
+  | **3 terms at 0.6 (shipped)** | **12** | **0** | **0.94** | **0** |
+  | 3 terms at 0.75 (the other models' rule) | 14 | 1 | 0.89 | 0 |
+
+  **Exit, honestly:** the plan asked for a gate refusing at least what P1's does (15 of 18). No
+  setting does on this model without costing answers. 0.75 refuses 14 and loses one in-scope
+  answer, so 0.6 was chosen: 12 refused, none of the in-scope questions refused. The owner can
+  move it to 0.75 with one line.
+- **Owed on a phone:**
+  - the asset download on first use;
+  - real indexing and re-index times for a code book (the support report now shows them);
+  - a backgrounded re-index resuming;
+  - the switch;
+  - both sets measured with the contextual model on the device.
+- **Tests:** `VaultEmbeddingUpgradeTests` (9, with two invented models standing in for the
+  standard and contextual ones):
+  - a vault searched with the model that built its index whatever the target;
+  - a re-index interrupted after one chunk that leaves the old index answering, then resumes,
+    embeds only what's missing and swaps in whole;
+  - a manual imported mid-way joining the answering index;
+  - personal documents untouched;
+  - the orchestrator's progress and its no-op once current;
+  - the fallback without the contextual model;
+  - the gate following the serving model;
+  - log lines with durations and no text;
+  - the input split.
+
+  `VaultManualRetrievalTests` covers the calibrated default.
 
 ### P5 — Helping the model search the book's way (estimates, measured last)
 

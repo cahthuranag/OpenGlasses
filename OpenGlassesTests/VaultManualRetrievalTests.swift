@@ -620,7 +620,7 @@ final class VaultManualRetrievalTests: XCTestCase {
     func testRenderingStatesInsufficiencyExplicitly() {
         let block = VaultRetriever.promptBlock(.insufficient(reason: RetrievalEvidencePolicy.insufficientSentence))
         XCTAssertTrue(block.hasPrefix("MANUAL PASSAGES: none retrieved"))
-        XCTAssertTrue(block.contains("do not cover this"))
+        XCTAssertTrue(block.contains("couldn't find it in the manuals"))
         let tool = VaultRetriever.toolResult(.insufficient(reason: RetrievalEvidencePolicy.insufficientSentence), query: "ZX9")
         XCTAssertEqual(tool, RetrievalEvidencePolicy.insufficientSentence)
     }

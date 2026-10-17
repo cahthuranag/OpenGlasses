@@ -481,7 +481,7 @@ struct VaultRetriever {
     static func teamLearningOnlyInstruction(leadIn: String?) -> String {
         let opening = leadIn.map { "Open your answer with exactly this sentence: \"\($0.trimmingCharacters(in: .whitespaces))\" — then give the finding. " }
             ?? "Open your answer by saying the manual does not cover this and that what follows is your crew's own finding. "
-        return "The loaded manuals do not cover this. What was retrieved instead is \(Passage.teamLearningLabel): "
+        return "No passage in the loaded manuals answers this closely enough. What was retrieved instead is \(Passage.teamLearningLabel): "
             + opening
             + "Name it as your crew's finding, not the manufacturer's instruction — circumstances differ — repeat its Source line, "
             + "and never let it override a safety note."
@@ -596,8 +596,14 @@ struct RetrievalEvidencePolicy: Equatable {
     var tokenBoost: Float = 0.25
     var maxBoost: Float = 0.5
 
+    /// What a turn the gate turned away is told. It says the search came up short, not that the
+    /// manuals are silent: measured on a field manual pair, the device gate (Plan IV P1) refuses a
+    /// third of the in-scope questions it cannot place, and "the manuals do not cover this" told a
+    /// technician something false about a book that does cover it.
     static let insufficientSentence =
-        "The loaded manuals do not cover this. Ask the technician for the model number, or recommend escalation rather than guessing."
+        "No passage in the loaded manuals answers this closely enough to rely on. Say you couldn't find it "
+        + "in the manuals — not that they don't cover it — and ask the technician for the model number or "
+        + "different words, or recommend escalation rather than guessing."
 
     init(similarityFloor: Float = 0.30, margin: Float = .infinity, minSharedTerms: Int = 0,
          sharedFraction: Double = 0, tokenBoost: Float = 0.25, maxBoost: Float = 0.5) {

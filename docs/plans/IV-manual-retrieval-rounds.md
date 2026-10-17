@@ -1,8 +1,9 @@
 # Plan IV — Manual Retrieval Rounds (every change measured on a field manual pair and a code book)
 
-**Status:** 🚧 P0, P1 and P2 shipped 2026-10-17: both measurements run as a process, on both
+**Status:** 🚧 P0–P3 shipped 2026-10-17/18: both measurements run as a process, on both
 embedders; the device's evidence gate carries the lexical criterion; the newest edition answers
-and an older one only when asked. P3–P5 are unbuilt.
+and an older one only when asked; chunks keep their line breaks and a clause-numbered document is
+chunked at its clauses. P4–P5 are unbuilt.
 **Track:** Field Assist (B2B): every vault with manuals, and the regulations vertical in particular.
 **Related:** Plans [ED](ED-vault-manual-retrieval.md) / [EJ](EJ-manual-retrieval-fidelity.md)
 (manual retrieval and its evidence gate), [EK](EK-manual-structure-and-figures.md) (structure from
@@ -365,6 +366,58 @@ used as a pointer the model can follow than as a passage.
   Code-book eval: hit@4 +0.04 and hit@1 +0.06 or better on both embedders (measured 0.42 → 0.46 and
   0.15 → 0.21 on the device; 0.46 → 0.50 and 0.17 → 0.24 on the simulator). The line-break join on
   its own lowers neither set on either embedder. Lennox calibration unchanged on both embedders.
+
+#### What shipped in P3 (2026-10-18)
+
+- **Line breaks kept.** `DocumentChunker` now joins two sentences with a line break when a line
+  break separated them in the source, and with a space otherwise (`keepsLineBreaks`, on). The
+  separator is still one character, so the sentence offsets IN P0 stores, and `PassageLocator`,
+  read exactly as before.
+- **Clause-numbered documents.** `DocumentChunker.clauseHeadingLines` counts lines that are a
+  number with at least two parts followed by a capitalised word, on a short line of their own,
+  counting each number once. A document with at least `minimumClauseHeadings` (10) is
+  clause-numbered. Each such line becomes a `## ` section, and a chunk starts at it with no
+  overlap carried in (`chunksAtClauseHeadings`, on). The measured code book prints about 1,400
+  such lines; the Lennox manuals print none, because their numbered steps have one part, so
+  nothing changes for them.
+- **Self-contained.** It all lives in the chunker, with no new reference to another type (the
+  manual contracts compile it on its own). Every route that chunks gets it: import, the
+  photographed-manual pages, and IN P0's migration.
+- **Existing stores.** `DocumentStore.locationVersion` 1 → 2. `PassageLocationMigration`
+  re-chunks a stored vault document under its own id when its text now chunks differently, which
+  re-embeds it once at launch, and only rewrites positions when it chunks the same. Document ids,
+  page labels and evidence keep their keys. A manual read by recognition is left alone, as before.
+- **Measured** (stable answer key, before → after):
+
+  | | Device (`nl-sentence`) | Simulator (`nl-word`) |
+  |---|---|---|
+  | Code book, newest edition: hit@1 / hit@4 | 0.19 / 0.37 → **0.26 / 0.44** | 0.25 / 0.47 → **0.32 / 0.53** |
+  | Code book, both editions loaded: hit@1 / hit@4 | 0.19 / 0.37 → **0.26 / 0.44** | 0.25 / 0.47 → **0.32 / 0.53** |
+  | Chunk-boundary misses, newest edition | 5 → 2 | 4 → 2 |
+  | Expected rules printed as a heading but never graded as starting (of 63) | 22 → 4 | 22 → 4 |
+  | Code book in-scope refused | 2 → 2 | 0 → 0 |
+  | Lennox recall@4 / hit@1 / refused out-of-scope / in-scope | 0.56 / 0.39 / 15 / 6, unchanged | 0.89 / 0.72 / 14 / 1, unchanged |
+
+  Line breaks alone leave every hit count unchanged on both sets and both embedders. They take
+  "never graded as starting" from 22 to 4, which is what lets clause search lead with a rule's own
+  text. The clause-boundary chunking is what moves the hits. With both editions loaded, the
+  older edition takes "never starting" to 2. What's left of the code-book misses is now mostly
+  ranking (20–27) and recall (8–9), which is P4's and P5's ground.
+- **Tests:** `ClauseChunkingTests` (7, invented fixtures):
+  - a line break surviving so a rule after a group heading grades `.starts` (and `.cites` without
+    it);
+  - sentences on one line staying joined by a space;
+  - sentence offsets still landing on their sentences;
+  - a 12-clause document chunked one clause per chunk and citing each;
+  - a prose manual with numbered steps, decimals and a few numbered sections chunking exactly as
+    before;
+  - fewer headings than the threshold leaving a document alone;
+  - a repeated heading counting once.
+
+  `ExampleVaultLennoxTests` now compares a passage with its page's stored text word for word,
+  because the page text is rebuilt from words joined by spaces. Both runners take
+  `RETRIEVAL_EVAL_CHUNKER` to index with the earlier behaviour, and the eval prints the "never
+  graded as starting" count.
 
 ### P4 — The contextual embedder, measured on a phone
 

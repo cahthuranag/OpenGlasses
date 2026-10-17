@@ -40,13 +40,27 @@ struct DocumentChunker {
     /// How much trailing context (in characters, sentence-aligned) to repeat into the next chunk.
     var overlapChars: Int
 
-    init(targetChars: Int = 700, maxChars: Int = 900, overlapChars: Int = 100) {
+    /// Join sentences that a line break separated with a line break, not a space (Plan IV P3).
+    /// A rule printed on its own line under a one-word group heading reached `ClauseReference` as
+    /// "Wiring 12-345 Title", which it rightly grades as a citation: a clause starts a line or
+    /// follows sentence punctuation. Keeping the break lets it see the rule start.
+    var keepsLineBreaks: Bool
+    /// In a document detected as clause-numbered (`clauseHeadingLines`), make each clause heading
+    /// line a section and start a new chunk at it, with no overlap carried across (Plan IV P3).
+    /// A rule's text then sits in chunks of its own, cited by its number. Never applied to a prose
+    /// manual: splitting at every heading of every manual was measured and lowered one.
+    var chunksAtClauseHeadings: Bool
+
+    init(targetChars: Int = 700, maxChars: Int = 900, overlapChars: Int = 100,
+         keepsLineBreaks: Bool = true, chunksAtClauseHeadings: Bool = true) {
         // Keep the invariants the packing logic relies on.
         precondition(maxChars >= targetChars, "maxChars must be >= targetChars")
         precondition(overlapChars < targetChars, "overlapChars must be < targetChars to guarantee progress")
         self.targetChars = targetChars
         self.maxChars = maxChars
         self.overlapChars = overlapChars
+        self.keepsLineBreaks = keepsLineBreaks
+        self.chunksAtClauseHeadings = chunksAtClauseHeadings
     }
 
     /// What kind of page a chunk came off. A drawing's text is a bag of terminal labels: it embeds
@@ -87,6 +101,8 @@ struct DocumentChunker {
         var figure: String?
         /// Offset of the sentence's first character within its page's text, when known.
         var pageOffset: Int?
+        /// A line break, not just a space, separated this sentence from the one before.
+        var followsLineBreak = false
     }
 
     /// IF: source page indices are authoritative. Chunk each body independently so short or
@@ -105,17 +121,31 @@ struct DocumentChunker {
     }
 
     func chunk(_ raw: String) -> [Chunk] {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return [] }
+
+        // A clause-numbered document's clause lines become sections, and a chunk starts at each.
+        var splitsAtSections = false
+        if chunksAtClauseHeadings {
+            let headings = Self.clauseHeadingLines(in: text)
+            if headings.count >= Self.minimumClauseHeadings {
+                text = Self.markingClauseHeadings(headings, in: text)
+                splitsAtSections = true
+            }
+        }
 
         let sentences = Self.taggedSentences(in: text)
         var chunks: [Chunk] = []
         var current: [Sentence] = []
         var currentLen = 0
+        // The chunk so far is only the overlap carried from the one before.
+        var overlapOnly = false
 
         func flush() {
             guard !current.isEmpty else { return }
-            let joined = current.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            let joined = current.enumerated().map { index, sentence in
+                index == 0 ? sentence.text : (keepsLineBreaks && sentence.followsLineBreak ? "\n" : " ") + sentence.text
+            }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
             guard !joined.isEmpty, let first = current.first else { return }
             let place = Self.location(of: current)
             chunks.append(Chunk(index: 0, text: joined, page: first.page, section: first.section,
@@ -126,6 +156,15 @@ struct DocumentChunker {
         for sentence in sentences {
             let s = sentence.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !s.isEmpty else { continue }
+
+            // A new clause starts a new chunk, and the last one's tail is not carried in: the
+            // clause before is not context for this one's number.
+            if splitsAtSections, let open = current.last, open.section != sentence.section {
+                if !overlapOnly { flush() }
+                current = []
+                currentLen = 0
+                overlapOnly = false
+            }
 
             // Prose and a drawing never share a chunk. A chunk takes its kind and figure from its
             // first sentence, so the tail of a page of prose running into a wiring diagram would
@@ -157,11 +196,14 @@ struct DocumentChunker {
                 flush()
                 current = Self.overlapTail(current, overlapChars: overlapChars)
                 currentLen = current.reduce(0) { $0 + $1.text.count + 1 }
+                overlapOnly = !current.isEmpty
             }
 
             current.append(Sentence(text: s, page: sentence.page, section: sentence.section,
-                                    kind: sentence.kind, figure: sentence.figure, pageOffset: sentence.pageOffset))
+                                    kind: sentence.kind, figure: sentence.figure, pageOffset: sentence.pageOffset,
+                                    followsLineBreak: sentence.followsLineBreak))
             currentLen += s.count + 1
+            overlapOnly = false
         }
         flush()
 
@@ -216,6 +258,7 @@ struct DocumentChunker {
         var cursor = text.startIndex
         var offset = 0
         var pageOrigin = 0
+        var lineBreakPending = false
 
         tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
             offset += text.distance(from: cursor, to: range.lowerBound)
@@ -230,10 +273,16 @@ struct DocumentChunker {
             }
             let raw = text[range]
             let s = String(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+            let leading = raw.prefix(while: { $0.isWhitespace || $0.isNewline })
             if !s.isEmpty {
-                let lead = raw.prefix(while: { $0.isWhitespace || $0.isNewline }).count
+                let lead = leading.count
                 result.append(Sentence(text: s, page: scanned.paginated ? page : nil, section: section,
-                                       kind: kind, figure: figure, pageOffset: max(0, offset + lead - pageOrigin)))
+                                       kind: kind, figure: figure, pageOffset: max(0, offset + lead - pageOrigin),
+                                       followsLineBreak: lineBreakPending || leading.contains(where: \.isNewline)))
+                lineBreakPending = raw.reversed().prefix(while: { $0.isWhitespace || $0.isNewline })
+                    .contains(where: \.isNewline)
+            } else if raw.contains(where: \.isNewline) {
+                lineBreakPending = true
             }
             return true
         }
@@ -520,6 +569,42 @@ struct DocumentChunker {
     private static func firstInt(in s: String) -> Int? {
         guard let r = s.range(of: #"\d+"#, options: .regularExpression) else { return nil }
         return Int(s[r])
+    }
+
+    // MARK: - Clause-numbered documents (Plan IV P3)
+
+    /// How many distinct clause headings make a document clause-numbered. A code book prints
+    /// hundreds; a prose manual with a few numbered sections prints fewer than this, and a manual
+    /// whose numbering is procedure steps ("1. Ignitor") prints none, because a step's number has
+    /// no second part.
+    static let minimumClauseHeadings = 10
+
+    /// The lines that read as a clause heading: a number with at least two parts ("12-345",
+    /// "3.9.4", "110.26"), then a capitalised word, on a short line of its own. Distinct numbers
+    /// only — a heading repeated as a running header counts once.
+    static func clauseHeadingLines(in text: String) -> [String] {
+        var seen = Set<String>()
+        var lines: [String] = []
+        for line in text.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let body = trimmed.hasPrefix("## ") ? String(trimmed.dropFirst(3)) : trimmed
+            guard body.count <= 90,
+                  let number = body.range(of: #"^\d{1,3}(?:[.\-]\d{1,4}){1,4}(?=\s+\p{Lu}\p{Ll})"#,
+                                          options: .regularExpression) else { continue }
+            if seen.insert(String(body[number])).inserted { lines.append(trimmed) }
+        }
+        return lines
+    }
+
+    /// The text with each clause heading line set as a section heading (`## `), which the
+    /// grammar below already reads. Lines already marked are left alone.
+    static func markingClauseHeadings(_ headings: [String], in text: String) -> String {
+        let marked = Set(headings.filter { !$0.hasPrefix("## ") })
+        guard !marked.isEmpty else { return text }
+        return text.split(separator: "\n", omittingEmptySubsequences: false).map { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return marked.contains(trimmed) ? "## " + trimmed : String(line)
+        }.joined(separator: "\n")
     }
 
     // MARK: - Packing helpers

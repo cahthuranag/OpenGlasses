@@ -88,6 +88,10 @@ Scripts/retrieval-eval/run.sh
   evidence gate instead of the shipped one, to calibrate a gate against both sets. The output line
   names the gate.
 
+- `RETRIEVAL_EVAL_CHUNKER=spaces` or `linebreaks` indexes with an earlier chunking behaviour, to
+  measure a chunking change against (in the simulator, `TEST_RUNNER_RETRIEVAL_EVAL_CHUNKER`). Give
+  each variant its own `RETRIEVAL_EVAL_WORKDIR`: an index is built once and reused.
+
 Every run prints in-scope refusals beside the hits, because a gate that refuses more out-of-scope
 questions usually refuses some in-scope ones too, and both numbers decide a gate.
 

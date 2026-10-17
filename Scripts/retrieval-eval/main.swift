@@ -26,7 +26,7 @@ struct RetrievalEvalMain {
         let work = URL(fileURLWithPath: env["RETRIEVAL_EVAL_WORKDIR"]
                        ?? NSTemporaryDirectory() + "retrieval-eval-store", isDirectory: true)
         try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
-        let store = DocumentStore(directory: work)
+        let store = DocumentStore(directory: work, chunker: RetrievalEval.chunker(named: env["RETRIEVAL_EVAL_CHUNKER"]))
 
         for document in manifestDocuments(in: vault) {
             if store.document(named: document.title) != nil { continue }

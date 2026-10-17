@@ -584,10 +584,37 @@ final class VaultManualRetrievalTests: XCTestCase {
         XCTAssertEqual(word.minSharedTerms, 3, "the measured backend carries the lexical criterion")
         XCTAssertEqual(word.sharedFraction, 0.75, "and the measured scaling for short questions")
         XCTAssertEqual(word.similarityFloor, 0.30)
-        for unmeasured in ["nl-sentence.en", "nl-contextual.multi_v1"] {
-            XCTAssertEqual(RetrievalEvidencePolicy.default(for: unmeasured), RetrievalEvidencePolicy(),
-                           "unmeasured backends keep today's gate rather than a guess: \(unmeasured)")
+        // The device's model was measured too, and gets the same rule: the criterion reads words,
+        // not cosines, so it means the same on both.
+        XCTAssertEqual(RetrievalEvidencePolicy.default(for: "nl-sentence.en"), word)
+        XCTAssertEqual(RetrievalEvidencePolicy.default(for: "nl-contextual.multi_v1"), RetrievalEvidencePolicy(),
+                       "the contextual model is unmeasured and keeps the floor rather than a guess")
+    }
+
+    /// The device's gate, before: a bare 0.30 floor over a model whose cosines sit between 0.2 and
+    /// 0.6 for everything, so a question about a torque the manuals never print was answered from
+    /// whatever came back. Here four passages score like that and share none of the question's
+    /// words.
+    func testTheSentenceModelsGateRefusesAQuestionThePassagesShareNoWordsWith() {
+        let offTopic = [
+            passage("d", 0, "The inducer pulls combustion air through the heat exchanger.", sim: 0.52),
+            passage("d", 1, "Set the thermostat heat anticipator to the control's current.", sim: 0.49),
+            passage("d", 2, "Check the condensate trap is primed before start-up.", sim: 0.47),
+            passage("d", 3, "Gas valve outlet pressure is measured at the manifold tap.", sim: 0.44),
+        ]
+        let onTopic = passage("d", 4, "Flame signal in microamps: normal 2.6 or greater, low 2.5 or less.", sim: 0.34)
+        func outcome(_ policy: RetrievalEvidencePolicy, _ turn: String) -> RetrievalOutcome {
+            VaultRetriever(query: { _, _ in offTopic + [onTopic] }, policy: policy).retrieve(.init(turn: turn))
         }
+        let device = RetrievalEvidencePolicy.default(for: "nl-sentence.en")
+        let torque = "what is the torque for the blower wheel set screw"
+        XCTAssertTrue(outcome(RetrievalEvidencePolicy(), torque).isSufficient, "the floor alone answered it")
+        XCTAssertFalse(outcome(device, torque).isSufficient, "the device's gate now refuses it")
+
+        // A short question the manual answers still gets its passage, and leads with it.
+        let answered = outcome(device, "flame signal microamps")
+        XCTAssertTrue(answered.isSufficient)
+        XCTAssertEqual(answered.passages.first?.chunkIndex, 4)
     }
 
     func testRenderingStatesInsufficiencyExplicitly() {

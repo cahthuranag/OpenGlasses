@@ -84,6 +84,12 @@ Scripts/retrieval-eval/run.sh
 - `RETRIEVAL_EVAL_WORKDIR` holds the index between runs, so a long book is embedded once. Delete it
   when you're done.
 - `RETRIEVAL_EVAL_EMBEDDER=contextual` measures the contextual model instead of the sentence model.
+- `RETRIEVAL_EVAL_GATE="<min shared terms>,<shared fraction>"` (or `floor`) measures a candidate
+  evidence gate instead of the shipped one, to calibrate a gate against both sets. The output line
+  names the gate.
+
+Every run prints in-scope refusals beside the hits, because a gate that refuses more out-of-scope
+questions usually refuses some in-scope ones too, and both numbers decide a gate.
 
 **In the simulator (the simulator's model, through the session's own retriever):**
 

@@ -90,6 +90,8 @@ enum RetrievalEval {
         var hit4 = 0
         var outOfScope = 0
         var refused = 0
+        /// Scored (in-scope) questions the gate turned away with "the manuals do not cover this".
+        var inScopeRefused = 0
         var misses: [MissClass: Int] = [:]
         var multiQuestions = 0, multiMisses = 0
         var doubtQuestions = 0, doubtMisses = 0
@@ -101,6 +103,7 @@ enum RetrievalEval {
             func rate(_ n: Int, _ d: Int) -> String { d == 0 ? "-" : String(format: "%.2f", Double(n) / Double(d)) }
             var out = ["[EVAL] \(label) embedder=\(embedder) scored=\(scored) hit@1 \(hit1) (\(rate(hit1, scored))) "
                        + "hit@4 \(hit4) (\(rate(hit4, scored)))"
+                       + " | in-scope refused \(inScopeRefused)"
                        + (outOfScope > 0 ? " | out-of-scope refused \(refused) of \(outOfScope)" : "")]
             if missCount > 0 {
                 let parts = MissClass.allCases.compactMap { c -> String? in
@@ -151,7 +154,9 @@ enum RetrievalEval {
             if q.multi == true { report.multiQuestions += 1 }
             if q.doubt == true { report.doubtQuestions += 1 }
 
-            let top4 = Array(gated.retrieve(.init(turn: q.q, limit: 4)).passages.prefix(4))
+            let outcome = gated.retrieve(.init(turn: q.q, limit: 4))
+            if !outcome.isSufficient { report.inScopeRefused += 1 }
+            let top4 = Array(outcome.passages.prefix(4))
             if top4.first.map({ holds($0, q) }) == true { report.hit1 += 1 }
             if top4.contains(where: { holds($0, q) }) { report.hit4 += 1; continue }
 

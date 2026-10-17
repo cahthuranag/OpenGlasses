@@ -40,12 +40,25 @@ struct RetrievalEvalMain {
             _ = await store.ingest(name: document.title, text: text, sourceType: "vault_document")
         }
 
-        let policy = RetrievalEvidencePolicy.default(for: embedder.modelId)
+        // The shipped gate for this embedder, or a candidate one to calibrate a gate against both
+        // sets: RETRIEVAL_EVAL_GATE="<min shared terms>,<shared fraction>" (floor 0.30), or "floor".
+        var policy = RetrievalEvidencePolicy.default(for: embedder.modelId)
+        if let gate = env["RETRIEVAL_EVAL_GATE"] {
+            let parts = gate.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+            if gate == "floor" {
+                policy = RetrievalEvidencePolicy()
+            } else if parts.count == 2, let terms = Int(parts[0]), let fraction = Double(parts[1]) {
+                policy = RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: terms, sharedFraction: fraction)
+            } else {
+                fail("RETRIEVAL_EVAL_GATE is \"floor\" or \"<terms>,<fraction>\"")
+            }
+        }
         let report = RetrievalEval.run(questions,
                                        gated: RetrievalEval.retriever(over: store, policy: policy),
                                        open: RetrievalEval.retriever(over: store, policy: RetrievalEvidencePolicy(similarityFloor: 0)),
                                        store: store)
-        for line in report.lines(label: env["RETRIEVAL_EVAL_LABEL"] ?? "local vault", embedder: embedder.modelId) {
+        let label = (env["RETRIEVAL_EVAL_LABEL"] ?? "local vault") + (env["RETRIEVAL_EVAL_GATE"].map { " gate=\($0)" } ?? "")
+        for line in report.lines(label: label, embedder: embedder.modelId) {
             print(line)
         }
     }

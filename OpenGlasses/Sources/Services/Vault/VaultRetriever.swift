@@ -636,11 +636,22 @@ struct RetrievalEvidencePolicy: Equatable {
     ///   nothing. Fractions of 0.5 and 0.6 refuse no in-scope question at all but drop insufficiency
     ///   recall to 0.562 and 0.688, which is the wrong trade: a technician who has to rephrase is
     ///   recoverable, a confident answer from the wrong manual is not.
-    /// - `nl-sentence`, `nl-contextual` — **unmeasured — device run pending.** Left at today's
-    ///   values (floor 0.30, no margin, no lexical criterion) rather than guessed: their cosines
-    ///   span a different range and the lexical rule may be unnecessary once similarity separates.
+    /// - `nl-sentence` — **measured** (2026-10-17, the device's model run on a Mac through the
+    ///   same retriever, `Scripts/retrieval-eval`): the same rule as `nl-word`. The bare 0.30 floor
+    ///   refused none of the 18 out-of-scope Lennox questions, because this model's cosines sit
+    ///   between 0.2 and 0.6 for everything and no floor separates an answer from a near miss. With
+    ///   the lexical criterion it refuses 15 of 18, and recall@4 and hit@1 are unchanged on the
+    ///   Lennox set and on a code book's 68-question local answer key. The cost is in-scope
+    ///   refusals, 0 → 6 of 18 on Lennox and 0 → 2 of 68 on the code book, every one of them a
+    ///   question whose four passages held no answering page anyway: it now hears "the manuals do
+    ///   not cover this" instead of an answer built from the wrong pages. Gentler settings were
+    ///   measured and buy back refusals only by answering out-of-scope questions again (one shared
+    ///   term: 1 in-scope and 6 of 18 out-of-scope refused; 3 terms at 0.6: 4 and 14). The two
+    ///   backends share one rule because the criterion reads words, not cosines.
+    /// - `nl-contextual` — **unmeasured — a phone run is pending.** Left at the floor rather than
+    ///   guessed.
     static func `default`(for modelId: String) -> RetrievalEvidencePolicy {
-        if modelId.hasPrefix("nl-word") {
+        if modelId.hasPrefix("nl-word") || modelId.hasPrefix("nl-sentence") {
             return RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.75)
         }
         return RetrievalEvidencePolicy()

@@ -124,6 +124,7 @@ final class RetrievalGateCalibrationTests: XCTestCase {
         ("floor 0.30 + terms >= 3 + fraction 0.75",
          RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.75)),
         ("default(for: nl-word)", RetrievalEvidencePolicy.default(for: "nl-word.en")),
+        ("default(for: nl-sentence)", RetrievalEvidencePolicy.default(for: "nl-sentence.en")),
     ]
 
     // MARK: - Fixture
@@ -266,14 +267,14 @@ final class RetrievalGateCalibrationTests: XCTestCase {
         // the two can differ by a question or two. Every round of retrieval work reads both
         // (Plan IV P0), and on a Mac `Scripts/retrieval-eval` prints the same lines for the
         // device's embedding model.
-        print("[GATE] production path | variant | recall@4 | hit@1 | insufficiency recall")
+        print("[GATE] production path | variant | recall@4 | hit@1 | insufficiency recall | in-scope refused")
         for (name, policy) in Self.variants {
             let report = RetrievalEval.run(Self.answerKey,
                                            gated: retriever(over: store, policy: policy), open: open, store: store,
                                            classifyMisses: false)
             print("[GATE] production path | \(name) | \(fmt(Float(report.hit4) / Float(report.scored))) | "
                   + "\(fmt(Float(report.hit1) / Float(report.scored))) | "
-                  + "\(fmt(Float(report.refused) / Float(report.outOfScope)))")
+                  + "\(fmt(Float(report.refused) / Float(report.outOfScope))) | \(report.inScopeRefused)")
         }
         let production = RetrievalEval.run(Self.answerKey, gated: retriever(over: store, policy: shipped),
                                            open: open, store: store)
@@ -302,6 +303,13 @@ final class RetrievalGateCalibrationTests: XCTestCase {
         }
 
         let chosen = try XCTUnwrap(scores["default(for: nl-word)"])
+
+        if Embedder().modelId.hasPrefix("nl-sentence") {
+            // On the device's model the floor refuses nothing either; the measured default must.
+            let device = try XCTUnwrap(scores["default(for: nl-sentence)"])
+            XCTAssertGreaterThan(device.insufficiency, baseline.insufficiency,
+                                 "the nl-sentence default must reject more than the floor alone")
+        }
 
         if Embedder().modelId.hasPrefix("nl-word") {
             // The lexical criterion is the only one that rejects anything on this backend, which is

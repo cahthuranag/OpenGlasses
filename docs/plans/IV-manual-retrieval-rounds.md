@@ -1,12 +1,14 @@
 # Plan IV — Manual Retrieval Rounds (every change measured on a field manual pair and a code book)
 
-**Status:** ✅ Rounds concluded for this run (2026-10-18): P0–P5 shipped. Both measurements run as
-a process, on both embedders; the device's evidence gate carries the lexical criterion; the newest
-edition answers and an older one only when asked; chunks keep their line breaks and a
-clause-numbered document is chunked at its clauses; Field Assist searches manuals with the
-contextual model by default; `manual_lookup` asks for the book's own words and, where a manual has
-a back-of-book index, offers what the index names. Phone runs owed for P4 and P5 (listed in each);
-the final table is under "Where the rounds ended".
+**Status:** ✅ P0–P6 shipped (2026-10-17/18). Both measurements run as a process, on both
+embedders; the device's evidence gate carries the lexical criterion; the newest edition answers and
+an older one only when asked; chunks keep their line breaks and a clause-numbered document is
+chunked at its clauses; Field Assist searches manuals with the contextual model by default;
+`manual_lookup` asks for the book's own words and, where a manual has a back-of-book index, offers
+what the index names; a clause-numbered document's answers carry six passages, prose four. Section
+titles in the embedded text and cross-reference following were measured and shelved (P6); the
+next round's ground is ranking. Phone runs owed for P4–P6 (listed in each); the table is under
+"Where the rounds ended".
 **Track:** Field Assist (B2B): every vault with manuals, and the regulations vertical in particular.
 **Related:** Plans [ED](ED-vault-manual-retrieval.md) / [EJ](EJ-manual-retrieval-fidelity.md)
 (manual retrieval and its evidence gate), [EK](EK-manual-structure-and-figures.md) (structure from
@@ -620,6 +622,110 @@ untouched.
     - a manual without an index getting no index line;
     - the description.
 
+### P6 — More passages where a passage is one clause
+
+- After P3 a clause-numbered document is chunked at each clause, so one passage is one rule, and a
+  measurement pass after P5 found the answer was often the fifth or sixth rule ranked. Six
+  passages instead of four: code book 0.53 → 0.57 on the contextual model, 0.44 → 0.50 on the
+  sentence model. Eight added only 0.02 more on the contextual model for another ~1,200
+  characters. Prose manuals stay at four.
+- **Exit:** both sets on both models, the gate, the edition default, citations and P5's hints
+  unchanged, the passage budget holding, Lennox unchanged.
+
+#### What shipped in P6 (2026-10-18)
+
+- **Six passages when the best passage is from a clause-numbered document, four otherwise**
+  (`ManualPassageLimit`). It covers the per-turn manual block and `manual_lookup`.
+  - The retriever is asked for six only when a manual the retrieval may search is clause-numbered,
+    so a vault of prose manuals retrieves exactly as before.
+  - **A mixed vault is decided by the best passage:** six are kept when the first manual passage is
+    from a clause-numbered document, and the outcome is cut to four otherwise. Learnings never
+    decide it. A cut that would leave only team learnings gives its last slot to the best manual
+    passage, so a sufficient outcome still carries the manual.
+  - In a mixed vault the prose answer's four come from the larger candidate pool that six asks
+    for. That is the one place the four can differ from before.
+- **Derived, not stored, so no re-index.** `DocumentStore.isClauseNumbered(documentId:)` runs P3's
+  detector (`DocumentChunker.isClauseNumbered`, now one rule both use) on the document's stored
+  chunk text. That text keeps its line breaks since P3's re-chunk. The answer is held in memory
+  per document and read again if the chunk count changes. Both Lennox manuals read as prose and
+  the code book as clause-numbered.
+- **Unchanged:**
+  - the evidence gate decides each passage as before;
+  - the edition default filters the documents searched before any of this;
+  - citations and `show_source` read the passages sent;
+  - P5's index line and nearest headings are computed as before.
+- **The passage budget holds.** The turn block and the lookup result share a 12,000-character
+  bound, which counts each passage's text, citation and a 256-character allowance. Six of the
+  longest chunks the chunker makes (900 characters) with long citations come to about 7,800, and
+  a test pins it. On the code book six passages average 3,500–3,700 characters.
+- **The local eval measures what is sent.** Hit@1 and hit@4 stay on four passages so they compare
+  across rounds. An "as sent" line adds the share of questions answered somewhere in what was
+  sent, the passages and characters sent, and the refusals on that path
+  (`RETRIEVAL_EVAL_PASSAGES=4` leaves it out).
+- **Measured** (Mac runner, the device's framework models, stable answer key). Hit@4 is the four
+  passages sent before P6; "as sent" is what P6 sends. Newest edition and both editions are
+  identical, because the edition default searches the newest.
+
+  | | Sentence: hit@4 → as sent | Contextual (default): hit@4 → as sent |
+  |---|---|---|
+  | Code book, all 68 | 0.44 → **0.50** | 0.53 → **0.57** |
+  | Single rule, answer not in doubt (34) | 0.50 → **0.59** | 0.59 → **0.68** |
+  | Multi-rule or calculation (20) | 0.45 → 0.45 | 0.50 → 0.50 |
+  | Answer in doubt (23) | 0.35 → 0.39 | 0.43 → 0.43 |
+  | Code book passages / characters per question | 4 / 2,352 → 5.6 / 3,510 | 4 / 2,491 → 5.9 / 3,692 |
+  | Code book in-scope refused | 2 → 2 | 0 → 0 |
+  | Lennox recall@4 → as sent | 0.56 → 0.56 (2.3 passages, 1,581 characters) | 0.94 → 0.94 (4.0 passages, 2,724 characters) |
+  | Lennox refused, out-of-scope / in-scope | 15 / 6, unchanged | 12 / 0, unchanged |
+
+  Before P3, four passages cost 2,488 characters on the same book. Six after P3 cost about 1.4×
+  that, and eight would cost about 1.9×. The expectation that eight clause chunks cost what four
+  older chunks did was checked and does not hold: the chunks retrieved are only about 5 % shorter.
+- **Owed on a phone:** whether answers hold up with six passages in a code-book session, and the
+  first lookup's cost of reading a large book's stored text for its shape (it runs once per
+  document per launch).
+- **Tests:**
+  - `ManualPassageLimitTests` (8, all invented):
+    - asking for six only where a clause-numbered manual can be searched;
+    - six kept for a clause-numbered best passage;
+    - a prose best passage cutting to four;
+    - a leading team learning not deciding it;
+    - a cut keeping a manual passage;
+    - short and refused outcomes untouched;
+    - six of the longest passages fitting the budget in both renderings;
+    - the store reading the shape from stored text.
+  - `VaultManualRetrievalTests` (+2): an invented clause-numbered manual sends six to the turn and
+    to `manual_lookup`, and an invented prose manual still sends four.
+
+#### Measured and shelved (2026-10-18)
+
+The same pass measured two other levers on both sets and both models. Neither ships.
+
+- **Section titles in the embedded text.** The document title and the chunk's heading were
+  prepended to the text that is embedded (never the text shown), and the store re-indexed.
+  - Code book, sentence model: 0.26 / 0.44 → 0.28 / 0.46, with in-scope refusals 2 → 1.
+  - Code book, contextual model: 0.32 / 0.53 → 0.34 / 0.51, with single-rule questions
+    0.59 → 0.56.
+  - Six and eight passages were no better than without it.
+  - On Lennox, applied to all documents, the sentence model dropped 0.56 → 0.50. Limited to
+    clause-numbered documents it does nothing there.
+  - About one question either way, for a full re-index.
+- **Following cross-references.** When the top passages cite a rule they don't contain, that
+  rule's own text was fetched as a candidate.
+  - It fired on 44 (sentence) and 51 (contextual) of the 68 code-book questions, and on none from
+    Lennox.
+  - Hits were unchanged in every subset on both models, whether a rule was cited once or twice.
+  - The fetched rule held the answer for 10 and 12 questions, every one already answered or
+    already in the top 30. Eight of the 12 are removed by the gate's shared-words check.
+  - Forcing the fetched rule into the fourth slot lowered hit@4: 0.44 → 0.41 and 0.53 → 0.50.
+
+#### The next round's ground: ranking
+
+The answer is in the ungated top 20 / top 30 for 0.69 / 0.87 of the code-book questions on the
+sentence model and 0.68 / 0.82 on the contextual model, against 0.57 sent today. That is up to
+0.11 for a perfect reordering of the top 20, and is an estimate. Ranking is 19 of the 32
+contextual misses; recall (not in the top 30) is 11, which is P5's book-vocabulary hints, owed a
+phone run with the model.
+
 ## Where the rounds ended
 
 Code book: hit@1 / hit@4 over the answer key's scorable questions. Lennox: recall@4 / hit@1, and
@@ -635,6 +741,7 @@ row used the first answer key (68 scorable). From "before P1" on, every row uses
 | P3 clause chunking | 0.26 / 0.44 | 0.26 / 0.44 | unchanged | not run | not run |
 | P4 contextual default | 0.26 / 0.44 | 0.26 / 0.44 | 0.56 / 0.39, refused 15 / 6 | **0.32 / 0.53**, 0 refused | **0.94 / 0.67, refused 12 / 0** |
 | P5 book's words + index hint | 0.26 / 0.44 | 0.26 / 0.44 | 0.56 / 0.39, refused 15 / 6 | 0.32 / 0.53, 0 refused | 0.94 / 0.67, refused 12 / 0 |
+| P6 six passages for clause-numbered documents | 0.26 / 0.44, **0.50 as sent** | 0.26 / 0.44, **0.50 as sent** | unchanged (four sent) | 0.32 / 0.53, **0.57 as sent** | unchanged (four sent) |
 
 ¹ From the failure breakdown that preceded P0, where the sentence model measured 0.15 / 0.42 on
 the same set. The contextual model was not run again until P4.
@@ -645,6 +752,10 @@ default path went from 0.16 / 0.38 to 0.32 / 0.53 on the code book and from 0.56
 Lennox. Out-of-scope refusals went from 0 to 12 of 18, and no in-scope question is refused. What
 remains is mostly ranking (19 of 32 contextual misses) and recall (11). P5's estimates put one
 guided retry at a few more of those, which only a phone run with the model can confirm.
+
+From P6 on, a code-book answer carries six passages, so "as sent" is the share of questions
+answered somewhere in what the model is given: 0.57 on the default path (single-rule questions
+0.68), with hit@1 / hit@4 kept on four passages for comparison across rounds.
 
 ## Not in this plan
 

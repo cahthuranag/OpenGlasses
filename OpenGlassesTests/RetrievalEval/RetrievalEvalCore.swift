@@ -155,6 +155,11 @@ enum RetrievalEval {
         /// Missed questions a guided retry would have found (`retry`), as an estimate of the model
         /// taking the hint a lookup gives it.
         var retryHits = 0
+        /// The passages as the app sends them (Plan IV P6: six when the best passage is from a
+        /// clause-numbered document, four otherwise), when the run was given the limit: questions
+        /// answered somewhere in what was sent, how many passages and characters went, refusals.
+        var sentMeasured = false
+        var hitSent = 0, passagesSent = 0, charactersSent = 0, inScopeRefusedSent = 0, refusedSent = 0
         var doubtQuestions = 0, doubtMisses = 0
 
         var missCount: Int { scored - hit4 }
@@ -175,6 +180,11 @@ enum RetrievalEval {
             }
             if rulesPrinted > 0 {
                 out.append("[EVAL]   rules printed as a heading \(rulesPrinted), never graded as starting \(rulesNeverStarting)")
+            }
+            if sentMeasured, scored > 0 {
+                out.append("[EVAL]   as sent: hit \(hitSent) (\(rate(hitSent, scored))) · passages \(String(format: "%.1f", Double(passagesSent) / Double(scored)))"
+                           + " · characters \(charactersSent / scored) per question · in-scope refused \(inScopeRefusedSent)"
+                           + (outOfScope > 0 ? " · out-of-scope refused \(refusedSent) of \(outOfScope)" : ""))
             }
             if let retry = RetrievalEval.retry {
                 out.append("[EVAL]   estimate, one guided retry (\(retry.rawValue)): \(retryHits) of \(missCount) misses found")
@@ -208,21 +218,29 @@ enum RetrievalEval {
     /// `classifyMisses: false` counts hits and refusals only, for a sweep over many gates.
     @MainActor
     static func run(_ questions: [Question], gated: VaultRetriever, open: VaultRetriever,
-                    store: DocumentStore, classifyMisses: Bool = true) -> Report {
-        run(questions, gatedFor: { _ in gated }, openFor: { _ in open }, store: store, classifyMisses: classifyMisses)
+                    store: DocumentStore, classifyMisses: Bool = true, passageLimit: ManualPassageLimit? = nil) -> Report {
+        run(questions, gatedFor: { _ in gated }, openFor: { _ in open }, store: store, classifyMisses: classifyMisses,
+            passageLimit: passageLimit)
     }
 
     /// The same, with a retriever per question: the session's factory reads the question to
     /// choose an edition (Plan IV P2), so the runner hands it each one.
     @MainActor
     static func run(_ questions: [Question], gatedFor: (String) -> VaultRetriever, openFor: (String) -> VaultRetriever,
-                    store: DocumentStore, classifyMisses: Bool = true) -> Report {
+                    store: DocumentStore, classifyMisses: Bool = true, passageLimit: ManualPassageLimit? = nil) -> Report {
         var report = Report()
+        report.sentMeasured = passageLimit != nil
+        let searchesClauseNumbered = store.documents.contains { store.isClauseNumbered(documentId: $0.id) }
+        func sent(_ gated: VaultRetriever, _ q: Question) -> RetrievalOutcome? {
+            passageLimit?.retrieve(.init(turn: q.q), with: gated, searchesClauseNumbered: searchesClauseNumbered,
+                                   isClauseNumbered: { store.isClauseNumbered(documentId: $0) })
+        }
         for q in questions {
             let gated = gatedFor(q.q), open = openFor(q.q)
             if q.outOfScope == true {
                 report.outOfScope += 1
                 if !gated.retrieve(.init(turn: q.q, limit: 4)).isSufficient { report.refused += 1 }
+                if let sent = sent(gated, q), !sent.isSufficient { report.refusedSent += 1 }
                 continue
             }
             guard q.isScorable else { continue }
@@ -232,6 +250,12 @@ enum RetrievalEval {
 
             let outcome = gated.retrieve(.init(turn: q.q, limit: 4))
             if !outcome.isSufficient { report.inScopeRefused += 1 }
+            if let sent = sent(gated, q) {
+                if !sent.isSufficient { report.inScopeRefusedSent += 1 }
+                if sent.passages.contains(where: { holds($0, q) }) { report.hitSent += 1 }
+                report.passagesSent += sent.passages.count
+                report.charactersSent += sent.passages.reduce(0) { $0 + $1.text.count }
+            }
             let top4 = Array(outcome.passages.prefix(4))
             if top4.first.map({ holds($0, q) }) == true { report.hit1 += 1 }
             if top4.contains(where: { holds($0, q) }) { report.hit4 += 1; continue }

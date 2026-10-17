@@ -727,18 +727,39 @@ final class DocumentStore: ObservableObject {
     func backOfBookIndex(documentId: String) -> BackOfBookIndex? {
         let count = chunkCount(documentId: documentId)
         if let cached = indexCache[documentId], cached.chunks == count { return cached.index }
+        let index = BackOfBookIndex.parse(storedText(documentId: documentId))
+        indexCache[documentId] = (count, index)
+        return index
+    }
+
+    // MARK: - A document's shape (Plan IV P6)
+
+    private var clauseNumberedCache: [String: (chunks: Int, value: Bool)] = [:]
+
+    /// Whether the document is clause-numbered — P3's detector (`DocumentChunker.isClauseNumbered`)
+    /// run on its stored text, whose chunks keep their line breaks since P3's re-chunk. Derived, not
+    /// stored, so no re-index: read once per document (and again if its chunks change).
+    func isClauseNumbered(documentId: String) -> Bool {
+        let count = chunkCount(documentId: documentId)
+        if let cached = clauseNumberedCache[documentId], cached.chunks == count { return cached.value }
+        let value = DocumentChunker.isClauseNumbered(storedText(documentId: documentId))
+        clauseNumberedCache[documentId] = (count, value)
+        return value
+    }
+
+    /// A document's chunk texts in order, one per line. The overlap between chunks is left in;
+    /// both readers above count distinct lines, so a repeated one does no harm.
+    private func storedText(documentId: String) -> String {
         let sql = "SELECT text FROM doc_chunks WHERE document_id = ? ORDER BY chunk_index ASC"
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return "" }
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
         var texts: [String] = []
         while sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0) {
             texts.append(String(cString: raw))
         }
-        let index = BackOfBookIndex.parse(texts.joined(separator: "\n"))
-        indexCache[documentId] = (count, index)
-        return index
+        return texts.joined(separator: "\n")
     }
 
     // MARK: - A vault's own embedding model (Plan IV P4)

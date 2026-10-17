@@ -91,6 +91,11 @@ Scripts/retrieval-eval/run.sh
 - `RETRIEVAL_EVAL_CHUNKER=spaces` or `linebreaks` indexes with an earlier chunking behaviour, to
   measure a chunking change against (in the simulator, `TEST_RUNNER_RETRIEVAL_EVAL_CHUNKER`). Give
   each variant its own `RETRIEVAL_EVAL_WORKDIR`: an index is built once and reused.
+- Hit@1 and hit@4 are read off four passages, so they compare across rounds. An "as sent" line
+  follows: the passages the app actually sends (six when the best passage is from a
+  clause-numbered document, four otherwise), with the share of questions answered somewhere in
+  them, how many passages and characters went, and the refusals on that path.
+  `RETRIEVAL_EVAL_PASSAGES=4` leaves the line out.
 
 Every run prints in-scope refusals beside the hits, because a gate that refuses more out-of-scope
 questions usually refuses some in-scope ones too, and both numbers decide a gate.

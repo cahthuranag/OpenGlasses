@@ -128,7 +128,7 @@ struct DocumentChunker {
         var splitsAtSections = false
         if chunksAtClauseHeadings {
             let headings = Self.clauseHeadingLines(in: text)
-            if headings.count >= Self.minimumClauseHeadings {
+            if Self.isClauseNumbered(headings: headings) {
                 text = Self.markingClauseHeadings(headings, in: text)
                 splitsAtSections = true
             }
@@ -578,6 +578,17 @@ struct DocumentChunker {
     /// whose numbering is procedure steps ("1. Ignitor") prints none, because a step's number has
     /// no second part.
     static let minimumClauseHeadings = 10
+
+    /// Whether a document is clause-numbered: enough distinct clause heading lines (Plan IV P3).
+    /// Retrieval reads the same rule off a stored document to decide how many passages to send
+    /// (Plan IV P6).
+    static func isClauseNumbered(_ text: String) -> Bool {
+        isClauseNumbered(headings: clauseHeadingLines(in: text))
+    }
+
+    private static func isClauseNumbered(headings: [String]) -> Bool {
+        headings.count >= minimumClauseHeadings
+    }
 
     /// The lines that read as a clause heading: a number with at least two parts ("12-345",
     /// "3.9.4", "110.26"), then a capitalised word, on a short line of its own. Distinct numbers

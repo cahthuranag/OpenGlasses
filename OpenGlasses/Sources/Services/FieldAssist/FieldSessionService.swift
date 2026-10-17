@@ -2293,6 +2293,18 @@ final class FieldSessionService: ObservableObject {
     /// model's view of the job exactly — see `TeamLearningTurnWithholding`.
     var turnSourceID: String?
 
+    /// `manual_lookup` searches that found nothing, in the turn in flight — keyed like a
+    /// learning answer: the Direct turn's id, else the minute (live modes).
+    private var lookupMisses: (turnKey: String, count: Int)?
+
+    /// Count a `manual_lookup` miss against the turn in flight and return the turn's total.
+    func noteManualLookupMiss(now: Date = Date()) -> Int {
+        let key = turnSourceID ?? "live:\(Int(now.timeIntervalSince1970 / 60))"
+        let count = lookupMisses?.turnKey == key ? (lookupMisses?.count ?? 0) + 1 : 1
+        lookupMisses = (key, count)
+        return count
+    }
+
     /// Technician lines logged recently, newest last — what a live-mode filing withholds.
     private var recentTechnicianTurns: [(sourceID: String, at: Date)] = []
     /// A live-mode filing waiting for its transcript.

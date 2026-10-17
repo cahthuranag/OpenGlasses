@@ -474,6 +474,32 @@ final class VaultManualRetrievalTests: XCTestCase {
         XCTAssertTrue(passages.allSatisfy { $0.matchedTokens == ["PVC"] }, "\(passages.map(\.matchedTokens))")
     }
 
+    /// Five rephrased lookups in one turn, each refused with the same sentence: the miss says not
+    /// to rephrase, and the second one in a turn says to stop.
+    func testALookupMissSaysNotToRephraseAndTheSecondSaysStop() async throws {
+        let store = makeStore()
+        let service = try await startSessionWithManual(store: store)
+        service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 1.01)
+        let tool = ManualLookupTool(documentStore: store, sessionService: service)
+
+        service.turnSourceID = "turn-1"
+        let first = try await tool.execute(args: ["query": "capacity of a decorative lighting cord"])
+        XCTAssertTrue(first.hasPrefix(RetrievalEvidencePolicy.insufficientSentence), first)
+        XCTAssertTrue(first.contains("Do not run manual_lookup again with a rephrasing"), first)
+        let second = try await tool.execute(args: ["query": "decorative cord ampacity"])
+        XCTAssertTrue(second.contains("That is 2 searches this turn that found nothing. Stop searching"), second)
+
+        // A new turn starts counting again.
+        service.turnSourceID = "turn-2"
+        let fresh = try await tool.execute(args: ["query": "decorative cord ampacity"])
+        XCTAssertTrue(fresh.contains("Do not run manual_lookup again"), fresh)
+
+        // A hit carries no such line.
+        service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 0)
+        let hit = try await tool.execute(args: ["query": "ZX3 fan"])
+        XCTAssertFalse(hit.contains("manual_lookup again"), hit)
+    }
+
     func testEvidencePolicyTruthTable() {
         let policy = RetrievalEvidencePolicy(similarityFloor: 0.3)
         let weak = VaultRetriever.Passage(documentId: "d", documentName: "M", chunkIndex: 0, text: "x", page: nil,
@@ -802,7 +828,7 @@ final class VaultManualRetrievalTests: XCTestCase {
 
         service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 1.01)
         let miss = try await tool.execute(args: ["query": "weather on Mars"])
-        XCTAssertEqual(miss, RetrievalEvidencePolicy.insufficientSentence)
+        XCTAssertTrue(miss.hasPrefix(RetrievalEvidencePolicy.insufficientSentence), miss)
 
         let noQuery = try await tool.execute(args: [:])
         XCTAssertTrue(noQuery.contains("Specify what to look up"), noQuery)

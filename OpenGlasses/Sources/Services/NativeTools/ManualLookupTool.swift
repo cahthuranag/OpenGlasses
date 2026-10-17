@@ -132,9 +132,29 @@ final class ManualLookupTool: NativeTool {
         }
         let label = query.flatMap { $0.isEmpty ? nil : $0 } ?? "what the label says"
         var result = VaultRetriever.toolResult(outcome, query: label, leadIn: disclosure?.leadIn)
+        if !outcome.answers {
+            result += "\n\n" + Self.missGuidance(misses: session.noteManualLookupMiss())
+        }
         if let ocrText {
             result = "Read from the label: \(ocrText.replacingOccurrences(of: "\n", with: " "))\n\n" + result
         }
         return result
+    }
+
+    /// What the model is told after a search that found nothing it may answer from. Field report:
+    /// on a code-book vault one question about a cord's capacity ran this tool five times in a
+    /// turn, each a rephrasing, each refused with the same sentence, and the technician got no
+    /// answer at all. A different wording reaches the same pages; the second miss in a turn says
+    /// to stop and answer.
+    static func missGuidance(misses: Int) -> String {
+        guard misses > 1 else {
+            return "Nothing in the loaded manuals answers this. Do not run manual_lookup again with a "
+                + "rephrasing of the same question: other wordings reach the same pages. Tell the "
+                + "technician the manuals do not cover it, or ask for the one detail that would change "
+                + "the search (a model number, a table, clause or page number)."
+        }
+        return "That is \(misses) searches this turn that found nothing. Stop searching and answer the "
+            + "technician now: say the loaded manuals do not cover it, and give what you do have from "
+            + "the passages and the vault already in front of you."
     }
 }

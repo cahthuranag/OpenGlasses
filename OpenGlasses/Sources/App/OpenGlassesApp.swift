@@ -3179,7 +3179,13 @@ class AppState: ObservableObject, AppStateProtocol {
         // Manuals indexed before passages knew their place on the page get it from the vault's own
         // file, so "show me the page" can mark the passage without a re-import (Plan IN P0).
         // Queued behind removal recovery by the per-vault lock it takes.
-        Task { [documentStore] in await PassageLocationMigration.run(store: documentStore) }
+        // Vault manuals are indexed and searched with Field Assist's own model (Plan IV P4), set
+        // before anything is imported; the re-index onto it runs after the location migration.
+        documentStore.fieldAssistEmbedder = Embedder.fieldAssist()
+        Task { [documentStore] in
+            await PassageLocationMigration.run(store: documentStore)
+            VaultEmbeddingUpgrade.start(store: documentStore)
+        }
         StudyService.shared.configure(llm: llmService, documentStore: documentStore, tts: speechService, camera: cameraService)
 
         // Reading companion (Plan BT) — camera frames for page turns, Study Mode for the

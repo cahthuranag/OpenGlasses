@@ -15,6 +15,8 @@ struct FieldAssistSettingsView: View {
     @AppStorage("fieldAssistDefaultMode") private var defaultMode: String = "ai_only"
     @AppStorage("fieldAssistBillingBasis") private var billingBasis: String = "minutes"
     @AppStorage("fieldAssistMinutesPerBillingUnit") private var minutesPerBillingUnit: Int = 15
+    /// `Config.fieldAssistContextualSearchEnabled` — on by default (Plan IV P4).
+    @AppStorage("fieldAssistContextualSearchEnabled") private var smarterManualSearch: Bool = true
     /// `Config.preferredMapsApp`'s key and default, stored as its raw value.
     @AppStorage("preferredMapsApp") private var preferredMapsApp: String = MapsApp.apple.rawValue
     @AppStorage("briefOnCarPlayConnect") private var briefOnCarPlayConnect: Bool = false
@@ -248,6 +250,24 @@ struct FieldAssistSettingsView: View {
                     Text("Reference Files")
                 } footer: {
                     Text("Edit a vault's grounding references in-app — edits write to a private overlay and never touch the bundled baseline. Swipe a free or imported vault to export it with your edits; paid bundled packs can't be exported. An export leaves the manuals on this phone and lists them as files to supply.")
+                }
+
+                // ──────────────── Manual search (Plan IV P4)
+                //
+                // The contextual model finds the answering page more often; switching re-indexes
+                // the manuals once in the background, and search keeps the old index until the new
+                // one is complete.
+                Section {
+                    Toggle("Smarter manual search", isOn: $smarterManualSearch)
+                        .onChange(of: smarterManualSearch) { _, _ in
+                            if let store = FieldSessionService.shared.documentStore {
+                                VaultEmbeddingUpgrade.start(store: store)
+                            }
+                        }
+                } header: {
+                    Text("Manual Search")
+                } footer: {
+                    Text("Finds the right page in your manuals more often. Switching it on or off re-indexes your manuals once in the background, and search keeps using the current index until that finishes. The first time, your phone may download a language model from Apple.")
                 }
 
                 // ──────────────── Wake word

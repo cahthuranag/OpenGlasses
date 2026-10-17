@@ -588,8 +588,11 @@ final class VaultManualRetrievalTests: XCTestCase {
         // The device's model was measured too, and gets the same rule: the criterion reads words,
         // not cosines, so it means the same on both.
         XCTAssertEqual(RetrievalEvidencePolicy.default(for: "nl-sentence.en"), word)
-        XCTAssertEqual(RetrievalEvidencePolicy.default(for: "nl-contextual.multi_v1"), RetrievalEvidencePolicy(),
-                       "the contextual model is unmeasured and keeps the floor rather than a guess")
+        // The contextual model, measured on both sets: the same three terms, scaled more gently.
+        XCTAssertEqual(RetrievalEvidencePolicy.default(for: "nl-contextual.multi_v1"),
+                       RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.6))
+        XCTAssertEqual(RetrievalEvidencePolicy.default(for: "none.en"), RetrievalEvidencePolicy(),
+                       "a model nobody measured keeps the floor rather than a guess")
     }
 
     /// The device's gate, before: a bare 0.30 floor over a model whose cosines sit between 0.2 and

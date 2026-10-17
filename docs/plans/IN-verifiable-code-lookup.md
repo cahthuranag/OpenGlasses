@@ -1,7 +1,9 @@
 # Plan IN — Code Lookup You Can Verify (open the cited page on request, the passage highlighted, editions compared)
 
-**Status:** 🚧 P3a shipped 2026-10-17 (clause numbers found by number, the clause's own text
-first); P0–P2, the rest of P3, and P4 unbuilt.
+**Status:** 🚧 P0, P1, P2 and P3a shipped 2026-10-17: each passage knows where it is on its page
+and is marked there when its page opens; "show me the page" (`show_source`) opens what the last
+answer cited, in the right book, in every mode; clause numbers are found by number. The rest of P3
+(the `standard` kind's import step, printed-page citations, answer rules) and P4 are unbuilt.
 **Track:** Field Assist (B2B): a regulations vertical for electricians, and every manual user gets
 the highlight.
 **Related:** Plans [ED](ED-vault-manual-retrieval.md) / [EJ](EJ-manual-retrieval-fidelity.md)
@@ -139,7 +141,7 @@ AS/NZS 3000. Three consequences for this plan:
 
 ## Phases (one PR each)
 
-### P0 — Where the passage is on the page (headless core)
+### P0 — Where the passage is on the page (headless core) ✅ (2026-10-17)
 
 - The chunker keeps each chunk's character range within its page's extracted text, plus the
   sentence boundaries inside it. Both are stored in `doc_chunks` (`page_start`, `page_end`,
@@ -157,7 +159,7 @@ AS/NZS 3000. Three consequences for this plan:
   named `.notLocatable` for the third. Re-ingest migrates an existing store without losing evidence
   rows. Printed and physical page mapping is tested on a PDF with roman-numeral front matter.
 
-### P1 — The highlight in the viewer
+### P1 — The highlight in the viewer ✅ (2026-10-17)
 
 - `ManualPDFPageView` takes the located ranges and adds `PDFAnnotation` highlights per line
   (`PDFSelection.selectionsByLine()`) in the design kit's highlight colour, readable in light and
@@ -170,7 +172,7 @@ AS/NZS 3000. Three consequences for this plan:
 - **Exit tests:** snapshot tests of the annotated page in both appearances; the unlocated case
   shows its line and no annotation; evidence still records `opened` and `verified` as before.
 
-### P2 — "Show me the page", "show me the relevant pages"
+### P2 — "Show me the page", "show me the relevant pages" ✅ (2026-10-17)
 
 - `show_source` (`which`, optional `document`), registered in the Field Assist block and
   `FieldToolProfile`. It resolves against the last answer's citations (decision 2) and presents one
@@ -188,6 +190,74 @@ AS/NZS 3000. Three consequences for this plan:
   3.9.4; "show me the page" opens book B at the right page with the passage highlighted. "Show me
   the relevant pages" opens all three cited pages in order. A bare `manual_figure(page:)` without a
   document refuses by name when two documents have that page.
+
+#### What shipped in P0–P2 (2026-10-17)
+
+- **P0.** `DocumentChunker.Chunk` keeps `pageStart`/`pageEnd` (the chunk's span within its page's
+  text as the chunker read it) and `sentenceStarts`; `doc_chunks` stores them as `page_start`,
+  `page_end`, `sentences` ("0,112,240") and `location_version`. `PassageLocationMigration` runs at
+  launch under each vault's operation lock: a row older than `DocumentStore.locationVersion` is
+  re-read from the vault's own file and, when the re-chunking matches the stored rows one for one
+  (the usual case), only the positions are written — document id, chunk text and embedding are
+  untouched, so ledger entries, citations and page-evidence labels still name the same page. When
+  the text no longer chunks the same way it is re-chunked under the same id. A manual read by
+  recognition is left alone (re-reading would re-recognise every scanned page); the locator splits
+  its sentences itself. `PassageLocator` folds both sides to letters and digits (line breaks,
+  line-end hyphens, ligatures, quotes, case, diacritics) and marks a sentence only when the whole of
+  it is found; a short sentence ("Note.") only when it is unique on the page or follows the sentence
+  before it; a repeated one by the chunk's own position. It returns `.notLocatable(.noTextLayer)` or
+  `.notLocatable(.notFound)` by name. Interpreted: "anchored on the first and last six words, with a
+  whole-sentence match required" is met by requiring the whole folded sentence, which subsumes the
+  anchors. Page labels: `VaultDocumentExtractor.pageLabels` records `PDFPage.label` where it says
+  something other than the physical number, else a lone number or roman numeral in the page's top
+  or bottom 9 % band; stored in `doc_page_labels`, read as a two-way `PageLabelMap` (a label two
+  pages carry maps to neither). Tests: `PassageLocationTests` — exact ranges on a two-column
+  clause-numbered fixture and a hyphenated one, `.noTextLayer` on an image-only page, roman-numeral
+  front matter mapped both ways, the migration keeping ids/text/embeddings/page labels, the re-chunk
+  and recognised cases, and (only when a run names a licensed manual) the Service Manual's page 34
+  flame-sensor passage.
+- **Not in P0:** citations still name the physical page ("page 34"); the printed label is recorded
+  and mapped but not yet spoken — "page 112" / "PDF page 130" stays with P3's printed-page citations,
+  as P3a noted. Physical numbering is unchanged, so IF's physical-page evidence is unaffected.
+- **P1.** `PassageHighlighter` adds PDFKit highlight annotations line by line
+  (`selectionsByLine()`) to the in-memory page only — tagged, so a re-render removes exactly its own
+  marks and never the publisher's, and nothing is written to the vault's file. Colour is the new
+  design-kit token `passageHighlight` (paper yellow on the page, deep amber behind the text fallback),
+  with two contrast-audit pairs. Several cited passages on one page are numbered as the answer
+  numbered them. `PassageMarks` decides the sheet's words: "The passage couldn't be marked on this
+  page." when nothing was found (decision 3), nothing at all for a page without a cited passage. The
+  first mark is scrolled into view; VoiceOver reads "Highlighted: …" before the page; the
+  extracted-text route marks the same passages in the stored text. Tests: `PassageHighlightTests` —
+  the marked page rendered in light and dark and pixel-sampled (no snapshot library is in the
+  project, so the "snapshot" is a render with sampled ground colours), the unlocated case drawing
+  nothing, numbering, the contrast pairs, and evidence classification unchanged (`opened`/`verified`
+  stay as `PageEvidencePolicy` says; the existing citation-sheet tests still pass).
+- **Not in P1:** "zoom to page width" — PDFKit's `autoScales` in page-view mode already fits a
+  portrait page; the first mark is scrolled to rather than zoomed. Highlight colour and VoiceOver
+  order are owed a device check.
+- **P2.** `show_source` (`which`: first/second/…/last/all, or a clause number; optional `document`,
+  matched by `ManualDocumentChoice` from PR #757) resolves against `AnswerSourceMemory`: a
+  Direct-mode answer's own `Source:` lines (`CitationLineParser`, with #757's semicolon and range
+  fixes) are authoritative; in the live modes `manual_lookup`'s sources stand in until an answer that
+  cites replaces them; a follow-up that cites nothing leaves them; a new job starts empty. Each page
+  carries its passages, numbered as cited. "All" opens up to six pages as one paged sheet ("Source 2
+  of 3"). `ShowSourceCenter` presents now when the app is in front; otherwise it keeps the request,
+  posts "<citation> — tap to open", opens it when the app comes back, and the tool tells the model to
+  say "It's on your phone." and not that the page is showing. A citation chip under an answer opens
+  with its passage marked too. Decision 1: `StandardDocumentOpenPolicy` keeps the automatic path from
+  opening a document whose manifest kind is `standard`, whatever the turn — interpreted to include a
+  spoken "show me…" in Direct mode, because that path would open whatever those words retrieved,
+  where `show_source` opens what the answer cited. **The bare-page refusal ("is in more than one
+  manual … Ask the technician which") arrived in PR #757.** Registered in the Field Assist tool block,
+  `FieldToolProfile`, `ToolEffectClassification` and `OfflineToolPolicy`. Tests: `ShowSourceTests` —
+  a scripted session with two code books: a clause 3.9.4 answer citing book B, then "show me the page"
+  opens book B page 2 with the requirement marked, "all" opens the three cited pages in order, "the
+  second one" survives a follow-up that cited nothing, a clause number resolves, a bare
+  `manual_figure(page: 2)` refuses by name, and a locked phone keeps the page, announces it and says
+  "It's on your phone.".
+- **Not in P2:** the notification has no tap handler of its own — tapping it brings the app to the
+  front, which opens the waiting page. A document is a `standard` only if its manifest says so;
+  there is no import step for it until P3.
 
 ### P3a — Find a clause by its number ✅ (2026-10-17)
 

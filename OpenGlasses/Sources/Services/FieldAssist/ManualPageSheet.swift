@@ -159,6 +159,9 @@ struct ManualPageSheetModel: Equatable {
     let photographed: Bool
     let reviewedPhotograph: Bool
     let printedPages: [Int: Int]
+    /// The passages the answer cited in this document, to be marked where they are found
+    /// (Plan IN P1). Empty for a page opened without one — a figure asked for by number.
+    let citedPassages: [CitedPassage]
 
     private(set) var route: ManualPageRoute
     var integrity: ManualPageIntegrity = .unknown
@@ -168,8 +171,10 @@ struct ManualPageSheetModel: Equatable {
          manufacturerPDF: URL? = nil, pdfPageCount: Int = 0,
          extractedPages: [Page] = [], publishedURL: URL? = nil,
          ledgerHash: String? = nil, documentIsPDF: Bool = false, citedFigure: String? = nil,
-         photographed: Bool = false, reviewedPhotograph:Bool = false, printedPages: [Int: Int] = [:]) {
+         photographed: Bool = false, reviewedPhotograph:Bool = false, printedPages: [Int: Int] = [:],
+         citedPassages: [CitedPassage] = []) {
         self.citation = citation
+        self.citedPassages = citedPassages
         self.photographed = photographed
         self.reviewedPhotograph = reviewedPhotograph
         self.printedPages = printedPages
@@ -206,6 +211,17 @@ struct ManualPageSheetModel: Equatable {
     /// The extracted text for the page currently being shown.
     var currentText: String? {
         extractedPages.first { $0.number == paging.currentPage }?.text
+    }
+
+    /// The cited passages on a page, in the order the answer numbered them.
+    func passages(onPage page: Int) -> [CitedPassage] {
+        citedPassages.filter { $0.anchor.page == page }.sorted { $0.number < $1.number }
+    }
+
+    /// The marks for the extracted text of the page on screen — the text fallback marks the same
+    /// passages in the stored text that the PDF route marks on the page.
+    var currentTextMarks: PassageMarks {
+        PassageMarks(passages: citedPassages, page: paging.currentPage, pageText: currentText)
     }
 
     /// Whether the sheet can offer "Open manufacturer's page" — a bundled original the technician

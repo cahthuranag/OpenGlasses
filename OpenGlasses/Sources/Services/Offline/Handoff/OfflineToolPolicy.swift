@@ -89,6 +89,7 @@ enum OfflineToolPolicy {
         "session_search": .local,
         "set_alarm": .local,
         "set_timer": .local,
+        "show_source": .local,            // opens a cited page already on the phone
         "social_context": .local,
         "step_count": .local,
         "study": .local,

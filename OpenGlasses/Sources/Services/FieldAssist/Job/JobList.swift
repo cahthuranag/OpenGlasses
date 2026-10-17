@@ -410,6 +410,27 @@ enum JobListComposer {
     }
 }
 
+// MARK: - Going back to the open job
+
+/// What a control that takes the technician to the open job says.
+///
+/// "Resume" is for a paused job only. The Field Assist tab's job row said "Resume Job EL101" while
+/// its own subtitle said "In progress" and the Job page showed the clock counting beside a "Pause
+/// job" button; a tester read that as a contradiction. A running job is opened, not resumed. Pure.
+enum OpenJobWording {
+
+    /// "Resume Job EL101" while paused, "Open Job EL101" while it runs; without a number, "Resume
+    /// the open job" or "Open the current job" ("Open the open job" says nothing).
+    static func goToTitle(jobLabel: String?, isPaused: Bool) -> String {
+        switch (jobLabel, isPaused) {
+        case (let label?, true): return "Resume \(label)"
+        case (let label?, false): return "Open \(label)"
+        case (nil, true): return "Resume the open job"
+        case (nil, false): return "Open the current job"
+        }
+    }
+}
+
 // MARK: - Add new job
 
 /// What "Add new job" does (Plan HC).
@@ -425,8 +446,8 @@ enum JobListAdd: Equatable {
     case startNew
     case jobOpen(OpenJobPrompt)
 
-    static func decide(openJobLabel: String?) -> JobListAdd {
-        openJobLabel.map { .jobOpen(OpenJobPrompt(jobLabel: $0)) } ?? .startNew
+    static func decide(openJobLabel: String?, openJobPaused: Bool = false) -> JobListAdd {
+        openJobLabel.map { .jobOpen(OpenJobPrompt(jobLabel: $0, isPaused: openJobPaused)) } ?? .startNew
     }
 }
 
@@ -434,6 +455,9 @@ enum JobListAdd: Equatable {
 struct OpenJobPrompt: Equatable, Identifiable {
     /// "Job 1005", or "No job number".
     let jobLabel: String
+    /// Whether the open job is paused. Decides "Resume" against "Open": a tester read "Resume" on
+    /// a job whose clock was running as a contradiction.
+    var isPaused: Bool = false
 
     var id: String { jobLabel }
 
@@ -443,7 +467,9 @@ struct OpenJobPrompt: Equatable, Identifiable {
     var message: String {
         "One job is open at a time. Finish it before starting another, or schedule the new job for later. Nothing is closed for you."
     }
-    var resumeTitle: String { hasNumber ? "Resume \(jobLabel)" : "Resume the open job" }
+    var resumeTitle: String {
+        OpenJobWording.goToTitle(jobLabel: hasNumber ? jobLabel : nil, isPaused: isPaused)
+    }
     var finishTitle: String { hasNumber ? "Finish \(jobLabel)…" : "Finish the open job…" }
     static let scheduleTitle = "Schedule a job for later"
 
@@ -519,6 +545,8 @@ enum JobListRouting {
         var openSessionId: String?
         /// "Job 1005" — for the open-job question.
         var openJobLabel: String?
+        /// Whether the open job is paused, so the question says "Resume" only then.
+        var openJobPaused: Bool = false
         var finishedSessionIds: Set<String> = []
         var upcomingIds: Set<String> = []
     }
@@ -545,7 +573,7 @@ enum JobListRouting {
             return facts.openSessionId == nil ? Outcome(notice: noOpenJob) : Outcome(path: [.currentJob])
         case .newJob:
             let label = facts.openSessionId.map { _ in facts.openJobLabel ?? JobTabModel.noJobNumber }
-            switch JobListAdd.decide(openJobLabel: label) {
+            switch JobListAdd.decide(openJobLabel: label, openJobPaused: facts.openJobPaused) {
             case .startNew: return Outcome(path: [.currentJob])
             case .jobOpen(let prompt): return Outcome(prompt: prompt)
             }

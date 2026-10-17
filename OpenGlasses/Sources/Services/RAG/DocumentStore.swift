@@ -93,6 +93,7 @@ final class DocumentStore: ObservableObject {
                 text: String,
                 sourceType: String = "text",
                 namespace: String = "global",
+                pageLabels: [PageLabel] = [],
                 progress: ((Int, Int) -> Void)? = nil) async -> DocumentRef? {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
@@ -113,10 +114,11 @@ final class DocumentStore: ObservableObject {
             insertChunk(documentId: docId, index: chunk.index, text: chunk.text,
                         embedding: embedding.map(vecToData), page: chunk.page, section: chunk.section,
                         kind: chunk.kind, figure: chunk.figure,
-                        createdAt: now, version: embedding != nil ? versionTag : nil)
+                        createdAt: now, version: embedding != nil ? versionTag : nil, location: chunk)
             progress?(chunk.index + 1, chunks.count)
             await Task.yield()
         }
+        if !pageLabels.isEmpty { setPageLabels(pageLabels, documentId: docId) }
 
         refresh()
         // The document's name is its title — of a scanned letter, a report, a prescription — and
@@ -339,6 +341,7 @@ final class DocumentStore: ObservableObject {
 
     func forget(documentId: String) {
         let id = escapedSQL(documentId)
+        exec("DELETE FROM doc_page_labels WHERE document_id = '\(id)'")
         exec("DELETE FROM doc_chunks WHERE document_id = '\(id)'")
         exec("DELETE FROM documents WHERE id = '\(id)'")
         refresh()
@@ -405,6 +408,7 @@ final class DocumentStore: ObservableObject {
 
         let chunks = chunkCount(documentId: documentId)
         try transaction {
+            try execChecked("DELETE FROM doc_page_labels WHERE document_id = '\(id)'")
             try execChecked("DELETE FROM doc_chunks WHERE document_id = '\(id)'")
             try execChecked("DELETE FROM documents WHERE id = '\(id)' AND namespace = '\(escapedSQL(namespace))'")
             let remainingDocuments = storedNamespace(documentId: documentId) == nil ? 0 : 1
@@ -462,6 +466,7 @@ final class DocumentStore: ObservableObject {
     }
 
     func clearAll() {
+        exec("DELETE FROM doc_page_labels")
         exec("DELETE FROM doc_chunks")
         exec("DELETE FROM documents")
         refresh()
@@ -473,6 +478,7 @@ final class DocumentStore: ObservableObject {
     /// must never be swept by a personal-documents clear.
     func clear(namespace: String) {
         let ns = escapedSQL(namespace)
+        exec("DELETE FROM doc_page_labels WHERE document_id IN (SELECT id FROM documents WHERE namespace = '\(ns)')")
         exec("DELETE FROM doc_chunks WHERE document_id IN (SELECT id FROM documents WHERE namespace = '\(ns)')")
         exec("DELETE FROM documents WHERE namespace = '\(ns)'")
         refresh()
@@ -563,7 +569,8 @@ final class DocumentStore: ObservableObject {
         for (index, chunk) in chunks.enumerated() {
             insertChunk(documentId: documentId, index: index, text: chunk.text, embedding: vectors[index],
                         page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
-                        createdAt: now, version: vectors[index] == nil ? nil : embedder.version.tag)
+                        createdAt: now, version: vectors[index] == nil ? nil : embedder.version.tag,
+                        location: chunk)
             guard sqlite3_errcode(db) == SQLITE_OK || sqlite3_errcode(db) == SQLITE_DONE else { return false }
         }
         guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { return false }
@@ -640,6 +647,142 @@ final class DocumentStore: ObservableObject {
         _ = sqlite3_step(stmt)
     }
 
+    // MARK: - Passage locations (Plan IN P0)
+
+    /// Bumped when what the chunker records about a chunk's place changes, so stored rows are
+    /// located again — the `EmbeddingVersion` pattern, for positions rather than vectors.
+    nonisolated static let locationVersion = 1
+
+    /// One chunk's text and place, for the highlight. Its own query rather than `fetchChunks`,
+    /// which decodes every embedding in the namespace to answer for one row.
+    func anchor(documentId: String, chunkIndex: Int) -> PassageAnchor? {
+        if documentId.hasPrefix("captured:"), !capturedNamespaceAllowed(documentId) { return nil }
+        let sql = """
+        SELECT text, page, page_start, page_end, sentences FROM doc_chunks
+        WHERE document_id = ? AND chunk_index = ? LIMIT 1
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(stmt, 2, Int32(chunkIndex))
+        guard sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0) else { return nil }
+        func optionalInt(_ column: Int32) -> Int? {
+            sqlite3_column_type(stmt, column) == SQLITE_NULL ? nil : Int(sqlite3_column_int(stmt, column))
+        }
+        let sentences = sqlite3_column_type(stmt, 4) == SQLITE_NULL ? nil
+            : String(cString: sqlite3_column_text(stmt, 4))
+        return PassageAnchor(documentId: documentId, chunkIndex: chunkIndex, text: String(cString: raw),
+                             page: optionalInt(1), pageStart: optionalInt(2), pageEnd: optionalInt(3),
+                             sentenceStarts: PassageAnchor.decode(sentences))
+    }
+
+    /// Whether any of a document's chunks were stored before the current location version.
+    func needsLocation(documentId: String) -> Bool {
+        let sql = """
+        SELECT COUNT(*) FROM doc_chunks WHERE document_id = ?
+        AND (location_version IS NULL OR location_version < \(Self.locationVersion))
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        return sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int(stmt, 0) > 0
+    }
+
+    /// Write freshly computed places onto a document's existing rows, matched by chunk index, in
+    /// one transaction. Only when the re-chunked text is the stored text, row for row: then the
+    /// document id, the text and the embedding stay exactly as they were, and everything keyed on
+    /// them — a ledger entry, a citation, an evidence label — is untouched. Returns false (and
+    /// writes nothing) when the texts disagree, which is the caller's cue to re-chunk instead.
+    func writeLocations(documentId: String, chunks: [DocumentChunker.Chunk]) -> Bool {
+        let sql = "SELECT chunk_index, text FROM doc_chunks WHERE document_id = ? ORDER BY chunk_index"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        var stored: [(index: Int, text: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            stored.append((Int(sqlite3_column_int(stmt, 0)), String(cString: sqlite3_column_text(stmt, 1))))
+        }
+        sqlite3_finalize(stmt)
+        guard !stored.isEmpty, stored.count == chunks.count,
+              zip(stored, chunks).allSatisfy({ $0.index == $1.index && $0.text == $1.text }) else { return false }
+        guard exec("BEGIN IMMEDIATE") else { return false }
+        let update = """
+        UPDATE doc_chunks SET page_start = ?, page_end = ?, sentences = ?, location_version = ?
+        WHERE document_id = ? AND chunk_index = ?
+        """
+        for chunk in chunks {
+            var row: OpaquePointer?
+            guard sqlite3_prepare_v2(db, update, -1, &row, nil) == SQLITE_OK else { exec("ROLLBACK"); return false }
+            bindLocation(chunk, to: row, from: 1)
+            sqlite3_bind_text(row, 5, documentId, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(row, 6, Int32(chunk.index))
+            let result = sqlite3_step(row)
+            sqlite3_finalize(row)
+            guard result == SQLITE_DONE else { exec("ROLLBACK"); return false }
+        }
+        return exec("COMMIT")
+    }
+
+    /// Replace a document's chunks with a fresh chunking under the same document id, re-embedding
+    /// them — for a document whose text no longer chunks the way it was stored (the extractor
+    /// changed since import). The id is kept so the ledger, citations and evidence still name it.
+    @discardableResult
+    func rechunk(documentId: String, chunks: [DocumentChunker.Chunk]) async -> Bool {
+        guard !chunks.isEmpty, storedNamespace(documentId: documentId) != nil else { return false }
+        var vectors: [Data?] = []
+        for chunk in chunks {
+            vectors.append(embedder.embed(chunk.text).map(vecToData))
+            await Task.yield()
+        }
+        guard exec("BEGIN IMMEDIATE") else { return false }
+        exec("DELETE FROM doc_chunks WHERE document_id = '\(escapedSQL(documentId))'")
+        let now = Date().timeIntervalSince1970
+        for (index, chunk) in chunks.enumerated() {
+            insertChunk(documentId: documentId, index: chunk.index, text: chunk.text, embedding: vectors[index],
+                        page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
+                        createdAt: now, version: vectors[index] == nil ? nil : embedder.version.tag,
+                        location: chunk)
+        }
+        exec("UPDATE documents SET chunk_count = \(chunks.count) WHERE id = '\(escapedSQL(documentId))'")
+        guard exec("COMMIT") else { exec("ROLLBACK"); return false }
+        refresh()
+        return true
+    }
+
+    /// Replace the printed page labels recorded for a document.
+    func setPageLabels(_ labels: [PageLabel], documentId: String) {
+        exec("DELETE FROM doc_page_labels WHERE document_id = '\(escapedSQL(documentId))'")
+        let sql = "INSERT OR REPLACE INTO doc_page_labels (document_id, page, label, source) VALUES (?, ?, ?, ?)"
+        for label in labels {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(stmt, 2, Int32(label.page))
+            sqlite3_bind_text(stmt, 3, label.label, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 4, label.source.rawValue, -1, SQLITE_TRANSIENT)
+            _ = sqlite3_step(stmt)
+            sqlite3_finalize(stmt)
+        }
+    }
+
+    /// The printed page labels recorded for a document, as a two-way map.
+    func pageLabels(documentId: String) -> PageLabelMap {
+        let sql = "SELECT page, label, source FROM doc_page_labels WHERE document_id = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return PageLabelMap([]) }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        var labels: [PageLabel] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            labels.append(PageLabel(page: Int(sqlite3_column_int(stmt, 0)),
+                                    label: String(cString: sqlite3_column_text(stmt, 1)),
+                                    source: PageLabel.Source(rawValue: String(cString: sqlite3_column_text(stmt, 2))) ?? .printed))
+        }
+        return PageLabelMap(labels)
+    }
+
     // MARK: - SQLite setup
 
     private func openDatabase() {
@@ -695,6 +838,23 @@ final class DocumentStore: ObservableObject {
             exec("UPDATE doc_chunks SET embedding_version = '\(escapedSQL(embedder.version.tag))' "
                  + "WHERE embedding_version IS NULL AND embedding IS NOT NULL")
         }
+        // Where each chunk sits on its page (Plan IN P0). Rows stored before these columns read back
+        // with no location; `PassageLocationMigration` fills them in from the vault's own file on a
+        // later launch, keeping the document id, the chunk text and the embedding as they are.
+        exec("ALTER TABLE doc_chunks ADD COLUMN page_start INTEGER")
+        exec("ALTER TABLE doc_chunks ADD COLUMN page_end INTEGER")
+        exec("ALTER TABLE doc_chunks ADD COLUMN sentences TEXT")
+        exec("ALTER TABLE doc_chunks ADD COLUMN location_version INTEGER")
+        // The printed page each physical page carries, where the PDF or its header says (decision 4).
+        exec("""
+        CREATE TABLE IF NOT EXISTS doc_page_labels (
+            document_id TEXT NOT NULL,
+            page INTEGER NOT NULL,
+            label TEXT NOT NULL,
+            source TEXT NOT NULL,
+            PRIMARY KEY (document_id, page)
+        )
+        """)
         exec("CREATE INDEX IF NOT EXISTS idx_chunk_doc ON doc_chunks(document_id)")
         exec("CREATE INDEX IF NOT EXISTS idx_doc_ns ON documents(namespace)")
     }
@@ -719,8 +879,8 @@ final class DocumentStore: ObservableObject {
 
     private func insertChunk(documentId: String, index: Int, text: String, embedding: Data?,
                              page: Int?, section: String?, kind: DocumentChunker.Kind, figure: String?,
-                             createdAt: Double, version: String?) {
-        let sql = "INSERT INTO doc_chunks (id, document_id, chunk_index, text, embedding, page, section, created_at, embedding_version, kind, figure) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                             createdAt: Double, version: String?, location: DocumentChunker.Chunk? = nil) {
+        let sql = "INSERT INTO doc_chunks (id, document_id, chunk_index, text, embedding, page, section, created_at, embedding_version, kind, figure, page_start, page_end, sentences, location_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(stmt) }
@@ -740,7 +900,22 @@ final class DocumentStore: ObservableObject {
         if let version, embedding != nil { sqlite3_bind_text(stmt, 9, version, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(stmt, 9) }
         sqlite3_bind_text(stmt, 10, kind.rawValue, -1, SQLITE_TRANSIENT)
         if let figure { sqlite3_bind_text(stmt, 11, figure, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(stmt, 11) }
+        bindLocation(location, to: stmt, from: 12)
         _ = sqlite3_step(stmt)
+    }
+
+    /// Binds a chunk's place on its page to four consecutive parameters: start, end, sentences and
+    /// the location version. A chunk without a location (a team learning stored whole) binds nulls,
+    /// and a null version is what tells the migration a row was never located.
+    private func bindLocation(_ chunk: DocumentChunker.Chunk?, to stmt: OpaquePointer?, from first: Int32) {
+        guard let chunk else {
+            for offset in 0..<Int32(4) { sqlite3_bind_null(stmt, first + offset) }
+            return
+        }
+        if let start = chunk.pageStart { sqlite3_bind_int(stmt, first, Int32(start)) } else { sqlite3_bind_null(stmt, first) }
+        if let end = chunk.pageEnd { sqlite3_bind_int(stmt, first + 1, Int32(end)) } else { sqlite3_bind_null(stmt, first + 1) }
+        sqlite3_bind_text(stmt, first + 2, PassageAnchor.encode(chunk.sentenceStarts), -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(stmt, first + 3, Int32(Self.locationVersion))
     }
 
     // MARK: - Fetches

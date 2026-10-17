@@ -1,0 +1,333 @@
+import Foundation
+import NaturalLanguage
+
+// Where a cited passage is on its page (Plan IN P0).
+//
+// The partner's electrician asked for two things after a source with every answer: the page on
+// request, and the exact supporting passage marked on it, so he reads the requirement rather than
+// the whole page. This file is the headless half of the second: where a chunk sits, which printed
+// page a physical page carries, and the ranges on a PDF page's own text layer that hold the
+// chunk's sentences. Nothing here draws; `PassageHighlighter` does, from what this returns.
+
+// MARK: - A chunk's place
+
+/// What the store keeps about where a chunk came from on its page, read back for the highlight.
+struct PassageAnchor: Equatable, Hashable {
+    let documentId: String
+    let chunkIndex: Int
+    /// The chunk's text, as cited.
+    let text: String
+    /// The physical page (PDF index + 1).
+    let page: Int?
+    /// The chunk's span within its page's text as the chunker read it — see
+    /// `DocumentChunker.Chunk.pageStart`. A tie-breaker when a sentence appears twice on a page.
+    let pageStart: Int?
+    let pageEnd: Int?
+    /// Offsets into `text` where each sentence starts. Empty for a row stored before the column
+    /// existed; the locator then splits the text itself.
+    let sentenceStarts: [Int]
+
+    init(documentId: String, chunkIndex: Int, text: String, page: Int?, pageStart: Int? = nil,
+         pageEnd: Int? = nil, sentenceStarts: [Int] = []) {
+        self.documentId = documentId
+        self.chunkIndex = chunkIndex
+        self.text = text
+        self.page = page
+        self.pageStart = pageStart
+        self.pageEnd = pageEnd
+        self.sentenceStarts = sentenceStarts
+    }
+
+    /// The chunk's sentences, from the stored starts when there are any.
+    var sentences: [String] { PassageLocator.sentences(of: text, starts: sentenceStarts) }
+
+    /// The compact form `doc_chunks.sentences` stores: "0,112,240".
+    static func encode(_ starts: [Int]) -> String { starts.map(String.init).joined(separator: ",") }
+
+    static func decode(_ stored: String?) -> [Int] {
+        guard let stored, !stored.isEmpty else { return [] }
+        return stored.split(separator: ",").compactMap { Int($0) }
+    }
+}
+
+// MARK: - Printed page numbers (decision 4)
+
+/// The number a page carries in print, beside the physical index the PDF knows it by.
+///
+/// A code book's printed page 112 can be PDF page 130: a cover, a contents and roman-numeral front
+/// matter come first. A citation that says "page 130" sends the reader to the wrong place in the
+/// paper book, and one that says "page 112" opens the wrong page in the viewer, so both numbers are
+/// kept and each is used for what it is.
+struct PageLabel: Equatable, Hashable {
+    enum Source: String, Equatable {
+        /// The PDF's own page label (`PDFPage.label`), set by the publisher.
+        case pdfLabel = "pdf_label"
+        /// A lone number, or roman numeral, printed in the page's top or bottom band.
+        case printed
+    }
+
+    /// Physical page, 1-based.
+    let page: Int
+    /// What is printed: "112", "iv", "A-3".
+    let label: String
+    let source: Source
+}
+
+/// Physical ↔ printed, both ways, for one document.
+struct PageLabelMap: Equatable {
+    private let byPage: [Int: String]
+
+    init(_ labels: [PageLabel]) {
+        byPage = Dictionary(labels.map { ($0.page, $0.label) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    var isEmpty: Bool { byPage.isEmpty }
+
+    /// The printed label of a physical page, when one is known.
+    func printed(forPhysical page: Int) -> String? { byPage[page] }
+
+    /// The physical page a printed label names. Nil when no page carries it, or when more than one
+    /// does — "page 3" of the front matter and of the body cannot both be right, and opening either
+    /// would be a guess.
+    func physical(forPrinted label: String) -> Int? {
+        let wanted = label.trimmingCharacters(in: .whitespaces).lowercased()
+        let hits = byPage.filter { $0.value.lowercased() == wanted }.map(\.key)
+        return hits.count == 1 ? hits[0] : nil
+    }
+}
+
+/// Reads the printed page number out of the text of a page's top or bottom band.
+enum PrintedPageBand {
+
+    /// The page number the band text prints, or nil. A line that is only a number ("112",
+    /// "- 112 -", "Page 112") or only a roman numeral ("iv") counts; a line with anything else on
+    /// it does not, because a header is full of numbers that are not page numbers — a clause, a
+    /// year, a model. When the band prints two different candidates, neither is trusted.
+    static func label(in bandText: String) -> String? {
+        let lines = bandText.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        var found = Set<String>()
+        for line in lines {
+            if let candidate = candidate(line) { found.insert(candidate) }
+        }
+        return found.count == 1 ? found.first : nil
+    }
+
+    private static let arabic = try! NSRegularExpression(
+        pattern: #"(?i)^(?:page\s+)?(?:[—–-]\s*)?([0-9]{1,4})(?:\s*[—–-])?$"#)
+    private static let roman = try! NSRegularExpression(
+        pattern: #"(?i)^(?:page\s+)?(?:[—–-]\s*)?(m{0,1}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3}))(?:\s*[—–-])?$"#)
+
+    private static func candidate(_ line: String) -> String? {
+        let range = NSRange(line.startIndex..<line.endIndex, in: line)
+        if let match = arabic.firstMatch(in: line, range: range), let r = Range(match.range(at: 1), in: line),
+           let number = Int(line[r]), number > 0 {
+            return String(number)
+        }
+        if let match = roman.firstMatch(in: line, range: range), let r = Range(match.range(at: 1), in: line),
+           !r.isEmpty {
+            return line[r].lowercased()
+        }
+        return nil
+    }
+}
+
+// MARK: - Finding the passage on the page
+
+/// What locating a passage on a page came to.
+enum PassageLocation: Equatable {
+    /// The passage's sentences that were found, as ranges in the PDF page's own text (UTF-16, as
+    /// `PDFPage.selection(for:)` takes them), in reading order. `dropped` sentences could not be
+    /// anchored and are simply not marked.
+    case located(ranges: [NSRange], dropped: Int)
+    /// Nothing can be marked. Named, because the viewer says so in words (decision 3).
+    case notLocatable(Reason)
+
+    enum Reason: String, Equatable {
+        /// The page has no text layer — a scan, or a photographed page.
+        case noTextLayer = "no_text_layer"
+        /// The page has text, and none of the passage's sentences was found whole in it.
+        case notFound = "not_found"
+    }
+
+    var ranges: [NSRange] {
+        if case .located(let ranges, _) = self { return ranges }
+        return []
+    }
+}
+
+/// Finds a chunk's sentences in a PDF page's text (Plan IN P0, decision 3).
+///
+/// A highlight is read as the requirement, so a wrong one is worse than none: only what is found
+/// is marked. The chunk text and the PDF's text layer disagree in every way that does not change
+/// the words — line breaks, hyphenation at a line end, ligatures, curly quotes, a heading the
+/// extractor re-marked, a table's pipes — so both sides are folded to their letters and digits,
+/// lower-cased and stripped of diacritics, and a sentence is found only if the whole of it appears
+/// there. One that does not — interrupted by a running header, reflowed across a column — is
+/// dropped from the highlight rather than stretched to fit.
+///
+/// Pure: strings in, ranges out.
+enum PassageLocator {
+
+    /// Below this many folded characters a sentence ("Note.", "2.") is too short to anchor on its
+    /// own: it is marked only if it appears once on the page, or right after the sentence before it.
+    static let shortSentence = 12
+    /// How far after the previous sentence a short one may sit and still be taken as its neighbour.
+    static let neighbourGap = 40
+
+    static func locate(_ anchor: PassageAnchor, onPageText pageText: String?) -> PassageLocation {
+        locate(sentences: anchor.sentences, onPageText: pageText, hint: anchor.pageStart)
+    }
+
+    static func locate(sentences: [String], onPageText pageText: String?, hint: Int? = nil) -> PassageLocation {
+        guard let pageText else { return .notLocatable(.noTextLayer) }
+        let page = Folded(pageText)
+        guard !page.scalars.isEmpty else { return .notLocatable(.noTextLayer) }
+
+        var found: [(start: Int, end: Int)] = []     // folded indices, end exclusive
+        var dropped = 0
+        for sentence in sentences {
+            let needle = Folded(sentence).scalars
+            guard !needle.isEmpty else { continue }
+            let hits = occurrences(of: needle, in: page.scalars)
+            let after = found.last?.end ?? 0
+            let choice: Int?
+            if needle.count < shortSentence {
+                if hits.count == 1 {
+                    choice = hits[0]
+                } else {
+                    choice = hits.first { $0 >= after && $0 - after <= neighbourGap && !found.isEmpty }
+                }
+            } else if hits.count <= 1 {
+                choice = hits.first
+            } else if !found.isEmpty {
+                choice = hits.first { $0 >= after } ?? hits.first
+            } else if let hint {
+                // The first sentence, found twice: the copy nearer where the chunker saw it.
+                choice = hits.min { abs(page.utf16Start(of: $0) - hint) < abs(page.utf16Start(of: $1) - hint) }
+            } else {
+                choice = hits.first
+            }
+            guard let start = choice else { dropped += 1; continue }
+            found.append((start, start + needle.count))
+        }
+        guard !found.isEmpty else { return .notLocatable(.notFound) }
+
+        // Neighbouring sentences with nothing but spaces and punctuation between them are one mark.
+        var merged: [(start: Int, end: Int)] = []
+        for span in found.sorted(by: { $0.start < $1.start }) {
+            if let last = merged.last, span.start <= last.end {
+                merged[merged.count - 1].end = max(last.end, span.end)
+            } else {
+                merged.append(span)
+            }
+        }
+        let ns = pageText as NSString
+        let ranges = merged.map { Self.closingPunctuation(page.utf16Range(from: $0.start, to: $0.end), in: ns) }
+        return .located(ranges: ranges, dropped: dropped)
+    }
+
+    /// Folding drops punctuation, so a match ends on the sentence's last letter or digit. The mark
+    /// takes in the full stop, bracket or quote that touches it on either side — "500 mm." is the
+    /// requirement as printed — and never runs across a space.
+    static func closingPunctuation(_ range: NSRange, in text: NSString) -> NSRange {
+        let punctuation = CharacterSet.punctuationCharacters.union(.symbols)
+        func isPunctuation(_ index: Int) -> Bool {
+            guard index >= 0, index < text.length,
+                  let scalar = Unicode.Scalar(text.character(at: index)) else { return false }
+            return punctuation.contains(scalar)
+        }
+        var start = range.location
+        var end = NSMaxRange(range)
+        while end < text.length, end - NSMaxRange(range) < 3, isPunctuation(end) { end += 1 }
+        let openers = CharacterSet(charactersIn: "\"'\u{201C}\u{2018}([")
+        while start > 0, range.location - start < 2,
+              let scalar = Unicode.Scalar(text.character(at: start - 1)), openers.contains(scalar) { start -= 1 }
+        return NSRange(location: start, length: end - start)
+    }
+
+    /// The sentences of a chunk: split at the stored starts, or by the tokenizer when the row
+    /// predates them.
+    static func sentences(of text: String, starts: [Int]) -> [String] {
+        guard !starts.isEmpty else {
+            let tokenizer = NLTokenizer(unit: .sentence)
+            tokenizer.string = text
+            var result: [String] = []
+            tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+                let s = text[range].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !s.isEmpty { result.append(s) }
+                return true
+            }
+            return result.isEmpty ? [text] : result
+        }
+        let characters = Array(text)
+        let bounds = (starts.filter { $0 >= 0 && $0 < characters.count } + [characters.count])
+        var result: [String] = []
+        for (from, to) in zip(bounds, bounds.dropFirst()) where to > from {
+            let s = String(characters[from..<to]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty { result.append(s) }
+        }
+        return result
+    }
+
+    private static func occurrences(of needle: [UInt32], in haystack: [UInt32]) -> [Int] {
+        guard needle.count <= haystack.count, let first = needle.first else { return [] }
+        var hits: [Int] = []
+        var i = 0
+        let last = haystack.count - needle.count
+        while i <= last {
+            if haystack[i] == first {
+                var j = 1
+                while j < needle.count && haystack[i + j] == needle[j] { j += 1 }
+                if j == needle.count { hits.append(i) }
+            }
+            i += 1
+        }
+        return hits
+    }
+
+    /// Text reduced to the characters that carry its words, each remembering where it came from.
+    struct Folded {
+        /// Folded letters and digits.
+        private(set) var scalars: [UInt32] = []
+        /// For each folded scalar, the UTF-16 range of the source character it came from.
+        private var sources: [NSRange] = []
+
+        init(_ text: String) {
+            var location = 0
+            for character in text {
+                let length = String(character).utf16.count
+                let source = NSRange(location: location, length: length)
+                location += length
+                for scalar in Self.fold(character) {
+                    scalars.append(scalar)
+                    sources.append(source)
+                }
+            }
+        }
+
+        func utf16Start(of index: Int) -> Int { sources[index].location }
+
+        func utf16Range(from start: Int, to end: Int) -> NSRange {
+            let first = sources[start]
+            let last = sources[end - 1]
+            return NSRange(location: first.location, length: last.location + last.length - first.location)
+        }
+
+        private static let ligatures: [Character: String] = [
+            "\u{FB00}": "ff", "\u{FB01}": "fi", "\u{FB02}": "fl", "\u{FB03}": "ffi", "\u{FB04}": "ffl",
+            "\u{FB05}": "st", "\u{FB06}": "st", "\u{0152}": "oe", "\u{0153}": "oe", "\u{00C6}": "ae", "\u{00E6}": "ae",
+        ]
+
+        /// One character's contribution: its letters and digits, case- and accent-folded.
+        static func fold(_ character: Character) -> [UInt32] {
+            let base = ligatures[character] ?? String(character)
+            let folded = base.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                                      locale: Locale(identifier: "en_US_POSIX"))
+            return folded.unicodeScalars
+                .filter { CharacterSet.alphanumerics.contains($0) }
+                .map(\.value)
+        }
+    }
+}

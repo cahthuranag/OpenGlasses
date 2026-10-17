@@ -110,7 +110,7 @@ final class ManualFigureTool: NativeTool {
         }
         let namespace = DocumentStore.vaultNamespace(store.manifest.id)
         guard documentStore.documentCount(namespace: namespace) > 0 else {
-            return "No manuals have been imported for the \(store.manifest.name) vault yet. Import them in Settings → Field Assist → Custom Vaults."
+            return ManualIndexAvailability.unsearchableSentence(for: store.manifest)
         }
 
         let requestedFigure = (args["figure"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)

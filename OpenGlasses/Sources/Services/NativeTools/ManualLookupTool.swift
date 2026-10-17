@@ -73,7 +73,9 @@ final class ManualLookupTool: NativeTool {
         }
         let namespace = DocumentStore.vaultNamespace(store.manifest.id)
         guard corpus.any else {
-            return "No manuals have been imported for the \(store.manifest.name) vault yet. Import them in Settings → Field Assist → Custom Vaults."
+            // Listed but not searchable: still being indexed, or never indexed — not "never
+            // imported", which sent the model round five rephrasings of the same search.
+            return ManualIndexAvailability.unsearchableSentence(for: store.manifest)
         }
 
         let query = (args["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -124,6 +126,10 @@ final class ManualLookupTool: NativeTool {
         let outcome = retriever.retrieve(.init(turn: query, ocrText: ocrText,
                                                procedureStep: nil, limit: session.manualPassageLimit))
         let disclosure = session.noteRetrieval(outcome)
+        // What "show me the page" opens next, until an answer that cites replaces it (Plan IN P2).
+        if outcome.answers {
+            session.sourceCenter.noteLookup(outcome.passages, sessionId: session.activeSession?.id)
+        }
         let label = query.flatMap { $0.isEmpty ? nil : $0 } ?? "what the label says"
         var result = VaultRetriever.toolResult(outcome, query: label, leadIn: disclosure?.leadIn)
         if let ocrText {

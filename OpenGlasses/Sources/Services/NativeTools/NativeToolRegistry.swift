@@ -243,6 +243,8 @@ final class NativeToolRegistry {
             }))
             // manual_figure puts a numbered drawing on the phone and in the next turn's image slot.
             register(ManualFigureTool(documentStore: documentStore))
+            // show_source opens the page the last answer cited, its passage highlighted (Plan IN P2).
+            register(ShowSourceTool(documentStore: documentStore))
             // Safety Assessment (HECA) — camera high-energy hazard assessment via SafetyAssessmentService.shared.
             register(SafetyAssessmentTool())
             if let camera = cameraService {

@@ -126,6 +126,10 @@ final class ManualLookupTool: NativeTool {
         let outcome = retriever.retrieve(.init(turn: query, ocrText: ocrText,
                                                procedureStep: nil, limit: session.manualPassageLimit))
         let disclosure = session.noteRetrieval(outcome)
+        // What "show me the page" opens next, until an answer that cites replaces it (Plan IN P2).
+        if outcome.answers {
+            session.sourceCenter.noteLookup(outcome.passages, sessionId: session.activeSession?.id)
+        }
         let label = query.flatMap { $0.isEmpty ? nil : $0 } ?? "what the label says"
         var result = VaultRetriever.toolResult(outcome, query: label, leadIn: disclosure?.leadIn)
         if let ocrText {

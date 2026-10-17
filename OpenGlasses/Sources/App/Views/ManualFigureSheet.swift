@@ -13,22 +13,68 @@ import SwiftUI
 /// `ManualPageSheetModel` / `ManualPageController`, which are tested without a screen.
 struct ManualFigureSheet: View {
     let request: AppState.ManualFigureRequest
+    /// Which of the request's pages is up, when "show me the relevant pages" opened several
+    /// (Plan IN P2). Each page gets its own controller, so its audit trail is its own.
+    @State private var stopIndex = 0
+
+    var body: some View {
+        let stops = request.stops
+        let index = min(stopIndex, stops.count - 1)
+        ManualSourcePage(stop: stops[index], position: stops.count > 1 ? (index + 1, stops.count) : nil,
+                         onPreviousSource: { stopIndex = max(index - 1, 0) },
+                         onNextSource: { stopIndex = min(index + 1, stops.count - 1) })
+            .id(index)
+    }
+}
+
+/// One cited page in the sheet.
+private struct ManualSourcePage: View {
+    let stop: AppState.ManualFigureRequest.Stop
+    /// "2 of 3" when the sheet holds several pages.
+    let position: (current: Int, count: Int)?
+    let onPreviousSource: () -> Void
+    let onNextSource: () -> Void
     @StateObject private var controller: ManualPageController
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    /// What marking the PDF page on screen came to, reported by the viewer (Plan IN P1).
+    @State private var pdfMarks: PassageMarks?
+    @State private var pdfPageText: String?
 
-    init(request: AppState.ManualFigureRequest) {
-        self.request = request
-        _controller = StateObject(wrappedValue: ManualPageController(model: request.sheet,
+    init(stop: AppState.ManualFigureRequest.Stop, position: (current: Int, count: Int)?,
+         onPreviousSource: @escaping () -> Void, onNextSource: @escaping () -> Void) {
+        self.stop = stop
+        self.position = position
+        self.onPreviousSource = onPreviousSource
+        self.onNextSource = onNextSource
+        _controller = StateObject(wrappedValue: ManualPageController(model: stop.sheet,
                                                                      session: FieldSessionService.shared,
-                                                                     origin: request.presenter.figure.origin))
+                                                                     origin: stop.presenter.figure.origin))
     }
 
     private var model: ManualPageSheetModel { controller.model }
 
+    /// The marks for whatever is on screen, on either route.
+    private var marks: PassageMarks? {
+        model.route == .manufacturerPDF ? pdfMarks : model.currentTextMarks
+    }
+
+    private var markedText: String? {
+        model.route == .manufacturerPDF ? pdfPageText : model.currentText
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // VoiceOver reads the highlighted passage first, then the page (Plan IN P1).
+                if let spoken = marks?.spokenPassages(in: markedText) {
+                    Color.clear
+                        .frame(height: 0)
+                        .accessibilityElement()
+                        .accessibilityLabel(Text(verbatim: spoken))
+                        .accessibilitySortPriority(2)
+                }
+                if let position { sourceStepper(position) }
                 header
                 Divider()
                 content
@@ -63,6 +109,12 @@ struct ManualFigureSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            // Decision 3: a passage that could not be found is said, never guessed at.
+            if let unmarked = marks?.unmarkedLine {
+                Text(verbatim: unmarked)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
@@ -79,7 +131,12 @@ struct ManualFigureSheet: View {
         case .manufacturerPDF where model.manufacturerPDF != nil:
             ManualPDFPageView(source: model.manufacturerPDF!,
                               pageIndex: model.paging.currentPage - 1,
-                              onPageChanged: { controller.viewerMoved(to: $0 + 1) })
+                              passages: model.citedPassages,
+                              onPageChanged: { controller.viewerMoved(to: $0 + 1) },
+                              onMarked: { marks, text in
+                                  pdfMarks = marks
+                                  pdfPageText = text
+                              })
                 .ignoresSafeArea(edges: .bottom)
         case .extractedText where !model.extractedPages.isEmpty:
             extractedText
@@ -93,9 +150,20 @@ struct ManualFigureSheet: View {
     /// question.
     private var extractedText: some View {
         ScrollView {
-            MessageContentView(text: model.currentText ?? "")
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Group {
+                let marks = model.currentTextMarks
+                if let text = model.currentText, !marks.located.isEmpty {
+                    // The same passages the PDF route marks, marked in the stored text. Plain
+                    // rather than rendered: the marks are ranges in this exact string.
+                    Text(Self.highlighted(text, marks: marks))
+                        .font(.body)
+                        .textSelection(.enabled)
+                } else {
+                    MessageContentView(text: model.currentText ?? "")
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(OGTheme.canvas)
         .contentShape(Rectangle())
@@ -106,6 +174,37 @@ struct ManualFigureSheet: View {
                     if value.translation.width < 0 { controller.next() } else { controller.previous() }
                 }
         )
+    }
+
+    /// The stored page text with the located passages on the design kit's highlight.
+    private static func highlighted(_ text: String, marks: PassageMarks) -> AttributedString {
+        let attributed = NSMutableAttributedString(string: text)
+        let wash = UIColor(OGTheme.Token.passageHighlight.color).withAlphaComponent(OGTheme.Opacity.passageHighlight)
+        for mark in marks.located {
+            for range in mark.location.ranges where NSMaxRange(range) <= attributed.length {
+                attributed.addAttribute(.backgroundColor, value: wash, range: range)
+            }
+        }
+        return (try? AttributedString(attributed, including: \.uiKit)) ?? AttributedString(text)
+    }
+
+    /// Moves between the pages "show me the relevant pages" opened.
+    private func sourceStepper(_ position: (current: Int, count: Int)) -> some View {
+        HStack {
+            Button(action: onPreviousSource) { Image(systemName: "chevron.left") }
+                .disabled(position.current <= 1)
+                .accessibilityLabel("Previous source")
+            Spacer()
+            Text("Source \(position.current) of \(position.count)")
+                .font(.footnote.weight(.semibold))
+            Spacer()
+            Button(action: onNextSource) { Image(systemName: "chevron.right") }
+                .disabled(position.current >= position.count)
+                .accessibilityLabel("Next source")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .background(OGTheme.card)
     }
 
     /// Neither the manufacturer's page nor stored text — the honest limit, with what to change so
@@ -187,9 +286,16 @@ struct ManualFigureSheet: View {
 private struct ManualPDFPageView: UIViewRepresentable {
     let source: URL
     let pageIndex: Int
+    /// Cited passages to mark wherever they are found (Plan IN P1).
+    var passages: [CitedPassage] = []
     var onPageChanged: (Int) -> Void = { _ in }
+    /// What marking the page on screen came to, and that page's text, for the header's line and
+    /// for VoiceOver.
+    var onMarked: (PassageMarks, String?) -> Void = { _, _ in }
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPageChanged: onPageChanged) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPageChanged: onPageChanged, passages: passages, onMarked: onMarked)
+    }
 
     func makeUIView(context: Context) -> PDFView {
         let view = PDFView()
@@ -200,11 +306,14 @@ private struct ManualPDFPageView: UIViewRepresentable {
         view.document = PDFDocument(url: source)
         goToPage(view)
         context.coordinator.observe(view)
+        context.coordinator.markCurrentPage(scrolling: true)
         return view
     }
 
     func updateUIView(_ view: PDFView, context: Context) {
         context.coordinator.onPageChanged = onPageChanged
+        context.coordinator.onMarked = onMarked
+        context.coordinator.passages = passages
         if view.document?.documentURL != source {
             view.document = PDFDocument(url: source)
         }
@@ -222,10 +331,36 @@ private struct ManualPDFPageView: UIViewRepresentable {
     /// technician's swipes rather than only the app's own jumps.
     final class Coordinator: NSObject {
         var onPageChanged: (Int) -> Void
+        var passages: [CitedPassage]
+        var onMarked: (PassageMarks, String?) -> Void
         private weak var view: PDFView?
+        /// The page last marked, so a redraw does not mark it again.
+        private var markedPage: PDFPage?
 
-        init(onPageChanged: @escaping (Int) -> Void) {
+        init(onPageChanged: @escaping (Int) -> Void, passages: [CitedPassage],
+             onMarked: @escaping (PassageMarks, String?) -> Void) {
             self.onPageChanged = onPageChanged
+            self.passages = passages
+            self.onMarked = onMarked
+        }
+
+        /// Mark the cited passages on the page on screen, in memory only — the vault's file is
+        /// never written — and bring the first mark into view.
+        func markCurrentPage(scrolling: Bool) {
+            guard let view, let document = view.document, let page = view.currentPage,
+                  page !== markedPage else { return }
+            if let previous = markedPage { PassageHighlighter.clear(previous) }
+            markedPage = page
+            let text = page.string
+            let marks = PassageMarks(passages: passages, page: document.index(for: page) + 1, pageText: text)
+            let first = marks.hasPassages ? PassageHighlighter.apply(marks, to: page) : nil
+            if scrolling, let first {
+                DispatchQueue.main.async { [weak view] in
+                    view?.go(to: first.insetBy(dx: 0, dy: -40), on: page)
+                }
+            }
+            let report = onMarked
+            DispatchQueue.main.async { report(marks, text) }
         }
 
         func observe(_ view: PDFView) {
@@ -237,6 +372,7 @@ private struct ManualPDFPageView: UIViewRepresentable {
         @objc private func pageChanged() {
             guard let view, let document = view.document, let page = view.currentPage else { return }
             onPageChanged(document.index(for: page))
+            markCurrentPage(scrolling: false)
         }
     }
 }

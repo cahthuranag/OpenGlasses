@@ -3176,6 +3176,10 @@ class AppState: ObservableObject, AppStateProtocol {
         // and from being opened, whether or not this has run yet — but leaving one unfinished would
         // leave a manual unreachable forever.
         Task { await VaultManualRemoval.recoverPendingRemovals(documentStore: documentStore) }
+        // Manuals indexed before passages knew their place on the page get it from the vault's own
+        // file, so "show me the page" can mark the passage without a re-import (Plan IN P0).
+        // Queued behind removal recovery by the per-vault lock it takes.
+        Task { [documentStore] in await PassageLocationMigration.run(store: documentStore) }
         StudyService.shared.configure(llm: llmService, documentStore: documentStore, tts: speechService, camera: cameraService)
 
         // Reading companion (Plan BT) — camera frames for page turns, Study Mode for the
@@ -3731,6 +3735,16 @@ class AppState: ObservableObject, AppStateProtocol {
                 self?.presentManualFigure(staged)
             }
         cancellables.append(figureToken)
+
+        // "Show me the page": the cited pages `show_source` resolved, each with its passage marked
+        // (Plan IN P2). Published only while the app is in front; a request made with the phone
+        // locked waits for it and a notification says where it is.
+        let sourcePagesToken = ShowSourceCenter.shared.$presented
+            .compactMap { $0 }
+            .sink { [weak self] request in
+                self?.presentSourcePages(request.pages)
+            }
+        cancellables.append(sourcePagesToken)
 
         // Field Assist: the lens says which machine the answers are for, and says so again when
         // the identity is corrected or forgotten — one transient line on the same path the figure
@@ -4644,7 +4658,17 @@ class AppState: ObservableObject, AppStateProtocol {
         /// What the sheet draws: which document, which pages, and the hash the manufacturer's file
         /// is checked against (Plan EK P3).
         let sheet: ManualPageSheetModel
-        var id: String { presenter.citation }
+        /// Further cited pages, after the first, when "show me the relevant pages" asked for all
+        /// of them (Plan IN P2). Paged in the answer's order, each in its own document.
+        var others: [Stop] = []
+
+        struct Stop: Equatable {
+            let presenter: ManualFigurePresenter
+            let sheet: ManualPageSheetModel
+        }
+
+        var stops: [Stop] { [Stop(presenter: presenter, sheet: sheet)] + others }
+        var id: String { stops.map(\.presenter.citation).joined(separator: " | ") }
     }
 
     /// Non-nil while the manual figure sheet should be presented.
@@ -4974,8 +4998,12 @@ class AppState: ObservableObject, AppStateProtocol {
             // has to say so — silence reads as a broken chip, and opening a page that is no longer
             // part of the vault is the thing removal promised would not happen.
             switch session.resolveCitation(citation) {
-            case .figure(let staged):
+            case .figure(var staged):
                 session.logCitationOpened(citation, origin: origin)
+                // The chip opens on its passage, marked, when the answer's passage is still known.
+                staged.citedPassages = ShowSourceCenter.shared.citedPassages(for: citation,
+                                                                             documentId: staged.documentId,
+                                                                             store: documentStore)
                 presentManualFigure(staged)
             case .removed(let title):
                 errorMessage = VaultManualRemovalPresentation.removedCitationNotice(manual: title)
@@ -5010,6 +5038,20 @@ class AppState: ObservableObject, AppStateProtocol {
         // The lens says where the drawing is and nothing else — it cannot render one legibly.
         ManualFigureCue.show(staged, on: glassesDisplay)
         return presenter
+    }
+
+    /// Put several cited pages in front of the technician at once — "show me the relevant pages"
+    /// (Plan IN P2). The first is presented the way a single page is; the rest page after it.
+    func presentSourcePages(_ pages: [FieldSessionService.StagedFigure]) {
+        guard let first = pages.first else { return }
+        let session = FieldSessionService.shared
+        let stops = pages.map { staged in
+            AppState.ManualFigureRequest.Stop(presenter: ManualFigurePresenter.present(staged, session: session),
+                                              sheet: session.manualPageSheet(for: staged))
+        }
+        manualFigureRequest = ManualFigureRequest(presenter: stops[0].presenter, sheet: stops[0].sheet,
+                                                  others: Array(stops.dropFirst()))
+        ManualFigureCue.show(first, on: glassesDisplay)
     }
 
     /// A manual has just been removed from an installed vault (Plan FN).

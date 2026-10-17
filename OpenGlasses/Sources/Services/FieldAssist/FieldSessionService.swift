@@ -49,6 +49,8 @@ final class FieldSessionService: ObservableObject {
     /// The drawing this turn points at, or nil when it points at none (Plan EK P2). Published so
     /// the phone can put the page in front of the technician while the model is still answering.
     @Published private(set) var stagedFigure: StagedFigure?
+    /// The last answer's sources and the "show me" pages (Plan IN P2). Injectable for tests.
+    var sourceCenter: ShowSourceCenter = .shared
 
     /// The last figure this session staged. Kept after `stagedFigure` clears so "show me that
     /// figure again" has something to reopen.
@@ -1498,6 +1500,13 @@ final class FieldSessionService: ObservableObject {
             tokenHits: candidate?.matchedTokens ?? [])
         var staged = decision.stagesFigure ? makeStagedFigure(for: candidate, vaultId: store.manifest.id) : nil
         staged?.origin = kind == .showMe ? .requested : .automatic
+
+        // A code book opens when it is asked for through its citation (`show_source`), never off
+        // a turn's wording (Plan IN decisions 1 and 2). The passages still go to the model.
+        if let figure = staged, StandardDocumentOpenPolicy.keepsToRequest(
+            documentKind: StandardDocumentOpenPolicy.documentKind(of: figure.documentId, in: store.manifest)) {
+            staged = nil
+        }
         staged?.presentOnPhone = decision.presentsOnPhone
         stageFigure(staged)
         logFigurePresentation(staged ?? candidate.flatMap { makeStagedFigure(for: $0, vaultId: store.manifest.id) },
@@ -1647,6 +1656,7 @@ final class FieldSessionService: ObservableObject {
     /// `leadIn` the caller hands the model.
     @discardableResult
     func noteRetrieval(_ outcome: RetrievalOutcome, now: Date = Date()) -> TeamLearningDisclosure? {
+        sourceCenter.noteRetrieved(outcome.passages, sessionId: activeSession?.id)
         let disclosure = disclosure(for: outcome)
         answerEvidence = AnswerEvidence(outcome: outcome, disclosure: disclosure)
         guard let disclosure, disclosure.restsOnLearningAlone else { return disclosure }
@@ -1792,6 +1802,8 @@ final class FieldSessionService: ObservableObject {
         /// Whether the phone opens it. False when the page goes to the model as the turn's picture
         /// but was not asked for (`FigureAutoOpenPolicy.Decision.attachToModelOnly`).
         var presentOnPhone: Bool
+        /// The passages an answer cited on this document, marked on the page (Plan IN P1).
+        var citedPassages: [CitedPassage] = []
 
         init(documentId: String, documentTitle: String, page: Int, figure: String? = nil,
              sourceFile: String? = nil, origin: PageOrigin = .requested,
@@ -2062,7 +2074,8 @@ final class FieldSessionService: ObservableObject {
             ledgerHash: reviewed != nil ? entry?.sourceContentHash : (isPDF ? entry?.contentHash : entry?.sourceContentHash),
             documentIsPDF: isPDF,
             citedFigure: figure.figure,photographed:reviewed != nil,reviewedPhotograph:reviewed != nil,
-            printedPages:Dictionary(uniqueKeysWithValues:reviewed?.pages.map {($0.index,$0.printedPage)} ?? []))
+            printedPages:Dictionary(uniqueKeysWithValues:reviewed?.pages.map {($0.index,$0.printedPage)} ?? []),
+            citedPassages: figure.citedPassages)
     }
 
     /// Audit: a technician opened a citation — from a chip under the answer, or by asking.
@@ -2348,6 +2361,8 @@ final class FieldSessionService: ObservableObject {
     /// the answer's citations. Live modes (Gemini Live, OpenAI Realtime) keep what Plan FW says.
     func recordAssistantReply(_ text: String, sourceID: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // What "show me the page" refers to next (Plan IN P2): kept whatever the log does.
+        sourceCenter.noteAnswer(trimmed, sessionId: activeSession?.id)
         guard let session = activeSession, let logger, !trimmed.isEmpty else { return }
         // Paused, the job takes no reply — unless the question it answers is already in the
         // record, which is the turn that paused it: "pause the job" was logged while the job ran,

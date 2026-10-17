@@ -165,13 +165,17 @@ final class RetrievalGateCalibrationTests: XCTestCase {
         return store
     }
 
+    /// The shipped routes — embedding query, exact-token, clause and lexical search — over the
+    /// store, the same retriever the local eval runners use (`RetrievalEval.retriever`).
     private func retriever(over store: DocumentStore, policy: RetrievalEvidencePolicy) -> VaultRetriever {
-        // The shipped routes: the embedding query, the exact-token search and the lexical route.
-        VaultRetriever(query: { query, limit in store.query(query, limit: limit) },
-                       tokenSearch: { token, limit in store.passages(containingToken: token, limit: limit) },
-                       termSearch: { query, limit in store.passages(sharingTermsWith: query, limit: limit) },
-                       provenance: nil,
-                       policy: policy)
+        RetrievalEval.retriever(over: store, policy: policy)
+    }
+
+    /// The labelled sets in the local eval's answer-key form, so the production-path column and
+    /// the miss breakdown are the same instrument the code-book eval uses.
+    private static var answerKey: [RetrievalEval.Question] {
+        positives.map { RetrievalEval.Question(q: $0.query, pages: $0.anchors.mapValues { Array($0).sorted() }) }
+            + negatives.map { RetrievalEval.Question(q: $0, outOfScope: true) }
     }
 
     // MARK: - The measurement
@@ -256,6 +260,29 @@ final class RetrievalGateCalibrationTests: XCTestCase {
         print("[GATE] shipped default still answers: \(answered)")
         print("[GATE] shipped default refuses in scope: \(refused)")
 
+        // The production path, beside the ranked-prefix table above: each question asked as a
+        // turn is (`retrieve(limit: 4)` through the gate), which is what the model is handed. The
+        // prefix method gates a 25-deep ranked list; this gates every candidate and keeps four, so
+        // the two can differ by a question or two. Every round of retrieval work reads both
+        // (Plan IV P0), and on a Mac `Scripts/retrieval-eval` prints the same lines for the
+        // device's embedding model.
+        print("[GATE] production path | variant | recall@4 | hit@1 | insufficiency recall")
+        for (name, policy) in Self.variants {
+            let report = RetrievalEval.run(Self.answerKey,
+                                           gated: retriever(over: store, policy: policy), open: open, store: store,
+                                           classifyMisses: false)
+            print("[GATE] production path | \(name) | \(fmt(Float(report.hit4) / Float(report.scored))) | "
+                  + "\(fmt(Float(report.hit1) / Float(report.scored))) | "
+                  + "\(fmt(Float(report.refused) / Float(report.outOfScope)))")
+        }
+        let production = RetrievalEval.run(Self.answerKey, gated: retriever(over: store, policy: shipped),
+                                           open: open, store: store)
+        for line in production.lines(label: "Lennox calibration, shipped gate", embedder: Embedder().modelId) {
+            print(line)
+        }
+        XCTAssertEqual(production.scored, Self.positives.count)
+        XCTAssertEqual(production.outOfScope, Self.negatives.count)
+
         // --- Findings asserted, one at a time ---
 
         // Retrieval itself works: every question, in scope or not, comes back with passages. That is
@@ -305,6 +332,25 @@ final class RetrievalGateCalibrationTests: XCTestCase {
             XCTAssertLessThanOrEqual(chosen.falseRefusals, flat.falseRefusals,
                                      "scaling the count must refuse no more in-scope questions than the flat count")
         }
+    }
+
+    // MARK: - The committed answer key
+
+    /// `examples/vaults/lennox-slp99/eval/calibration.jsonl` is these sets in the local eval's
+    /// answer-key form, for `Scripts/retrieval-eval` on a Mac. It must say exactly what the arrays
+    /// above say, or the two runners measure different things. Runs without the manuals.
+    func testTheCommittedAnswerKeyIsTheLabelledSets() throws {
+        let url = Self.documentsDirectory.deletingLastPathComponent()
+            .appendingPathComponent("eval/calibration.jsonl")
+        let committed = RetrievalEval.loadAnswerKey(try String(contentsOf: url, encoding: .utf8))
+        func normalised(_ qs: [RetrievalEval.Question]) -> [String] {
+            qs.map { q in
+                let pages = (q.pages ?? [:]).sorted { $0.key < $1.key }
+                    .map { "\($0.key)=\($0.value.sorted())" }.joined(separator: ";")
+                return "\(q.q)|\(pages)|\(q.outOfScope == true)"
+            }
+        }
+        XCTAssertEqual(normalised(committed), normalised(Self.answerKey))
     }
 
     // MARK: - Identity (Plan EL)

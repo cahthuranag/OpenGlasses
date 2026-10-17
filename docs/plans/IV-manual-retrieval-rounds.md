@@ -1,6 +1,7 @@
 # Plan IV — Manual Retrieval Rounds (every change measured on a field manual pair and a code book)
 
-**Status:** 📝 Drafted 2026-10-17 — nothing implemented.
+**Status:** 🚧 P0 shipped 2026-10-17: both measurements run as a process, on both embedders. P1–P5
+are unbuilt.
 **Track:** Field Assist (B2B): every vault with manuals, and the regulations vertical in particular.
 **Related:** Plans [ED](ED-vault-manual-retrieval.md) / [EJ](EJ-manual-retrieval-fidelity.md)
 (manual retrieval and its evidence gate), [EK](EK-manual-structure-and-figures.md) (structure from
@@ -175,6 +176,46 @@ used as a pointer the model can follow than as a passage.
   manuals.
 - **Exit:** both runs print on both embedders; with no manuals and no answer key, both skip cleanly
   in CI; the README describes the process without naming or quoting any book.
+
+#### What shipped in P0 (2026-10-17)
+
+- **One scoring core for every runner.** `OpenGlassesTests/RetrievalEval/RetrievalEvalCore.swift`
+  reads a JSON-lines answer key (`rules`, `tables`, or `pages` per question, `outOfScope`, `multi`,
+  `doubt`), runs it through a retriever, and reports hit@1, hit@4, refusals and the miss classes,
+  which are expected label not printed, chunk boundary, duplicates, ranking (top 30) and recall.
+  It prints counts only, never a question, a passage or a title, so a run's output can go into a
+  plan or a PR. `RetrievalEval.retriever(over:policy:)` is the four shipped routes over one store.
+  `LocalManualEvalTests` checks it ranks exactly as `FieldSessionService.makeRetriever` does.
+- **The simulator runner.** `LocalManualEvalTests.testLocalVaultAgainstItsAnswerKey` imports a
+  vault folder as a customer's is and asks through the session's own retriever. It runs only with
+  `TEST_RUNNER_RETRIEVAL_EVAL_VAULT` and `TEST_RUNNER_RETRIEVAL_EVAL_ANSWER_KEY`, and skips
+  otherwise. The class's other six tests are the core's own, on synthetic fixtures.
+- **The Mac runner, on the device's model.** `Scripts/retrieval-eval/run.sh` compiles the app's
+  real `DocumentStore`, chunker and retriever with the shared core and four no-op stubs, and runs
+  them on NaturalLanguage's sentence model (`RETRIEVAL_EVAL_EMBEDDER=contextual` for P4). The index
+  lives in a work folder the developer names, outside the repository. `README.md` there is the
+  process: writing an answer key from one's own material, and what never goes in the repository.
+- **The calibration test's production-path column.** `RetrievalGateCalibrationTests` prints recall@4,
+  hit@1 and insufficiency for every gate variant with each question asked as a turn
+  (`retrieve(limit: 4)`), plus the miss breakdown for the shipped gate. It also checks that the
+  committed `examples/vaults/lennox-slp99/eval/calibration.jsonl` (the same sets in answer-key form,
+  for the Mac runner) matches its own lists.
+- **Baseline for the rounds** (main after #763; the device column is the Mac runner):
+
+  | | Device (`nl-sentence`) | Simulator (`nl-word`) |
+  |---|---|---|
+  | Code book, newest edition only: hit@1 / hit@4 | 0.16 / 0.38 | 0.18 / 0.44 |
+  | Code book, both editions: hit@1 / hit@4 | 0.21 / 0.37 | 0.22 / 0.41 |
+  | Lennox: recall@4 / hit@1 / out-of-scope refused | 0.56 / 0.39 / 0 of 18 | 0.89 / 0.72 / 14 of 18 |
+
+  The code-book answer key was transcribed again for this round. It has 68 scorable questions
+  (18 multi-rule, 24 in doubt), against 72 in the breakdown above, so its numbers sit a few points
+  off the breakdown's. Every later round is compared with this table, from the same key, not with
+  the breakdown. Misses on the newest edition, device: ranking 24 (57 %), recall 14 (33 %), chunk
+  boundary 4 (10 %). Simulator: ranking 22 (58 %), recall 11 (29 %), chunk boundary 5 (13 %).
+- **Tests:** `LocalManualEvalTests` (7, one of them skipped unless pointed at a vault) and
+  `RetrievalGateCalibrationTests` (3; the measurement and identity cases skip without the manuals,
+  the answer-key check always runs).
 
 ### P1 — The device's evidence gate (one default, the largest measured change)
 

@@ -1,0 +1,107 @@
+# Local retrieval eval
+
+Two measurements are read for every change to manual retrieval:
+
+- **The Lennox calibration set.** The labelled questions in `RetrievalGateCalibrationTests`, over
+  the example vault's two manuals. The test runs in the simulator when the manuals are in
+  `examples/vaults/lennox-slp99/documents/` and skips otherwise.
+- **Your own documents against your own answer key.** This might be a code book with the rule
+  numbers your study material gives as answers, or a manual with the pages that answer your
+  questions. You run it locally. It is never committed and never shared.
+
+Each one runs on both embedding models. The simulator test measures the simulator's word-average
+model (`nl-word`). The Mac runner in this folder measures the device's model (`nl-sentence`, or the
+contextual model when asked). Both use the app's own `DocumentStore`, `DocumentChunker` and
+`VaultRetriever`, and score with the same core (`OpenGlassesTests/RetrievalEval/RetrievalEvalCore.swift`).
+
+## What a run prints
+
+Counts only, never a question, a passage or a document title:
+
+```
+[EVAL] my code book embedder=nl-sentence.en scored=72 hit@1 11 (0.15) hit@4 30 (0.42)
+[EVAL]   misses 42: recall (not in the top 30) 14 (33%) · ranking (in the top 30) 20 (48%) · …
+[EVAL]   overlays: multi-rule or calculation 17 (11 missed) · answer in doubt 27 (14 missed)
+```
+
+Hit@1 and hit@4 count the questions where the first passage, or any of the four the model is handed,
+holds the answer. A passage holds the answer when it prints an expected rule or table number, or
+when it comes from an expected page. Misses are put in the first class that fits:
+
+1. **Expected label not printed in these documents.** The answer key cites a number that these
+   documents never print as a heading. It may come from another edition, or the key may be wrong.
+2. **Chunk boundary.** The rule's continuation is in the top four without its number.
+3. **Duplicates across documents.** Near-identical passages take the slots, and removing them
+   would hit.
+4. **Ranking.** The expected passage is in the top 30 candidates but is outranked.
+5. **Recall.** The expected passage is not in the top 30 at all.
+
+The overlays count questions flagged `multi` (several rules or a calculation, where a one-passage
+test is the wrong test) and `doubt` (the expected answer itself is uncertain).
+
+## The answer key
+
+The answer key is a JSON-lines file, one question per line. Lines starting with `//` are comments.
+
+```
+{"q": "what protects a kitchen counter receptacle", "rules": ["99-200"]}
+{"q": "which cable may run in a plenum", "tables": ["Table 99"], "multi": false}
+{"q": "how do I test the flame sensor", "pages": {"SLP99UHVK Service Manual": [34]}}
+{"q": "what is the torque for the blower wheel set screw", "outOfScope": true}
+```
+
+- `rules` / `tables`: what a passage must print. Write rule numbers as printed, without subrules
+  ("99-200", not "99-200(2)").
+- `pages`: the document title as it appears in the vault manifest, mapped to the pages that answer.
+- `outOfScope`: the documents don't answer the question, so the gate should refuse it.
+- `multi`, `doubt`, `note`: optional.
+
+Write questions the way a technician would ask them, not the way the book phrases its headings. If
+your material is a workbook or an exam with worked answers, the questions and the cited rules make
+the key. Keep the file outside the repository and delete it when you're done if the material is
+licensed to you alone.
+
+The Lennox set is already written for you in this form:
+`examples/vaults/lennox-slp99/eval/calibration.jsonl`. `RetrievalGateCalibrationTests` keeps it
+identical to the test's own lists.
+
+## Running it
+
+**On a Mac (the device's embedding model):**
+
+```
+RETRIEVAL_EVAL_VAULT=/path/to/vault \
+RETRIEVAL_EVAL_ANSWER_KEY=/path/to/answers.jsonl \
+RETRIEVAL_EVAL_WORKDIR=/path/outside/the/repo/eval-store \
+RETRIEVAL_EVAL_LABEL="my code book" \
+Scripts/retrieval-eval/run.sh
+```
+
+- `RETRIEVAL_EVAL_VAULT` is a vault folder: `manifest.json` plus its documents. The Mac runner reads
+  extracted text, so turn a PDF into Markdown first with `Scripts/extract-manual-text.swift` and
+  list the `.md` in the manifest. To measure one edition of a book loaded on its own, write a
+  manifest that lists only that edition.
+- `RETRIEVAL_EVAL_WORKDIR` holds the index between runs, so a long book is embedded once. Delete it
+  when you're done.
+- `RETRIEVAL_EVAL_EMBEDDER=contextual` measures the contextual model instead of the sentence model.
+
+**In the simulator (the simulator's model, through the session's own retriever):**
+
+```
+TEST_RUNNER_RETRIEVAL_EVAL_VAULT=/path/to/vault \
+TEST_RUNNER_RETRIEVAL_EVAL_ANSWER_KEY=/path/to/answers.jsonl \
+xcodebuild test … -only-testing:OpenGlassesTests/LocalManualEvalTests
+```
+
+The vault is imported exactly as a customer's would be, so PDFs work as they do in the app. The
+`TEST_RUNNER_` prefix is how xcodebuild passes a variable to the test process. Without the
+variables the test skips.
+
+The Lennox calibration's production-path column (each question asked as a turn is, four passages
+through the shipped gate) prints with the rest of `RetrievalGateCalibrationTests`.
+
+## What never goes in the repository
+
+Manuals, code books, extracted text, answer keys written from licensed material, index folders and
+per-question results. The runners print only counts so their output is safe to paste into a plan or
+a pull request.

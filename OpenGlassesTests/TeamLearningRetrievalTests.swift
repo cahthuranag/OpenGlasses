@@ -221,7 +221,7 @@ final class TeamLearningRetrievalTests: XCTestCase {
         XCTAssertTrue(looked.contains("Source: \(entry.citationName)"), looked)
         // A search narrowed to one manual by title reads the manuals alone.
         let narrowed = try await lookup.execute(args: ["query": "ZX7", "document": "Test Manual"])
-        XCTAssertEqual(narrowed, RetrievalEvidencePolicy.insufficientSentence)
+        XCTAssertTrue(narrowed.hasPrefix(RetrievalEvidencePolicy.insufficientSentence), narrowed)
 
         // 3. equipment_lookup's manual fall-through.
         let equipment = EquipmentLookupTool(documentStore: store, sessionService: sessions)
@@ -235,7 +235,7 @@ final class TeamLearningRetrievalTests: XCTestCase {
         XCTAssertFalse(context.contains(VaultPromptBuilder.teamLearningRule))
         XCTAssertTrue(context.contains(RetrievalEvidencePolicy.insufficientSentence))
         let looked = try await ManualLookupTool(documentStore: store, sessionService: sessions).execute(args: ["query": "ZX7"])
-        XCTAssertEqual(looked, RetrievalEvidencePolicy.insufficientSentence)
+        XCTAssertTrue(looked.hasPrefix(RetrievalEvidencePolicy.insufficientSentence), looked)
     }
 
     func testHIPAAModeDoesNotQueryTheCorpus() {

@@ -310,6 +310,196 @@ final class VaultManualRetrievalTests: XCTestCase {
         XCTAssertEqual(seenQueries, ["hello", "hello", "Step 2"])
     }
 
+    // MARK: - Field report, build 497
+
+    /// "How to test the flame sensor readings or signal": the device's sentence embedder ranked the
+    /// flame-sensor section 159th, below diagnostic-code rows that merely mention a flame. The
+    /// lexical route proposes it, and fusion puts the passage both lists like ahead of rows only
+    /// the embedder likes.
+    func testThePassageThatSharesTheQuestionsWordsIsFoundWhenTheEmbedderMissesIt() {
+        let rows = (0..<6).map {
+            self.passage("svc", 80 + $0, "E24\($0) Low flame current. Check the control and its wiring harness.",
+                         sim: 0.51 - Float($0) * 0.01, page: 20, section: "Integrated Control Diagnostic Codes")
+        }
+        let flameSensor = passage("svc", 150, """
+            2. Flame Sensor. To check flame sense signal use the push-button on the integrated control and go to \
+            Field Test Mode. The menu will display the flame signal. A much higher than normal micro amp reading \
+            may appear when checking the sensor.
+            """, sim: 0.34, page: 34, section: "2. Flame Sensor", name: "Service Manual")
+        var termQueries: [String] = []
+        let withoutTerms = VaultRetriever(query: { _, _ in rows })
+        let withTerms = VaultRetriever(query: { _, _ in rows }, termSearch: { query, _ in
+            termQueries.append(query)
+            return [flameSensor]
+        })
+        let turn = "And how to test the flame sensor readings or signal"
+
+        XCTAssertFalse(withoutTerms.retrieve(.init(turn: turn)).passages.contains { $0.page == 34 },
+                       "the embedder alone never reaches it — the field result")
+        let found = withTerms.retrieve(.init(turn: turn)).passages
+        XCTAssertEqual(termQueries, [turn])
+        XCTAssertEqual(found.first?.chunkIndex, 150, "\(found.map(\.citation))")
+        XCTAssertEqual(found.count, 4, "the rest of the slots still go to the embedder's best")
+
+        // Without content terms — a bare code — there is nothing to search on and the order is
+        // the score order, as before.
+        termQueries = []
+        _ = withTerms.retrieve(.init(turn: "E241"))
+        XCTAssertTrue(termQueries.isEmpty)
+    }
+
+    func testFusionKeepsAnotherModelsRowBelowThisOnesWhateverItsWords() {
+        let scope = VaultRetriever.ModelScope(activeTokens: ["090XV60C"], otherTokens: ["070XV36B"])
+        let other = passage("d", 1, "070XV36B flame signal microamps flame sensor test reading", sim: 0.9)
+        let mine = passage("d", 2, "090XV60C manifold pressure", sim: 0.5)
+        let retriever = VaultRetriever(query: { _, _ in [other, mine] }, modelScope: scope)
+        let ranked = retriever.retrieve(.init(turn: "flame sensor signal reading test")).passages
+        XCTAssertEqual(ranked.map(\.chunkIndex), [2, 1])
+    }
+
+    /// "That's the universal manual for SLP 99 UH models": the vent tables print a 99 in a cell, and
+    /// so do enough other pages that the token search's document order chose which came back.
+    func testABareNumberPrintedOnPageAfterPageIsNotACode() {
+        func table(_ i: Int) -> DocumentStore.Passage {
+            passage("inst", i, "Vent length table 99 feet 2 inch 3 inch 46 99 81", sim: 0, page: 17 + i)
+        }
+        let prose = passage("svc", 50, "The parts list covers every SLP99UH model in the universal manual.", sim: 0.6)
+        var limits: [String: Int] = [:]
+        let retriever = VaultRetriever(query: { _, _ in [prose] }, tokenSearch: { token, limit in
+            limits[token] = limit
+            switch token {
+            case "99": return (0..<20).map(table).prefix(limit).map { $0 }
+            case "120": return [self.passage("inst", 44, "HUM 120 VAC OUTPUT", sim: 0, page: 44)]
+            case "S47": return (0..<20).map { self.passage("svc", 100 + $0, "rollout switch S47", sim: 0) }.prefix(limit).map { $0 }
+            default: return []
+            }
+        })
+
+        let outcome = retriever.retrieve(.init(turn: "the universal manual for SLP 99 UH models", limit: 4))
+        XCTAssertEqual(limits["99"], 9, "the search is asked for one more than it can use, to see the overflow")
+        XCTAssertEqual(outcome.passages.first?.chunkIndex, 50, "\(outcome.passages.map(\.citation))")
+        XCTAssertTrue(outcome.passages.allSatisfy { $0.matchedTokens.isEmpty })
+        XCTAssertFalse(outcome.passages.contains { $0.documentId == "inst" })
+
+        // A number that names a handful of passages still finds them, ahead of everything.
+        let rare = retriever.retrieve(.init(turn: "what does the 120 VAC output feed", limit: 4))
+        XCTAssertEqual(rare.passages.first?.matchedTokens, ["120"])
+        // A code is a code however often it is printed: only bare numbers are judged this way.
+        let code = retriever.retrieve(.init(turn: "where is S47", limit: 4))
+        XCTAssertEqual(code.passages.first?.matchedTokens, ["S47"])
+    }
+
+    /// "Check page 34 of the service manual, item number two" searched 34 as a code.
+    func testANamedPageIsNotSearchedAsACode() {
+        var searched: [String] = []
+        let retriever = VaultRetriever(query: { _, _ in [] }, tokenSearch: { token, _ in
+            searched.append(token)
+            return [self.passage("inst", 70, "Maximum vent length 34 feet", sim: 0, page: 18)]
+        })
+        let outcome = retriever.retrieve(.init(turn: "check page 34 of the service manual item number two"))
+        XCTAssertTrue(searched.isEmpty, "\(searched)")
+        XCTAssertFalse(outcome.passages.contains { $0.page == 18 })
+        // The same number said as a value is still searched.
+        _ = retriever.retrieve(.init(turn: "maximum vent length 34 feet"))
+        XCTAssertEqual(searched, ["34"])
+    }
+
+    func testPageReferencesAreRecognisedAndOnlyTheirNumbersRemoved() {
+        XCTAssertEqual(PageReference.pages(in: "Hey check page 34 of the service manual item number two"), [34])
+        XCTAssertEqual(PageReference.pages(in: "pages 34 and 40"), [34, 40])
+        XCTAssertEqual(PageReference.pages(in: "pages 34 to 36"), [34, 35, 36])
+        XCTAssertEqual(PageReference.pages(in: "pages 3-60"), [3, 60], "a wide range names its ends")
+        XCTAssertEqual(PageReference.pages(in: "see p. 12 and pg 14, page number 20"), [12, 14, 20])
+        XCTAssertEqual(PageReference.pages(in: "Page 34, item two"), [34])
+        // Not a page: a part number's tail, a quantity of pages, a code.
+        XCTAssertEqual(PageReference.pages(in: "part 69W43 p 12"), [])
+        XCTAssertEqual(PageReference.pages(in: "34 pages long"), [])
+        XCTAssertEqual(PageReference.pages(in: "E223 on the display"), [])
+
+        let removed = PageReference.removingReferences(from: "check page 34 of the service manual")
+        XCTAssertEqual(CodeTokenizer.codeTokens(from: removed), [])
+        XCTAssertTrue(removed.contains("page"), removed)
+        XCTAssertEqual(PageReference.removingReferences(from: "code 108 on page 5 of 090XV60C"),
+                       "code 108 on page   of 090XV60C")
+    }
+
+    /// A code-book vault: "that type of cord is CXWT, the cord gauge is 14 … what's the capacity by
+    /// the book" boosted only the 14 — a gauge printed on page after page — and never searched the
+    /// cord type. The rare designation carries the search; the common number does not.
+    func testARareCordTypeCarriesTheSearchAndACommonGaugeDoesNot() {
+        let gaugeRows = (0..<40).map {
+            self.passage("cec", $0, "Table \($0 + 1) conductor 14 AWG 12 AWG 10 AWG 15 20 30", sim: 0.2, page: 300 + $0)
+        }
+        let cordTypes = passage("cec", 900, "Table 11 Flexible cords: type CXWT, decorative lighting, 300 V, "
+                                + "No. 18 to 14 AWG", sim: 0.2, page: 610, name: "Code Book")
+        let prose = passage("cec", 901, "Christmas tree lights and the capacity of seasonal decorative lighting outfits.",
+                            sim: 0.6, page: 120, name: "Code Book")
+        var searched: [String] = []
+        let retriever = VaultRetriever(query: { _, _ in [prose] }, tokenSearch: { token, limit in
+            searched.append(token)
+            switch token {
+            case "14": return gaugeRows.prefix(limit).map { $0 }
+            case "CXWT": return [cordTypes]
+            default: return []
+            }
+        })
+        let turn = "Check the cord and pass that type of cord is CXWT the cord gauge is 14 I'm going to use it "
+            + "for Christmas tree lights so what's the capacity by the book"
+        let outcome = retriever.retrieve(.init(turn: turn, limit: 4))
+        XCTAssertEqual(Set(searched), ["14", "CXWT"])
+        XCTAssertTrue(outcome.isSufficient)
+        XCTAssertEqual(outcome.passages.first?.chunkIndex, 900, "\(outcome.passages.map(\.citation))")
+        XCTAssertEqual(outcome.passages.first?.matchedTokens, ["CXWT"])
+        XCTAssertFalse(outcome.passages.contains { $0.matchedTokens.contains("14") })
+        XCTAssertFalse(outcome.passages.contains { (300..<340).contains($0.page ?? 0) })
+    }
+
+    func testCapitalisedDesignationsAreOnlyThoseWrittenAsSuch() {
+        XCTAssertEqual(CodeTokenizer.capitalisedDesignations(from: "that type of cord is CXWT, OK, the gauge is 14"),
+                       ["CXWT"], "two letters is a word like OK, not a designation")
+        XCTAssertEqual(CodeTokenizer.capitalisedDesignations(from: "WHAT IS THE CAPACITY OF CXWT"), [],
+                       "a turn in capitals has nothing to tell apart")
+        XCTAssertEqual(CodeTokenizer.capitalisedDesignations(from: "is SJOOW or NMD90 rated for it"), ["SJOOW"],
+                       "a designation with a digit is already a code")
+        // A word in capitals the manuals never print is not boosted. One they print everywhere is,
+        // but the passages kept for it are those sharing the question's words, not the first in
+        // page order.
+        let pipes = (0..<30).map { self.passage("d", $0, "PVC pipe schedule 40", sim: 0) }
+            + [passage("d", 30, "PVC condensate drain trap", sim: 0)]
+        let retriever = VaultRetriever(query: { _, _ in [] }, tokenSearch: { token, limit in
+            token == "PVC" ? pipes.prefix(limit).map { $0 } : []
+        })
+        let passages = retriever.retrieve(.init(turn: "run the PVC condensate drain to the ABS trap")).passages
+        XCTAssertEqual(passages.first?.chunkIndex, 30, "\(passages.map(\.chunkIndex))")
+        XCTAssertTrue(passages.allSatisfy { $0.matchedTokens == ["PVC"] }, "\(passages.map(\.matchedTokens))")
+    }
+
+    /// Five rephrased lookups in one turn, each refused with the same sentence: the miss says not
+    /// to rephrase, and the second one in a turn says to stop.
+    func testALookupMissSaysNotToRephraseAndTheSecondSaysStop() async throws {
+        let store = makeStore()
+        let service = try await startSessionWithManual(store: store)
+        service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 1.01)
+        let tool = ManualLookupTool(documentStore: store, sessionService: service)
+
+        service.turnSourceID = "turn-1"
+        let first = try await tool.execute(args: ["query": "capacity of a decorative lighting cord"])
+        XCTAssertTrue(first.hasPrefix(RetrievalEvidencePolicy.insufficientSentence), first)
+        XCTAssertTrue(first.contains("Do not run manual_lookup again with a rephrasing"), first)
+        let second = try await tool.execute(args: ["query": "decorative cord ampacity"])
+        XCTAssertTrue(second.contains("That is 2 searches this turn that found nothing. Stop searching"), second)
+
+        // A new turn starts counting again.
+        service.turnSourceID = "turn-2"
+        let fresh = try await tool.execute(args: ["query": "decorative cord ampacity"])
+        XCTAssertTrue(fresh.contains("Do not run manual_lookup again"), fresh)
+
+        // A hit carries no such line.
+        service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 0)
+        let hit = try await tool.execute(args: ["query": "ZX3 fan"])
+        XCTAssertFalse(hit.contains("manual_lookup again"), hit)
+    }
+
     func testEvidencePolicyTruthTable() {
         let policy = RetrievalEvidencePolicy(similarityFloor: 0.3)
         let weak = VaultRetriever.Passage(documentId: "d", documentName: "M", chunkIndex: 0, text: "x", page: nil,
@@ -638,7 +828,7 @@ final class VaultManualRetrievalTests: XCTestCase {
 
         service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 1.01)
         let miss = try await tool.execute(args: ["query": "weather on Mars"])
-        XCTAssertEqual(miss, RetrievalEvidencePolicy.insufficientSentence)
+        XCTAssertTrue(miss.hasPrefix(RetrievalEvidencePolicy.insufficientSentence), miss)
 
         let noQuery = try await tool.execute(args: [:])
         XCTAssertTrue(noQuery.contains("Specify what to look up"), noQuery)

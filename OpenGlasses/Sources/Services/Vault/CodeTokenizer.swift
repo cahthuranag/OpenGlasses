@@ -63,6 +63,23 @@ enum CodeTokenizer {
         candidateTokens(from: text).filter(isCodeLike)
     }
 
+    /// Words written in capitals, three to eight letters — a designation said as letters: a cord
+    /// type ("CXWT", "SJOW"), a cable ("NMD90" carries a digit and is a code already). Field
+    /// report: on a Canadian Electrical Code vault, "that type of cord is CXWT, the gauge is 14"
+    /// boosted only the 14, a cell on page after page of the code book, and never searched the one
+    /// word that names the cord. Only as written: a turn typed or transcribed all in capitals has
+    /// no designations to tell apart, so it yields none. Retrieval counts one only when the
+    /// manuals print it.
+    static func capitalisedDesignations(from text: String) -> [String] {
+        let letters = text.filter(\.isLetter)
+        guard !letters.isEmpty, letters.contains(where: \.isLowercase) else { return [] }
+        var seen = Set<String>()
+        return words(in: text).filter { word in
+            (3...8).contains(word.count) && word.allSatisfy { $0.isLetter && $0.isUppercase }
+                && seen.insert(word).inserted
+        }
+    }
+
     /// Case-insensitive whole-token containment: "E5" matches "code E5 means" but not "E50".
     static func contains(_ haystack: String, token: String) -> Bool {
         guard !token.isEmpty else { return false }

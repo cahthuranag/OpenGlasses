@@ -166,13 +166,16 @@ enum FigureAutoOpenPolicy {
         case correction = "correction"
         case reading = "reading"
         case nothingFound = "nothing_found"
+        case otherPageNamed = "other_page_named"
     }
 
     /// Decide for one turn. `tokenHits` are the exact tokens that matched the passage — a hit made
     /// only of numbers ("135", "0.28") is a coincidence of a spoken value and a table cell, not a
-    /// reference to the page.
+    /// reference to the page. `namedPages` are the pages the turn named (`PageReference`) and
+    /// `passagePage` the page the passage is on.
     static func decide(turnKind: ManualTurnKind, passageKind: PassageKind?,
-                       tokenHits: [String]) -> Decision {
+                       tokenHits: [String], namedPages: Set<Int> = [],
+                       passagePage: Int? = nil) -> Decision {
         switch turnKind {
         case .jobBookkeeping: return .none(reason: .jobBookkeeping)
         case .correction: return .none(reason: .correction)
@@ -180,6 +183,14 @@ enum FigureAutoOpenPolicy {
         case .showMe, .question, .statement: break
         }
         guard let passageKind else { return .none(reason: .nothingFound) }
+        // A turn that names a page has said which page it wants. Any other page is the wrong one,
+        // however it was found: "why did you open installation, I said page 34 of the service
+        // manual" asked for a page, and the automatic path opened the vent table its search had
+        // found instead (field report, build 497). The named page is `manual_figure`'s to open;
+        // the passages still go to the model.
+        if !namedPages.isEmpty, !(passagePage.map(namedPages.contains) ?? false) {
+            return .none(reason: .otherPageNamed)
+        }
         // Asked for: whatever it is, it opens.
         if turnKind == .showMe { return .present(reason: .askedForPage) }
         // Found only through a number. A number is what a reading is made of and what a table

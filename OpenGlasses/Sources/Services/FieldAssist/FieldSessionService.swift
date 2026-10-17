@@ -1497,7 +1497,9 @@ final class FieldSessionService: ObservableObject {
         let decision = FigureAutoOpenPolicy.decide(
             turnKind: kind,
             passageKind: candidate.map { $0.kind == .diagram ? .diagram : .captioned },
-            tokenHits: candidate?.matchedTokens ?? [])
+            tokenHits: candidate?.matchedTokens ?? [],
+            namedPages: PageReference.pages(in: searchTurn),
+            passagePage: candidate?.page)
         var staged = decision.stagesFigure ? makeStagedFigure(for: candidate, vaultId: store.manifest.id) : nil
         staged?.origin = kind == .showMe ? .requested : .automatic
 
@@ -1613,6 +1615,11 @@ final class FieldSessionService: ObservableObject {
             searched.flatMap { space in
                 tagged(documentStore?.passages(clause: clause, namespace: space.namespace,
                                                documentIds: ids(for: space), limit: limit) ?? [], space)
+            }
+        }, termSearch: { query, limit in
+            searched.flatMap { space in
+                tagged(documentStore?.passages(sharingTermsWith: query, limit: limit, namespace: space.namespace,
+                                               documentIds: ids(for: space)) ?? [], space)
             }
         }, provenance: { documentId in
             if documentId.hasPrefix("captured:") { return true }
@@ -2285,6 +2292,18 @@ final class FieldSessionService: ObservableObject {
     /// Read when a team learning is filed, so the turn that filed it can be withheld from the
     /// model's view of the job exactly — see `TeamLearningTurnWithholding`.
     var turnSourceID: String?
+
+    /// `manual_lookup` searches that found nothing, in the turn in flight — keyed like a
+    /// learning answer: the Direct turn's id, else the minute (live modes).
+    private var lookupMisses: (turnKey: String, count: Int)?
+
+    /// Count a `manual_lookup` miss against the turn in flight and return the turn's total.
+    func noteManualLookupMiss(now: Date = Date()) -> Int {
+        let key = turnSourceID ?? "live:\(Int(now.timeIntervalSince1970 / 60))"
+        let count = lookupMisses?.turnKey == key ? (lookupMisses?.count ?? 0) + 1 : 1
+        lookupMisses = (key, count)
+        return count
+    }
 
     /// Technician lines logged recently, newest last — what a live-mode filing withholds.
     private var recentTechnicianTurns: [(sourceID: String, at: Date)] = []

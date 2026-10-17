@@ -1,7 +1,8 @@
 # Plan IV — Manual Retrieval Rounds (every change measured on a field manual pair and a code book)
 
-**Status:** 🚧 P0 and P1 shipped 2026-10-17: both measurements run as a process, on both
-embedders, and the device's evidence gate carries the lexical criterion. P2–P5 are unbuilt.
+**Status:** 🚧 P0, P1 and P2 shipped 2026-10-17: both measurements run as a process, on both
+embedders; the device's evidence gate carries the lexical criterion; the newest edition answers
+and an older one only when asked. P3–P5 are unbuilt.
 **Track:** Field Assist (B2B): every vault with manuals, and the regulations vertical in particular.
 **Related:** Plans [ED](ED-vault-manual-retrieval.md) / [EJ](EJ-manual-retrieval-fidelity.md)
 (manual retrieval and its evidence gate), [EK](EK-manual-structure-and-figures.md) (structure from
@@ -291,6 +292,59 @@ used as a pointer the model can follow than as a passage.
   when asked by year, by "previous edition" and by "what changed", and labels it. Code-book eval
   with both editions loaded: hit@4 rises to at least the single-edition number on both embedders
   (measured: 0.36 → 0.42, 0.40 → 0.46). Lennox calibration unchanged (two manuals, not editions).
+
+#### What shipped in P2 (2026-10-17)
+
+- **Recognising editions.** `DocumentEditions` (pure) groups a vault's documents into works held in
+  more than one edition. They share a `kind` and their titles match once the edition label is out.
+  The label is the manifest's new optional `edition` field (`VaultDocument.edition`, the field Plan
+  IN P3 names, added here as the minimal piece), else a year in the title. Every edition needs an
+  order (a year, a number, or a revision letter), or the group isn't treated as editions. A vault
+  with one edition of each document has no editions, and nothing changes for it. HK's `revision`
+  and `supersedes` can feed the same type when they land.
+- **What a turn asks for.** `EditionRequest.parse` returns `.newest` by default. It returns
+  `.named` when the turn names an older edition's year or label, `.previous` for "previous
+  edition", "old code", "last code" and their kin, and `.compare` for "what changed", "difference
+  between", or "compare"/"versus" next to an edition word or label. Naming the newest edition asks
+  for nothing extra.
+- **All three paths.**
+  - The per-turn block and `manual_lookup` search what the request allows. `makeRetriever` filters
+    the vault's manual namespace only, so team learnings and photographed manuals are searched as
+    before, and a `document` the model names is searched as named. `manual_lookup` reads the
+    technician's own words as well as its query.
+  - `manual_figure`'s page and caption choice (`ManualDocumentChoice`) opens the newest edition when
+    a page is in two editions of one work and nothing names one.
+  - `show_source` and the citation chips resolve a citation by its document title, so an answer
+    that cited the older edition still opens it.
+- **What the model is told.** On the default, a line says which edition answered and that the
+  older one is loaded and used only when asked. When a turn reaches past it, each passage is marked
+  `(edition: 2021)` before its text, and the `Source:` line stays the document's title so the
+  citation still opens. A comparison is told to answer only from the passages, name the edition
+  beside each point, and say it couldn't find something in one edition rather than that nothing
+  changed. That last part is the ground IN P4's `compare_editions` builds on.
+- **Measured** (stable answer key; the "before" both-editions vault is the same two books under
+  titles that carry no year, so no edition is recognised):
+
+  | | Device (`nl-sentence`) | Simulator (`nl-word`) |
+  |---|---|---|
+  | Code book, both editions loaded: hit@1 / hit@4, before → after | 0.24 / 0.35 → **0.19 / 0.37** | 0.25 / 0.43 → **0.25 / 0.47** |
+  | Code book, newest edition only (target) | 0.19 / 0.37 | 0.25 / 0.47 |
+  | Code book in-scope refused, both editions | 2 → 2 | 0 → 0 |
+  | Lennox recall@4 / hit@1 / refused out-of-scope / in-scope | 0.56 / 0.39 / 15 / 6 (unchanged) | 0.89 / 0.72 / 14 / 1 (unchanged) |
+
+  With both editions loaded, the numbers now equal the newest-only ones on both embedders. hit@4
+  rises on both. hit@1 on the device falls from 0.24 to 0.19: three questions were answered first by
+  the older edition's copy of the rule. Those are now answered from the newest edition, which ranks
+  them lower, so the remaining gap is P3's, not P2's.
+- **Tests:** `DocumentEditionsTests` (8). They cover recognition by year, by the manifest's field
+  and not across kinds, a single-edition vault being unchanged, the turn table, the searchable
+  titles per request, and through a session:
+  - the per-turn block on the default, a named year and a comparison;
+  - `manual_lookup` reading the technician's words, plus an explicit `document`;
+  - a page in both editions opening in the newest, or in the older edition when it's named;
+  - an older-edition citation still resolving.
+
+  `LocalManualEvalTests` and the Mac runner apply the same default per question.
 
 ### P3 — A rule starts where the book starts it (clause-numbered documents)
 

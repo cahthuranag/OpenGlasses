@@ -45,6 +45,9 @@ final class DocumentStore: ObservableObject {
         var subjectModelToken: String?
         /// Supplemental label only; `page` remains the physical capture index.
         var printedPage: Int?
+        /// The edition this passage's document is, set by the retrieval factory when a turn reaches
+        /// past the newest edition (Plan IV P2). The store never sets it.
+        var editionLabel: String?
         /// Set by a clause search only (Plan IN P3a): how this chunk relates to the clause it was
         /// found for. Carried rather than recomputed because a continuation chunk need not print
         /// the clause number at all.

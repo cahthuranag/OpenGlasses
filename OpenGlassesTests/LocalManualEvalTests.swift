@@ -56,9 +56,12 @@ final class LocalManualEvalTests: XCTestCase {
 
         let store = makeStore(chunker: DocumentChunker())
         let (service, vaultStore) = try await installAndStart(URL(fileURLWithPath: vaultPath), store: store)
-        let gated = service.manualRetriever(store: vaultStore)
-        let open = RetrievalEval.retriever(over: store, policy: RetrievalEvidencePolicy(similarityFloor: 0))
-        let report = RetrievalEval.run(questions, gated: gated, open: open, store: store)
+        let editions = service.documentEditions(of: vaultStore)
+        let report = RetrievalEval.run(
+            questions,
+            gatedFor: { service.manualRetriever(store: vaultStore, editionRequest: EditionRequest.parse($0, editions: editions)) },
+            openFor: { RetrievalEval.retriever(over: store, policy: RetrievalEvidencePolicy(similarityFloor: 0), editions: editions, turn: $0) },
+            store: store)
         for line in report.lines(label: env["RETRIEVAL_EVAL_LABEL"] ?? "local vault", embedder: Embedder().modelId) {
             print(line)
         }

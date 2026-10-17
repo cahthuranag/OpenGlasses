@@ -1480,7 +1480,8 @@ final class FieldSessionService: ObservableObject {
         case .inScope:
             break
         }
-        let outcome = manualRetriever(store: store).retrieve(
+        let editionRequest = EditionRequest.parse(searchTurn, editions: documentEditions(of: store))
+        let outcome = manualRetriever(store: store, editionRequest: editionRequest).retrieve(
             .init(turn: searchTurn, procedureStep: runner?.currentStep?.title, limit: manualPassageLimit))
         // Support trace: which pages went to the model, by citation — or that the gate refused.
         TurnRecorder.noteManualPassages(outcome.passages.map(\.citation), refused: !outcome.answers)
@@ -1513,13 +1514,49 @@ final class FieldSessionService: ObservableObject {
         stageFigure(staged)
         logFigurePresentation(staged ?? candidate.flatMap { makeStagedFigure(for: $0, vaultId: store.manifest.id) },
                               decision: decision, turnKind: kind)
-        let block = VaultRetriever.promptBlock(outcome, leadIn: disclosure?.leadIn)
+        var block = VaultRetriever.promptBlock(outcome, leadIn: disclosure?.leadIn)
+        if let note = editionNote(for: editionRequest, store: store) { block += "\n\n" + note }
         return scopeNote.map { block + "\n\n" + $0 } ?? block
     }
 
-    /// The per-turn retriever for the active vault: the shared factory with its default namespaces.
-    func manualRetriever(store: VaultStore) -> VaultRetriever {
-        makeRetriever(store: store, documentStore: documentStore)
+    /// The per-turn retriever for the active vault: the shared factory with its default namespaces,
+    /// searching the edition `editionRequest` asks for (the newest unless a turn reaches past it).
+    func manualRetriever(store: VaultStore, editionRequest: EditionRequest = .newest) -> VaultRetriever {
+        makeRetriever(store: store, documentStore: documentStore, editionRequest: editionRequest)
+    }
+
+    // MARK: - Editions (Plan IV P2)
+
+    /// The works the vault holds in more than one edition, read off its manifest.
+    func documentEditions(of store: VaultStore) -> DocumentEditions {
+        DocumentEditions(documents: store.manifest.documents)
+    }
+
+    /// What the model is told about editions beside a turn's passages, or nil when the vault holds
+    /// one edition of everything. The default is said out loud so the model doesn't present the
+    /// newest edition's rule as the only one there is, and a reach past it is said so each answer
+    /// names its edition.
+    func editionNote(for request: EditionRequest, store: VaultStore) -> String? {
+        let editions = documentEditions(of: store)
+        guard !editions.isEmpty else { return nil }
+        switch request {
+        case .newest:
+            let works = editions.works.map { work in
+                "\(work[0].title) is the newest edition; "
+                    + work.dropFirst().map { "\($0.title) (\($0.label))" }.joined(separator: ", ")
+                    + (work.count > 2 ? " are" : " is") + " loaded as well"
+            }
+            return "EDITIONS: these passages are from the newest edition. " + works.joined(separator: ". ")
+                + ". Use an older edition only when the technician asks for it by its year, as the previous edition, "
+                + "or to compare editions."
+        case .named, .previous:
+            return "EDITIONS: the technician asked for an older edition. Each passage is marked with its edition; "
+                + "say which edition your answer comes from."
+        case .compare:
+            return "EDITIONS: the technician asked to compare editions. Each passage is marked with its edition. "
+                + "Answer only from these passages, name the edition beside each point, and if one edition has "
+                + "no passage for this, say you couldn't find it there rather than that nothing changed."
+        }
     }
 
     // MARK: - The retrieval factory (Plan FP P2)
@@ -1574,8 +1611,21 @@ final class FieldSessionService: ObservableObject {
     /// a manual, and "still in its namespace" for a learning — a learning retracted mid-turn is not
     /// quoted — and the removal journal is never consulted for a learning.
     func makeRetriever(store: VaultStore, documentStore: DocumentStore?, documentIds: [String]? = nil,
-                       namespaces: [RetrievalNamespace]? = nil) -> VaultRetriever {
+                       namespaces: [RetrievalNamespace]? = nil,
+                       editionRequest: EditionRequest = .newest) -> VaultRetriever {
         let vaultId = store.manifest.id
+        // Editions (Plan IV P2): the manuals a request may search, unless the caller named its own.
+        // The filter is on the vault's manual namespace only; learnings and photographed manuals
+        // are searched as before.
+        let editions = documentEditions(of: store)
+        let editionIds: [String]? = {
+            guard documentIds == nil, let documentStore,
+                  let titles = editions.searchableTitles(for: editionRequest, among: store.manifest.documents.map(\.title))
+            else { return nil }
+            return documentStore.list(namespace: DocumentStore.vaultNamespace(vaultId))
+                .filter { titles.contains($0.name) }.map(\.id)
+        }()
+        let labelsEditions = editionRequest.reachesOlderEditions && !editions.isEmpty
         let all = namespaces ?? retrievalNamespaces(vaultId: vaultId)
         let searched = documentIds == nil ? all : all.filter { $0.source.isReference }
         let manualNamespaces = searched.filter { $0.source == .manual }.map(\.namespace)
@@ -1595,10 +1645,16 @@ final class FieldSessionService: ObservableObject {
                     passage.subjectModelToken = entries?.entry(forDocumentId: raw.documentId).map { $0.subject.modelToken }
                         ?? LearningCorpus.subjectModelToken(fromDocumentText: raw.text)
                 }
+                if labelsEditions, space.source == .manual {
+                    passage.editionLabel = editions.edition(of: raw.documentName)?.label
+                }
                 return passage
             }
         }
-        func ids(for space: RetrievalNamespace) -> [String]? { space.source.isReference ? documentIds : nil }
+        func ids(for space: RetrievalNamespace) -> [String]? {
+            if space.source == .manual { return documentIds ?? editionIds }
+            return space.source.isReference ? documentIds : nil
+        }
 
         let manualAvailable = VaultManualRemoval.availabilityCheck(forVault: vaultId, documentStore: documentStore, capturedCatalog:capturedManuals)
         return VaultRetriever(query: { query, limit in

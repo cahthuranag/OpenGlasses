@@ -69,6 +69,10 @@ struct VaultRetriever {
         /// its contract §7.1 citation name, so `citation` renders it unchanged.
         var source: RetrievalSource = .manual
         var printedPage: Int?
+        /// The passage's edition, when the turn asked for an older edition or to compare (Plan IV
+        /// P2). The model is told it before the text, and the `Source:` line stays the document's
+        /// own title, so a citation still opens its page.
+        var editionLabel: String?
         /// How the passage relates to a clause number the request named (Plan IN P3a), when it
         /// does. Ranks the clause's own text ahead of passages that only cite it.
         var clauseMatch: ClauseReference.Match?
@@ -414,7 +418,8 @@ struct VaultRetriever {
                        similarity: raw.similarity, score: raw.similarity + boost, matchedTokens: matched,
                        modelPenalty: penalty,
                        recognisedFromScan: raw.source.isReference && (provenance?(raw.documentId) ?? false),
-                       kind: raw.kind, figure: raw.figure, source: raw.source, printedPage:raw.printedPage)
+                       kind: raw.kind, figure: raw.figure, source: raw.source, printedPage:raw.printedPage,
+                       editionLabel: raw.editionLabel)
     }
 
     // MARK: - Rendering
@@ -469,6 +474,7 @@ struct VaultRetriever {
         let label = p.source == .teamLearning ? Passage.teamLearningLabel + " "
             : (p.source == .capturedManual ? "PHOTOGRAPHED MANUAL (unreviewed; original job/date in citation) " : "")
                 + (p.kindLabel.map { $0 + " " } ?? "")
+                + (p.editionLabel.map { "(edition: \($0)) " } ?? "")
         return "[\(index + 1)] \(label)\(p.text)\nSource: \(p.citation)"
             + (p.recognisedFromScan ? " " + Passage.provenanceNote : "")
     }

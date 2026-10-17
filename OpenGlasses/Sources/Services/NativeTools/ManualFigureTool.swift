@@ -132,7 +132,8 @@ final class ManualFigureTool: NativeTool {
                 let hits = documentStore.passages(figure: label, namespace: namespace, limit: 40)
                     .filter { isAvailable($0.documentId) }
                 guard !hits.isEmpty else { continue }
-                switch ManualDocumentChoice.pick(hits, document: chosen, said: currentUtterance()) {
+                switch ManualDocumentChoice.pick(hits, document: chosen, said: currentUtterance(),
+                                                 editions: session.documentEditions(of: store)) {
                 case .found(let hit): passage = Self.retrieved(hit)
                 case .problem(let sentence): lastProblem = sentence.replacingOccurrences(of: "{what}", with: label)
                 }
@@ -148,7 +149,8 @@ final class ManualFigureTool: NativeTool {
             guard !hits.isEmpty else {
                 return "Nothing is stored for page \(requestedPage) of the loaded manuals."
             }
-            switch ManualDocumentChoice.pick(hits, document: chosen, said: currentUtterance()) {
+            switch ManualDocumentChoice.pick(hits, document: chosen, said: currentUtterance(),
+                                             editions: session.documentEditions(of: store)) {
             case .found(let hit): passage = Self.retrieved(hit)
             case .problem(let sentence):
                 return sentence.replacingOccurrences(of: "{what}", with: "Page \(requestedPage)")
@@ -240,7 +242,8 @@ enum ManualDocumentChoice {
         case problem(String)
     }
 
-    static func pick(_ hits: [DocumentStore.Passage], document: String?, said: String?) -> Outcome {
+    static func pick(_ hits: [DocumentStore.Passage], document: String?, said: String?,
+                     editions: DocumentEditions = .none) -> Outcome {
         let names = orderedNames(hits)
         guard let first = hits.first else { return .problem("Nothing is stored for {what} of the loaded manuals.") }
         if let document = document?.trimmingCharacters(in: .whitespacesAndNewlines), !document.isEmpty {
@@ -254,6 +257,12 @@ enum ManualDocumentChoice {
         if let said, let named = named(in: said, among: names),
            let hit = hits.first(where: { $0.documentName == named }) {
             return .found(hit)
+        }
+        // Editions of one work (Plan IV P2): the page or caption opens in the newest unless the
+        // technician asked for an older one. A request to compare still asks which.
+        if let allowed = editions.searchableTitles(for: EditionRequest.parse(said, editions: editions), among: names) {
+            let chosen = names.filter(allowed.contains)
+            if chosen.count == 1, let hit = hits.first(where: { $0.documentName == chosen[0] }) { return .found(hit) }
         }
         return .problem("{what} is in more than one manual: " + names.joined(separator: "; ")
                         + ". Ask the technician which, then call again with 'document'. Nothing was opened.")

@@ -146,6 +146,13 @@ struct VaultManifest: Codable, Equatable {
     }
 }
 
+extension DocumentEditions {
+    /// The editions among a manifest's documents (Plan IV P2).
+    init(documents: [VaultDocument]) {
+        self.init(entries: documents.map { (title: $0.title, kind: $0.kind, edition: $0.edition) })
+    }
+}
+
 /// One reference-tier document declared by a vault manifest.
 struct VaultDocument: Codable, Equatable {
     /// File name inside `documents_dir` (or the vault root). PDF, EPUB, Markdown, or plain text.
@@ -166,19 +173,26 @@ struct VaultDocument: Codable, Equatable {
     /// never a substitute for the bundled original.
     let sourceUrl: String?
     let capturedManual: CapturedManualReview?
+    /// Which edition or revision of its work this document is ("2024", "Rev C", "3rd edition"),
+    /// when the vault holds more than one (Plan IV P2; the field Plan IN P3 names). The newest
+    /// edition answers by default and an older one only when asked for — see `DocumentEditions`.
+    /// Optional: two documents whose titles differ only by a year are recognised without it.
+    let edition: String?
 
     init(file: String, title: String, kind: String? = nil,
-         source: String? = nil, sourceUrl: String? = nil, capturedManual: CapturedManualReview? = nil) {
+         source: String? = nil, sourceUrl: String? = nil, capturedManual: CapturedManualReview? = nil,
+         edition: String? = nil) {
         self.file = file
         self.title = title
         self.kind = kind
         self.source = source
         self.sourceUrl = sourceUrl
         self.capturedManual = capturedManual
+        self.edition = edition
     }
 
     enum CodingKeys: String, CodingKey {
-        case file, title, kind, source
+        case file, title, kind, source, edition
         case sourceUrl = "source_url"
         case capturedManual = "captured_manual"
     }
@@ -188,6 +202,7 @@ struct VaultDocument: Codable, Equatable {
         file = try c.decode(String.self,forKey:.file);title = try c.decode(String.self,forKey:.title)
         kind = try c.decodeIfPresent(String.self,forKey:.kind);source = try c.decodeIfPresent(String.self,forKey:.source)
         sourceUrl = try c.decodeIfPresent(String.self,forKey:.sourceUrl)
+        edition = try c.decodeIfPresent(String.self, forKey: .edition)
         capturedManual = c.contains(.capturedManual) ? try c.decode(CapturedManualReview.self,forKey:.capturedManual) : nil
         if let review = capturedManual, !review.valid {
             throw DecodingError.dataCorruptedError(forKey:.capturedManual,in:c,debugDescription:"Invalid photographed-manual review metadata")

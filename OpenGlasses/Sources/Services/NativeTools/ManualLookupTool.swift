@@ -18,7 +18,10 @@ final class ManualLookupTool: NativeTool {
     Returns the matching manual passages, each with a Source line naming the manual and page — \
     cite those lines. If it reports that the manuals do not cover the question, or that they are \
     not for the machine the question names, say so verbatim rather than answering from general \
-    knowledge. Requires an active session in a vault that has manuals.
+    knowledge. Write the query in the manual's own words — the part, procedure, table or rule as \
+    the book would name it — rather than repeating the technician's phrasing; when a result offers \
+    the book's index references or its nearest section headings, those are the words to search \
+    with. Requires an active session in a vault that has manuals.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
@@ -142,8 +145,21 @@ final class ManualLookupTool: NativeTool {
         }
         let label = query.flatMap { $0.isEmpty ? nil : $0 } ?? "what the label says"
         var result = VaultRetriever.toolResult(outcome, query: label, leadIn: disclosure?.leadIn)
+        // The book's way in (Plan IV P5): what its own index names for these words, when a manual
+        // has one and the passages don't already carry it; and on a first miss, the headings of
+        // the nearest sections, so the one retry #763 allows is in the book's terms.
+        let lookupWords = [query, ocrText].compactMap { $0 }.joined(separator: " ")
+        let references = session.indexReferences(for: lookupWords, store: store, documentIds: documentIds)
+            .filter { ref in !outcome.passages.contains { ClauseReference.match(ref, in: $0.text) != nil || $0.figure == ref } }
+        if !references.isEmpty {
+            result += "\n\n" + Self.indexHint(references)
+        }
         if !outcome.answers {
-            result += "\n\n" + Self.missGuidance(misses: session.noteManualLookupMiss())
+            let misses = session.noteManualLookupMiss()
+            result += "\n\n" + Self.missGuidance(misses: misses)
+            let sections = misses > 1 ? [] : session.closestSections(for: lookupWords, store: store,
+                                                                     documentIds: documentIds, editionRequest: editionRequest)
+            if !sections.isEmpty { result += "\n\n" + Self.sectionsHint(sections) }
         }
         if documentIds == nil, let note = session.editionNote(for: editionRequest, store: store) {
             result += "\n\n" + note
@@ -152,6 +168,19 @@ final class ManualLookupTool: NativeTool {
             result = "Read from the label: \(ocrText.replacingOccurrences(of: "\n", with: " "))\n\n" + result
         }
         return result
+    }
+
+    /// The book's own index pointing elsewhere than the passages.
+    static func indexHint(_ references: [String]) -> String {
+        "The manual's own index lists these for those words: "
+            + references.map { $0.hasPrefix("Table") ? $0 : "rule \($0)" }.joined(separator: ", ")
+            + ". If the passages above don't answer, look them up by number."
+    }
+
+    /// The nearest sections, offered after a first miss.
+    static func sectionsHint(_ sections: [String]) -> String {
+        "The nearest sections in the manuals are headed: " + sections.joined(separator: "; ")
+            + ". If one of them is what was asked about, one more lookup in those words is worth it."
     }
 
     /// What the model is told after a search that found nothing it may answer from. Field report:

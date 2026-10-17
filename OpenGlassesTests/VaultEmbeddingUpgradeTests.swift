@@ -19,8 +19,12 @@ final class VaultEmbeddingUpgradeTests: XCTestCase {
         func embed(_ text: String) -> [Float]? {
             calls += 1
             var v = [Float](repeating: 0, count: dimension)
+            // A stable hash, not `hashValue`: Swift seeds that per process, so which words shared
+            // a bucket changed from run to run and the ranking these tests assert with it.
             for word in text.lowercased().split(whereSeparator: { !$0.isLetter }) {
-                v[(abs(word.hashValue) + offset) % dimension] += 1
+                var h: UInt32 = 2_166_136_261
+                for byte in word.utf8 { h = (h ^ UInt32(byte)) &* 16_777_619 }
+                v[(Int(h % UInt32(dimension)) + offset) % dimension] += 1
             }
             return v.contains { $0 != 0 } ? v : nil
         }

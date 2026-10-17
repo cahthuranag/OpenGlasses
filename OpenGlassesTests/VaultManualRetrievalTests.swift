@@ -501,6 +501,58 @@ final class VaultManualRetrievalTests: XCTestCase {
         XCTAssertFalse(hit.contains("manual_lookup again"), hit)
     }
 
+    // MARK: - Searching the book's way (Plan IV P5)
+
+    /// A manual with its own back-of-book index: a lookup that misses offers what the index names
+    /// for its words, and — on the first miss only — the nearest sections' headings.
+    func testAMissInAManualWithAnIndexOffersItsReferencesAndThenTheNearestHeadings() async throws {
+        let store = makeStore()
+        let service = try await startSessionWithManual(store: store, manualText: BackOfBookIndexTests.inventedBook())
+        let manual = try XCTUnwrap(store.list(namespace: DocumentStore.vaultNamespace("manual_test")).first)
+        XCTAssertNotNil(store.backOfBookIndex(documentId: manual.id), "read back from the stored chunks")
+        service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 1.01)
+        let tool = ManualLookupTool(documentStore: store, sessionService: service)
+
+        service.turnSourceID = "turn-1"
+        let first = try await tool.execute(args: ["query": "where do the lantern hooks go"])
+        XCTAssertTrue(first.hasPrefix(RetrievalEvidencePolicy.insufficientSentence), first)
+        XCTAssertTrue(first.contains("The manual's own index lists these for those words: rule 41-300"), first)
+        XCTAssertTrue(first.contains("The nearest sections in the manuals are headed: "), first)
+        XCTAssertTrue(first.contains("Do not run manual_lookup again with a rephrasing"), "the retry is still one: \(first)")
+
+        let second = try await tool.execute(args: ["query": "lantern hook placement"])
+        XCTAssertFalse(second.contains("The nearest sections"), "no headings once the retry is spent: \(second)")
+        XCTAssertTrue(second.contains("Stop searching"), second)
+    }
+
+    /// A manual without an index — the shape of the example vault's — gets no index line, and an
+    /// answered lookup gets no headings.
+    func testAManualWithoutAnIndexGetsNoIndexLine() async throws {
+        let store = makeStore()
+        let service = try await startSessionWithManual(store: store)
+        let manual = try XCTUnwrap(store.list(namespace: DocumentStore.vaultNamespace("manual_test")).first)
+        XCTAssertNil(store.backOfBookIndex(documentId: manual.id))
+        let tool = ManualLookupTool(documentStore: store, sessionService: service)
+
+        service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 1.01)
+        service.turnSourceID = "turn-1"
+        let miss = try await tool.execute(args: ["query": "fan relay"])
+        XCTAssertFalse(miss.contains("own index"), miss)
+
+        service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 0)
+        service.turnSourceID = "turn-2"
+        let hit = try await tool.execute(args: ["query": "ZX3 fan"])
+        XCTAssertFalse(hit.contains("own index"), hit)
+        XCTAssertFalse(hit.contains("The nearest sections"), hit)
+    }
+
+    func testTheToolAsksForTheBooksWords() {
+        let description = ManualLookupTool(documentStore: makeStore(), sessionService: FieldSessionService(
+            sessionsRoot: tempRoot.appendingPathComponent("s-desc", isDirectory: true))).description
+        XCTAssertTrue(description.contains("in the manual's own words"), description)
+        XCTAssertTrue(description.contains("cite those lines"), "the existing guidance stays")
+    }
+
     func testEvidencePolicyTruthTable() {
         let policy = RetrievalEvidencePolicy(similarityFloor: 0.3)
         let weak = VaultRetriever.Passage(documentId: "d", documentName: "M", chunkIndex: 0, text: "x", page: nil,
@@ -782,8 +834,9 @@ final class VaultManualRetrievalTests: XCTestCase {
 
     // MARK: - Session prompt context
 
-    private func startSessionWithManual(store: DocumentStore) async throws -> FieldSessionService {
-        let manifest = try VaultImporter.install(from: writeVault())
+    private func startSessionWithManual(store: DocumentStore,
+                                        manualText: String = manualText) async throws -> FieldSessionService {
+        let manifest = try VaultImporter.install(from: writeVault(manualText: manualText))
         VaultRegistry.shared.reloadUserManifests()
         VaultRegistry.shared.resetCache()
         _ = try await VaultImporter.syncDocuments(manifest: manifest, into: store)

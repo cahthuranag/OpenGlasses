@@ -1538,6 +1538,35 @@ final class FieldSessionService: ObservableObject {
         makeRetriever(store: store, documentStore: documentStore, editionRequest: editionRequest)
     }
 
+    // MARK: - Searching the book's way (Plan IV P5)
+
+    /// The clause numbers and tables the vault's manuals' own back-of-book indexes give for a
+    /// lookup's words, best first — nothing when no manual searched has an index.
+    func indexReferences(for query: String, store: VaultStore, documentIds: [String]?, limit: Int = 3) -> [String] {
+        guard let documentStore else { return [] }
+        let docs = documentStore.list(namespace: DocumentStore.vaultNamespace(store.manifest.id))
+            .filter { documentIds?.contains($0.id) ?? true }
+        var seen = Set<String>()
+        return docs.compactMap { documentStore.backOfBookIndex(documentId: $0.id) }
+            .flatMap { $0.references(for: query, limit: limit) }
+            .filter { seen.insert($0).inserted }
+            .prefix(limit).map { $0 }
+    }
+
+    /// The headings of the sections nearest a lookup's words, ungated — what a lookup that found
+    /// nothing it would stand behind offers, so the one retry uses the book's own terms.
+    func closestSections(for query: String, store: VaultStore, documentIds: [String]?,
+                         editionRequest: EditionRequest, limit: Int = 3) -> [String] {
+        let open = makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds,
+                                 editionRequest: editionRequest, policy: RetrievalEvidencePolicy(similarityFloor: 0))
+        var seen = Set<String>()
+        return open.retrieve(.init(turn: query, limit: 8)).passages
+            .filter { $0.source.isReference }
+            .compactMap { $0.section?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+            .prefix(limit).map { $0 }
+    }
+
     // MARK: - Editions (Plan IV P2)
 
     /// The works the vault holds in more than one edition, read off its manifest.
@@ -1625,7 +1654,8 @@ final class FieldSessionService: ObservableObject {
     /// quoted — and the removal journal is never consulted for a learning.
     func makeRetriever(store: VaultStore, documentStore: DocumentStore?, documentIds: [String]? = nil,
                        namespaces: [RetrievalNamespace]? = nil,
-                       editionRequest: EditionRequest = .newest) -> VaultRetriever {
+                       editionRequest: EditionRequest = .newest,
+                       policy: RetrievalEvidencePolicy? = nil) -> VaultRetriever {
         let vaultId = store.manifest.id
         // Editions (Plan IV P2): the manuals a request may search, unless the caller named its own.
         // The filter is on the vault's manual namespace only; learnings and photographed manuals
@@ -1705,7 +1735,7 @@ final class FieldSessionService: ObservableObject {
                 documentStore?.list(namespace: namespace).contains { $0.id == documentId } ?? false
             }) { return true }
             return manualAvailable(documentId)
-        }, policy: retrievalPolicy(forVault: vaultId), modelScope: retrievalModelScope)
+        }, policy: policy ?? retrievalPolicy(forVault: vaultId), modelScope: retrievalModelScope)
     }
 
     // MARK: - Team learnings at answer time (Plan FP P2)

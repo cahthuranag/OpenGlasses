@@ -64,10 +64,10 @@ enum CodeTokenizer {
     }
 
     /// Words written in capitals, three to eight letters — a designation said as letters: a cord
-    /// type ("CXWT", "SJOW"), a cable ("NMD90" carries a digit and is a code already). Field
-    /// report: on a Canadian Electrical Code vault, "that type of cord is CXWT, the gauge is 14"
-    /// boosted only the 14, a cell on page after page of the code book, and never searched the one
-    /// word that names the cord. Only as written: a turn typed or transcribed all in capitals has
+    /// or cable type ("QXRT"; one with a digit, "QMX90", is a code already). Field report: on a
+    /// code-book vault, "that type of cord is <type>, the gauge is 14" boosted only the 14, a cell
+    /// on page after page of the book, and never searched the one word that names the cord. Only
+    /// as written: a turn typed or transcribed all in capitals has
     /// no designations to tell apart, so it yields none. Retrieval counts one only when the
     /// manuals print it.
     static func capitalisedDesignations(from text: String) -> [String] {

@@ -423,43 +423,44 @@ final class VaultManualRetrievalTests: XCTestCase {
                        "code 108 on page   of 090XV60C")
     }
 
-    /// A code-book vault: "that type of cord is CXWT, the cord gauge is 14 … what's the capacity by
-    /// the book" boosted only the 14 — a gauge printed on page after page — and never searched the
-    /// cord type. The rare designation carries the search; the common number does not.
+    /// A code-book vault (field report, build 497): "the cord type is <type>, the gauge is 14 …
+    /// what's its rating by the book" boosted only the 14 — a gauge printed on page after page —
+    /// and never searched the cord type. The rare designation carries the search; the common
+    /// number does not. Every name, table and figure here is invented.
     func testARareCordTypeCarriesTheSearchAndACommonGaugeDoesNot() {
         let gaugeRows = (0..<40).map {
             self.passage("cec", $0, "Table \($0 + 1) conductor 14 AWG 12 AWG 10 AWG 15 20 30", sim: 0.2, page: 300 + $0)
         }
-        let cordTypes = passage("cec", 900, "Table 11 Flexible cords: type CXWT, decorative lighting, 300 V, "
-                                + "No. 18 to 14 AWG", sim: 0.2, page: 610, name: "Code Book")
-        let prose = passage("cec", 901, "Christmas tree lights and the capacity of seasonal decorative lighting outfits.",
+        let cordTypes = passage("cec", 900, "Table 99 Portable cords: type QXRT, light duty, gauges 14 and 16",
+                                sim: 0.2, page: 610, name: "Code Book")
+        let prose = passage("cec", 901, "Seasonal lighting strings and the rating of the cords that feed them.",
                             sim: 0.6, page: 120, name: "Code Book")
         var searched: [String] = []
         let retriever = VaultRetriever(query: { _, _ in [prose] }, tokenSearch: { token, limit in
             searched.append(token)
             switch token {
             case "14": return gaugeRows.prefix(limit).map { $0 }
-            case "CXWT": return [cordTypes]
+            case "QXRT": return [cordTypes]
             default: return []
             }
         })
-        let turn = "Check the cord and pass that type of cord is CXWT the cord gauge is 14 I'm going to use it "
-            + "for Christmas tree lights so what's the capacity by the book"
+        let turn = "Check the cord the cord type is QXRT and the gauge is 14 I'm going to use it "
+            + "for seasonal lights so what's its rating by the book"
         let outcome = retriever.retrieve(.init(turn: turn, limit: 4))
-        XCTAssertEqual(Set(searched), ["14", "CXWT"])
+        XCTAssertEqual(Set(searched), ["14", "QXRT"])
         XCTAssertTrue(outcome.isSufficient)
         XCTAssertEqual(outcome.passages.first?.chunkIndex, 900, "\(outcome.passages.map(\.citation))")
-        XCTAssertEqual(outcome.passages.first?.matchedTokens, ["CXWT"])
+        XCTAssertEqual(outcome.passages.first?.matchedTokens, ["QXRT"])
         XCTAssertFalse(outcome.passages.contains { $0.matchedTokens.contains("14") })
         XCTAssertFalse(outcome.passages.contains { (300..<340).contains($0.page ?? 0) })
     }
 
     func testCapitalisedDesignationsAreOnlyThoseWrittenAsSuch() {
-        XCTAssertEqual(CodeTokenizer.capitalisedDesignations(from: "that type of cord is CXWT, OK, the gauge is 14"),
-                       ["CXWT"], "two letters is a word like OK, not a designation")
-        XCTAssertEqual(CodeTokenizer.capitalisedDesignations(from: "WHAT IS THE CAPACITY OF CXWT"), [],
+        XCTAssertEqual(CodeTokenizer.capitalisedDesignations(from: "that type of cord is QXRT, OK, the gauge is 14"),
+                       ["QXRT"], "two letters is a word like OK, not a designation")
+        XCTAssertEqual(CodeTokenizer.capitalisedDesignations(from: "WHAT IS THE RATING OF QXRT"), [],
                        "a turn in capitals has nothing to tell apart")
-        XCTAssertEqual(CodeTokenizer.capitalisedDesignations(from: "is SJOOW or NMD90 rated for it"), ["SJOOW"],
+        XCTAssertEqual(CodeTokenizer.capitalisedDesignations(from: "is QXRTW or QMX90 rated for it"), ["QXRTW"],
                        "a designation with a digit is already a code")
         // A word in capitals the manuals never print is not boosted. One they print everywhere is,
         // but the passages kept for it are those sharing the question's words, not the first in
@@ -483,15 +484,15 @@ final class VaultManualRetrievalTests: XCTestCase {
         let tool = ManualLookupTool(documentStore: store, sessionService: service)
 
         service.turnSourceID = "turn-1"
-        let first = try await tool.execute(args: ["query": "capacity of a decorative lighting cord"])
+        let first = try await tool.execute(args: ["query": "rating of a seasonal lighting cord"])
         XCTAssertTrue(first.hasPrefix(RetrievalEvidencePolicy.insufficientSentence), first)
         XCTAssertTrue(first.contains("Do not run manual_lookup again with a rephrasing"), first)
-        let second = try await tool.execute(args: ["query": "decorative cord ampacity"])
+        let second = try await tool.execute(args: ["query": "seasonal cord rating"])
         XCTAssertTrue(second.contains("That is 2 searches this turn that found nothing. Stop searching"), second)
 
         // A new turn starts counting again.
         service.turnSourceID = "turn-2"
-        let fresh = try await tool.execute(args: ["query": "decorative cord ampacity"])
+        let fresh = try await tool.execute(args: ["query": "seasonal cord rating"])
         XCTAssertTrue(fresh.contains("Do not run manual_lookup again"), fresh)
 
         // A hit carries no such line.

@@ -229,7 +229,7 @@ struct VaultRetriever {
         // every passage that prints a 26.
         let clauses = ClauseReference.references(in: request.turn ?? "")
         // Boost tokens: anything code-like the technician said or the camera read, and any word
-        // they said in capitals ("CXWT"). A page they named is where to look, not something to
+        // they said in capitals ("QXRT"). A page they named is where to look, not something to
         // look for, so its number is not one of them.
         let spokenTurn = PageReference.removingReferences(from: ClauseReference.removingReferences(from: request.turn ?? ""))
         let designations = Set(CodeTokenizer.capitalisedDesignations(from: spokenTurn))
@@ -253,8 +253,8 @@ struct VaultRetriever {
         // is on hundreds of pages and the first four pages of the book took them. It neither ranks
         // a passage first nor carries one past the gate. A number that names few passages ("what
         // does the 120 VAC output feed" on a drawing) is kept. A code or a designation is kept
-        // however often it is printed — two editions of a code book print "CXWT" ten times
-        // between them — but when it overflows the search, the passages kept for it are the ones
+        // however often it is printed — a cord type recurs in every table that lists it, and
+        // again in each edition of a book — but when it overflows the search, the passages kept for it are the ones
         // that share the most of the question's words, not the first in page order. A word in
         // capitals counts only when the search finds it at all.
         let searchLimit = max(request.limit * 2, 4)

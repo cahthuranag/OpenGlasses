@@ -481,7 +481,7 @@ struct VaultRetriever {
     static func teamLearningOnlyInstruction(leadIn: String?) -> String {
         let opening = leadIn.map { "Open your answer with exactly this sentence: \"\($0.trimmingCharacters(in: .whitespaces))\" — then give the finding. " }
             ?? "Open your answer by saying the manual does not cover this and that what follows is your crew's own finding. "
-        return "The loaded manuals do not cover this. What was retrieved instead is \(Passage.teamLearningLabel): "
+        return "No passage in the loaded manuals answers this closely enough. What was retrieved instead is \(Passage.teamLearningLabel): "
             + opening
             + "Name it as your crew's finding, not the manufacturer's instruction — circumstances differ — repeat its Source line, "
             + "and never let it override a safety note."
@@ -596,8 +596,14 @@ struct RetrievalEvidencePolicy: Equatable {
     var tokenBoost: Float = 0.25
     var maxBoost: Float = 0.5
 
+    /// What a turn the gate turned away is told. It says the search came up short, not that the
+    /// manuals are silent: measured on a field manual pair, the device gate (Plan IV P1) refuses a
+    /// third of the in-scope questions it cannot place, and "the manuals do not cover this" told a
+    /// technician something false about a book that does cover it.
     static let insufficientSentence =
-        "The loaded manuals do not cover this. Ask the technician for the model number, or recommend escalation rather than guessing."
+        "No passage in the loaded manuals answers this closely enough to rely on. Say you couldn't find it "
+        + "in the manuals — not that they don't cover it — and ask the technician for the model number or "
+        + "different words, or recommend escalation rather than guessing."
 
     init(similarityFloor: Float = 0.30, margin: Float = .infinity, minSharedTerms: Int = 0,
          sharedFraction: Double = 0, tokenBoost: Float = 0.25, maxBoost: Float = 0.5) {
@@ -636,11 +642,22 @@ struct RetrievalEvidencePolicy: Equatable {
     ///   nothing. Fractions of 0.5 and 0.6 refuse no in-scope question at all but drop insufficiency
     ///   recall to 0.562 and 0.688, which is the wrong trade: a technician who has to rephrase is
     ///   recoverable, a confident answer from the wrong manual is not.
-    /// - `nl-sentence`, `nl-contextual` — **unmeasured — device run pending.** Left at today's
-    ///   values (floor 0.30, no margin, no lexical criterion) rather than guessed: their cosines
-    ///   span a different range and the lexical rule may be unnecessary once similarity separates.
+    /// - `nl-sentence` — **measured** (2026-10-17, the device's model run on a Mac through the
+    ///   same retriever, `Scripts/retrieval-eval`): the same rule as `nl-word`. The bare 0.30 floor
+    ///   refused none of the 18 out-of-scope Lennox questions, because this model's cosines sit
+    ///   between 0.2 and 0.6 for everything and no floor separates an answer from a near miss. With
+    ///   the lexical criterion it refuses 15 of 18, and recall@4 and hit@1 are unchanged on the
+    ///   Lennox set and on a code book's 68-question local answer key. The cost is in-scope
+    ///   refusals, 0 → 6 of 18 on Lennox and 0 → 2 of 68 on the code book, every one of them a
+    ///   question whose four passages held no answering page anyway: it now hears "the manuals do
+    ///   not cover this" instead of an answer built from the wrong pages. Gentler settings were
+    ///   measured and buy back refusals only by answering out-of-scope questions again (one shared
+    ///   term: 1 in-scope and 6 of 18 out-of-scope refused; 3 terms at 0.6: 4 and 14). The two
+    ///   backends share one rule because the criterion reads words, not cosines.
+    /// - `nl-contextual` — **unmeasured — a phone run is pending.** Left at the floor rather than
+    ///   guessed.
     static func `default`(for modelId: String) -> RetrievalEvidencePolicy {
-        if modelId.hasPrefix("nl-word") {
+        if modelId.hasPrefix("nl-word") || modelId.hasPrefix("nl-sentence") {
             return RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.75)
         }
         return RetrievalEvidencePolicy()

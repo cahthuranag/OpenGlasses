@@ -1,7 +1,7 @@
 # Plan IV — Manual Retrieval Rounds (every change measured on a field manual pair and a code book)
 
-**Status:** 🚧 P0 shipped 2026-10-17: both measurements run as a process, on both embedders. P1–P5
-are unbuilt.
+**Status:** 🚧 P0 and P1 shipped 2026-10-17: both measurements run as a process, on both
+embedders, and the device's evidence gate carries the lexical criterion. P2–P5 are unbuilt.
 **Track:** Field Assist (B2B): every vault with manuals, and the regulations vertical in particular.
 **Related:** Plans [ED](ED-vault-manual-retrieval.md) / [EJ](EJ-manual-retrieval-fidelity.md)
 (manual retrieval and its evidence gate), [EK](EK-manual-structure-and-figures.md) (structure from
@@ -229,6 +229,54 @@ used as a pointer the model can follow than as a passage.
   0.42). Both sets on `nl-word` unchanged, since its gate is untouched.
   `RetrievalGateCalibrationTests` asserts the `nl-sentence` default refuses more than the floor
   alone, as it does for `nl-word`.
+
+#### What shipped in P1 (2026-10-17)
+
+- `RetrievalEvidencePolicy.default(for:)` gives `nl-sentence` the `nl-word` rule (three shared
+  content terms, scaled 0.75 for short questions, floor 0.30). `nl-contextual` keeps the floor until
+  P4's phone run. The policy comment carries the measurement.
+- The eval core now counts **in-scope refusals** (a question the manuals answer, told they don't),
+  and the calibration test's production-path column prints them beside recall, hit@1 and
+  insufficiency, with a `default(for: nl-sentence)` row. The Mac runner takes
+  `RETRIEVAL_EVAL_GATE` to measure a candidate gate.
+- **Before → after**, same answer key and indexes as every later round:
+
+  | | Device (`nl-sentence`) before | after | Simulator (`nl-word`) |
+  |---|---|---|---|
+  | Lennox recall@4 / hit@1 | 0.56 / 0.39 | 0.56 / 0.39 | 0.89 / 0.72 (unchanged by construction) |
+  | Lennox out-of-scope refused | 0 of 18 | **15 of 18** | 14 of 18 |
+  | Lennox in-scope refused | 0 of 18 | 6 of 18 | 1 of 18 |
+  | Code book (newest edition) hit@1 / hit@4 | 0.19 / 0.37 | 0.19 / 0.37 | 0.25 / 0.47 |
+  | Code book (both editions) hit@1 / hit@4 | 0.24 / 0.35 | 0.24 / 0.35 | — |
+  | Code book in-scope refused | 0 of 68 | 2 of 68 | 0 of 68 |
+
+  The P0 baseline table above came from an earlier transcription of the answer key. This one is
+  the key kept for the rest of the rounds, so later rounds compare with this table.
+- **The cost, stated:** in-scope refusals rise (0 → 6 of 18 on Lennox, 0 → 2 of 68 on the code
+  book). Every one of them is a question whose four passages held no answering page before the
+  change, since hit@4 doesn't move, so no answer was lost. Those questions now hear "the manuals do
+  not cover this" instead of an answer built from the wrong pages, and that sentence is itself
+  wrong for them: the manual does cover them, retrieval missed. Gentler settings were swept on both
+  sets and buy refusals back only by answering out-of-scope questions again:
+
+  | Gate (device) | Lennox out-of-scope refused | Lennox in-scope refused | Code book in-scope refused |
+  |---|---|---|---|
+  | floor only (before) | 0 of 18 | 0 | 0 |
+  | 1 shared term | 6 | 1 | 0 |
+  | 2 terms (fraction 0 or 0.5), or 3 at 0.5 | 8–9 | 3 | 1 |
+  | 3 terms at 0.6 | 14 | 4 | 2 |
+  | 3 terms at 0.75 (shipped, = `nl-word`) | 15 | 6 | 2 |
+
+  Hit@1 and hit@4 are identical for every row on both sets. The plan's rule was shipped as
+  specified. **Decided 2026-10-17 (owner):** keep 3 terms at 0.75, and reword the refusal so a miss
+  is not presented as silence: `RetrievalEvidencePolicy.insufficientSentence` now tells the model to
+  say it couldn't find the answer in the manuals — never that they don't cover it — and to ask for
+  the model number or different words. P2–P4 attack the cause, the misses themselves.
+- **Tests:** `VaultManualRetrievalTests` (the per-backend defaults; a synthetic sentence-model
+  distribution where the floor answers an out-of-scope question and the new gate refuses it while
+  a short in-scope question still leads with its passage), `RetrievalGateCalibrationTests` (the
+  `nl-sentence` assertion when it runs on that model), `LocalManualEvalTests` (in-scope refusals
+  in the output).
 
 ### P2 — The newest edition by default (decided rule 1)
 

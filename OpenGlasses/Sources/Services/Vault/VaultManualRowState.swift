@@ -12,8 +12,13 @@ struct VaultManualRowState: Equatable, Identifiable {
     enum Status: Equatable {
         /// Indexed, with the ledger's own summary ("412 sections · 11 diagram pages").
         case indexed(String)
-        /// The manifest lists it and the index does not hold it.
+        /// The manifest lists it and the index does not hold it, and nothing is indexing it.
         case notIndexed
+        /// The vault's index is running and this manual is the one being read now. Not adverse:
+        /// a tester read "not indexed" in red while the import's own indexing was still going.
+        case indexing
+        /// The vault's index is running and will reach this manual after the one in progress.
+        case waitingToIndex
         /// A removal started from this screen is running.
         case removing
         /// A removal was recorded and did not finish. The manual is already unreachable —
@@ -47,6 +52,9 @@ struct VaultManualRowState: Equatable, Identifiable {
     let isActionEnabled: Bool
     /// Why no action is offered, when none is. Nil when one is.
     let unavailableReason: String?
+    /// Why the offered action is greyed out, shown under it — never a disabled button with no
+    /// reason. Nil when it is enabled, or when the status already says why ("Removing…").
+    var disabledReason: String? = nil
 
     var id: String { file }
 
@@ -55,6 +63,8 @@ struct VaultManualRowState: Equatable, Identifiable {
         switch status {
         case .indexed(let summary): return summary
         case .notIndexed: return "not indexed"
+        case .indexing: return "Indexing…"
+        case .waitingToIndex: return "Waiting to index"
         case .removing: return "Removing…"
         case .removalIncomplete: return "Removal incomplete"
         }
@@ -64,7 +74,7 @@ struct VaultManualRowState: Equatable, Identifiable {
     var isStatusAdverse: Bool {
         switch status {
         case .notIndexed, .removalIncomplete: return true
-        case .indexed, .removing: return false
+        case .indexed, .indexing, .waitingToIndex, .removing: return false
         }
     }
 
@@ -82,6 +92,8 @@ struct VaultManualRowState: Equatable, Identifiable {
         switch status {
         case .indexed(let summary): return "\(title), \(summary)"
         case .notIndexed: return "\(title), not indexed"
+        case .indexing: return "\(title), indexing"
+        case .waitingToIndex: return "\(title), waiting to index"
         case .removing: return "\(title), removing"
         case .removalIncomplete: return "\(title), removal incomplete"
         }
@@ -109,13 +121,16 @@ struct VaultManualRowState: Equatable, Identifiable {
     ///   - inFlightFile: the file this screen is removing right now, if any.
     ///   - eligibility: whether this vault accepts individual removal at all.
     ///   - isVaultBusy: an import, re-index, uninstall or another removal owns the vault.
+    ///   - indexingTitle: when the vault's index is running, the title of the manual it is on now
+    ///     (`VaultIndexingMonitor`); nil when no index is running for this vault.
     static func make(document: VaultDocument,
                      ledgerEntry: VaultDocumentLedger.Entry?,
                      summary: String?,
                      pendingFiles: Set<String>,
                      inFlightFile: String?,
                      eligibility: VaultManualRemoval.Eligibility,
-                     isVaultBusy: Bool) -> VaultManualRowState {
+                     isVaultBusy: Bool,
+                     indexingTitle: String? = nil) -> VaultManualRowState {
         let isPending = pendingFiles.contains(document.file)
         let isInFlight = inFlightFile == document.file
         let status: Status
@@ -123,8 +138,12 @@ struct VaultManualRowState: Equatable, Identifiable {
             status = .removing
         } else if isPending {
             status = .removalIncomplete
+        } else if indexingTitle == document.title {
+            status = .indexing
         } else if ledgerEntry != nil, let summary {
             status = .indexed(summary)
+        } else if indexingTitle != nil {
+            status = .waitingToIndex
         } else {
             status = .notIndexed
         }
@@ -147,9 +166,30 @@ struct VaultManualRowState: Equatable, Identifiable {
         // A removal already running for *this* manual is not something to start again; one running
         // for another manual of the same vault is, once the lock lets go.
         let enabled = action != nil && !isVaultBusy && !isInFlight
-        return VaultManualRowState(file: document.file, title: document.title, status: status,
-                                   action: action, isActionEnabled: enabled, unavailableReason: reason)
+        var row = VaultManualRowState(file: document.file, title: document.title, status: status,
+                                      action: action, isActionEnabled: enabled, unavailableReason: reason)
+        if action != nil, !enabled, !isInFlight {
+            row.disabledReason = busyReason(isIndexing: indexingTitle != nil)
+        }
+        return row
     }
+
+    /// Why a vault's manual controls are greyed out while something holds the vault.
+    static func busyReason(isIndexing: Bool) -> String {
+        isIndexing ? "Available when indexing finishes" : "Available when the current task on this vault finishes"
+    }
+
+    /// The reason under "Re-index manuals" when it is greyed out, or nil when it is available.
+    static func reindexDisabledReason(isIndexing: Bool, isVaultBusy: Bool) -> String? {
+        if isIndexing { return "Available when indexing finishes" }
+        return isVaultBusy ? "Available when the current task on this vault finishes" : nil
+    }
+
+    /// What the indexing section says about leaving the app, so a technician who locks the phone
+    /// after importing knows why it has not finished.
+    static let backgroundNotice =
+        "Indexing carries on for a short while if you leave the app, then pauses until you come back. "
+        + "Keep the app open to finish sooner."
 }
 
 /// The words the removal flow says: the confirmation, what a success reports, and what each failure

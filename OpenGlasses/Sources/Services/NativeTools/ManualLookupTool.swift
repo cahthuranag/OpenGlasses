@@ -73,7 +73,9 @@ final class ManualLookupTool: NativeTool {
         }
         let namespace = DocumentStore.vaultNamespace(store.manifest.id)
         guard corpus.any else {
-            return "No manuals have been imported for the \(store.manifest.name) vault yet. Import them in Settings → Field Assist → Custom Vaults."
+            // Listed but not searchable: still being indexed, or never indexed — not "never
+            // imported", which sent the model round five rephrasings of the same search.
+            return ManualIndexAvailability.unsearchableSentence(for: store.manifest)
         }
 
         let query = (args["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)

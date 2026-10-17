@@ -14,9 +14,10 @@ struct VaultManagerView: View {
     @State private var errorMessage: String?
     @State private var successMessage: String?
     @State private var warnings: [String] = []
-    @State private var syncProgress: (vaultId: String, title: String, completed: Int, total: Int)?
-    /// Recognition runs before chunking for a scanned manual and is the slow part; it gets its own line.
-    @State private var recognitionProgress: (title: String, done: Int, total: Int)?
+    /// Indexing progress lives with the app, not with this screen: a tester left the screen while
+    /// an import's indexing ran, came back, and found red "not indexed" rows and greyed-out
+    /// buttons with no explanation, because the progress had been this view's own state.
+    @ObservedObject private var indexing = VaultIndexingMonitor.shared
     @State private var shareItem: ShareItem?
     /// Manual file names each vault's removal journal has an unfinished removal for. Re-read with
     /// the ledgers, because a removal interrupted by a previous launch is a state the list has to
@@ -67,13 +68,13 @@ struct VaultManagerView: View {
                 } label: {
                     Label("Import Vault Folder…", systemImage: "square.and.arrow.down")
                 }
-                .disabled(syncProgress != nil || removalInFlight != nil || !ownVaultsGate.allowsImport)
+                .disabled(indexing.isIndexingAny || removalInFlight != nil || !ownVaultsGate.allowsImport)
                 Button {
                     addingFromLink = true
                 } label: {
                     Label("Add from Link or QR…", systemImage: "link")
                 }
-                .disabled(syncProgress != nil || removalInFlight != nil || !ownVaultsGate.allowsImport)
+                .disabled(indexing.isIndexingAny || removalInFlight != nil || !ownVaultsGate.allowsImport)
                 if let explanation = ownVaultsGate.explanation {
                     Text(explanation)
                         .font(.caption)
@@ -101,19 +102,24 @@ struct VaultManagerView: View {
                 }
             }
 
-            if let syncProgress {
+            ForEach(indexing.runs.values.sorted { $0.vaultId < $1.vaultId }, id: \.vaultId) { run in
                 Section {
                     VStack(alignment: .leading, spacing: 4) {
-                        if let recognitionProgress, recognitionProgress.done < recognitionProgress.total {
-                            Text("Reading \(recognitionProgress.title) — page \(recognitionProgress.done + 1) of \(recognitionProgress.total) by recognition…")
-                            ProgressView(value: Double(recognitionProgress.done), total: Double(max(recognitionProgress.total, 1)))
+                        if run.isRecognising, let done = run.recognitionDone, let total = run.recognitionTotal {
+                            Text("Reading \(run.headline) — page \(done + 1) of \(total) by recognition…")
+                            ProgressView(value: Double(done), total: Double(max(total, 1)))
                             Text("Scanned pages are read on this phone. Keep the app open; an interrupted read resumes where it stopped.")
                                 .font(.caption2).foregroundStyle(.secondary)
                         } else {
-                            Text("Indexing \(syncProgress.title)…")
-                            ProgressView(value: Double(syncProgress.completed), total: Double(max(syncProgress.total, 1)))
+                            Text("Indexing \(run.headline)")
+                            ProgressView(value: Double(run.completed), total: Double(max(run.total, 1)))
                         }
+                        Text(VaultManualRowState.backgroundNotice)
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
+                    .accessibilityElement(children: .combine)
+                } header: {
+                    Text(installed.first { $0.id == run.vaultId }?.name ?? run.vaultId)
                 }
             }
 
@@ -168,6 +174,8 @@ struct VaultManagerView: View {
             reloadLedgers()
             if case .idle = packs.catalogState { Task { await packs.loadCatalog() } }
         }
+        // A run started by another copy of this screen finished: read what it indexed.
+        .onChange(of: indexing.runs.count) { _, _ in reloadLedgers() }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.folder]) { result in
             handleImport(result)
         }
@@ -328,7 +336,12 @@ struct VaultManagerView: View {
                 }
                 .font(.caption)
                 .buttonStyle(.borderless)
-                .disabled(syncProgress != nil || isBusy(manifest.id))
+                .disabled(indexing.isIndexingAny || isBusy(manifest.id))
+                if let reason = VaultManualRowState.reindexDisabledReason(
+                    isIndexing: indexing.run(for: manifest.id) != nil,
+                    isVaultBusy: indexing.isIndexingAny || isBusy(manifest.id)) {
+                    Text(reason).font(.caption2).foregroundStyle(.secondary)
+                }
             }
         }
         .swipeActions(edge: .leading) {
@@ -384,7 +397,10 @@ struct VaultManagerView: View {
                 .buttonStyle(.borderless)
                 .disabled(!row.isActionEnabled)
                 .accessibilityLabel(Text(verbatim: "\(action.title.replacingOccurrences(of: "…", with: "")): \(row.title)"))
-                .accessibilityHint(Text(verbatim: row.accessibilityActionHint ?? ""))
+                .accessibilityHint(Text(verbatim: row.disabledReason ?? row.accessibilityActionHint ?? ""))
+                if let reason = row.disabledReason {
+                    Text(verbatim: reason).font(.caption2).foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -408,7 +424,8 @@ struct VaultManagerView: View {
                                             summary: entry.map(Self.entrySummary),
                                             pendingFiles: pending, inFlightFile: inFlight,
                                             eligibility: eligibility,
-                                            isVaultBusy: isBusy(manifest.id))
+                                            isVaultBusy: isBusy(manifest.id),
+                                            indexingTitle: indexing.run(for: manifest.id)?.title)
         }
     }
 
@@ -416,7 +433,7 @@ struct VaultManagerView: View {
     /// it, or anything else holding the per-vault lock (an uninstall, a launch-time recovery).
     private func isBusy(_ vaultId: String) -> Bool {
         if removalInFlight?.vaultId == vaultId { return true }
-        if syncProgress?.vaultId == vaultId { return true }
+        if indexing.run(for: vaultId) != nil { return true }
         return VaultOperationLock.isBusy(vaultId)
     }
 
@@ -524,20 +541,10 @@ struct VaultManagerView: View {
     }
 
     private func sync(_ manifest: VaultManifest) async {
-        syncProgress = (manifest.id, manifest.documents.first?.title ?? manifest.name, 0, 1)
-        recognitionProgress = nil
-        defer { syncProgress = nil; recognitionProgress = nil }
         do {
-            let ledger = try await VaultImporter.syncDocuments(
-                manifest: manifest, into: appState.documentStore,
-                renderPolicy: ScanRenderPolicy(),
-                progress: { title, completed, total in
-                    recognitionProgress = nil
-                    syncProgress = (manifest.id, title, completed, total)
-                },
-                recognitionProgress: { title, done, total in
-                    recognitionProgress = (title, done, total)
-                })
+            // The monitor owns the run's progress, so this screen — or another copy of it opened
+            // later — shows it however the reader moves around the app.
+            let ledger = try await indexing.sync(manifest, into: appState.documentStore)
             ledgers[manifest.id] = ledger
             let sections = ledger.entries.reduce(0) { $0 + $1.chunkCount }
             successMessage = "Indexed \(ledger.entries.count) manual\(ledger.entries.count == 1 ? "" : "s") for \(manifest.name) (\(sections) sections)."

@@ -317,7 +317,8 @@ enum VaultImporter {
             }
             let sourceType = extracted.usedRecognition ? recognisedSourceType : "vault_document"
             let ref = await store.ingest(name: want.title, text: extracted.text,
-                                         sourceType: sourceType, namespace: namespace) { done, total in
+                                         sourceType: sourceType, namespace: namespace,
+                                         pageLabels: extracted.pageLabels) { done, total in
                 progress?(want.title, done, total)
             }
             guard let ref else {

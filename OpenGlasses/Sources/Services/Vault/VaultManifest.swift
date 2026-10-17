@@ -146,13 +146,6 @@ struct VaultManifest: Codable, Equatable {
     }
 }
 
-extension DocumentEditions {
-    /// The editions among a manifest's documents (Plan IV P2).
-    init(documents: [VaultDocument]) {
-        self.init(entries: documents.map { (title: $0.title, kind: $0.kind, edition: $0.edition) })
-    }
-}
-
 /// One reference-tier document declared by a vault manifest.
 struct VaultDocument: Codable, Equatable {
     /// File name inside `documents_dir` (or the vault root). PDF, EPUB, Markdown, or plain text.

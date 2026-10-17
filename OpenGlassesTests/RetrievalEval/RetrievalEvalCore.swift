@@ -97,6 +97,30 @@ enum RetrievalEval {
                               policy: policy)
     }
 
+    /// What a model would retry with after a miss, simulated deterministically (Plan IV P5): the
+    /// clause numbers a document's index gives for the question, or the headings of the passages
+    /// nearest it. The real retry is the model's; this measures how often the hint holds the way.
+    enum Retry: String { case index, headings }
+    nonisolated(unsafe) static var retry: Retry?
+
+    @MainActor
+    private static func retried(_ q: Question, kind: Retry, gated: VaultRetriever, open: VaultRetriever,
+                                store: DocumentStore) -> Bool {
+        let turn: String
+        switch kind {
+        case .index:
+            let refs = store.documents.compactMap { store.backOfBookIndex(documentId: $0.id) }
+                .flatMap { $0.references(for: q.q, limit: 3) }
+            guard !refs.isEmpty else { return false }
+            turn = refs.map { $0.hasPrefix("Table") ? $0 : "rule " + $0 }.joined(separator: " ")
+        case .headings:
+            let headings = open.retrieve(.init(turn: q.q, limit: 3)).passages.compactMap(\.section)
+            guard !headings.isEmpty else { return false }
+            turn = Array(NSOrderedSet(array: headings)).compactMap { $0 as? String }.joined(separator: "; ")
+        }
+        return gated.retrieve(.init(turn: turn, limit: 4)).passages.prefix(4).contains { holds($0, q) }
+    }
+
     // MARK: - Scoring
 
     /// Why a question missed hit@4, first class that fits, in this order.
@@ -128,6 +152,9 @@ enum RetrievalEval {
         /// no chunk is graded as starting (`ClauseReference` `.starts`) — the measure of whether
         /// a rule's own text can be found by its number.
         var rulesPrinted = 0, rulesNeverStarting = 0
+        /// Missed questions a guided retry would have found (`retry`), as an estimate of the model
+        /// taking the hint a lookup gives it.
+        var retryHits = 0
         var doubtQuestions = 0, doubtMisses = 0
 
         var missCount: Int { scored - hit4 }
@@ -148,6 +175,9 @@ enum RetrievalEval {
             }
             if rulesPrinted > 0 {
                 out.append("[EVAL]   rules printed as a heading \(rulesPrinted), never graded as starting \(rulesNeverStarting)")
+            }
+            if let retry = RetrievalEval.retry {
+                out.append("[EVAL]   estimate, one guided retry (\(retry.rawValue)): \(retryHits) of \(missCount) misses found")
             }
             if multiQuestions + doubtQuestions > 0 {
                 out.append("[EVAL]   overlays: multi-rule or calculation \(multiQuestions) (\(multiMisses) missed) · "
@@ -208,6 +238,7 @@ enum RetrievalEval {
 
             if q.multi == true { report.multiMisses += 1 }
             if q.doubt == true { report.doubtMisses += 1 }
+            if let retry = RetrievalEval.retry, retried(q, kind: retry, gated: gated, open: open, store: store) { report.retryHits += 1 }
             guard classifyMisses else { continue }
             report.misses[classify(q, top4: top4, gated: gated, open: open, store: store), default: 0] += 1
         }

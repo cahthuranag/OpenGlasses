@@ -18,6 +18,9 @@ struct RetrievalEvalMain {
         let questions = RetrievalEval.loadAnswerKey(keyText)
         guard !questions.isEmpty else { fail("the answer key has no questions") }
 
+        // Plan IV P5: estimate how often one guided retry (the book's index, or the nearest
+        // headings) would find what a missed question was after.
+        RetrievalEval.retry = env["RETRIEVAL_EVAL_RETRY"].flatMap(RetrievalEval.Retry.init(rawValue:))
         let embedder = Embedder()
         guard embedder.isAvailable else { fail("no NaturalLanguage embedding model on this Mac") }
 

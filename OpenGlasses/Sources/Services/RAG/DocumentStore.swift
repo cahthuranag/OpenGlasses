@@ -717,6 +717,30 @@ final class DocumentStore: ObservableObject {
         _ = sqlite3_step(stmt)
     }
 
+    // MARK: - A document's own subject index (Plan IV P5)
+
+    private var indexCache: [String: (chunks: Int, index: BackOfBookIndex?)] = [:]
+
+    /// The document's back-of-book index, parsed from its stored text, or nil when it has none.
+    /// Parsed once per document (and again if its chunks change), and held in memory only: an
+    /// index's entries are the publisher's text, read where they are stored and never copied.
+    func backOfBookIndex(documentId: String) -> BackOfBookIndex? {
+        let count = chunkCount(documentId: documentId)
+        if let cached = indexCache[documentId], cached.chunks == count { return cached.index }
+        let sql = "SELECT text FROM doc_chunks WHERE document_id = ? ORDER BY chunk_index ASC"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        var texts: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0) {
+            texts.append(String(cString: raw))
+        }
+        let index = BackOfBookIndex.parse(texts.joined(separator: "\n"))
+        indexCache[documentId] = (count, index)
+        return index
+    }
+
     // MARK: - A vault's own embedding model (Plan IV P4)
 
     /// The model a vault's manuals are indexed with going forward — `Embedder.fieldAssist()` in

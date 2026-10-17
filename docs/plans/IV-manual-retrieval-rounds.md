@@ -1,10 +1,12 @@
 # Plan IV — Manual Retrieval Rounds (every change measured on a field manual pair and a code book)
 
-**Status:** 🚧 P0–P3 shipped 2026-10-17/18: both measurements run as a process, on both
-embedders; the device's evidence gate carries the lexical criterion; the newest edition answers
-and an older one only when asked; chunks keep their line breaks and a clause-numbered document is
-chunked at its clauses; Field Assist searches manuals with the contextual model by default.
-P5 is unbuilt; P4 owes a phone run.
+**Status:** ✅ Rounds concluded for this run (2026-10-18): P0–P5 shipped. Both measurements run as
+a process, on both embedders; the device's evidence gate carries the lexical criterion; the newest
+edition answers and an older one only when asked; chunks keep their line breaks and a
+clause-numbered document is chunked at its clauses; Field Assist searches manuals with the
+contextual model by default; `manual_lookup` asks for the book's own words and, where a manual has
+a back-of-book index, offers what the index names. Phone runs owed for P4 and P5 (listed in each);
+the final table is under "Where the rounds ended".
 **Track:** Field Assist (B2B): every vault with manuals, and the regulations vertical in particular.
 **Related:** Plans [ED](ED-vault-manual-retrieval.md) / [EJ](EJ-manual-retrieval-fidelity.md)
 (manual retrieval and its evidence gate), [EK](EK-manual-structure-and-figures.md) (structure from
@@ -533,6 +535,116 @@ the possible model download.
 - **Exit:** both sets measured with the model in the loop on a device (a scripted run of the
   failed questions through `manual_lookup`), and the phase ships only the parts that moved either
   set without lowering the other.
+
+#### What shipped in P5 (2026-10-18)
+
+**Search in the book's vocabulary.**
+
+- `manual_lookup`'s description asks for the query in the manual's own words (the part, procedure,
+  table or rule as the book names it) rather than the technician's phrasing, and says that index
+  references or nearest headings in a result are the words to search with.
+- **On a first miss, the nearest headings.** When a lookup finds nothing it would answer from, the
+  result adds the headings of the three nearest sections. They come from the same search without
+  the gate, so there is no new network call and no extra model call. #763's guidance is unchanged:
+  the miss still says not to rephrase. The headings appear on the first miss of a turn only, so
+  the one retry is guided and a second miss gets the "stop searching" line alone.
+
+**Index hint, only where a manual has one.**
+
+- `BackOfBookIndex` detects a document's own subject index. Detection needs an "Index" heading in
+  the last 40 % of the text, followed by at least 30 lines that end in clause numbers (two or more
+  parts) or "Table N" / "Section N" references. It reads sub-entries under a heading (the heading's
+  words carry over) and references carried onto the next line. A manual without an index gets
+  nothing. That was checked on both Lennox manuals, raw and as stored chunks. An index was found
+  in both code-book editions.
+- `manual_lookup` adds one line naming the rules and tables the index gives for the lookup's
+  words, leaving out any the passages already carry. The line takes no passage slot and changes no
+  ranking, and the model can follow it with a clause lookup (IN P3a).
+- **Fetching the index's clauses as extra candidates was built and measured, and moved nothing.**
+  With the route on and off, hit@1, hit@4, refusals and the miss breakdown were identical on both
+  sets and both models. It was removed, and the index stays a hint.
+- **No third re-index.** The index is not stored. It is parsed from the document's stored chunk
+  text the first time a lookup needs it: P3's chunks keep line breaks, and P3's location version
+  has already re-chunked every stored document. It is then kept in memory per document, and
+  re-read if the chunk count changes. Nothing new is written, so no copy of a publisher's index
+  exists outside its own stored text. Parsing a code book takes 36–66 ms on a Mac and a query
+  under 1 ms.
+- The plan asked for detection at import and storage. Reading the stored text at search time gives
+  the same answer for every vault already indexed, and costs no version bump.
+
+**Measured** (Mac runner, the device's framework models, stable answer key, P3's chunker).
+Retrieval with P5 equals P4 on both models, because nothing P5 shipped enters the ranking:
+
+| | Sentence model | Contextual model (default) |
+|---|---|---|
+| Code book, newest and both editions: hit@1 / hit@4 | 0.26 / 0.44 | 0.32 / 0.53 |
+| Code book in-scope refused | 2 of 68 | 0 of 68 |
+| Code book misses: ranking / recall / chunk boundary / not printed | 27 / 8 / 2 / 1 | 19 / 11 / 1 / 1 |
+| Lennox recall@4 / hit@1 | 0.56 / 0.39 | 0.94 / 0.67 |
+| Lennox refused, out-of-scope / in-scope | 15 / 6 of 18 | 12 / 0 of 18 |
+
+**Model-in-the-loop, estimates only.** The harness can't run the model, so each miss was retried
+once automatically as if the model had followed the hint (`RETRIEVAL_EVAL_RETRY=index|headings`).
+"Index" looks up the rules the index names. "Headings" searches the nearest three sections'
+headings. A retry counts when its top four hold the answer:
+
+| Estimate: misses one guided retry finds | Sentence model | Contextual model |
+|---|---|---|
+| Code book, index references | 5 of 38 | 3 of 32 |
+| Code book, nearest headings | 9 of 38 | 4 of 32 |
+| Lennox, index references | 0 of 8 (no index: no line) | 0 of 1 |
+| Lennox, nearest headings | 4 of 8 | 0 of 1 |
+
+These are upper bounds on what a perfectly obedient model gains from one retry. They are not
+measured answers. Lennox didn't drop and in-scope refusals didn't rise, because the ranking is
+untouched.
+
+- **Owed on a phone:**
+  - whether the model writes its queries in the book's words and follows an index line or a
+    heading on its one retry (a scripted run of the failed questions through `manual_lookup`,
+    the plan's exit);
+  - the first-lookup cost of reading a large book's stored text for its index;
+  - that a second miss in a turn still stops.
+- **Tests:**
+  - `BackOfBookIndexTests` (7, all invented):
+    - an index found and ranked;
+    - a sub-entry carrying its heading's words;
+    - a carried-over references line;
+    - words the index lacks getting nothing;
+    - a contents-page "Index" line with no index behind it;
+    - a short list under an "Index" heading;
+    - a prose service manual's steps and readings.
+  - `VaultManualRetrievalTests` (+3):
+    - a miss in a manual with an invented index offering its reference and then the headings,
+      with no headings on the second miss;
+    - a manual without an index getting no index line;
+    - the description.
+
+## Where the rounds ended
+
+Code book: hit@1 / hit@4 over the answer key's scorable questions. Lennox: recall@4 / hit@1, and
+questions refused (out-of-scope / in-scope, each of 18). Device models on a Mac unless marked. P0's
+row used the first answer key (68 scorable). From "before P1" on, every row uses the stable key.
+
+| Round | Code book, newest (sentence) | Code book, both editions (sentence) | Lennox (sentence) | Code book (contextual) | Lennox (contextual) |
+|---|---|---|---|---|---|
+| P0 baseline, first key | 0.16 / 0.38 | 0.21 / 0.37 | 0.56 / 0.39, refused 0 / 0 | 0.24 / 0.47 ¹ | 0.94 ¹ (0.89, 14 refused, under P1's gate) |
+| Before P1, stable key | 0.19 / 0.37 | 0.24 / 0.35 | 0.56 / 0.39, refused 0 / 0 | not run | not run |
+| P1 lexical gate | 0.19 / 0.37, 2 refused | 0.24 / 0.35 | 0.56 / 0.39, refused 15 / 6 | not run | not run |
+| P2 newest edition | 0.19 / 0.37 | 0.19 / 0.37 | unchanged | not run | not run |
+| P3 clause chunking | 0.26 / 0.44 | 0.26 / 0.44 | unchanged | not run | not run |
+| P4 contextual default | 0.26 / 0.44 | 0.26 / 0.44 | 0.56 / 0.39, refused 15 / 6 | **0.32 / 0.53**, 0 refused | **0.94 / 0.67, refused 12 / 0** |
+| P5 book's words + index hint | 0.26 / 0.44 | 0.26 / 0.44 | 0.56 / 0.39, refused 15 / 6 | 0.32 / 0.53, 0 refused | 0.94 / 0.67, refused 12 / 0 |
+
+¹ From the failure breakdown that preceded P0, where the sentence model measured 0.15 / 0.42 on
+the same set. The contextual model was not run again until P4.
+
+The simulator's word model, for the record: code book newest 0.18 / 0.44 at P0, and 0.32 / 0.53
+after P3. Lennox started at 0.89 / 0.72 with 14 of 18 refused. Over the rounds, the device's
+default path went from 0.16 / 0.38 to 0.32 / 0.53 on the code book and from 0.56 to 0.94 on
+Lennox. Out-of-scope refusals went from 0 to 12 of 18, and no in-scope question is refused. What
+remains is mostly ranking (19 of 32 contextual misses) and recall (11). P5's estimates put one
+guided retry at a few more of those, which only a phone run with the model can confirm.
 
 ## Not in this plan
 

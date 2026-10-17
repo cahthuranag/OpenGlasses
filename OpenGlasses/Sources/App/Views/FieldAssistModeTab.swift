@@ -95,7 +95,10 @@ struct FieldAssistModeTab: View {
             } label: {
                 FieldAssistTabRow(
                     symbol: openSession == nil ? "play.circle.fill" : "briefcase.fill",
-                    title: openSession.map { "Resume \(label(for: $0))" } ?? "Start a job",
+                    title: openSession.map {
+                        OpenJobWording.goToTitle(jobLabel: $0.jobReference.flatMap { $0.isEmpty ? nil : "Job \($0)" },
+                                                 isPaused: $0.pausedAt != nil)
+                    } ?? "Start a job",
                     subtitle: openSession.map {
                         "\(VaultRegistry.shared.manifest(id: $0.vaultId)?.name ?? $0.vaultId) · "
                             + ($0.pausedAt == nil ? "In progress" : "Paused")

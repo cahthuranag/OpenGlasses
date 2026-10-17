@@ -23,7 +23,7 @@ final class JobListRoutingTests: XCTestCase {
             return XCTFail("a job is open: it must ask")
         }
         XCTAssertEqual(prompt.title, "Job 1005 is still open")
-        XCTAssertEqual(prompt.resumeTitle, "Resume Job 1005")
+        XCTAssertEqual(prompt.resumeTitle, "Open Job 1005", "the job is running: it is opened, not resumed")
         XCTAssertEqual(prompt.finishTitle, "Finish Job 1005…")
         XCTAssertEqual(OpenJobPrompt.scheduleTitle, "Schedule a job for later")
         XCTAssertTrue(prompt.message.contains("Nothing is closed for you"))
@@ -36,7 +36,7 @@ final class JobListRoutingTests: XCTestCase {
     func testAnOpenJobWithNoNumberIsNamedInPlainWords() {
         let prompt = OpenJobPrompt(jobLabel: JobTabModel.noJobNumber)
         XCTAssertEqual(prompt.title, "A job is still open")
-        XCTAssertEqual(prompt.resumeTitle, "Resume the open job")
+        XCTAssertEqual(prompt.resumeTitle, "Open the current job")
         XCTAssertEqual(prompt.finishTitle, "Finish the open job…")
         // …and routing without a label still asks.
         XCTAssertEqual(JobListRouting.resolve(.newJob, .init(openSessionId: "x")).prompt, prompt)

@@ -308,7 +308,8 @@ private struct JobTabContent: View {
     /// Add new job: the start page, or — with a job open — the question (`JobListAdd`).
     private func addNewJob() {
         notice = nil
-        switch JobListAdd.decide(openJobLabel: feed.routingFacts.openJobLabel) {
+        switch JobListAdd.decide(openJobLabel: feed.routingFacts.openJobLabel,
+                                 openJobPaused: feed.routingFacts.openJobPaused) {
         case .startNew: path = [.currentJob]
         case .jobOpen(let prompt): openJobPrompt = prompt
         }

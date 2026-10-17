@@ -108,6 +108,7 @@ final class JobListFeed: ObservableObject {
         return JobListRouting.Facts(
             openSessionId: openSession?.id,
             openJobLabel: openSession.map { JobDaySession.label(reference: $0.jobReference) },
+            openJobPaused: openSession?.pausedAt != nil,
             finishedSessionIds: Set(sessions.history.filter { $0.endedAt != nil }.map(\.id)),
             upcomingIds: Set(upcoming.jobs.map(\.id)))
     }

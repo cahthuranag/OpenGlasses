@@ -53,6 +53,14 @@ class AgentNotificationQueue: ObservableObject {
 
     // MARK: - Queue Management
 
+    /// Whether a message enqueued now would be said straight away: glasses connected, worn and
+    /// idle. The goal check-ins (Plan IW P2) ask before they decide to speak, so a check-in that
+    /// would only be queued goes to the digest once rather than twice.
+    var canDeliverImmediately: Bool {
+        guard let appState else { return false }
+        return appState.isConnected && !appState.glassesIdle && !appState.isProcessing && !appState.isListening
+    }
+
     /// Add a notification to the queue. If glasses are connected, deliver immediately.
     func enqueue(message: String, source: String, priority: QueuedNotification.Priority = .medium, personaId: String? = nil, personaName: String? = nil) {
         guard let appState else { return }
@@ -60,7 +68,7 @@ class AgentNotificationQueue: ObservableObject {
         // Check chattiness — quiet mode suppresses non-high notifications
         if Config.agentChattiness == .quiet && priority != .high { return }
 
-        if appState.isConnected && !appState.glassesIdle && !appState.isProcessing && !appState.isListening {
+        if canDeliverImmediately {
             // Glasses connected, worn, and idle — deliver immediately
             Task {
                 await deliverImmediately(message: message, waitForResponse: priority != .low, personaId: personaId, personaName: personaName, source: source)

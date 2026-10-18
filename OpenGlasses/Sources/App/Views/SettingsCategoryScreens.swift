@@ -61,6 +61,7 @@ struct AppleIntegrationsSettingsScreen: View {
     @AppStorage("myDayWeatherIncluded") private var myDayWeatherIncluded = true
     @AppStorage("myDayTravelIncluded") private var myDayTravelIncluded = true
     @AppStorage("myDayDigestIncluded") private var myDayDigestIncluded = true
+    @AppStorage("myDayGoalsIncluded") private var myDayGoalsIncluded = true
     @AppStorage("myDayTransportMode") private var myDayTransportMode = MyDayTransportMode.walking.rawValue
     @AppStorage("myDayTravelBufferMinutes") private var myDayTravelBufferMinutes = 10
     @AppStorage("myDayTravelOrigin") private var myDayTravelOrigin = MyDayTravelOrigin.currentLocation.rawValue
@@ -101,6 +102,7 @@ struct AppleIntegrationsSettingsScreen: View {
                     Toggle("Travel time", isOn: $myDayTravelIncluded)
                         .disabled(!myDayCalendarIncluded)
                     Toggle("Actionable updates", isOn: $myDayDigestIncluded)
+                    Toggle("Goals", isOn: $myDayGoalsIncluded)
                 } header: {
                     Text("Included in My Day")
                 } footer: {

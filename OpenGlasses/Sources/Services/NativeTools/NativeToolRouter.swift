@@ -447,6 +447,7 @@ final class NativeToolRouter: ToolExecutionAuthority {
             outcome: outcome, invocationOrigin: call.context.origin,
             scheduledTask: ActivityScope.scheduledTask, plannedStep: plannedStep,
             operationID: call.context.invocationID, jobThreadID: activityJobThread(),
+            goalStep: call.context.depth == 0 ? ActivityScope.goalStep : nil,
             at: Date()) else { return }
         activityRecorder.record(entry)
     }

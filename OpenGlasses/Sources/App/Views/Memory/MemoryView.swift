@@ -31,7 +31,16 @@ struct MemoryView: View {
             }
 
             ForEach(model.sections) { section in
-                if section.collapsedByDefault {
+                if section.group == .unfinished {
+                    // Goals are the wearer's own list, not remembered facts, so they are not rows
+                    // here — but "unfinished things" is where someone looks for them (Plan IW P2).
+                    Section {
+                        goalsLink
+                        rows(section.facts)
+                    } header: {
+                        Text(verbatim: MemoryScreenModel.title(for: section.group))
+                    }
+                } else if section.collapsedByDefault {
                     Section {
                         DisclosureGroup(isExpanded: $model.healthExpanded) {
                             rows(section.facts)
@@ -45,6 +54,14 @@ struct MemoryView: View {
                     } header: {
                         Text(verbatim: MemoryScreenModel.title(for: section.group))
                     }
+                }
+            }
+
+            if model.query.isEmpty, !model.sections.contains(where: { $0.group == .unfinished }) {
+                Section {
+                    goalsLink
+                } header: {
+                    Text(verbatim: MemoryScreenModel.title(for: .unfinished))
                 }
             }
 
@@ -79,6 +96,15 @@ struct MemoryView: View {
             }
         } message: { result in
             Text(verbatim: result.summary)
+        }
+    }
+
+    /// The way from memory to the wearer's goals — a link, because goals are not memory facts.
+    private var goalsLink: some View {
+        NavigationLink {
+            GoalsView()
+        } label: {
+            Label("Goals", systemImage: "target")
         }
     }
 

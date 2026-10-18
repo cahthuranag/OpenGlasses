@@ -140,6 +140,17 @@ final class GoalStore: ObservableObject {
         return goal
     }
 
+    /// Delete one goal — the Goals screen's delete (Plan IW P2). Its check-in task goes with it,
+    /// because every change to the goals reconciles the check-ins. False when there is no such
+    /// goal or the file is unreadable.
+    @discardableResult
+    func remove(_ id: UUID) -> Bool {
+        guard !isUnreadable, let index = goals.firstIndex(where: { $0.id == id }) else { return false }
+        goals.remove(at: index)
+        save()
+        return true
+    }
+
     /// Everything — the registry's "delete all", and the way out of an unreadable file.
     func deleteAll() {
         try? FileManager.default.removeItem(at: fileURL)

@@ -68,6 +68,30 @@ struct GoalPhraser: Sendable {
         return sentences.joined(separator: " ")
     }
 
+    // MARK: Check-in — the one sentence a scheduled check-in says (Plan IW P2)
+
+    /// "A check-in on Clear the garage: two of four done, and next is book the skip, due
+    /// tomorrow." One sentence, never a question: a check-in reminds, and the wearer asks for the
+    /// rest ("what's next on the garage?") if they want it.
+    func checkIn(for goal: Goal) -> String {
+        let total = goal.countedSteps.count
+        let done = goal.doneStepCount
+        let progress: String
+        if total == 0 {
+            progress = "no steps on it yet"
+        } else if done == 0 {
+            progress = total == 1 ? "not started yet" : "none of \(SpokenPhrasing.number(total)) done yet"
+        } else {
+            progress = "\(SpokenPhrasing.number(done)) of \(SpokenPhrasing.number(total)) done"
+        }
+        guard let step = GoalAdvancePolicy.nextStep(in: goal) else {
+            return "A check-in on \(goal.title): \(progress)."
+        }
+        let due = step.dueAt.map { ", due \(SpokenPhrasing.day($0, now: now, calendar: calendar))" } ?? ""
+        return "A check-in on \(goal.title): \(progress), and next is "
+            + "\(SpokenPhrasing.listCased(step.title))\(due)."
+    }
+
     // MARK: Proposal read-back — before anything is stored
 
     /// "Okay. I'd break that into: book the skip, sort the shelves, list the bike for sale, and

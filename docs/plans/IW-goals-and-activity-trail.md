@@ -1,6 +1,6 @@
 # Plan IW — Goals and the Activity Trail ("what are we working on, what did you do, what's next")
 
-**Status:** 🚧 P0 + P1 built 2026-10-19 (stores, feeders, `goals`/`activity` tools; P2 screens and My Day unbuilt). Drafted 2026-10-18. See [P0 as built](#p0-as-built) and [P1 as built](#p1-as-built).
+**Status:** ✅ P0–P2 built 2026-10-19; device pass owed (a three-step goal over two days with one check-in heard at the right time; the Activity screen after a morning of normal use reads as a sensible story; a scheduled task's result visible without `speakResult`); Home tile deferred (decision 5); catalog sync owed for the new screens' strings. Drafted 2026-10-18. See [P0 as built](#p0-as-built), [P1 as built](#p1-as-built) and [P2 as built](#p2-as-built).
 **Builds on:** Plan [S](S-plan-then-execute-and-safety-supervisor.md) (`AgentPlan`/`AgentPlanner`/
 `PlanValidator`/`PlanExecutor`/`AgentRunner`), `AgentScheduler` + `manage_schedule`,
 `AgentNotificationQueue`, Plan [BZ](BZ-notification-digest.md) (digest), Plan
@@ -390,6 +390,107 @@ steps included; (4) HIPAA retention shortens the horizons only in compliance mod
 only finished ones; (5) a job links by its conversation thread (`thread:<id>`) rather than a new ref
 kind; (6) `goals` stays out of the small-model safe set (ten actions); `activity` joins it; neither
 is added to the always-declared core set.
+
+### P2 as built
+
+Built 2026-10-19 on the P0 and P1 core. No new store: everything below reads and writes
+`GoalStore`, `ActivityStore` and the existing scheduled-task list. The Home-grid tile stays
+deferred (decision 5).
+
+- **Goals screen** — Settings › AI & Personality › Goals (`GoalsView`, `GoalDetailView`,
+  `AddGoalSheet`, `GoalPage`) over `GoalsScreenModel`. Goals on the go and finished ones (kept 90
+  days), each with a progress ring of done steps over the steps not skipped. A goal's page: its
+  steps with Done, Skip and Reopen, rename and remove by swipe, add a step; the step's own offer as
+  a capsule button ("Search for it", "Set the reminder", "Draft it" …) — or the question, for an
+  `ask` — disabled with the reason when the tool is off or a scheduled check needs Agent Mode; the
+  check-in picker (off, daily, weekly, 1/2/3/7 days before it's due — before-due only when there
+  is a date) with a note while Agent Mode is off or the goal is paused; name, reason and due date;
+  pause / pick back up / mark done / set aside; delete (with a confirmation, `GoalStore.remove`).
+  The add path (empty-state button, toolbar +, sheet) is shown only while `goals` is enabled —
+  `Config.isToolEnabled`, which already folds in an organisation's `closedTools` — and the list
+  shows either way. The empty state is one sentence in the assistant's voice and does not mention
+  jobs.
+- **"Do it"** (`StepActionRun`, pure) maps a step's `StepAction` to the call its tool already
+  takes — `reminder` create with an ISO `due_at`, `calendar` create with date/start/duration,
+  `web_search`, `manage_schedule` create (0 = once a day, else weekly) — and the screen hands it to
+  `NativeToolRouter.execute` with the wearer as the origin, so confirmation, safety rules, the
+  presence ceiling and Agent Mode apply as they do to a spoken request; nothing bypasses the
+  ladder. A draft goes to the conversation as the wearer's message; a question runs nothing. The
+  call runs inside `ActivityScope.goalStep`, so the trail row it writes carries the goal and step
+  (`goalID`/`stepID` and a `goal:<id>` ref) — the evidence link P0's `GoalAdvancePolicy` reads.
+  Running an offer never marks the step done.
+- **Activity screen** — Settings › AI & Personality › Activity (`ActivityView`) over
+  `ActivityScreenModel`: the trail a day at a time (Today, Yesterday, then dates), newest first,
+  each row's title, time, the goal it served (looked up by id — never stored as text), how it was
+  authorised in words ("You approved it", "Held for you", "Scheduled", "Refused: you said no" …)
+  and an outcome where it adds something ("May not have gone through", "Didn't finish"). Filters:
+  all / actions / held / scheduled / refused. A row opens its goal, or the conversation thread it
+  links to (a Field Assist job's thread) when that thread is still on the phone; the journal has no
+  screen, so an operation ref is not a destination. Clear asks first and calls `deleteAll`. In
+  HIPAA mode rows show titles only. The empty state and the footer say the trail records the
+  assistant's actions only, never what the wearer said or looked up. Debug Events stays in the
+  Developer panel.
+- **Check-ins** — `ScheduledTaskKind.goalCheckIn(goalID)` on `AgentScheduler.ScheduledTask`
+  (`kind`, persisted as `goal_check_in:<uuid>`; a kind a newer build writes decodes as
+  `unrecognised` and never runs, so the list still loads), plus `lastSpokenAt`.
+  `GoalCheckInSchedule.reconciled` keeps exactly one check-in task per goal with a cadence that is
+  active (on) or paused (off), removes it when the goal is done, set aside, deleted or its cadence
+  turned off, and keeps its run history across a pause; a new daily/weekly check-in counts from
+  when it was set. AppState reconciles on every change to `GoalStore.$goals` (skipped while the
+  store is unreadable, which would read as no goals), and the scheduler reconciles again before
+  each run. `ScheduleDuePolicy` treats only prompt tasks as due, so a check-in never reaches the
+  model. `GoalCheckInPolicy.run` (pure): nothing while Agent Mode is off (check-ins pause, goals
+  stay); each due check-in (`GoalAdvancePolicy.isCheckInDue` — `beforeDue(n)` once) files a
+  `DigestItem` (`DigestSource.goal`, one per goal) and, when the wearer is present
+  (`AgentNotificationQueue.canDeliverImmediately`) and fewer than two goal sentences were said
+  today (the tasks' `lastSpokenAt` stamps), one sentence from `GoalPhraser.checkIn(for:)` through
+  the queue. Each check-in also writes a "Checked in on a goal" trail row linked to the goal.
+  Scheduled Tasks lists check-ins under Built-in by the goal's title, not editable or deletable
+  there (the row opens the goal); its save merges its edits with the stored check-ins
+  (`mergingEdits`).
+- **My Day** — `MyDaySource.goals` ("Goals"), `GoalsDaySource` / `GoalStoreDaySource` (each active
+  goal's next step with a date, its own or the goal's), `MyDayInputs.goalSteps`,
+  `MyDaySourceSelection.goals` (`Config.myDayGoalsIncluded`, default on; nothing shows without
+  goals) and its switch in My Day settings. `MyDayComposer` adds one row at most — the soonest of
+  those steps that is overdue, due today (rank 2) or due tomorrow (rank 3): under a leave-by,
+  above the weather — kind `.preparation`, actions `[.open, .complete, .dismiss]`, detail "Due
+  today · <goal>". Complete marks the step done (`MyDayService.complete` routes by source); open
+  pushes the goal's page from the full My Day screen; dismiss is the card's ordinary per-day clear.
+  The row's glyph is a target. `daily_briefing` speaks it with the rest, and its description says
+  so. The digest's own goal items stay out of My Day (P1), so a step is never shown twice.
+- **Support report** — `GoalActivityReportLine`: "Goals: N active; activity entries (14 d): N",
+  counts only, in the report's phone lines.
+- **Memory** — the "Unfinished things" group carries a Goals link (a section of its own when no
+  unfinished facts exist); goals are not memory facts and are not ingested into `BrainStore`.
+- **UI-test seam** — `-OGUITestSeedGoals` writes one goal two steps in and a morning's trail
+  through the shipping stores; every UI-test launch clears both files first, so a launch without
+  it shows the empty states.
+- Tests: `GoalCheckInTests` (cadence → task, finished/deleted/off → none, run history kept,
+  screen-save merge, `beforeDue(3)` once, two sentences a day across goals, absent wearer → digest
+  only, Agent Mode off pauses, the scheduler end to end, the prompt path never sees a check-in, the
+  kind's codec and forward compatibility, the sentence), `MyDayComposerTests` (+4: under a
+  leave-by and above the weather, tomorrow's step, none without goals or with nothing due, one row
+  across goals), `MyDayGoalsSourceTests` (the selection switch, Done on a row), `GoalsScreenModelTests`,
+  `ActivityScreenModelTests` (with the support line), `SettingsHubTests` (Goals and Activity under
+  AI & Personality, Goals from Memory), and `GoalsActivityAccessibilityTests` (UI: both screens
+  empty and populated, audited at the default size and AX5, screenshots light and dark).
+
+Verified 2026-10-19 on the simulator (no phone reachable): the focused suites (147 tests — the
+new `GoalCheckInTests` 13, `GoalsScreenModelTests` 13, `ActivityScreenModelTests` 8,
+`MyDayGoalsSourceTests` 3 and the touched P1, My Day and hub suites); the full unit suite, 11,411
+tests (16 skipped, zero failures); `GoalsActivityAccessibilityTests`, six UI cases — both screens
+empty and populated, audited at the default size and at AX5 with no new deferrals beyond the
+standard form set, and screenshots of each in light and dark; a Release build for the simulator;
+the privacy-logging gate; gitleaks over the branch.
+
+**Decisions taken in P2 (2026-10-19):** (1) a check-in's sentence count is read from the check-in
+tasks' own `lastSpokenAt` stamps rather than a new store — each cadence fires at most once a day,
+so the stamps are the day's count (a goal finished the same day takes its stamp with it); (2) a
+check-in task is named "Goal check-in", not after the goal, so the wearer's words are not copied
+into `UserDefaults`; (3) a goal typed on the screen needs one step or more (a spoken proposal keeps
+3–7) and starts with the default check-in; (4) "Do it" never marks a step done — the wearer does,
+as P0's suggest-only evidence rule has it; (5) My Day shows a step only when it is overdue or due
+today or tomorrow, as reminders are kept to the day.
 
 ## Risks
 

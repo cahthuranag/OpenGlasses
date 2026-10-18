@@ -88,6 +88,10 @@ enum UITestSupport {
         case vaultReceivedBadge = "-OGUITestVaultReceivedBadge"
         /// Dark appearance, for the half of a screenshot pass that is about the dark palette.
         case darkAppearance = "-OGUITestDarkAppearance"
+        /// Plan IW P2: one goal part-way through, and a morning's activity trail — what the Goals
+        /// and Activity screens need to have rows at all. Written through the shipping stores; the
+        /// titles are invented.
+        case seedGoals = "-OGUITestSeedGoals"
     }
 
     /// Whether a vault-link review is being staged for a screenshot.
@@ -194,6 +198,7 @@ enum UITestSupport {
         // without the entitlement" depend on which test ran first.
         clearFieldSessions()
         clearStagedSends()
+        clearGoalsAndActivity()
 
         if wantsFieldAssist {
             // The entitlement comes from the seam that already exists for development and demos —
@@ -305,6 +310,14 @@ enum UITestSupport {
 
         if isSet(.seedFieldDay) {
             seedFieldDay(appState)
+        }
+
+        // Emptied again through the stores themselves, whatever the file wipe at launch found: a
+        // run's first launch was seen to come up with the previous run's seeded goal.
+        GoalStore.shared.deleteAll()
+        ActivityStore.shared.deleteAll()
+        if isSet(.seedGoals) {
+            seedGoalsAndActivity()
         }
 
         if isSet(.seedCaptions) {
@@ -422,6 +435,54 @@ enum UITestSupport {
             VaultRegistry.shared.reloadUserManifests()
             VaultRegistry.shared.resetCache()
         }
+    }
+
+    /// Goals and the activity trail live in Application Support, which the defaults wipe does not
+    /// reach — so every UI-test launch starts with neither, and the empty states are what a launch
+    /// without `seedGoals` shows. Run before either shared store is first read.
+    private static func clearGoalsAndActivity() {
+        try? FileManager.default.removeItem(at: GoalStore.defaultDirectory().appendingPathComponent("goals.json"))
+        try? FileManager.default.removeItem(at: ActivityStore.defaultDirectory().appendingPathComponent("activity.json"))
+    }
+
+    /// One goal two steps in, and a morning's worth of trail: an action, a scheduled run, a held
+    /// action, a refusal from yesterday and a check-in that links to the goal.
+    @MainActor
+    private static func seedGoalsAndActivity() {
+        let now = Date()
+        let calendar = Calendar.current
+        let day = { (offset: Int) in calendar.date(byAdding: .day, value: offset, to: now) ?? now }
+        let goalID = UUID()
+        let goal = Goal(
+            id: goalID, title: "Clear the garage", why: "Before the move", createdAt: day(-2),
+            dueAt: GoalsScreenModel.endOfDay(day(5), calendar: calendar), checkIn: .beforeDue(days: 2),
+            steps: [
+                GoalStep(id: UUID(), title: "Book the skip", state: .done, doneAt: day(-1)),
+                GoalStep(id: UUID(), title: "Sort the shelves", dueAt: GoalsScreenModel.endOfDay(day(1), calendar: calendar),
+                         suggestedAction: .search(query: "shelf brackets")),
+                GoalStep(id: UUID(), title: "List the bike for sale",
+                         suggestedAction: .draft(kind: .listing, prompt: "A short listing for a blue road bike.")),
+                GoalStep(id: UUID(), title: "Drop the paint at the depot"),
+            ],
+            source: .wearer)
+        GoalStore.shared.add(goal)
+
+        let trail = ActivityStore.shared
+        let minutesAgo = { (minutes: Double) in now.addingTimeInterval(-minutes * 60) }
+        trail.append(ActivityEntry(id: UUID(), at: minutesAgo(95), kind: .action,
+                                   title: "Added an event to your calendar", detail: "You approved: Dentist, Thursday at 9 AM",
+                                   tool: "calendar", authorisation: .asked, origin: .wearer, outcome: .done))
+        trail.append(ActivityEntry(id: UUID(), at: minutesAgo(80), kind: .scheduledRun,
+                                   title: "Ran Upcoming Events", detail: "Nothing in the next half hour.",
+                                   authorisation: .scheduled, origin: .scheduled, outcome: .done))
+        trail.append(ActivityFeed.goalCheckIn(goalID: goalID, spoken: false, at: minutesAgo(60)))
+        trail.append(ActivityEntry(id: UUID(), at: minutesAgo(30), kind: .held,
+                                   title: "Your OK to use the send message tool", tool: "send_message",
+                                   authorisation: .heldForYou, origin: .wearer, outcome: .waitingOnYou))
+        trail.append(ActivityEntry(id: UUID(), at: day(-1), kind: .refused,
+                                   title: "Didn't use the calendar tool: you said no", tool: "calendar",
+                                   authorisation: .refused(reason: ActivityFeed.RefusalCode.declined),
+                                   origin: .wearer, outcome: .failed))
     }
 
     private static func clearFieldSessions() {

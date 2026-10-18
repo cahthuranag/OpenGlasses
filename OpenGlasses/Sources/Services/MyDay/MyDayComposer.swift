@@ -66,6 +66,11 @@ struct MyDayComposer: Sendable {
             ranked.append(digestItem(update))
         }
 
+        if let goal = goalItem(inputs.goalSteps, now: now, startOfToday: startOfToday,
+                               startOfTomorrow: startOfTomorrow, endOfTomorrow: endOfTomorrow) {
+            ranked.append(goal)
+        }
+
         // Cleared rows drop out *here* — after ranking, before the cap. Filtering the inputs would
         // have hidden the row from the headline's counts as well and left travel selection looking
         // at events the card no longer shows; filtering the finished snapshot would have left the
@@ -312,6 +317,52 @@ struct MyDayComposer: Sendable {
                 dueAt: update.createdAt,
                 urgency: update.urgency,
                 actions: [.dismiss]
+            )
+        )
+    }
+
+    /// Between the goal's id and the step's in a goals row's id: `<goal uuid>|<step uuid>`.
+    static let goalItemSeparator = "|"
+
+    /// The goals row (Plan IW P2): one item at most — the open step due soonest across the
+    /// wearer's goals, if it is overdue, due today or due tomorrow. It ranks below a leave-by (rank
+    /// 1) and above the weather: overdue and due-today steps sit with the day's other due work at
+    /// rank 2, tomorrow's at rank 3, where a dated row still comes before the undated weather.
+    /// Kind `.preparation` — a step is something to get ready, not an appointment.
+    private func goalItem(
+        _ steps: [MyDayGoalStep],
+        now: Date,
+        startOfToday: Date,
+        startOfTomorrow: Date,
+        endOfTomorrow: Date
+    ) -> RankedItem? {
+        guard let step = steps
+            .filter({ $0.dueAt < endOfTomorrow })
+            .min(by: { ($0.dueAt, $0.stepID.uuidString) < ($1.dueAt, $1.stepID.uuidString) })
+        else { return nil }
+
+        let isOverdue = step.dueAt < now
+        let isDueToday = !isOverdue && step.dueAt < startOfTomorrow
+        let timing: String
+        if isOverdue {
+            timing = "Overdue"
+        } else if isDueToday {
+            timing = "Due today"
+        } else {
+            timing = "Due tomorrow"
+        }
+        return RankedItem(
+            rank: isOverdue || isDueToday ? 2 : 3,
+            item: MyDayItem(
+                id: .init(source: .goals,
+                          rawValue: step.goalID.uuidString.lowercased() + Self.goalItemSeparator
+                              + step.stepID.uuidString.lowercased()),
+                kind: .preparation,
+                title: step.stepTitle,
+                detail: "\(timing) · \(step.goalTitle)",
+                dueAt: step.dueAt,
+                urgency: isOverdue ? .important : .upcoming,
+                actions: [.open, .complete, .dismiss]
             )
         )
     }

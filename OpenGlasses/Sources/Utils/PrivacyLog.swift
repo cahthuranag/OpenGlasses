@@ -2028,6 +2028,9 @@ enum PrivacyLog {
     enum AgentEvent: String {
         case started, stopped, checkScheduled, onboardingRun
         case taskStarted, taskCompleted, taskFailed, taskDeferred, taskProducedNothing
+        // Plan IW P2 — goal check-ins: how many ran in a cycle and whether any was said. Never the
+        // goal, which is the wearer's words.
+        case goalCheckInsRan
         case personaSwitched, modelSwitched, modelRestored
         case queued, pruned, deliveryStarted, deliverySkipped, deliveredViaSession
         case awaitingOperator, summaryFailed, injectionDeferred

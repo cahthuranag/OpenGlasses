@@ -32,6 +32,8 @@ enum MyDaySource: String, CaseIterable, Equatable, Sendable {
     case reminders
     case travel
     case weather
+    /// The wearer's goals (Plan IW P2): at most one row, the open step due soonest.
+    case goals
 
     var displayName: String {
         switch self {
@@ -40,6 +42,7 @@ enum MyDaySource: String, CaseIterable, Equatable, Sendable {
         case .reminders: "Reminders"
         case .travel: "Travel Time"
         case .weather: "Weather"
+        case .goals: "Goals"
         }
     }
 }
@@ -211,6 +214,18 @@ struct MyDaySourceSelection: Equatable, Sendable {
     let weather: Bool
     let travel: Bool
     let digest: Bool
+    /// Plan IW P2. On by default; with no goals the source simply has nothing to add.
+    let goals: Bool
+
+    init(calendar: Bool, reminders: Bool, weather: Bool, travel: Bool, digest: Bool,
+         goals: Bool = true) {
+        self.calendar = calendar
+        self.reminders = reminders
+        self.weather = weather
+        self.travel = travel
+        self.digest = digest
+        self.goals = goals
+    }
 
     static var current: Self {
         let calendar = Config.myDayCalendarIncluded
@@ -219,7 +234,8 @@ struct MyDaySourceSelection: Equatable, Sendable {
             reminders: Config.myDayRemindersIncluded,
             weather: Config.myDayWeatherIncluded,
             travel: calendar && Config.myDayTravelIncluded,
-            digest: Config.myDayDigestIncluded
+            digest: Config.myDayDigestIncluded,
+            goals: Config.myDayGoalsIncluded
         )
     }
 
@@ -228,8 +244,20 @@ struct MyDaySourceSelection: Equatable, Sendable {
         reminders: true,
         weather: true,
         travel: true,
-        digest: true
+        digest: true,
+        goals: true
     )
+}
+
+/// One goal's next step, as My Day needs it (Plan IW P2). Only steps with a date reach the card —
+/// the step's own, else the goal's — because the card is a day, and an undated step is not part
+/// of one (the same rule the card keeps for undated reminders).
+struct MyDayGoalStep: Equatable, Sendable {
+    let goalID: UUID
+    let stepID: UUID
+    let goalTitle: String
+    let stepTitle: String
+    let dueAt: Date
 }
 
 struct MyDayInputs: Equatable, Sendable {
@@ -238,6 +266,8 @@ struct MyDayInputs: Equatable, Sendable {
     let weather: MyDayWeather?
     let travel: MyDayTravelEstimate?
     let digestUpdates: [MyDayDigestUpdate]
+    /// Each active goal's next dated step; the composer shows the soonest due, at most one.
+    let goalSteps: [MyDayGoalStep]
     let sourceStates: [MyDaySourceState]
     /// Rows the wearer cleared from today's card, as storage key → fingerprint. Note what this is
     /// *not*: it never reaches a source, so a cleared row is still gathered, still counted where
@@ -250,6 +280,7 @@ struct MyDayInputs: Equatable, Sendable {
         weather: MyDayWeather?,
         travel: MyDayTravelEstimate? = nil,
         digestUpdates: [MyDayDigestUpdate] = [],
+        goalSteps: [MyDayGoalStep] = [],
         sourceStates: [MyDaySourceState],
         dismissals: [String: String] = [:]
     ) {
@@ -258,6 +289,7 @@ struct MyDayInputs: Equatable, Sendable {
         self.weather = weather
         self.travel = travel
         self.digestUpdates = digestUpdates
+        self.goalSteps = goalSteps
         self.sourceStates = sourceStates
         self.dismissals = dismissals
     }

@@ -102,6 +102,11 @@ final class SettingsHubTests: XCTestCase {
         ("SmartRoutingView", .intelligence, ["AIPersonalitySettingsScreen"]),
         ("LLMImageSettingsView", .intelligence, ["AIPersonalitySettingsScreen"]),
         ("AgenticFeaturesView", .intelligence, ["AIPersonalitySettingsScreen"]),
+        // Plan IW P2: the wearer's goals and the assistant's activity — and the Memory screen's
+        // way to the goals, under "Unfinished things".
+        ("GoalsView", .intelligence, ["AIPersonalitySettingsScreen"]),
+        ("ActivityView", .intelligence, ["AIPersonalitySettingsScreen"]),
+        ("GoalsView", .intelligence, ["AIPersonalitySettingsScreen", "MemoryView"]),
         // Voice & Triggers.
         ("TempleTapSettingsView", .voice, ["VoiceTriggersSettingsScreen"]),
         // Devices & Privacy. The Connected Glasses section is the Glasses screen now.

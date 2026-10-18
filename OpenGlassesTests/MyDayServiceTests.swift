@@ -162,6 +162,77 @@ final class MyDayServiceTests: XCTestCase {
     }
 }
 
+/// Plan IW P2 — the goals source through the service: the selection switch, and Done on a goals row.
+@MainActor
+final class MyDayGoalsSourceTests: XCTestCase {
+
+    private func store(_ directory: URL, now: Date, due: Date) -> GoalStore {
+        let store = GoalStore(directory: directory, clock: { now }, hipaaRetentionDays: { nil })
+        store.add(Goal(id: GoalActivityFixture.uuid(1), title: "Clear the garage", createdAt: now,
+                       dueAt: due, steps: [GoalActivityFixture.step(1, "Book the skip"),
+                                           GoalActivityFixture.step(2, "Sort the shelves")],
+                       source: .wearer))
+        return store
+    }
+
+    private func selection(goals: Bool) -> MyDaySourceSelection {
+        .init(calendar: true, reminders: true, weather: true, travel: true, digest: true, goals: goals)
+    }
+
+    func testGoalsIncludedOffHidesTheRowAndOnShowsIt() async {
+        let directory = GoalActivityFixture.workspace("MyDayGoals")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = Date()
+        let goals = store(directory, now: now, due: now.addingTimeInterval(3600))
+        let sources = FakeDaySources()
+        var included = false
+        let service = MyDayService(calendarSource: sources, remindersSource: sources, weatherSource: sources,
+                                   goalsSource: GoalStoreDaySource(store: { goals }),
+                                   sourceSelection: { self.selection(goals: included) })
+
+        let off = await service.refresh(now: now)
+        XCTAssertFalse(off.allItems.contains { $0.id.source == .goals })
+        XCTAssertFalse(off.sourceStates.contains { $0.source == .goals })
+
+        included = true
+        let on = await service.refresh(now: now)
+        let row = on.allItems.first { $0.id.source == .goals }
+        XCTAssertEqual(row?.title, "Book the skip")
+        XCTAssertEqual(row.flatMap(MyDayService.goalID(of:)), GoalActivityFixture.uuid(1))
+    }
+
+    func testCompletingAGoalsRowMarksTheStepDoneAndTheNextOneTakesItsPlace() async throws {
+        let directory = GoalActivityFixture.workspace("MyDayGoalsDone")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = Date()
+        let goals = store(directory, now: now, due: now.addingTimeInterval(3600))
+        let sources = FakeDaySources()
+        let service = MyDayService(calendarSource: sources, remindersSource: sources, weatherSource: sources,
+                                   goalsSource: GoalStoreDaySource(store: { goals }),
+                                   sourceSelection: { self.selection(goals: true) })
+        let first = await service.refresh(now: now)
+        let row = try XCTUnwrap(first.allItems.first { $0.id.source == .goals })
+
+        let title = try await service.complete(row, now: now)
+
+        XCTAssertEqual(title, "Book the skip")
+        XCTAssertEqual(goals.goals.first?.steps.first?.state, .done)
+        XCTAssertTrue(sources.completedIDs.isEmpty, "a goal step is not a reminder")
+        guard case .loaded(let after) = service.state else { return XCTFail("not refreshed") }
+        XCTAssertEqual(after.allItems.first { $0.id.source == .goals }?.title, "Sort the shelves")
+    }
+
+    func testAGoalWithNoDatesHasNoRow() {
+        let undated = Goal(id: GoalActivityFixture.uuid(1), title: "Learn the guitar", createdAt: Date(),
+                           steps: [GoalActivityFixture.step(1, "Buy strings")], source: .wearer)
+        XCTAssertTrue(GoalStoreDaySource.nextSteps([undated]).isEmpty)
+        var paused = undated
+        paused.dueAt = Date().addingTimeInterval(3600)
+        paused.state = .paused
+        XCTAssertTrue(GoalStoreDaySource.nextSteps([paused]).isEmpty, "a paused goal is not on the day")
+    }
+}
+
 @MainActor
 private final class FakeDaySources: CalendarDaySource, RemindersDaySource, WeatherDaySource,
                                     TravelTimeDaySource, DigestDaySource {

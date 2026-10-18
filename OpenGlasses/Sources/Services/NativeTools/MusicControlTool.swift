@@ -19,7 +19,8 @@ struct MusicControlTool: NativeTool {
         now_playing, search, play_song, play_artist, play_album, play_playlist, play_station, \
         add_to_library (the playing song, or 'query'), volume_up, volume_down, volume_set ('level' 0-100, speakers only), \
         devices (list speakers). 'device' names a Home Assistant speaker ('kitchen'). \
-        It cannot control Spotify or other apps; never promise that — pass provider 'spotify' and it explains.
+        It cannot control Spotify or other apps; never promise that — pass provider 'spotify' and it explains. \
+        Podcasts go to play_podcast.
         """
     let parametersSchema: [String: Any] = [
         "type": "object",

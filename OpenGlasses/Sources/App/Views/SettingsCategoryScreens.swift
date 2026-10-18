@@ -36,6 +36,8 @@ struct AppleIntegrationsSettingsScreen: View {
                     detail: "Look someone up to call or message them."),
         Integration(id: "music_control", title: "Music", icon: "music.note",
                     detail: "Play, pause, skip, and ask what's playing."),
+        Integration(id: "play_podcast", title: "Podcasts", icon: "antenna.radiowaves.left.and.right",
+                    detail: "Open a show or its latest episode in Apple Podcasts."),
         Integration(id: "get_directions", title: "Maps Directions", icon: "map",
                     detail: "Get directions to a place, opened in Maps."),
         Integration(id: "set_alarm", title: "Alarms", icon: "alarm",

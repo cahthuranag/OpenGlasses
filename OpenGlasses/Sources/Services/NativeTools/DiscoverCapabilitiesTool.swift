@@ -110,6 +110,8 @@ struct DiscoverCapabilitiesTool: NativeTool {
             ("xhsdiscover://", "Xiaohongshu", "Social"),
             ("bilibili://", "Bilibili", "Entertainment"),
             ("spotify://", "Spotify", "Music"),
+            ("tidal://", "Tidal", "Music"),
+            ("amznmp3://", "Amazon Music", "Music"),
             ("music://", "Apple Music", "Music"),
             ("youtube://", "YouTube", "Entertainment"),
             ("nflx://", "Netflix", "Entertainment"),

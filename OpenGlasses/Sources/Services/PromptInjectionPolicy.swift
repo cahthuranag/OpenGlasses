@@ -25,7 +25,7 @@ enum PromptInjectionPolicy {
     /// attacker could influence. Their results are framed as data, never trusted as instructions.
     static let untrustedOutputTools: Set<String> = [
         // Web / network sourced
-        "web_search", "get_news", "daily_briefing",
+        "web_search", "get_news", "daily_briefing", "play_podcast",
         // Camera OCR / codes / captured documents (text from the physical world)
         "reading_assist", "scan_code", "qr_context", "smart_capture",
         "translate", "translate_sign_menu", "identify_medication", "equipment_lookup",

@@ -178,6 +178,8 @@
 		<string>shareddocuments</string>
 		<string>youtube</string>
 		<string>spotify</string>
+		<string>tidal</string>
+		<string>amznmp3</string>
 		<string>whatsapp</string>
 		<string>instagram</string>
 		<string>twitter</string>
@@ -188,13 +190,11 @@
 		<string>uber</string>
 		<string>lyft</string>
 		<string>weixin</string>
-		<string>wechat</string>
 		<string>alipay</string>
 		<string>alipays</string>
 		<string>baidumap</string>
 		<string>iosamap</string>
 		<string>mqq</string>
-		<string>weibo</string>
 		<string>sinaweibo</string>
 		<string>dingtalk</string>
 		<string>snssdk1128</string>

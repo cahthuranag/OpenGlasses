@@ -50,6 +50,8 @@ struct OpenAppTool: NativeTool {
         // Popular third-party apps
         "youtube": "youtube://",
         "spotify": "spotify://",
+        "tidal": "tidal://",
+        "amazon music": "amznmp3://",
         "whatsapp": "whatsapp://",
         "instagram": "instagram://",
         "x": "twitter://",
@@ -71,6 +73,10 @@ struct OpenAppTool: NativeTool {
         "podcast": "podcasts",
         "the podcasts app": "podcasts",
         "the music app": "music",
+        "tidal music": "tidal",
+        "title": "tidal",
+        "amazon": "amazon music",
+        "amazon prime music": "amazon music",
         "the maps app": "maps",
         "google map": "google maps",
         "facetiming": "facetime",
@@ -95,19 +101,23 @@ struct OpenAppTool: NativeTool {
             return "I don't know how to open \(appName). Try asking for a specific app like Podcasts, Music, Maps, etc. Supported apps: \(available)"
         }
 
-        let canOpen = await MainActor.run {
-            UIApplication.shared.canOpenURL(url)
-        }
+        // Open directly rather than asking `canOpenURL` first: the pre-check only answers for the
+        // fifty schemes iOS honours in `LSApplicationQueriesSchemes`, while `open` takes any scheme
+        // and reports whether an installed app accepted it. The table above can grow freely.
+        let opened = await Self.open(url)
 
-        guard canOpen else {
+        guard opened else {
             return "\(appName) doesn't appear to be installed on this device."
-        }
-
-        await MainActor.run {
-            UIApplication.shared.open(url, options: [:], completionHandler: nil)
         }
 
         let displayName = appName.prefix(1).uppercased() + appName.dropFirst()
         return "Opening \(displayName)..."
+    }
+
+    @MainActor
+    private static func open(_ url: URL) async -> Bool {
+        await withCheckedContinuation { continuation in
+            UIApplication.shared.open(url, options: [:]) { continuation.resume(returning: $0) }
+        }
     }
 }

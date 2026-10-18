@@ -956,7 +956,7 @@ enum SensitiveStore: String, CaseIterable {
 
         case .remoteInvokeAudit:
             return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,
-                          protection: .platformDefault, backupExcluded: false, retention: .cap(50),
+                          protection: .platformDefault, backupExcluded: false, retention: .cap(RemoteInvokeService.auditLimit),
                           deleteAll: .unavailable("the trail is what makes remote invocation reviewable"),
                           deleteSubject: .notSubjectLinked,
                           owner: "RemoteInvokeService",

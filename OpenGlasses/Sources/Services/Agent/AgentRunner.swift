@@ -12,7 +12,7 @@ final class AgentRunner {
     private let router: ToolExecuting
     private let planner: AgentPlanner
 
-    /// One-line narration (plan header + each step's rationale) for TTS + the HUD plan-trace.
+    /// Plan-header narration for TTS + the HUD plan-trace.
     var onNarrate: ((String) -> Void)?
     /// Per-step progress (1-based index, total, step) for a "step i of N" HUD trace.
     var onStep: ((Int, Int, AgentStep) -> Void)?

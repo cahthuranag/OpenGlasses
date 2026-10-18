@@ -257,7 +257,7 @@ struct ScheduledTaskDetailView: View {
                 Text("Schedule")
             } footer: {
                 Text(intervalMinutes == 0
-                     ? "Runs once when the agent starts each day."
+                     ? "Runs once a day, the first time the assistant checks after midnight."
                      : "Runs approximately every \(intervalMinutes) minutes when the agent is idle.")
             }
 

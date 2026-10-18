@@ -59,6 +59,8 @@ struct ServicesSettingsView: View {
     // Home Assistant
     @State private var haURL: String = Config.homeAssistantURL
     @State private var haToken: String = Config.homeAssistantToken
+    @AppStorage("smartHomeControlEnabled") private var smartHomeControlEnabled = true
+    @ObservedObject private var adminGate = AdminGate.shared
 
     // TTS engine preference (Additional Capabilities #1 — Kokoro on-device tier)
     @State private var ttsEnginePreference: TTSEnginePreference = Config.ttsEnginePreference
@@ -748,6 +750,16 @@ struct ServicesSettingsView: View {
 
             // MARK: Home Assistant
             Section {
+                if adminGate.presentation(.row(in: .connections)).isShown &&
+                    AIFeature.smartHomeControl.record.toolNames.contains(where: { adminGate.presentation(.tool($0)).isShown }) {
+                    InfoToggle(
+                        title: "AI Smart Home Control",
+                        isOn: $smartHomeControlEnabled,
+                        info: "When off, the assistant cannot use HomeKit or Home Assistant, including reading device status or controlling lights, locks and scenes. Your saved connection settings stay on this phone."
+                    )
+                    .disabled(!adminGate.presentation(.row(in: .connections)).isEditable ||
+                              !AIFeature.smartHomeControl.record.toolNames.contains(where: { adminGate.presentation(.tool($0)).isEditable }))
+                }
                 TextField("HA URL (e.g. http://192.168.1.100:8123)", text: $haURL)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)

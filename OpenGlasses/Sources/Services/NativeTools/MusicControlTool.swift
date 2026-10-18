@@ -20,7 +20,8 @@ struct MusicControlTool: NativeTool {
         add_to_library (the playing song, or 'query'), volume_up, volume_down, volume_set ('level' 0-100, speakers only), \
         devices (list speakers). 'device' names a Home Assistant speaker ('kitchen'). \
         It cannot control Spotify or other apps; never promise that — pass provider 'spotify' and it explains. \
-        Podcasts go to play_podcast.
+        The one Spotify thing it does: play with a 'query' on Spotify opens Spotify's own search for those words, \
+        and the wearer taps what to play. Podcasts go to play_podcast.
         """
     let parametersSchema: [String: Any] = [
         "type": "object",
@@ -192,6 +193,9 @@ struct MusicControlEnvironment {
     var appleMusicPlaying: () -> Bool
     /// Tells the temple-tap trigger to drop its Now Playing claim before the wearer's player acts.
     var postUserPlaybackRequested: () -> Void
+    /// Hands Spotify's search page to the system as a universal link only; false when the Spotify
+    /// app is not installed to claim it.
+    var openSpotifySearch: @MainActor (URL) async -> Bool = { _ in false }
 
     static func live() -> MusicControlEnvironment {
         let library = MediaPlayerLibrary()
@@ -228,6 +232,13 @@ struct MusicControlEnvironment {
             appleMusicPlaying: { library.isPlaying },
             postUserPlaybackRequested: {
                 NotificationCenter.default.post(name: MediaTriggerService.userPlaybackRequested, object: nil)
+            },
+            openSpotifySearch: { url in
+                await withCheckedContinuation { continuation in
+                    UIApplication.shared.open(url, options: [.universalLinksOnly: true]) {
+                        continuation.resume(returning: $0)
+                    }
+                }
             })
     }
 
@@ -276,6 +287,13 @@ struct MusicControlEnvironment {
         let result: MusicCommandResult
         switch MusicCommandRouter.route(command, target: request.target, context: context) {
         case .refuse(let line):
+            // Spotify by name with something to find: open Spotify's own search for it — a link,
+            // never an API call — and let the wearer tap. Transport on Spotify stays refused.
+            if case .unsupported("Spotify")? = request.target.service, let phrase = Self.searchPhrase(command),
+               let url = SpotifySearchLink.url(for: phrase) {
+                postUserPlaybackRequested()
+                if await openSpotifySearch(url) { return .done(MusicPhraser.openingSpotifySearch(phrase)) }
+            }
             return .unsupported(line)
         case .askSpeaker(let speakers):
             return MusicCommandResult(spoken: MusicPhraser.askWhichSpeaker(speakers), outcome: .needsInput)
@@ -294,6 +312,15 @@ struct MusicControlEnvironment {
             return .done(MusicPhraser.likeIsAddToLibrary)
         }
         return result
+    }
+
+    /// The words worth opening a search for: a play-by-name or a search; nothing for transport.
+    static func searchPhrase(_ command: MusicCommand) -> String? {
+        switch command {
+        case .playByName(let play): return play.phrase
+        case .search(let words): return words
+        default: return nil
+        }
     }
 
     /// Whether routing needs the speaker list — a network call to Home Assistant, skipped when the

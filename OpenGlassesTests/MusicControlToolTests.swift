@@ -10,6 +10,8 @@ final class MusicControlToolTests: XCTestCase {
     private var speaker: RecordingMusicProvider!
     private var homeAssistant: FakeHomeAssistant!
     private var standDowns = 0
+    private var spotifyOpens: [URL] = []
+    private var spotifyInstalled = true
     private var applePlaying = false
     private var defaultProvider: MusicProviderID = .appleMusic
 
@@ -19,6 +21,8 @@ final class MusicControlToolTests: XCTestCase {
         homeAssistant = FakeHomeAssistant()
         homeAssistant.players = [MusicFixtures.player("media_player.kitchen", name: "Kitchen")]
         standDowns = 0
+        spotifyOpens = []
+        spotifyInstalled = true
         applePlaying = false
         defaultProvider = .appleMusic
     }
@@ -36,7 +40,11 @@ final class MusicControlToolTests: XCTestCase {
                 hiddenSpeakers: [],
                 askWhenUnsure: true,
                 appleMusicPlaying: { [unowned self] in self.applePlaying },
-                postUserPlaybackRequested: { [unowned self] in self.standDowns += 1 })
+                postUserPlaybackRequested: { [unowned self] in self.standDowns += 1 },
+                openSpotifySearch: { [unowned self] url in
+                    self.spotifyOpens.append(url)
+                    return self.spotifyInstalled
+                })
         }
         return tool
     }
@@ -82,12 +90,24 @@ final class MusicControlToolTests: XCTestCase {
         XCTAssertEqual(speaker.received.first?.0, .playByName(MusicRequestParser.request(from: "rumours")))
     }
 
-    func testSpotifyGetsTheGenericRefusal() async throws {
+    func testPlayOnSpotifyOpensSpotifysSearchAndStandsTheTriggerDown() async throws {
         let result = try await tool(homeAssistantUsable: false).execute(args: ["action": "play", "query": "Discover Weekly on Spotify"])
-        XCTAssertEqual(result, MusicPhraser.cannotControl("Spotify"))
-        XCTAssertTrue(apple.received.isEmpty)
+        XCTAssertEqual(result, MusicPhraser.openingSpotifySearch("discover weekly"))
+        XCTAssertEqual(spotifyOpens.map(\.absoluteString), ["https://open.spotify.com/search/discover%20weekly"])
+        XCTAssertEqual(standDowns, 1)
+        XCTAssertTrue(apple.received.isEmpty, "nothing is played by Avenkin")
+    }
+
+    func testSpotifyTransportAndAMissingSpotifyAppGetTheGenericRefusal() async throws {
         let byProvider = try await tool(homeAssistantUsable: false).execute(args: ["action": "next", "provider": "spotify"])
         XCTAssertEqual(byProvider, MusicPhraser.cannotControl("Spotify"))
+        XCTAssertEqual(spotifyOpens, [], "transport has nothing to search for")
+
+        spotifyInstalled = false
+        let missing = try await tool(homeAssistantUsable: false).execute(args: ["action": "play", "query": "Discover Weekly on Spotify"])
+        XCTAssertEqual(missing, MusicPhraser.cannotControl("Spotify"))
+        XCTAssertEqual(spotifyOpens.count, 1, "the link was offered to the system")
+        XCTAssertTrue(apple.received.isEmpty)
     }
 
     func testLikeExplainsItAddedToTheLibrary() async throws {
@@ -161,6 +181,7 @@ final class MusicControlToolTests: XCTestCase {
         XCTAssertTrue(description.contains("catalogue"))
         XCTAssertTrue(description.contains("library"))
         XCTAssertTrue(description.contains("cannot control Spotify"))
+        XCTAssertTrue(description.contains("opens Spotify's own search"))
         XCTAssertFalse(description.contains("Plan "))
     }
 }

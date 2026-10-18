@@ -9,6 +9,11 @@ to be built unless that changes. **Owed:** device checks — catalogue playback 
 subscription, the first-use access prompt, playback with the phone locked and Avenkin backgrounded,
 temple taps with Apple Music playing and with music on a Home Assistant (Spotify Connect) speaker,
 add to library. MusicKit App Service is enabled on the App ID (no entitlement key needed).
+**2026-10-18 — one Spotify hand-off, no Platform:** "play X on Spotify" now opens the Spotify app's
+own search for X through the `open.spotify.com` universal link (`SpotifySearchLink`), and the wearer
+taps what to play. No Web API, no client id, no account: it is a link, like `open_app`, so Decision 1
+is untouched. Transport "on Spotify" and a phone without Spotify keep the generic refusal. **Owed:**
+device check that the link lands on Spotify's search with the words typed in.
 **Extends:** `music_control` (`NativeTools/MusicControlTool.swift`).
 **Related:** Plan [CH](CH-media-button-trigger.md) / Plan [GJ](GJ-remappable-temple-gestures.md)
 (temple taps), Plan [GF](GF-recipe-add-ons.md) (not a viable route), Plan [GR](GR-android-tv-control.md)

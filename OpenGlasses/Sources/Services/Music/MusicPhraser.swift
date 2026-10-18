@@ -13,6 +13,11 @@ enum MusicPhraser {
             + "and you can set a Home Assistant speaker as your music provider in Settings."
     }
 
+    /// The hand-off is a search page, not playback; say so, so nobody waits for music.
+    static func openingSpotifySearch(_ phrase: String) -> String {
+        "Opening Spotify's search for \(phrase). Tap what you'd like to play."
+    }
+
     static let speakersNeedHomeAssistant =
         "Playing on a speaker needs Home Assistant, which isn't set up. You can add it in Settings, under Services."
 

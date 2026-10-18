@@ -43,6 +43,8 @@ struct AppleIntegrationsSettingsScreen: View {
     ]
 
     @State private var disabledTools: Set<String> = Config.disabledTools
+    @AppStorage("smartHomeControlEnabled") private var smartHomeControlEnabled = true
+    @AppStorage("aiMessagingEnabled") private var aiMessagingEnabled = true
     @State private var permissionDeniedTool: String?
     @State private var didResetMyDayHistory = false
     /// Plan HA C4: an app switch the organisation closed is not shown to the technician.
@@ -193,6 +195,29 @@ struct AppleIntegrationsSettingsScreen: View {
             }
 
             let shownIntegrations = Self.integrations.filter { adminGate.presentation(.tool($0.id)).isShown }
+            if adminGate.presentation(.row(in: .connections)).isShown {
+                Section {
+                    if AIFeature.smartHomeControl.record.toolNames.contains(where: { adminGate.presentation(.tool($0)).isShown }) {
+                        InfoToggle(
+                            title: "AI Smart Home Control",
+                            isOn: $smartHomeControlEnabled,
+                            info: "When off, the assistant cannot use HomeKit or Home Assistant, including reading device status or controlling lights, locks and scenes. Your saved connection settings stay on this phone."
+                        )
+                        .disabled(!AIFeature.smartHomeControl.record.toolNames.contains(where: { adminGate.presentation(.tool($0)).isEditable }))
+                    }
+                    if AIFeature.messaging.record.toolNames.contains(where: { adminGate.presentation(.tool($0)).isShown }) {
+                        InfoToggle(
+                            title: "AI Messaging",
+                            isOn: $aiMessagingEnabled,
+                            info: "When off, the assistant cannot compose or send messages through its messaging tools. Your contacts and other calling tools are unchanged."
+                        )
+                        .disabled(!AIFeature.messaging.record.toolNames.contains(where: { adminGate.presentation(.tool($0)).isEditable }))
+                    }
+                } header: {
+                    Text("AI Access")
+                }
+                .disabled(!adminGate.presentation(.row(in: .connections)).isEditable)
+            }
             if !shownIntegrations.isEmpty {
                 Section {
                     ForEach(shownIntegrations) { integration in

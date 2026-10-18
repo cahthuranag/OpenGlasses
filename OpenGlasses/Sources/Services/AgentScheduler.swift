@@ -147,11 +147,7 @@ class AgentScheduler: ObservableObject {
         let tasks = loadTasks()
         let now = Date()
 
-        for task in tasks where task.enabled && task.intervalMinutes > 0 {
-            let interval = TimeInterval(task.intervalMinutes * 60)
-            if let lastRun = task.lastRun {
-                if now.timeIntervalSince(lastRun) < interval { continue }
-            }
+        for task in tasks where ScheduleDuePolicy.isDue(task: task, now: now, calendar: .current) {
 
             // A task's name is the wearer's own instruction to their agent ("check whether the
             // clinic replied"), so which task ran is not written down; the model it was pinned

@@ -87,9 +87,9 @@ surface (reuses `WebSearchTool` as-is).
   a low-max-prob / high-perplexity completion is a stronger uncertainty signal than phrase matching.
   Model-specific and larger; the string classifier is the deterministic first cut and stays as the
   cheap always-available fallback.
-- **Apple Foundation guided-tool path** — if/when the on-device model gains reliable tool-calling,
-  prefer a real `web_search` tool call over the re-ask splice on that backend; the detector becomes a
-  belt-and-braces backstop.
+- **Apple Foundation guided-tool path** — ✅ done by Plan JD (2026-10-18): the on-device model now
+  calls `web_search` as a real framework tool; the detector is the belt-and-braces backstop on that
+  backend, exactly as this item asked.
 - **Extend to cloud "no-tool" turns** — the same gate could catch a cloud model that answered stale
   without calling `web_search`, but cloud tool-calls well, so low value and out of scope.
 

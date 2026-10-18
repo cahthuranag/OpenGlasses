@@ -1,7 +1,7 @@
 import XCTest
 @testable import OpenGlasses
 
-/// Plan JD — which show and which episode the wearer meant. Every id and title here is invented.
+/// Plan JE — which show and which episode the wearer meant. Every id and title here is invented.
 final class PodcastRankerTests: XCTestCase {
 
     private func show(_ id: String, _ title: String) -> PodcastShow {

@@ -69,7 +69,7 @@ final class NativeToolRegistry {
         register(ShazamTool())
         register(CurrencyTool())
         register(MusicControlTool())
-        register(PodcastTool())   // Plan JD: a podcast by name, opened in Apple Podcasts
+        register(PodcastTool())   // Plan JE: a podcast by name, opened in Apple Podcasts
         register(DailyBriefingTool(myDayService: myDayService))
         register(ClipboardTool())
         register(PhoneCallTool())

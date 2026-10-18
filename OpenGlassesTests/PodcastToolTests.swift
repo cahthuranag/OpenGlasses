@@ -1,7 +1,7 @@
 import XCTest
 @testable import OpenGlasses
 
-/// Plan JD — `play_podcast` looks the show up, picks the episode, stands the temple-tap trigger
+/// Plan JE — `play_podcast` looks the show up, picks the episode, stands the temple-tap trigger
 /// down, and opens only a podcasts.apple.com page. Fixtures are invented.
 private final class FakePodcastDirectory: PodcastDirectorySearching, @unchecked Sendable {
     var shows: [PodcastShow] = []

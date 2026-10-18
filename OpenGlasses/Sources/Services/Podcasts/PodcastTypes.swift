@@ -1,6 +1,6 @@
 import Foundation
 
-// Plan JD — value types for playing a podcast by name. Pure: nothing here touches the network or
+// Plan JE — value types for playing a podcast by name. Pure: nothing here touches the network or
 // the Podcasts app.
 
 /// A show as Apple's public podcast directory lists it.

@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 /// Lets the agent manage its own scheduled tasks at runtime.
 /// The agent can create, list, enable/disable, and delete tasks.
@@ -67,11 +68,16 @@ struct AgentScheduleTool: NativeTool {
     ]
 
     func execute(args: [String: Any]) async throws -> String {
+        await MainActor.run { executeOnMainActor(args: args) }
+    }
+
+    @MainActor
+    private func executeOnMainActor(args: [String: Any]) -> String {
         guard let action = args["action"] as? String else {
             return "Specify an action: list, create, enable, disable, delete"
         }
 
-        let tasks = await MainActor.run { AgentScheduler.savedTasks() }
+        let tasks = AgentScheduler.savedTasks()
 
         switch action {
         case "list":
@@ -88,44 +94,7 @@ struct AgentScheduleTool: NativeTool {
             return lines.joined(separator: "\n")
 
         case "create":
-            guard let taskName = args["task_name"] as? String, !taskName.isEmpty else {
-                return "Provide a task_name for the new task."
-            }
-            guard let prompt = args["task_prompt"] as? String, !prompt.isEmpty else {
-                return "Provide a task_prompt — what should the agent do on each run?"
-            }
-            let interval = args["interval_minutes"] as? Int ?? 30
-            let speak = args["speak_result"] as? Bool ?? true
-            let personaId = args["persona_id"] as? String
-            let modelId = args["model_id"] as? String
-
-            let id = taskName.lowercased()
-                .replacingOccurrences(of: " ", with: "-")
-                .filter { $0.isLetter || $0.isNumber || $0 == "-" }
-
-            let personaLabel = personaId.flatMap { pid in Config.enabledPersonas.first(where: { $0.id == pid })?.name } ?? ""
-            let modelLabel = modelId.flatMap { mid in Config.savedModels.first(where: { $0.id == mid })?.name } ?? ""
-
-            var newTask = AgentScheduler.ScheduledTask(
-                id: id,
-                name: taskName,
-                prompt: prompt,
-                intervalMinutes: interval,
-                enabled: true,
-                speakResult: speak
-            )
-            newTask.personaId = personaId
-            newTask.modelId = modelId
-            newTask.createdBy = "agent"
-
-            let updatedTasks = tasks + [newTask]
-            await MainActor.run { AgentScheduler.saveTasks(updatedTasks) }
-
-            var details = "Created task '\(taskName)' (ID: \(id), every \(interval) min"
-            if !personaLabel.isEmpty { details += ", agent: \(personaLabel)" }
-            if !modelLabel.isEmpty { details += ", model: \(modelLabel)" }
-            details += "). It will run on the next scheduler cycle."
-            return details
+            return createTask(args: args, tasks: tasks)
 
         case "enable":
             guard let taskId = args["task_id"] as? String else {
@@ -135,7 +104,7 @@ struct AgentScheduleTool: NativeTool {
                 var updated = tasks
                 updated[idx].enabled = true
                 let saved = updated
-                await MainActor.run { AgentScheduler.saveTasks(saved) }
+                AgentScheduler.saveTasks(saved)
                 return "Enabled task '\(tasks[idx].name)'."
             }
             return "Task '\(taskId)' not found."
@@ -148,7 +117,7 @@ struct AgentScheduleTool: NativeTool {
                 var updated = tasks
                 updated[idx].enabled = false
                 let saved = updated
-                await MainActor.run { AgentScheduler.saveTasks(saved) }
+                AgentScheduler.saveTasks(saved)
                 return "Disabled task '\(tasks[idx].name)'."
             }
             return "Task '\(taskId)' not found."
@@ -162,7 +131,7 @@ struct AgentScheduleTool: NativeTool {
                 var updated = tasks
                 updated.remove(at: idx)
                 let saved = updated
-                await MainActor.run { AgentScheduler.saveTasks(saved) }
+                AgentScheduler.saveTasks(saved)
                 return "Deleted task '\(name)'."
             }
             return "Task '\(taskId)' not found."
@@ -170,5 +139,73 @@ struct AgentScheduleTool: NativeTool {
         default:
             return "Unknown action '\(action)'. Use: list, create, enable, disable, delete."
         }
+    }
+
+    @MainActor
+    private func createTask(args: [String: Any], tasks: [AgentScheduler.ScheduledTask]) -> String {
+        guard let taskName = args["task_name"] as? String, !taskName.isEmpty else {
+            return "Provide a task_name for the new task."
+        }
+        guard let prompt = args["task_prompt"] as? String, !prompt.isEmpty else {
+            return "Provide a task_prompt — what should the agent do on each run?"
+        }
+        guard let interval = Self.intervalMinutes(from: args["interval_minutes"]) else {
+            return "Provide a non-negative number of minutes for interval_minutes, or 0 for once daily."
+        }
+        let speak = args["speak_result"] as? Bool ?? true
+        let personaId = args["persona_id"] as? String
+        let modelId = args["model_id"] as? String
+
+        let slug = taskName.lowercased()
+            .replacingOccurrences(of: " ", with: "-")
+            .filter { $0.isLetter || $0.isNumber || $0 == "-" }
+        let baseID = slug.isEmpty ? "task" : slug
+        let existingIDs = Set(tasks.map(\.id)).union(["morning-briefing"])
+        var id = baseID
+        var suffix = 2
+        while existingIDs.contains(id) {
+            id = "\(baseID)-\(suffix)"
+            suffix += 1
+        }
+
+        let personaLabel = personaId.flatMap { pid in Config.enabledPersonas.first(where: { $0.id == pid })?.name } ?? ""
+        let modelLabel = modelId.flatMap { mid in Config.savedModels.first(where: { $0.id == mid })?.name } ?? ""
+
+        var newTask = AgentScheduler.ScheduledTask(
+            id: id,
+            name: taskName,
+            prompt: prompt,
+            intervalMinutes: interval,
+            enabled: true,
+            speakResult: speak
+        )
+        newTask.personaId = personaId
+        newTask.modelId = modelId
+        newTask.createdBy = "agent"
+
+        let updatedTasks = tasks + [newTask]
+        AgentScheduler.saveTasks(updatedTasks)
+
+        let cadence = interval == 0 ? "once daily" : "every \(interval) min"
+        var details = "Created task '\(taskName)' (ID: \(id), \(cadence)"
+        if !personaLabel.isEmpty { details += ", agent: \(personaLabel)" }
+        if !modelLabel.isEmpty { details += ", model: \(modelLabel)" }
+        details += "). It will run on the next scheduler cycle."
+        return details
+    }
+
+    private static func intervalMinutes(from value: Any?) -> Int? {
+        guard let value else { return 30 }
+        let minutes: Double
+        if let number = value as? NSNumber {
+            guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+            minutes = number.doubleValue
+        } else if let text = value as? String, let number = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            minutes = number
+        } else {
+            return nil
+        }
+        guard minutes.isFinite, minutes >= 0 else { return nil }
+        return Int(exactly: minutes.rounded())
     }
 }

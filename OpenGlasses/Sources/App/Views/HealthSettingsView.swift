@@ -5,6 +5,8 @@ import SwiftUI
 struct HealthSettingsView: View {
     @State private var shareWithAI = Config.shareHealthDataWithAI
     @State private var summariesEnabled = Config.healthSummariesEnabled
+    @AppStorage("healthVaultAIEnabled") private var healthVaultAIEnabled = true
+    @ObservedObject private var adminGate = AdminGate.shared
     @State private var authorization: HealthAuthorizationState?
     @State private var savedAt: Date?
     @State private var requesting = false
@@ -25,6 +27,14 @@ struct HealthSettingsView: View {
             }
 
             Section {
+                if adminGate.presentation(.row(in: .devices)).isShown && adminGate.presentation(.tool("health_vault")).isShown {
+                    InfoToggle(
+                        title: "AI Access to Health Vault",
+                        isOn: $healthVaultAIEnabled,
+                        info: "When off, the assistant cannot look up or edit your Health Vault directly. Existing records stay on this phone. Apple Health summaries and their sharing setting are controlled separately below."
+                    )
+                    .disabled(!adminGate.presentation(.row(in: .devices)).isEditable || !adminGate.presentation(.tool("health_vault")).isEditable)
+                }
                 Toggle("Health Summaries", isOn: $summariesEnabled)
                     .onChange(of: summariesEnabled) { _, newValue in
                         Config.healthSummariesEnabled = newValue

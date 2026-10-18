@@ -1,6 +1,11 @@
 # Plan JC — Planning-Sweep Fixes (small defects found while drafting IW–JB)
 
-**Status:** 📝 Drafted (not scheduled), 2026-10-18 — nothing built.
+**Status:** ✅ All five items implemented and verified 2026-10-18. The 89 focused simulator
+tests pass; the full simulator suite passes (11,172 tests, 16 skipped, zero failures); the arm64
+simulator Release build, privacy-logging gate and whitespace check pass.
+Daily scheduling uses local calendar days, the three named switches have live Settings bindings,
+the fixed-plan executor's unused re-injection/narration hooks are removed, the audit retains 100
+entries from one constant, and task creation validates intervals and allocates unique ids atomically.
 **Shape:** a bundle in the manner of Plan [ID](ID-ecosystem-review-hardening-bundle.md): five
 independent items, each a few lines and a test, **one PR for the bundle**. Items 1 and 2 are taken
 out of the plans that first claimed them ([IW](IW-goals-and-activity-trail.md) P0 and
@@ -54,6 +59,12 @@ later gather them; this item is about existence, not placement.
 `OutboundFrameConsumerTests` / `DataStoreRegistryTests`). Pins the three and prevents a fourth
 orphan.
 
+**Implementation finding:** six older inventory switches also lack a dedicated Settings binding:
+`medicationIdentifierEnabled`, `healthSafetyAdvisorEnabled`, `fitnessCoachingEnabled`,
+`safetyAssessmentEnabled`, `fieldAssistToolsEnabled` and `ambientCaptionsEnabled`. The guard
+names this existing baseline explicitly, requires the three JC switches to have live
+`@AppStorage` bindings, and fails on any additional gap. Surfacing those six is separate work.
+
 ### 3. Plan-step constraint re-injection is dead code
 
 **Found:** `PlanExecutor` has `onNarrate`, `onStep` and `onReinject`; `AgentRunner` wires only
@@ -80,9 +91,12 @@ therefore states a retention the code does not enforce.
 value (or the registry is corrected to 100; decision below), and the registry record references
 the constant so they cannot drift again. Regenerate the ET matrix (`UPDATE_PLAN_DOCS`).
 
-**Test:** `RemoteInvokeAuditRetentionTests` — append `cap + 5` entries, read back `cap`; and a
+**Test:** `RemoteInvokeServiceTests` — append `cap + 5` entries, read back `cap`; and a
 registry attribute-truth test asserting the record's `.cap(n)` equals the service constant (the
 pattern other stores already use).
+
+The regressions include a persisted/reloaded cap and an oversized legacy audit.
+`RemoteInvokeService.auditLimit` is the shared 100-entry value.
 
 ### 5. `manage_schedule` drops a decimal interval and overwrites by slug
 
@@ -105,14 +119,28 @@ names the interval it actually stored.
   IX P2 lines that claimed items 1 and 2 are amended to point here (done in the drafting PR).
 - No behaviour change beyond the five items; no new stores, routes or tools.
 
-## Decisions for Greig
+## Decisions taken for implementation
 
-1. **Item 3:** wire the re-injection (recommended — it is what Plan S promised and the hook is
-   there) or delete it?
-2. **Item 4:** 100 (the code's number, more history for the audit view) or 50 (the registry's)?
-   *Recommend 100 and fix the registry.*
-3. **Item 2 placement:** beside each feature's own settings (recommended) or one "AI features" list
-   under Devices & Privacy now?
+1. **Item 3:** remove the unused hooks. There is no model reasoning call between the fixed plan's
+   steps, so adding a callback would not re-inject constraints into execution. Progress stays on
+   `onStep`; the existing runner header and summary are unchanged.
+2. **Item 4:** retain 100, matching existing behaviour, and reference the service constant from
+   the registry.
+3. **Item 2:** beside each feature: smart home and messaging under Works with your iPhone,
+   smart home also beside Home Assistant, and vault access beside Health Summaries. Rows honour
+   the organisation's category visibility/editability policy.
+
+## Validation (2026-10-18)
+
+- Focused: 89 tests, zero failures (`ScheduleDuePolicyTests`, `AgentScheduleToolTests`,
+  `AIFeatureSwitchSurfaceTests`, `AgentSafetyTests`, `AgentPlanLoopTests`,
+  `RemoteInvokeServiceTests`, `DataStoreRegistryTests`).
+- Full iOS 27 simulator suite: 11,172 tests, 16 skipped, zero failures; test execution exited 0.
+  Initial simulator startup required recovery and a fresh device. Xcode's optional post-run
+  simulator-diagnostics collection timed out; test execution still finalized successfully.
+- Optimized Release build for the arm64 simulator: passed, with watch targets excluded and
+  localization extraction disabled as for the test build.
+- Privacy-logging gate and `git diff --check`: passed.
 
 ## Out of scope
 

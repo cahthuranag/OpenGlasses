@@ -67,6 +67,27 @@ final class RemoteInvokeServiceTests: XCTestCase {
 
     // MARK: - Reply envelopes
 
+    func testAuditRetentionMatchesRegistryAndSurvivesReload() async throws {
+        let auditService = service(agentMode: false)
+        for index in 0..<(RemoteInvokeService.auditLimit + 5) {
+            _ = await auditService.handleFrame(invoke("device_status", id: "retention-\(index)"))
+        }
+        XCTAssertEqual(auditService.auditLog.count, RemoteInvokeService.auditLimit)
+        XCTAssertEqual(SensitiveStore.remoteInvokeAudit.record.retention, .cap(RemoteInvokeService.auditLimit))
+        let stored = try XCTUnwrap(UserDefaults.standard.data(forKey: "remoteInvokeAuditLog"))
+        let entries = try JSONDecoder().decode([RemoteInvokeAuditEntry].self, from: stored)
+        XCTAssertEqual(entries, auditService.auditLog)
+        XCTAssertEqual(self.service(agentMode: false).auditLog, entries)
+    }
+
+    func testOversizedPersistedAuditIsCappedOnLoad() throws {
+        let entries = (0..<(RemoteInvokeService.auditLimit + 5)).map {
+            RemoteInvokeAuditEntry(action: "entry-\($0)", disposition: "denied")
+        }
+        UserDefaults.standard.set(try JSONEncoder().encode(entries), forKey: "remoteInvokeAuditLog")
+        XCTAssertEqual(service().auditLog, Array(entries.prefix(RemoteInvokeService.auditLimit)))
+    }
+
     func testAllowedCommandExecutesAndRepliesOkWithPayload() async {
         let log = Box<[String]>([])
         let svc = service(log: log)

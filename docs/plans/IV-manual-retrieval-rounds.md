@@ -1,14 +1,16 @@
 # Plan IV — Manual Retrieval Rounds (every change measured on a field manual pair and a code book)
 
-**Status:** ✅ P0–P6 shipped (2026-10-17/18). Both measurements run as a process, on both
+**Status:** ✅ P0–P7 shipped (2026-10-17/18). Both measurements run as a process, on both
 embedders; the device's evidence gate carries the lexical criterion; the newest edition answers and
 an older one only when asked; chunks keep their line breaks and a clause-numbered document is
 chunked at its clauses; Field Assist searches manuals with the contextual model by default;
 `manual_lookup` asks for the book's own words and, where a manual has a back-of-book index, offers
-what the index names; a clause-numbered document's answers carry six passages, prose four. Section
-titles in the embedded text and cross-reference following were measured and shelved (P6); the
-next round's ground is ranking. Phone runs owed for P4–P6 (listed in each); the table is under
-"Where the rounds ended".
+what the index names; a clause-numbered document's answers carry six passages, prose four; inside
+each ranking group the question's words are weighed by BM25F, a heading's words three times a
+body word's (P7). Section titles in the embedded text and cross-reference following were measured
+and shelved (P6); fusion, a rule-starts preference, a deeper pool and token max-sim were measured
+and rejected (P7). Phone runs owed for P4–P7 (listed in each); the table is under "Where the
+rounds ended".
 **Track:** Field Assist (B2B): every vault with manuals, and the regulations vertical in particular.
 **Related:** Plans [ED](ED-vault-manual-retrieval.md) / [EJ](EJ-manual-retrieval-fidelity.md)
 (manual retrieval and its evidence gate), [EK](EK-manual-structure-and-figures.md) (structure from
@@ -726,6 +728,88 @@ sentence model and 0.68 / 0.82 on the contextual model, against 0.57 sent today.
 contextual misses; recall (not in the top 30) is 11, which is P5's book-vocabulary hints, owed a
 phone run with the model.
 
+### P7 — Weigh the question's words inside each ranking group (BM25F, headings ×3)
+
+- Since #763 the passages inside a ranking group are ordered by how many of the question's
+  content words they share. A count weighs a word printed on most of a book's pages like the rare
+  word that names the subject, and cannot tell the passage whose heading names the subject from
+  one that mentions it in passing. Ranking was 19 of the 32 contextual misses after P6.
+- **Exit:** the spoken-code and named-clause groups first, exactly as before; the order within
+  groups only, at the shipped candidate depth; nothing lower on either set or model; refusals
+  unchanged; no re-index, no schema change, no model call.
+
+#### What shipped in P7 (2026-10-18)
+
+- **BM25F replaces the shared-word count inside each group** (`VaultRetriever`,
+  `LexicalSupport.TermStatistics`). Two fields: the chunk's text, and its section or clause
+  heading weighted ×3. k1 1.2, b 0.75, the app's own content terms (`LexicalSupport.termCounts`,
+  the counted form of `contentTerms`). Everything ahead of the words is unchanged: the groups, a
+  named clause's offset, another model's rows (Plan EL), and the number of spoken codes matched.
+  The score still breaks ties.
+- **The statistics are derived, not stored.** `DocumentStore.termStatistics(namespaces:)` reads
+  the searched namespaces' stored chunk text and headings once: document frequency per term, chunk
+  count and total field lengths. It holds them in memory, as P6 does for `isClauseNumbered` and P5
+  for the back-of-book index, and reads again only when a namespace's chunk count or text length
+  changes. Totals rather than averages, so namespaces add. The session's factory passes the
+  namespaces it searches (manuals, learnings, photographed manuals). The retriever asks once per
+  retrieval and only when there are candidates and content terms. A retriever built without
+  statistics ranks by the shared-word count, as before.
+- **Not deepened.** The routes still return twice the passages sent. A 30-deep pool reordered the
+  same way measured 0.03 lower as sent on the code book (contextual): the extra candidates are
+  more often wrong than right.
+- **Measured** (Mac runner, device models, the rebuilt answer key: 66 scorable code-book questions,
+  42 single-rule, 24 multi-rule). Hit@1 / hit@4 on four passages; "as sent" is what P6 sends.
+  Newest edition and both editions are identical.
+
+  | | Sentence: P6 → P7 | Contextual (default): P6 → P7 |
+  |---|---|---|
+  | Code book hit@1 / hit@4 | 0.32 / 0.53 → **0.38 / 0.55** | 0.35 / 0.56 → **0.39 / 0.56** |
+  | Code book as sent | 0.58 → 0.58 | 0.61 → 0.61 |
+  | Single rule hit@1 | 0.43 → **0.48** | 0.45 → **0.52** |
+  | Multi-rule hit@1 / hit@4 | 0.12 / 0.33 → 0.21 / 0.38 | 0.17 / 0.38, unchanged |
+  | Code book characters sent per question | 3,629 → 3,576 | 3,696 → 3,568 |
+  | Code book in-scope refused | 1 → 1 | 0 → 0 |
+  | Lennox recall@4 / hit@1 | 0.56 / 0.39 → 0.56 / **0.56** | 0.94 / 0.67 → **1.00 / 0.83** |
+  | Lennox refused, out-of-scope / in-scope | 15 / 6, unchanged | 12 / 0, unchanged |
+
+  No subset is lower on either model. The cheaper variant without statistics (shared words plus
+  half the heading's shared words) came close: code book hit@1 0.38 contextual and 0.33 sentence,
+  Lennox 1.00 / 0.89 contextual and 0.56 / 0.50 sentence. BM25F is ahead on the code book on both
+  models and on Lennox with the sentence model, one question behind on Lennox with the contextual
+  model, for one in-memory table per namespace.
+- **Owed on a phone:** the first retrieval's cost of reading a large book's stored text for its
+  statistics (once per namespace per launch, the same read P6 makes for its shape), and whether
+  answers in a code-book session lead with the rule asked about more often.
+- **Tests:** `HeadingWeightedRankingTests` (9, all invented):
+  - term counts agreeing with `contentTerms`;
+  - statistics counting chunks rather than occurrences, and adding;
+  - a rare shared word outweighing two on every page;
+  - a heading word outweighing the same word in the body, and a zero weight switching it off;
+  - the retriever: the heading that names the subject leading where a count ties, the rare word
+    beating the count, and a spoken code still leading whatever the words weigh;
+  - the store: per-namespace statistics, cached, merged, and moved by a manual added;
+  - a clause-numbered book where the clause whose heading names the subject leads.
+
+#### Round 8: measured and rejected (2026-10-18)
+
+The same harness measured four other orderings at the shipped candidate depth. None ships.
+
+- **Fusion** (reciprocal-rank fusion of the embedding rank with the word or BM25F rank, k 5–60):
+  hit@1 fell or at best held: contextual code book 0.35 → 0.26, sentence code book 0.32 → 0.27,
+  Lennox sentence 0.39 → 0.28, Lennox contextual 0.67 → 0.67. The embedding rank is the weaker
+  signal inside these pools, and fusion gives it half the say.
+- **A rule's starting passage ahead of the first passage that cites it:** no change on any set or
+  model.
+- **A deeper pool** (30 candidates, then reorder): as sent 0.61 → 0.58 on the contextual code
+  book, with BM25F on it 0.58 / 0.38. Depth adds wrong candidates faster than right ones.
+- **Token max-sim** (the contextual model's per-token vectors, late interaction): best on the code
+  book when it breaks word ties (hit@1 0.42), but Lennox 0.67 against BM25F's 0.83, contextual
+  only, and about half a second per question on a Mac to embed the question and 30 passages token
+  by token. Not worth a model call per turn for a mixed result.
+- **A language-model rerank** of the sent passages is the remaining lever. Its estimated ceiling
+  over P7 is about +0.07 hit@1 on the code book. It costs a model call per turn and is left as a
+  decision for the owner (open question 3).
+
 ## Where the rounds ended
 
 Code book: hit@1 / hit@4 over the answer key's scorable questions. Lennox: recall@4 / hit@1, and
@@ -742,9 +826,14 @@ row used the first answer key (68 scorable). From "before P1" on, every row uses
 | P4 contextual default | 0.26 / 0.44 | 0.26 / 0.44 | 0.56 / 0.39, refused 15 / 6 | **0.32 / 0.53**, 0 refused | **0.94 / 0.67, refused 12 / 0** |
 | P5 book's words + index hint | 0.26 / 0.44 | 0.26 / 0.44 | 0.56 / 0.39, refused 15 / 6 | 0.32 / 0.53, 0 refused | 0.94 / 0.67, refused 12 / 0 |
 | P6 six passages for clause-numbered documents | 0.26 / 0.44, **0.50 as sent** | 0.26 / 0.44, **0.50 as sent** | unchanged (four sent) | 0.32 / 0.53, **0.57 as sent** | unchanged (four sent) |
+| P6, rebuilt key ² | 0.32 / 0.53, 0.58 as sent | 0.32 / 0.53, 0.58 as sent | 0.56 / 0.39, refused 15 / 6 | 0.35 / 0.56, 0.61 as sent | 0.94 / 0.67, refused 12 / 0 |
+| P7 BM25F, headings ×3 ² | **0.38 / 0.55**, 0.58 as sent | **0.38 / 0.55**, 0.58 as sent | 0.56 / **0.56**, refused 15 / 6 | **0.39 / 0.56**, 0.61 as sent | **1.00 / 0.83**, refused 12 / 0 |
 
 ¹ From the failure breakdown that preceded P0, where the sentence model measured 0.15 / 0.42 on
 the same set. The contextual model was not run again until P4.
+
+² The answer key was rebuilt for round 8 (66 scorable questions), so P6 was measured again on it
+and P7 is compared with that row, not the rows above.
 
 The simulator's word model, for the record: code book newest 0.18 / 0.44 at P0, and 0.32 / 0.53
 after P3. Lennox started at 0.89 / 0.72 with 14 of 18 refused. Over the rounds, the device's
@@ -756,6 +845,10 @@ guided retry at a few more of those, which only a phone run with the model can c
 From P6 on, a code-book answer carries six passages, so "as sent" is the share of questions
 answered somewhere in what the model is given: 0.57 on the default path (single-rule questions
 0.68), with hit@1 / hit@4 kept on four passages for comparison across rounds.
+
+P7 moved the answering passage to the top, not into the set: on the rebuilt key, hit@1 0.35 →
+0.39 on the default path (0.32 → 0.38 on the sentence model) with "as sent" unchanged, and Lennox
+recall 0.94 → 1.00 with hit@1 0.67 → 0.83.
 
 ## Not in this plan
 
@@ -770,3 +863,5 @@ answered somewhere in what the model is given: 0.57 on the default path (single-
 1. P2's edition recognition: is a title differing only in a year enough, or should a vault author
    always set `edition` (IN P3) before two editions can coexist?
 2. P4: which phone, and with which vaults loaded, for the contextual run?
+3. P7's round left one lever: a language-model rerank of the passages sent, estimated at about
+   +0.07 hit@1 on the code book for a model call per turn. Worth it, and on which model?

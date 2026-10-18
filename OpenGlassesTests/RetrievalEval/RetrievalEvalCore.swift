@@ -76,6 +76,7 @@ enum RetrievalEval {
                        tokenSearch: { token, limit in store.passages(containingToken: token, limit: limit) },
                        clauseSearch: { clause, limit in store.passages(clause: clause, limit: limit) },
                        termSearch: { query, limit in store.passages(sharingTermsWith: query, limit: limit) },
+                       termStatistics: { store.termStatistics(namespaces: nil) },
                        policy: policy)
     }
 
@@ -94,6 +95,7 @@ enum RetrievalEval {
                               tokenSearch: { token, limit in store.passages(containingToken: token, documentIds: ids, limit: limit) },
                               clauseSearch: { clause, limit in store.passages(clause: clause, documentIds: ids, limit: limit) },
                               termSearch: { query, limit in store.passages(sharingTermsWith: query, limit: limit, documentIds: ids) },
+                              termStatistics: { store.termStatistics(namespaces: nil) },
                               policy: policy)
     }
 

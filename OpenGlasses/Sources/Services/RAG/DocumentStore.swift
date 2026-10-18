@@ -747,6 +747,44 @@ final class DocumentStore: ObservableObject {
         return value
     }
 
+    // MARK: - A corpus's word statistics (Plan IV P7)
+
+    private var termStatisticsCache: [String: (stamp: [Int], statistics: LexicalSupport.TermStatistics)] = [:]
+
+    /// The term statistics BM25F ranks a retrieval's candidates with, over every chunk in
+    /// `namespaces` (nil: the whole store). Read once per namespace from the stored text — again
+    /// only when its chunks change — and held in memory: derived, never stored, so no re-index.
+    func termStatistics(namespaces: [String]?) -> LexicalSupport.TermStatistics {
+        (namespaces?.map(Optional.some) ?? [nil]).reduce(LexicalSupport.TermStatistics()) { $0 + termStatistics(namespace: $1) }
+    }
+
+    private func termStatistics(namespace: String?) -> LexicalSupport.TermStatistics {
+        let scope = namespace.map { "JOIN documents d ON c.document_id = d.id WHERE d.namespace = '\(escapedSQL($0))'" } ?? ""
+        // The chunk count and the text's length: a manual added, removed or replaced moves one.
+        let stamp = rows("SELECT COUNT(*), TOTAL(LENGTH(c.text)) FROM doc_chunks c \(scope)") { stmt in
+            [Int(sqlite3_column_int64(stmt, 0)), Int(sqlite3_column_double(stmt, 1))]
+        }.first ?? []
+        let key = namespace ?? "*"
+        if let cached = termStatisticsCache[key], cached.stamp == stamp { return cached.statistics }
+        var statistics = LexicalSupport.TermStatistics()
+        _ = rows("SELECT c.text, c.section FROM doc_chunks c \(scope)") { stmt in
+            statistics.add(text: sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? "",
+                           heading: sqlite3_column_text(stmt, 1).map { String(cString: $0) })
+        }
+        termStatisticsCache[key] = (stamp, statistics)
+        return statistics
+    }
+
+    /// Each row of `sql`, read by `read`.
+    private func rows<T>(_ sql: String, _ read: (OpaquePointer?) -> T) -> [T] {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        var out: [T] = []
+        while sqlite3_step(stmt) == SQLITE_ROW { out.append(read(stmt)) }
+        return out
+    }
+
     /// A document's chunk texts in order, one per line. The overlap between chunks is left in;
     /// both readers above count distinct lines, so a repeated one does no harm.
     private func storedText(documentId: String) -> String {

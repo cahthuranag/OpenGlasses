@@ -37,6 +37,14 @@ struct PlannedStepContext: Sendable, Equatable {
     let step: PlannedStepRecord
 }
 
+/// A goal step the wearer asked the assistant to act on — "Do it" on the Goals screen (Plan IW P2).
+/// The row the router writes then names the goal and the step, so the step's evidence and the
+/// Activity screen's link back to the goal both have something to follow.
+struct GoalStepContext: Sendable, Equatable {
+    let goalID: UUID
+    let stepID: UUID
+}
+
 /// What the router cannot see from the call itself: that it is running inside a scheduled task, or
 /// as one step of a plan. Task-locals, like `ToolInvocationScope`, so neither the provider wires
 /// nor `NativeTool.execute(args:)` change shape to carry them.
@@ -45,6 +53,8 @@ enum ActivityScope {
     @TaskLocal static var scheduledTask: String?
     /// The plan step this call is.
     @TaskLocal static var plannedStep: PlannedStepContext?
+    /// The goal step this call acts on, when the wearer started it from that step.
+    @TaskLocal static var goalStep: GoalStepContext?
 }
 
 // MARK: - Turning a hook's facts into a row
@@ -88,6 +98,7 @@ enum ActivityFeed {
                          invocationOrigin: ToolInvocationOrigin,
                          scheduledTask: String?, plannedStep: PlannedStepContext?,
                          operationID: String, jobThreadID: String?,
+                         goalStep: GoalStepContext? = nil,
                          id: UUID = UUID(), at: Date) -> ActivityEntry? {
         let origin: ActivityOrigin
         if scheduledTask != nil {
@@ -97,7 +108,10 @@ enum ActivityFeed {
         } else {
             origin = Self.origin(for: invocationOrigin)
         }
-        let jobRefs = jobThreadID.map { [ActivityRef.thread($0)] } ?? []
+        let linkRefs = (jobThreadID.map { [ActivityRef.thread($0)] } ?? [])
+            + (goalStep.map { [ActivityRef.goal($0.goalID.uuidString.lowercased())] } ?? [])
+        let goalID = goalStep?.goalID
+        let stepID = goalStep?.stepID
         let readable = readableName(tool)
 
         switch gate {
@@ -108,27 +122,31 @@ enum ActivityFeed {
             return ActivityEntry(
                 id: id, at: at, kind: plannedStep == nil ? .action : .plannedStep,
                 title: words.title, detail: plannedStep?.goal ?? words.detail, tool: tool,
+                goalID: goalID, stepID: stepID,
                 authorisation: scheduledTask == nil ? .asked : .scheduled, origin: origin,
                 outcome: self.outcome(of: outcome),
-                refs: [.operation(operationID)] + jobRefs)
+                refs: [.operation(operationID)] + linkRefs)
 
         case .declined:
             return ActivityEntry(id: id, at: at, kind: .refused,
                                  title: "Didn't use the \(readable) tool: you said no", tool: tool,
+                                 goalID: goalID, stepID: stepID,
                                  authorisation: .refused(reason: RefusalCode.declined), origin: origin,
-                                 outcome: .failed, refs: jobRefs)
+                                 outcome: .failed, refs: linkRefs)
 
         case .refused(let code):
             return ActivityEntry(id: id, at: at, kind: .refused,
                                  title: "Didn't use the \(readable) tool: it wasn't allowed", tool: tool,
+                                 goalID: goalID, stepID: stepID,
                                  authorisation: .refused(reason: code), origin: origin,
-                                 outcome: .failed, refs: jobRefs)
+                                 outcome: .failed, refs: linkRefs)
 
         case .held:
             return ActivityEntry(id: id, at: at, kind: .held,
                                  title: "Your OK to use the \(readable) tool", tool: tool,
+                                 goalID: goalID, stepID: stepID,
                                  authorisation: .heldForYou, origin: origin,
-                                 outcome: .waitingOnYou, refs: jobRefs)
+                                 outcome: .waitingOnYou, refs: linkRefs)
         }
     }
 
@@ -154,6 +172,15 @@ enum ActivityFeed {
                              title: name.isEmpty ? "Ran a scheduled task" : "Ran \(name)",
                              detail: detail, authorisation: .scheduled, origin: .scheduled,
                              outcome: outcome)
+    }
+
+    /// One goal check-in (Plan IW P2). The title is a fixed sentence and the goal travels as a
+    /// link — never its title, which is the wearer's words; the Activity screen looks it up.
+    static func goalCheckIn(goalID: UUID, spoken: Bool, id: UUID = UUID(), at: Date) -> ActivityEntry {
+        ActivityEntry(id: id, at: at, kind: .scheduledRun, title: "Checked in on a goal",
+                      detail: spoken ? "Said it out loud" : "Left it in your digest",
+                      goalID: goalID, authorisation: .scheduled, origin: .scheduled, outcome: .done,
+                      refs: [.goal(goalID.uuidString.lowercased())])
     }
 
     /// Something spoken to the wearer straight away, which therefore never reached the digest.

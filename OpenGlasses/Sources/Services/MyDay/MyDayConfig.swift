@@ -26,6 +26,12 @@ extension Config {
         set { UserDefaults.standard.set(newValue, forKey: "myDayDigestIncluded") }
     }
 
+    /// Plan IW P2: the goals row. On by default — with no goals there is nothing to show.
+    static var myDayGoalsIncluded: Bool {
+        get { storedBool("myDayGoalsIncluded", default: true) }
+        set { UserDefaults.standard.set(newValue, forKey: "myDayGoalsIncluded") }
+    }
+
     static var myDayMorningDeliveryEnabled: Bool {
         get { storedBool("myDayMorningDeliveryEnabled", default: false) }
         set { UserDefaults.standard.set(newValue, forKey: "myDayMorningDeliveryEnabled") }

@@ -384,6 +384,25 @@ struct AIPersonalitySettingsScreen: View {
                 Text("Personas are different characters with their own model + prompt (e.g. a museum docent, a fitness coach). System Prompt tweaks the default voice and behaviour.")
             }
 
+            // MARK: Goals and activity (Plan IW P2)
+            Section {
+                NavigationLink {
+                    GoalsView()
+                } label: {
+                    Label("Goals", systemImage: "target")
+                }
+                NavigationLink {
+                    ActivityView(model: ActivityScreenModel.live(conversations: appState.conversationStore))
+                        .environmentObject(appState)
+                } label: {
+                    Label("Activity", systemImage: "clock.arrow.circlepath")
+                }
+            } header: {
+                Text("Goals and activity")
+            } footer: {
+                Text("Goals are what you're working on, kept with you step by step. Activity is what the assistant has done for you.")
+            }
+
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             // MARK: — Intelligence
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

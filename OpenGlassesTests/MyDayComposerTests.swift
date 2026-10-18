@@ -29,11 +29,13 @@ final class MyDayComposerTests: XCTestCase {
         weather: MyDayWeather? = nil,
         travel: MyDayTravelEstimate? = nil,
         digestUpdates: [MyDayDigestUpdate] = [],
+        goalSteps: [MyDayGoalStep] = [],
         states: [MyDaySourceState] = MyDaySource.allCases.map(MyDaySourceState.available),
         dismissals: [String: String] = [:]
     ) -> MyDayInputs {
         .init(events: events, reminders: reminders, weather: weather, travel: travel,
               digestUpdates: digestUpdates,
+              goalSteps: goalSteps,
               sourceStates: states,
               dismissals: dismissals)
     }
@@ -418,5 +420,80 @@ final class MyDayComposerTests: XCTestCase {
         XCTAssertTrue(spoken.contains("Reminder one"))
         XCTAssertTrue(spoken.contains("Calendar and Weather are unavailable."))
         XCTAssertLessThan(spoken.count, 500)
+    }
+
+    // MARK: - The goals row (Plan IW P2)
+
+    private func goalStep(_ n: Int, _ title: String, due: Date, goal: String = "Clear the garage") -> MyDayGoalStep {
+        MyDayGoalStep(goalID: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", n))!,
+                      stepID: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", 100 + n))!,
+                      goalTitle: goal, stepTitle: title, dueAt: due)
+    }
+
+    func testAGoalRowRanksUnderALeaveByAndAboveTheWeather() throws {
+        let now = date(9)
+        let later = event("dentist", at: 10)
+        let travel = MyDayTravelEstimate(
+            eventID: later.id, eventTitle: "Dentist", destination: "Queen Street Dental",
+            eventStart: later.startDate, travelDuration: 20 * 60, bufferDuration: 10 * 60,
+            leaveAt: date(9, minute: 30), mode: .walking)
+        let snapshot = MyDayComposer(calendar: calendar, maxItems: 10).compose(
+            inputs: inputs(
+                events: [later],
+                weather: .init(summary: "Rain this afternoon.", isDecisionRelevant: true),
+                travel: travel,
+                goalSteps: [goalStep(1, "Book the skip", due: date(23, minute: 59))]
+            ),
+            now: now
+        )
+        let ids = snapshot.items.map(\.id.source)
+        let leaveBy = try XCTUnwrap(ids.firstIndex(of: .travel))
+        let goal = try XCTUnwrap(ids.firstIndex(of: .goals))
+        let weather = try XCTUnwrap(ids.firstIndex(of: .weather))
+        XCTAssertLessThan(leaveBy, goal, "the goal row sits under a leave-by")
+        XCTAssertLessThan(goal, weather, "and above the weather")
+
+        let row = snapshot.items[goal]
+        XCTAssertEqual(row.kind, .preparation)
+        XCTAssertEqual(row.title, "Book the skip")
+        XCTAssertEqual(row.detail, "Due today · Clear the garage")
+        XCTAssertEqual(row.actions, [.open, .complete, .dismiss])
+        XCTAssertEqual(row.id.rawValue,
+                       "00000000-0000-0000-0000-000000000001|00000000-0000-0000-0000-000000000101")
+    }
+
+    func testTomorrowsStepStillComesBeforeTheWeather() {
+        let snapshot = MyDayComposer(calendar: calendar).compose(
+            inputs: inputs(weather: .init(summary: "Rain.", isDecisionRelevant: true),
+                           goalSteps: [goalStep(1, "Sort the shelves", due: date(12, day: 31))]),
+            now: date(9))
+        XCTAssertEqual(snapshot.items.map(\.id.source), [.goals, .weather])
+        XCTAssertEqual(snapshot.items.first?.detail, "Due tomorrow · Clear the garage")
+        XCTAssertEqual(snapshot.items.first?.urgency, .upcoming)
+    }
+
+    func testNoGoalRowWithoutGoalsOrWithNothingDueByTomorrow() {
+        let none = MyDayComposer(calendar: calendar).compose(inputs: inputs(), now: date(9))
+        XCTAssertFalse(none.allItems.contains { $0.id.source == .goals })
+
+        let farOff = MyDayComposer(calendar: calendar).compose(
+            inputs: inputs(goalSteps: [goalStep(1, "Drop the paint at the depot", due: date(12, day: 31) + 2 * 86_400)]),
+            now: date(9))
+        XCTAssertFalse(farOff.allItems.contains { $0.id.source == .goals },
+                       "a step due later in the week is not part of today")
+    }
+
+    func testOnlyTheSoonestStepAcrossGoalsAndAnOverdueOneIsImportant() {
+        let snapshot = MyDayComposer(calendar: calendar).compose(
+            inputs: inputs(goalSteps: [
+                goalStep(1, "Sort the shelves", due: date(17)),
+                goalStep(2, "Buy the paint", due: date(8), goal: "Paint the fence"),
+                goalStep(3, "Book flights", due: date(12, day: 31), goal: "Plan the trip"),
+            ]),
+            now: date(9))
+        let goals = snapshot.allItems.filter { $0.id.source == .goals }
+        XCTAssertEqual(goals.map(\.title), ["Buy the paint"], "one goal row at most: the soonest due")
+        XCTAssertEqual(goals.first?.detail, "Overdue · Paint the fence")
+        XCTAssertEqual(goals.first?.urgency, .important)
     }
 }

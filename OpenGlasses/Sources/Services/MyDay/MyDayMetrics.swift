@@ -10,6 +10,8 @@ enum MyDayActionMetric: String, CaseIterable, Sendable {
     case completeReminder
     case openEvent
     case startDirections
+    /// Plan IW P2: a goal step marked done from its My Day row.
+    case completeGoalStep
 }
 
 enum MyDaySnapshotLatencyBucket: String, CaseIterable, Sendable {

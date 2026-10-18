@@ -14,9 +14,16 @@ class AgentScheduler: ObservableObject {
     /// The activity trail (Plan IW P1): one entry per run, whether or not its result is spoken —
     /// the run history this scheduler otherwise keeps only as `lastRun`. Wired by AppState.
     var activityRecorder: ActivityRecording?
+    /// Plan IW P2: where a goal check-in's digest line is filed. Wired by AppState to the
+    /// notification digest (`DigestSource.goal`).
+    var fileGoalCheckIn: ((GoalCheckInOutput) -> Void)?
+    /// The goals the check-ins read — nil while the store cannot be read, when nothing is
+    /// reconciled or run (an unreadable store reads as no goals, which would drop every check-in).
+    var goals: () -> [Goal]? = { GoalStore.shared.isUnreadable ? nil : GoalStore.shared.goals }
+    var agentModeEnabled: () -> Bool = { Config.agentModeEnabled }
 
     /// Built-in scheduled tasks. Users can add more via quick actions.
-    struct ScheduledTask: Codable, Identifiable {
+    struct ScheduledTask: Codable, Identifiable, Equatable {
         var id: String
         var name: String
         var prompt: String
@@ -27,6 +34,12 @@ class AgentScheduler: ObservableObject {
         var personaId: String?     // Which persona/agent runs this (nil = default/current)
         var modelId: String?       // Specific model override (nil = persona's model or active model)
         var createdBy: String?     // Which agent created this task (for audit trail)
+        /// Nil for an ordinary prompt task. A goal's check-in (Plan IW P2) is typed instead: it
+        /// makes no model call and says only what `GoalPhraser.checkIn(for:)` builds.
+        var kind: ScheduledTaskKind? = nil
+        /// When this task last said something unprompted — a goal check-in's sentence. What the
+        /// daily cap on goal sentences counts.
+        var lastSpokenAt: Date? = nil
 
         static let defaults: [ScheduledTask] = [
             ScheduledTask(
@@ -147,9 +160,12 @@ class AgentScheduler: ObservableObject {
         guard let appState, Config.agentModeEnabled else { return }
         guard !appState.isProcessing, !appState.isListening, !appState.speechService.isSpeaking else { return }
 
-        let tasks = loadTasks()
         let now = Date()
+        // Goal check-ins first: they make no model call, so a slow prompt task cannot hold one up.
+        runGoalCheckIns(now: now, wearerPresent: appState.agentNotificationQueue.canDeliverImmediately)
+        let tasks = loadTasks()
 
+        // `isDue` is false for every typed task, so only prompt tasks reach the model here.
         for task in tasks where ScheduleDuePolicy.isDue(task: task, now: now, calendar: .current) {
 
             // A task's name is the wearer's own instruction to their agent ("check whether the
@@ -169,6 +185,50 @@ class AgentScheduler: ObservableObject {
             // Only run one task per cycle to avoid overwhelming
             break
         }
+    }
+
+    // MARK: - Goal check-ins (Plan IW P2)
+
+    /// The source label a spoken check-in carries through the notification queue.
+    static let goalCheckInSource = "Goal check-in"
+
+    /// Bring the check-in tasks in line with the goals, run the ones that are due, file each in the
+    /// digest, say at most the day's allowance, and record each on the activity trail.
+    ///
+    /// Reached only from the scheduler's own cycle, which runs only while Agent Mode is on — the
+    /// policy checks it again rather than trusting the caller.
+    func runGoalCheckIns(now: Date, wearerPresent: Bool) {
+        guard let goals = goals() else { return }
+        let stored = loadTasks()
+        let current = GoalCheckInSchedule.reconciled(stored, goals: goals, now: now)
+        let result = GoalCheckInPolicy.run(tasks: current, goals: goals,
+                                           agentModeEnabled: agentModeEnabled(),
+                                           wearerPresent: wearerPresent, now: now, calendar: .current)
+        for output in result.outputs {
+            fileGoalCheckIn?(output)
+            if let line = output.spokenLine {
+                appState?.agentNotificationQueue.enqueue(message: line, source: Self.goalCheckInSource,
+                                                         priority: .low)
+            }
+            activityRecorder?.record(ActivityFeed.goalCheckIn(goalID: output.goalID,
+                                                              spoken: output.spokenLine != nil, at: now))
+        }
+        if result.tasks != stored { Self.saveTasks(result.tasks) }
+        if !result.outputs.isEmpty {
+            let spoke = result.outputs.contains { $0.spokenLine != nil }
+            PrivacyLog.agent(.scheduler, .goalCheckInsRan,
+                             reason: PrivacyToken(spoke ? "spoke" : "digestOnly"),
+                             count: result.outputs.count)
+        }
+    }
+
+    /// Keep the stored check-in tasks in line with `goals` — called whenever the goals change, so
+    /// a goal that is finished, set aside or has its check-ins turned off loses its task at once,
+    /// and one given a cadence gains one. Writes only when something changed.
+    static func reconcileGoalCheckIns(goals: [Goal], now: Date = Date()) {
+        let stored = savedTasks()
+        let reconciled = GoalCheckInSchedule.reconciled(stored, goals: goals, now: now)
+        if reconciled != stored { saveTasks(reconciled) }
     }
 
     // MARK: - Execution

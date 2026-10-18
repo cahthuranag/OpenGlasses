@@ -8,6 +8,8 @@ struct ScheduledTasksView: View {
     @State private var tasks: [AgentScheduler.ScheduledTask] = AgentScheduler.savedTasks()
     @State private var searchText = ""
     @State private var showAddTask = false
+    /// For a goal check-in's row: the goal's title and cadence (Plan IW P2).
+    @ObservedObject private var goalStore = GoalStore.shared
 
     private enum TaskGroup: String, CaseIterable {
         case builtIn = "Built-in"
@@ -32,6 +34,8 @@ struct ScheduledTasksView: View {
     private func classify(_ task: AgentScheduler.ScheduledTask) -> TaskGroup {
         let builtInIds = Set(AgentScheduler.ScheduledTask.defaults.map(\.id))
         if builtInIds.contains(task.id) { return .builtIn }
+        // A goal's check-in is the app's own task, set from the goal — not a custom prompt.
+        if task.goalCheckInID != nil { return .builtIn }
         if task.id.hasPrefix("shortcut-") { return .shortcuts }
         return .custom
     }
@@ -43,7 +47,12 @@ struct ScheduledTasksView: View {
                 if !groupTasks.isEmpty {
                     Section {
                         ForEach(groupTasks) { task in
-                            taskRow(task)
+                            if let goalID = task.goalCheckInID {
+                                checkInRow(task, goalID: goalID)
+                                    .deleteDisabled(true)
+                            } else {
+                                taskRow(task)
+                            }
                         }
                         .onDelete { offsets in
                             deleteFromGroup(group, offsets: offsets)
@@ -79,8 +88,46 @@ struct ScheduledTasksView: View {
         .sheet(isPresented: $showAddTask) {
             AddTaskSheet { newTask in
                 tasks.append(newTask)
-                AgentScheduler.saveTasks(tasks)
+                save()
             }
+        }
+    }
+
+    // MARK: - Goal check-in row (Plan IW P2)
+
+    /// A goal's check-in, under its goal's title. Not editable here: the cadence is set on the
+    /// goal, and the row opens it.
+    private func checkInRow(_ task: AgentScheduler.ScheduledTask, goalID: UUID) -> some View {
+        let goal = goalStore.goal(id: goalID)
+        return NavigationLink {
+            GoalPage(goalID: goalID)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: goal?.title ?? task.name)
+                    .font(.body)
+                    .foregroundStyle(Color(.label))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Label {
+                        Text(verbatim: [String(localized: "Goal check-in", comment: "Scheduled Tasks: a goal's check-in."),
+                                        GoalsScreenModel.cadenceLabel(goal?.checkIn ?? .none),
+                                        task.enabled ? nil : String(localized: "paused", comment: "Scheduled Tasks: a paused goal's check-in.")]
+                            .compactMap { $0 }.joined(separator: " · "))
+                    } icon: {
+                        Image(systemName: "target")
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    if let lastRun = task.lastRun {
+                        Text(lastRun, style: .relative)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(Text("Opens the goal, where its check-ins are set."))
         }
     }
 
@@ -162,8 +209,10 @@ struct ScheduledTasksView: View {
         return "Every \(task.intervalMinutes)m"
     }
 
+    /// The prompt tasks as edited here, with the check-in tasks as they are stored now — this
+    /// screen's copy of those may be out of date (Plan IW P2).
     private func save() {
-        AgentScheduler.saveTasks(tasks)
+        AgentScheduler.saveTasks(GoalCheckInSchedule.mergingEdits(tasks, into: AgentScheduler.savedTasks()))
     }
 
     private func deleteFromGroup(_ group: TaskGroup, offsets: IndexSet) {

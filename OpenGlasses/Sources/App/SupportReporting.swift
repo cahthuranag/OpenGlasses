@@ -212,6 +212,9 @@ extension AppState {
         // says, and what the stream delivered. Always present: "not known" is an answer too.
         // A level and three numbers; no device is named.
         phone.append(GlassesVideoLinkReport.line(for: GlassesTransportProbe.shared.snapshot))
+        // Plan IW P2: how many goals are on the go and how long the trail is — counts only.
+        phone.append(GoalActivityReportLine.line(goals: GoalStore.shared.goals,
+                                                 entries: ActivityStore.shared.entries, now: Date()))
         if let job = FieldSessionService.shared.activeSession, job.endedAt == nil {
             phone.append("Job open: \(job.jobReference.map { "Job \($0)" } ?? JobTabModel.noJobNumber)")
         }

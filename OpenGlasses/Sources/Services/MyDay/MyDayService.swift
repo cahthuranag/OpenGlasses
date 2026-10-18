@@ -15,6 +15,8 @@ final class MyDayService: ObservableObject {
     private let weatherSource: any WeatherDaySource
     private let travelSource: (any TravelTimeDaySource)?
     private var digestSource: (any DigestDaySource)?
+    /// Plan IW P2: the goals row. Wired by AppState, like the digest.
+    private var goalsSource: (any GoalsDaySource)?
     private let sourceSelection: () -> MyDaySourceSelection
     private let composer: MyDayComposer
     private let spokenFormatter: MyDaySpokenFormatter
@@ -35,6 +37,7 @@ final class MyDayService: ObservableObject {
         weatherSource: any WeatherDaySource,
         travelSource: (any TravelTimeDaySource)? = nil,
         digestSource: (any DigestDaySource)? = nil,
+        goalsSource: (any GoalsDaySource)? = nil,
         sourceSelection: @escaping () -> MyDaySourceSelection = { .current },
         composer: MyDayComposer = MyDayComposer(),
         spokenFormatter: MyDaySpokenFormatter = MyDaySpokenFormatter(),
@@ -49,6 +52,7 @@ final class MyDayService: ObservableObject {
         self.weatherSource = weatherSource
         self.travelSource = travelSource
         self.digestSource = digestSource
+        self.goalsSource = goalsSource
         self.sourceSelection = sourceSelection
         self.composer = composer
         self.spokenFormatter = spokenFormatter
@@ -98,6 +102,7 @@ final class MyDayService: ObservableObject {
         }
         async let weatherLoad = loadWeather(enabled: selection.weather)
         async let digestLoad = loadDigest(enabled: selection.digest, now: now)
+        async let goalsLoad = loadGoals(enabled: selection.goals)
         let events = await loadEvents(enabled: selection.calendar, from: start, to: end)
         async let travelLoad = loadTravel(
             enabled: selection.travel,
@@ -108,7 +113,9 @@ final class MyDayService: ObservableObject {
         let weather = await weatherLoad
         let travel = await travelLoad
         let digest = await digestLoad
-        let sourceStates = [events?.state, reminders?.state, weather?.state, travel?.state, digest?.state]
+        let goals = await goalsLoad
+        let sourceStates = [events?.state, reminders?.state, weather?.state, travel?.state, digest?.state,
+                            goals?.state]
             .compactMap { $0 }
         let snapshot = refreshComposer.compose(
             inputs: MyDayInputs(
@@ -117,6 +124,7 @@ final class MyDayService: ObservableObject {
                 weather: weather?.value,
                 travel: travel?.value,
                 digestUpdates: digest?.value ?? [],
+                goalSteps: goals?.value ?? [],
                 sourceStates: sourceStates,
                 dismissals: dismissals.active(on: now)
             ),
@@ -150,6 +158,10 @@ final class MyDayService: ObservableObject {
         digestSource = source
     }
 
+    func setGoalsSource(_ source: any GoalsDaySource) {
+        goalsSource = source
+    }
+
     /// Clear one row from today's card — the one entry point, whichever source the row came from.
     ///
     /// A digest update owns its own record and is retired inside the digest, which is the shipped
@@ -181,6 +193,38 @@ final class MyDayService: ObservableObject {
         let title = try await remindersSource.completeReminder(id: id)
         _ = await refresh(now: now, channel: nil)
         return title
+    }
+
+    /// Complete a row's item: a reminder in Reminders, a goal step in the wearer's goals (Plan IW
+    /// P2). Returns the title of what was completed, or nil when it is no longer there.
+    @discardableResult
+    func complete(_ item: MyDayItem, now: Date = Date()) async throws -> String? {
+        switch item.id.source {
+        case .goals:
+            return await completeGoalStep(id: item.id.rawValue, now: now)
+        default:
+            return try await completeReminder(id: item.id.rawValue, now: now)
+        }
+    }
+
+    /// Mark the goal step a goals row names done. `id` is `<goal uuid>|<step uuid>`.
+    @discardableResult
+    func completeGoalStep(id: String, now: Date = Date()) async -> String? {
+        let parts = id.split(separator: Character(MyDayComposer.goalItemSeparator)).map(String.init)
+        guard parts.count == 2, let goalID = UUID(uuidString: parts[0]),
+              let stepID = UUID(uuidString: parts[1]) else { return nil }
+        metrics.record(.action(.completeGoalStep), at: now)
+        let title = goalsSource?.completeGoalStep(goalID: goalID, stepID: stepID, now: now)
+        _ = await refresh(now: now, channel: nil)
+        return title
+    }
+
+    /// The goal a goals row belongs to, for its "open" action.
+    static func goalID(of item: MyDayItem) -> UUID? {
+        guard item.id.source == .goals,
+              let first = item.id.rawValue.split(separator: Character(MyDayComposer.goalItemSeparator)).first
+        else { return nil }
+        return UUID(uuidString: String(first))
     }
 
     func recordAction(_ action: MyDayActionMetric, at date: Date = Date()) {
@@ -223,6 +267,11 @@ final class MyDayService: ObservableObject {
     ) async -> MyDaySourceLoad<MyDayTravelEstimate?>? {
         guard enabled, let travelSource else { return nil }
         return await travelSource.loadTravel(for: events, now: now)
+    }
+
+    private func loadGoals(enabled: Bool) async -> MyDaySourceLoad<[MyDayGoalStep]>? {
+        guard enabled, let goalsSource else { return nil }
+        return await goalsSource.loadGoalSteps()
     }
 
     private func loadDigest(

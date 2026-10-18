@@ -41,6 +41,8 @@ enum LaunchState: String {
     case vaultReceivedBadge = "-OGUITestVaultReceivedBadge"
     /// Dark appearance, for the half of a screenshot pass that is about the dark palette.
     case darkAppearance = "-OGUITestDarkAppearance"
+    /// One goal part-way through and a morning's activity trail (Plan IW P2).
+    case seedGoals = "-OGUITestSeedGoals"
 }
 
 // MARK: - Deferrals

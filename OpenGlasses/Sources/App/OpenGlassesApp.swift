@@ -3908,6 +3908,28 @@ class AppState: ObservableObject, AppStateProtocol {
         }
         notificationDigest.isOffline = { [weak self] in !(self?.reachability.isOnline ?? true) }
         myDayService.setDigestSource(NotificationDigestDaySource(service: notificationDigest))
+        // Plan IW P2: My Day's goals row, and each goal check-in filed in the digest — one item
+        // per goal, so a later check-in replaces the earlier one.
+        myDayService.setGoalsSource(GoalStoreDaySource())
+        agentScheduler.fileGoalCheckIn = { [weak self] output in
+            self?.notificationDigest.ingest(
+                id: output.digestID, source: .goal, title: output.digestTitle, body: output.digestBody,
+                priority: .medium, threadKey: output.digestID)
+        }
+        // Every change to the goals — by voice, on the Goals screen, from My Day, or a subject
+        // erasure — brings the check-in tasks in line at once: a finished goal's task goes, a new
+        // cadence gets one. The scheduler reconciles again before each run in case a write raced.
+        // A store that cannot be read (before the first unlock) reads as no goals, and reconciling
+        // against that would drop every check-in with its run history — so it is skipped. On the
+        // next turn of the run loop, because `$goals` fires before the store has settled.
+        cancellables.append(GoalStore.shared.$goals
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { _ in
+                let store = GoalStore.shared
+                guard !store.isUnreadable else { return }
+                AgentScheduler.reconcileGoalCheckIns(goals: store.goals)
+            })
         agentNotificationQueue.onQueued = { [weak self] notification in
             self?.notificationDigest.ingest(
                 source: .agent, title: notification.message, priority: notification.priority,

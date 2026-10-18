@@ -31,6 +31,57 @@ protocol DigestDaySource: AnyObject {
     func dismissDigestItem(id: String)
 }
 
+/// The goals row's source (Plan IW P2).
+@MainActor
+protocol GoalsDaySource: AnyObject {
+    func loadGoalSteps() async -> MyDaySourceLoad<[MyDayGoalStep]>
+    /// Mark one step done, as the Goals screen's Done does. Returns the step's title, or nil when
+    /// the goal or the step is gone (or the goals cannot be opened).
+    func completeGoalStep(goalID: UUID, stepID: UUID, now: Date) -> String?
+}
+
+/// Reads the wearer's goals from `GoalStore`. Goals are the wearer's own list on this phone, so
+/// there is no permission to ask for; the only way to be unavailable is a file that cannot be read.
+@MainActor
+final class GoalStoreDaySource: GoalsDaySource {
+    private let store: @MainActor () -> GoalStore
+
+    init(store: @escaping @MainActor () -> GoalStore = { GoalStore.shared }) {
+        self.store = store
+    }
+
+    func loadGoalSteps() async -> MyDaySourceLoad<[MyDayGoalStep]> {
+        let store = store()
+        guard !store.isUnreadable else {
+            return .init(value: [], state: .unavailable(.goals, message: "Goals could not be opened."))
+        }
+        return .init(value: Self.nextSteps(store.goals), state: .available(.goals))
+    }
+
+    func completeGoalStep(goalID: UUID, stepID: UUID, now: Date) -> String? {
+        let store = store()
+        guard let goal = store.goal(id: goalID),
+              let index = goal.steps.firstIndex(where: { $0.id == stepID }) else { return nil }
+        let title = goal.steps[index].title
+        let updated = store.update(goalID) { changed in
+            changed.steps[index].state = .done
+            changed.steps[index].doneAt = now
+        }
+        return updated == nil ? nil : title
+    }
+
+    /// Each active goal's next step (`GoalAdvancePolicy.nextStep`) that has a date — its own, else
+    /// the goal's. Pure.
+    static func nextSteps(_ goals: [Goal]) -> [MyDayGoalStep] {
+        goals.compactMap { goal in
+            guard let step = GoalAdvancePolicy.nextStep(in: goal),
+                  let due = step.dueAt ?? goal.dueAt else { return nil }
+            return MyDayGoalStep(goalID: goal.id, stepID: step.id, goalTitle: goal.title,
+                                 stepTitle: step.title, dueAt: due)
+        }
+    }
+}
+
 extension EventKitDayStore: CalendarDaySource {
     func loadEvents(from start: Date, to end: Date) async -> MyDaySourceLoad<[MyDayCalendarEvent]> {
         do {

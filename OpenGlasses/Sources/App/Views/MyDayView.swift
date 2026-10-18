@@ -94,7 +94,25 @@ struct MyDayView: View {
                     MyDaySwipeToClear(label: item.title) {
                         Task { await service.dismiss(item) }
                     } content: {
-                        itemRow(item)
+                        if let goalID = MyDayService.goalID(of: item) {
+                            // A goals row opens its goal (Plan IW P2); its complete button marks
+                            // the step done.
+                            HStack(spacing: 0) {
+                                itemRow(item)
+                                NavigationLink {
+                                    GoalPage(goalID: goalID)
+                                } label: {
+                                    Image(systemName: "chevron.right")
+                                        .frame(width: OGMetrics.minTouchTarget, height: OGMetrics.minTouchTarget)
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(accent)
+                                .accessibilityLabel("Open the goal for \(item.title)")
+                                .padding(.trailing, 8)
+                            }
+                        } else {
+                            itemRow(item)
+                        }
                     }
                 }
             }
@@ -113,7 +131,7 @@ struct MyDayView: View {
 
     private func itemRow(_ item: MyDayItem) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            OGIconTile(systemName: icon(for: item.kind))
+            OGIconTile(systemName: MyDayView.icon(for: item))
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
                     .font(.body.weight(item.urgency >= .important ? .semibold : .regular))
@@ -149,7 +167,7 @@ struct MyDayView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(accent)
-            .accessibilityLabel("Complete \(item.title)")
+            .accessibilityLabel(item.id.source == .goals ? "Mark \(item.title) done" : "Complete \(item.title)")
         } else if item.actions.contains(.directions),
                   let url = service.directionsURL(for: item.id) {
             Button {
@@ -212,23 +230,13 @@ struct MyDayView: View {
 
     private func complete(_ item: MyDayItem) async {
         do {
-            let title = try await service.completeReminder(id: item.id.rawValue)
-            if title == nil { actionMessage = "That reminder is no longer available." }
+            let title = try await service.complete(item)
+            if title == nil { actionMessage = MyDayView.goneMessage(for: item) }
         } catch {
             actionMessage = "The reminder could not be completed."
         }
     }
 
-    private func icon(for kind: MyDayKind) -> String {
-        switch kind {
-        case .event: "calendar"
-        case .leaveBy: "location.fill"
-        case .preparation: "checkmark.seal"
-        case .reminder: "checklist"
-        case .update: "bell.badge"
-        case .weather: "cloud.sun"
-        }
-    }
 
     private func isStale(_ snapshot: MyDaySnapshot) -> Bool {
         guard let refresh = snapshot.nextRefreshAt else { return false }
@@ -327,8 +335,8 @@ struct MyDayHomeView: View {
     /// action that moved to the card did not become a weaker version of itself.
     private func complete(_ item: MyDayItem) async {
         do {
-            let title = try await service.completeReminder(id: item.id.rawValue)
-            if title == nil { actionMessage = "That reminder is no longer available." }
+            let title = try await service.complete(item)
+            if title == nil { actionMessage = MyDayView.goneMessage(for: item) }
         } catch {
             actionMessage = "The reminder could not be completed."
         }
@@ -508,7 +516,7 @@ struct MyDayHomeView: View {
                                 isExpanded = true
                             } label: {
                                 HStack(alignment: .top, spacing: 10) {
-                                    Image(systemName: icon(for: item.kind))
+                                    Image(systemName: MyDayView.icon(for: item))
                                         .foregroundStyle(OGTheme.tintedAccentLabel(accent))
                                         .frame(width: 20)
                                         .accessibilityHidden(true)
@@ -614,7 +622,7 @@ struct MyDayHomeView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(accent)
-            .accessibilityLabel("Complete \(item.title)")
+            .accessibilityLabel(item.id.source == .goals ? "Mark \(item.title) done" : "Complete \(item.title)")
         } else if item.actions.contains(.directions),
                   let url = service.directionsURL(for: item.id) {
             Button {
@@ -663,14 +671,27 @@ struct MyDayHomeView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func icon(for kind: MyDayKind) -> String {
-        switch kind {
-        case .event: "calendar"
-        case .leaveBy: "location.fill"
-        case .preparation: "checkmark.seal"
-        case .reminder: "checklist"
-        case .update: "bell.badge"
-        case .weather: "cloud.sun"
+}
+
+extension MyDayView {
+    /// A row's glyph. A goals row is a `.preparation` row with a goal's own glyph (Plan IW P2), so
+    /// it reads as the wearer's goal rather than as getting ready for an event.
+    static func icon(for item: MyDayItem) -> String {
+        if item.id.source == .goals { return "target" }
+        switch item.kind {
+        case .event: return "calendar"
+        case .leaveBy: return "location.fill"
+        case .preparation: return "checkmark.seal"
+        case .reminder: return "checklist"
+        case .update: return "bell.badge"
+        case .weather: return "cloud.sun"
         }
+    }
+
+    /// What to say when a row's item went away before it could be completed.
+    static func goneMessage(for item: MyDayItem) -> String {
+        item.id.source == .goals
+            ? String(localized: "That step is no longer on your goals.", comment: "My Day: a goal step that went away.")
+            : String(localized: "That reminder is no longer available.", comment: "My Day: a reminder that went away.")
     }
 }

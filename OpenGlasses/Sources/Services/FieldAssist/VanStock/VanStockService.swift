@@ -111,7 +111,7 @@ final class VanStockService {
         switch match(line, in: log) {
         case .one(let item): return composer.check(item, level: log.level(of: item.id))
         case .several(let items): return composer.candidates(items, levels: log.levels)
-        case .none: return composer.notOnVan(line.reference)
+        case .none: return composer.notCarried(line.reference)
         }
     }
 

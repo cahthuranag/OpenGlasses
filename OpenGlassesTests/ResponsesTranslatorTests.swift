@@ -110,6 +110,143 @@ final class ResponsesTranslatorTests: XCTestCase {
         XCTAssertEqual(parsed.toolCalls.first?.arguments?["room"] as? String, "all")
     }
 
+    // MARK: - Message phase: commentary is never the reply
+
+    private func message(_ text: String, phase: String? = nil, id: String? = nil) -> [String: Any] {
+        var item: [String: Any] = ["type": "message", "role": "assistant",
+                                   "content": [["type": "output_text", "text": text]]]
+        if let phase { item["phase"] = phase }
+        if let id { item["id"] = id }
+        return item
+    }
+
+    /// The ChatGPT backend sent a terse planning note as a commentary message and a tester heard
+    /// it spoken as the answer. The answer is the final_answer message alone.
+    func testCommentaryThenFinalAnswerReplyIsTheFinalAnswer() {
+        let output: [[String: Any]] = [
+            ["type": "reasoning", "summary": []],
+            message("Need reply thanks, no tool, brief.", phase: "commentary"),
+            message("De nada! Até à próxima.", phase: "final_answer"),
+        ]
+        let parsed = ResponsesTranslator.parseOutput(["output": output])
+        XCTAssertEqual(parsed.text, "De nada! Até à próxima.")
+        XCTAssertEqual(parsed.withheldCommentary, 1)
+        XCTAssertTrue(parsed.toolCalls.isEmpty)
+        XCTAssertEqual(parsed.rawOutputItems.count, 3, "the commentary item is still kept for replay")
+        XCTAssertEqual(parsed.rawOutputItems[1]["phase"] as? String, "commentary")
+    }
+
+    /// Nothing but commentary: an empty reply — the caller's empty-reply handling, never the note.
+    func testCommentaryOnlyIsAnEmptyReply() {
+        let parsed = ResponsesTranslator.parseOutput(["output": [
+            message("Need reply thanks, no tool, brief.", phase: "commentary"),
+        ]])
+        XCTAssertEqual(parsed.text, "")
+        XCTAssertTrue(parsed.toolCalls.isEmpty)
+        XCTAssertEqual(parsed.withheldCommentary, 1)
+        XCTAssertEqual(parsed.rawOutputItems.count, 1)
+    }
+
+    /// Backends that do not label messages (the public API on older models, fixtures) are
+    /// unchanged — and several unlabelled or answer messages still join as before.
+    func testMessagesWithoutPhaseOrWithAnswerPhasesAreTheReply() {
+        let parsed = ResponsesTranslator.parseOutput(["output": [
+            message("It is sunny."),
+            message("Take a hat.", phase: "partial_answer"),
+            message("Back by six.", phase: "final_answer"),
+        ]])
+        XCTAssertEqual(parsed.text, "It is sunny. Take a hat. Back by six.")
+        XCTAssertEqual(parsed.withheldCommentary, 0)
+        XCTAssertEqual(parsed.text,
+                       TextSegmentJoiner.join(["It is sunny.", "Take a hat.", "Back by six."]),
+                       "the joiner's behaviour for answer messages is unchanged")
+    }
+
+    func testCommentaryPreambleBeforeAFunctionCallKeepsTheCallAndNotThePreamble() {
+        let parsed = ResponsesTranslator.parseOutput(["output": [
+            ["type": "reasoning", "summary": []],
+            message("Checking the weather.", phase: "commentary"),
+            ["type": "function_call", "call_id": "call_1", "name": "get_weather", "arguments": #"{"city":"Porto"}"#],
+        ]])
+        XCTAssertEqual(parsed.text, "")
+        XCTAssertEqual(parsed.toolCalls.map(\.name), ["get_weather"])
+        XCTAssertEqual(parsed.toolCalls.first?.arguments?["city"] as? String, "Porto")
+        XCTAssertEqual(parsed.withheldCommentary, 1)
+        // The replayed turn still carries the commentary item, in order, before its call.
+        let history = ResponsesTranslator.assistantHistoryMessage(text: parsed.text, toolCalls: parsed.toolCalls,
+                                                                  rawOutputItems: parsed.rawOutputItems)
+        let items = ResponsesTranslator.inputItems(history: [history])
+        XCTAssertEqual(items.map { $0["type"] as? String }, ["reasoning", "message", "function_call"])
+        XCTAssertEqual(items[1]["phase"] as? String, "commentary")
+    }
+
+    func testIsCommentaryReadsOnlyAnExplicitCommentaryMessage() {
+        XCTAssertTrue(ResponsesTranslator.isCommentary(message("x", phase: "commentary")))
+        XCTAssertFalse(ResponsesTranslator.isCommentary(message("x", phase: "final_answer")))
+        XCTAssertFalse(ResponsesTranslator.isCommentary(message("x", phase: "partial_answer")))
+        XCTAssertFalse(ResponsesTranslator.isCommentary(message("x")))
+        XCTAssertFalse(ResponsesTranslator.isCommentary(["type": "reasoning", "phase": "commentary"]))
+    }
+
+    /// Deltas of an item announced as commentary never reach the live bubble; the answer's do.
+    /// Matched by item id and by output index, whichever the delta carries.
+    func testStreamAccumulatorWithholdsCommentaryDeltas() {
+        var accumulator = ResponsesTranslator.StreamAccumulator()
+        var streamed = ""
+        for event in SSEEventParser.parse("""
+        event: response.output_item.added
+        data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_c","role":"assistant","phase":"commentary","content":[]}}
+
+        event: response.output_text.delta
+        data: {"type":"response.output_text.delta","item_id":"msg_c","output_index":0,"content_index":0,"delta":"Need reply "}
+
+        event: response.output_text.delta
+        data: {"type":"response.output_text.delta","output_index":0,"delta":"thanks."}
+
+        event: response.output_item.done
+        data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_c","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"Need reply thanks."}]}}
+
+        event: response.output_item.added
+        data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_f","role":"assistant","phase":"final_answer","content":[]}}
+
+        event: response.output_text.delta
+        data: {"type":"response.output_text.delta","item_id":"msg_f","output_index":1,"content_index":0,"delta":"De nada!"}
+
+        event: response.output_item.done
+        data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","id":"msg_f","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"De nada!"}]}}
+
+        event: response.completed
+        data: {"type":"response.completed","response":{"id":"resp_c","usage":{"input_tokens":3,"output_tokens":4}}}
+
+        """) {
+            if let delta = accumulator.consume(event) { streamed += delta }
+        }
+        XCTAssertEqual(streamed, "De nada!")
+        XCTAssertEqual(accumulator.withheldCommentaryDeltas, 2)
+        let final = ResponsesTranslator.parseOutput(accumulator.effectiveResponse ?? [:])
+        XCTAssertEqual(final.text, "De nada!")
+        XCTAssertEqual(final.withheldCommentary, 1)
+        XCTAssertEqual(final.rawOutputItems.count, 2)
+    }
+
+    /// Deltas with no phase announced (older backends, the existing fixtures) all stream.
+    func testStreamAccumulatorPassesDeltasOfUnlabelledItems() {
+        var accumulator = ResponsesTranslator.StreamAccumulator()
+        var streamed = ""
+        for event in SSEEventParser.parse("""
+        event: response.output_item.added
+        data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[]}}
+
+        event: response.output_text.delta
+        data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"Hello"}
+
+        """) {
+            if let delta = accumulator.consume(event) { streamed += delta }
+        }
+        XCTAssertEqual(streamed, "Hello")
+        XCTAssertEqual(accumulator.withheldCommentaryDeltas, 0)
+    }
+
     /// The leniency contract: a no-argument tool call with no call id must not be dropped.
     func testParseOutputToleratesMissingIDAndArguments() {
         let response: [String: Any] = ["output": [
@@ -341,7 +478,8 @@ final class ResponsesTranslatorTests: XCTestCase {
             rawCall,
         ]
         let parsed = ResponsesTranslator.parseOutput(["output": output])
-        XCTAssertEqual(parsed.text, "Looking.")
+        XCTAssertEqual(parsed.text, "", "a commentary preamble is not the reply")
+        XCTAssertEqual(parsed.withheldCommentary, 1)
         XCTAssertEqual(parsed.toolCalls.count, 1)
         XCTAssertEqual(parsed.rawOutputItems.count, 3)
         XCTAssertEqual(parsed.rawOutputItems[0]["encrypted_content"] as? String, "gAAAAB-ciphertext")

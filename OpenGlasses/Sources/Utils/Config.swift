@@ -2306,6 +2306,16 @@ struct Config {
         setSavedGateways(gateways)
     }
 
+    /// Drop a gateway's setup code: its bootstrap token is one-time, so a pairing that ended
+    /// without a device token (cancelled, timed out) stops presenting it.
+    static func clearGatewaySetupCode(gatewayId: String) {
+        var gateways = savedGateways
+        guard let idx = gateways.firstIndex(where: { $0.id == gatewayId }),
+              gateways[idx].setupCode != nil else { return }
+        gateways[idx].setupCode = nil
+        setSavedGateways(gateways)
+    }
+
     /// The stable device id for a gateway, generating + persisting one if absent.
     static func deviceId(forGateway gatewayId: String) -> String {
         var gateways = savedGateways
@@ -2876,6 +2886,7 @@ struct Config {
         "send_via",             // Block multi-channel messaging of PHI
         "openclaw_skills",      // No gateway skill execution with PHI
         "reading_session",      // No passive camera OCR of documents — a "book" can be a chart
+        "manual_capture",      // Paper manuals must not become clinical capture records.
         "team_learning",        // A clinical site's "learning" is a patient note wearing a different hat
     ]
 
@@ -3403,11 +3414,10 @@ struct Config {
 
     /// Whether a delegated remote-agent task may carry a still from the wearer's camera.
     ///
-    /// **Default off, and deliberately distinct from `agentModeEnabled`.** Agent Mode bought
-    /// "dispatch text tasks to my agent"; quietly upgrading that to "and ship frames from a
-    /// head-mounted camera to the same endpoint" is a scope expansion the user never agreed to.
-    /// Default on since Plan EH P1: the gateway's `attachments` schema and its advertised
-    /// per-image ceiling answered the question CN P3 shipped default-off on.
+    /// **Deliberately distinct from `agentModeEnabled`**, so a frame can be withheld while text
+    /// tasks still dispatch. Default **on** since Plan EH P1: the gateway's `attachments` schema and
+    /// its advertised per-image ceiling answered the question CN shipped default-off on. That
+    /// reading has not yet been exercised against a live gateway; EH P4 is the check.
     @UserDefaultsBacked("agentVisionAttachmentEnabled", default: true)
     static var agentVisionAttachmentEnabled: Bool
 
@@ -3494,6 +3504,32 @@ struct Config {
         let stored = UserDefaults.standard.string(forKey: "organizationAccentColor") ?? ""
         let raw = PolicyEnvelope.string(.organizationAccentColor, stored: stored)
         return AppAccent.hexValue(raw) == nil ? nil : raw
+    }
+
+    // MARK: - Tool definitions on demand (Plan IU)
+
+    /// When the request sends only a core set of full tool definitions and the model looks up the
+    /// rest (`ToolExposurePolicy`). The organisation's pin wins; otherwise the wearer's choice,
+    /// Automatic by default. Read once at the start of a turn: a turn in flight keeps its mode.
+    static var toolDefinitionsMode: ToolDefinitionsMode {
+        organizationToolDefinitionsMode ?? userToolDefinitionsMode
+    }
+
+    /// The wearer's own choice, whatever the organisation pinned.
+    static var userToolDefinitionsMode: ToolDefinitionsMode {
+        UserDefaults.standard.string(forKey: "toolDefinitionsMode").flatMap(ToolDefinitionsMode.init(rawValue:))
+            ?? .automatic
+    }
+
+    static func setToolDefinitionsMode(_ mode: ToolDefinitionsMode) {
+        UserDefaults.standard.set(mode.rawValue, forKey: "toolDefinitionsMode")
+    }
+
+    /// The mode the organisation's profile pins, or nil — no profile, or one that does not say.
+    /// Written only by a profile; there is no setter on purpose.
+    static var organizationToolDefinitionsMode: ToolDefinitionsMode? {
+        let stored = UserDefaults.standard.string(forKey: "organizationToolDefinitionsMode") ?? ""
+        return ToolDefinitionsMode(rawValue: PolicyEnvelope.string(.organizationToolDefinitionsMode, stored: stored))
     }
 
     // MARK: - Mic Route (Plan CL P3)
@@ -3856,6 +3892,15 @@ struct Config {
     @UserDefaultsBacked("contextualEmbeddingEnabled", default: false) static var contextualEmbeddingEnabled: Bool
 
     static func setContextualEmbeddingEnabled(_ enabled: Bool) { contextualEmbeddingEnabled = enabled }
+
+    /// Field Assist's manual search uses the contextual model (Plan IV P4) — **on by default**,
+    /// for the vault manuals only; everything else keeps the switch above. Settings › Field Assist
+    /// shows it as "Smarter manual search". Turning it either way re-indexes the vault manuals
+    /// once in the background, and search keeps answering from the old index until the new one
+    /// is complete. Until the model's asset is on the device the manuals stay on the standard
+    /// model.
+    @UserDefaultsBacked("fieldAssistContextualSearchEnabled", default: true)
+    static var fieldAssistContextualSearchEnabled: Bool
 
     // MARK: - Model pricing overrides (Plan AU — Settings editor)
 
@@ -4416,6 +4461,11 @@ struct Config {
     /// this so a lapsed entitlement disables the feature even if the toggle was left on.
     static var fieldAssistActive: Bool {
         fieldAssistEnabled && fieldAssistUnlocked
+    }
+
+    static var capturedManualsPolicy: String {
+        let fallback = FieldAssistEntitlement.shared.check(.capturedManualReview).isGranted ? "reviewToPool" : "jobOnly"
+        return PolicyEnvelope.string(.capturedManualsPolicy, stored: fallback)
     }
 
     /// Preferred vault for new Field Assist sessions (defaults to refrigeration).

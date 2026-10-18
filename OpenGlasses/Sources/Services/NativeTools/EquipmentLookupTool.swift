@@ -177,7 +177,18 @@ final class EquipmentLookupTool: NativeTool {
         let index = session.modelIndex
         guard !index.isEmpty else { return (nil, nil) }
         let matches = index.match(text: text)
-        guard !matches.isEmpty else { return (nil, nil) }
+        guard !matches.isEmpty else {
+            // A member of the vault's series that no listed size claims is still a machine these
+            // manuals are for, and recognising it is what keeps the turn from being refused.
+            guard let member = index.seriesMember(in: text) else { return (nil, nil) }
+            let identity = EquipmentRecognition.identity(
+                stated: member, resolution: EquipmentRecognition.resolve(stated: member, index: index),
+                source: source, nameplateText: nameplateText)
+            guard identity.isSeriesMember, session.activeEquipment?.unitKey != identity.unitKey else {
+                return (nil, nil)
+            }
+            return record(identity)
+        }
         guard matches.count == 1 else {
             let names = matches.map(\.name).joined(separator: ", ")
             return (nil, "That reads as more than one model: \(names). Which one is it?")
@@ -186,6 +197,12 @@ final class EquipmentLookupTool: NativeTool {
         let identity = Self.identity(for: model, in: text, source: source, index: index,
                                      nameplateText: nameplateText)
         if session.activeEquipment?.heading == model.heading { return (nil, nil) }
+        return record(identity)
+    }
+
+    /// Make a recognised machine the session's active equipment — or, on a job already on another
+    /// machine, hold it for the technician's answer (Plan FO P1).
+    private func record(_ identity: EquipmentIdentity) -> (announcement: String?, ambiguity: String?) {
         // Plan FO P1: this is the path where recognition *happens to* the session — a model number
         // said in passing, a nameplate the camera read. On a job that is already on a machine,
         // re-scoping silently leaves the previous job open and still billing, so the flow holds the
@@ -252,7 +269,7 @@ final class EquipmentLookupTool: NativeTool {
         }
         let wholeModel = EquipmentRecognition.normalised(fragment).count >= EquipmentRecognition.minimumNearLength
         let resolution = wholeModel ? EquipmentRecognition.resolve(stated: fragment, index: index) : .unmatched
-        if resolution.model != nil {
+        if resolution.isCovered {
             let identity = EquipmentRecognition.identity(stated: fragment, resolution: resolution, source: .spoken)
             let recorded = session.correctEquipment(identity)
             return Self.announcement(for: recorded)

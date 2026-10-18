@@ -456,6 +456,39 @@ final class DeliveryTests: XCTestCase {
         XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("office@example.com"))
     }
 
+    /// The tester's job 1027: number given and conversation bound after the start, a part logged,
+    /// the job ended, then the report sent. Marking the part sent rewrote the job from the copy its
+    /// log took at the start — no number, in progress, no conversation — so it fell out of the Jobs
+    /// list and the support report called it open. The send must touch the parts and nothing else.
+    func testSendingAfterTheJobEndedKeepsTheJobAsItEnded() async throws {
+        let service = try liveSession(jobReference: nil)
+        service.setJobReference("1027")
+        service.bindConversationThread("thread-1027")
+        _ = service.requestPart(part("14T65"))
+        let staged = DeliveryRequest.make(record: try XCTUnwrap(service.workRecord()),
+                                          channel: .email, recipients: ["office@example.com"],
+                                          attachments: [])
+        let ended = try service.endSession(outcome: .resolved)
+        XCTAssertFalse(staged.partsRequestIds.isEmpty, "the case under test: a send that carries parts")
+
+        service.completeDelivery(staged, outcome: .sent)
+
+        let stored = try XCTUnwrap(service.history.first { $0.id == ended.id })
+        XCTAssertEqual(stored.jobReference, "1027")
+        XCTAssertEqual(stored.outcome, .resolved)
+        XCTAssertNotNil(stored.endedAt, "an ended job stays ended, so the Jobs list still shows it")
+        XCTAssertEqual(stored.conversationThreadId, "thread-1027")
+        XCTAssertEqual(stored.partsRequests.first?.status, .sent)
+
+        let url = tempRoot.appendingPathComponent("sessions/\(ended.id)/session.json")
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let onDisk = try decoder.decode(FieldSession.self, from: Data(contentsOf: url))
+        XCTAssertEqual(onDisk.jobReference, "1027")
+        XCTAssertNotNil(onDisk.endedAt, "and the next launch does not bring it back as an open job")
+        XCTAssertEqual(onDisk.partsRequests.first?.status, .sent)
+    }
+
     func testADismissedComposerLeavesTheRecordExactlyWhereItWas() async throws {
         let service = try liveSession()
         let queue = OfflineQueue(path: tempRoot.appendingPathComponent("queue.sqlite"))

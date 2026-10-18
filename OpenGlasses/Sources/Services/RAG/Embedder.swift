@@ -19,6 +19,40 @@ struct Embedder {
         self.backend = Embedder.selectBackend(language: language)
     }
 
+    /// Which model a caller wants, whatever the app-wide switch says (Plan IV P4).
+    enum Preference: Equatable {
+        /// The NLEmbedding model: sentence, else the word average.
+        case standard
+        /// The contextual model when its asset is on the device; the standard model otherwise.
+        case contextual
+    }
+
+    init(language: NLLanguage = .english, preference: Preference) {
+        self.language = language
+        switch preference {
+        case .standard:
+            self.backend = NLEmbeddingBackend(language: language)
+        case .contextual:
+            self.backend = NLContextualBackend.ready(for: language) ?? NLEmbeddingBackend(language: language)
+        }
+    }
+
+    /// A given backend — the seam tests use to stand in two models with distinct versions.
+    init(language: NLLanguage = .english, backend: EmbeddingBackend?) {
+        self.language = language
+        self.backend = backend
+    }
+
+    /// The embedder Field Assist indexes and searches a vault's manuals with: the contextual model
+    /// while "Smarter manual search" is on (the default) and its asset is on the device, the
+    /// standard model otherwise. Every other user of embeddings keeps `Embedder()`.
+    static func fieldAssist(language: NLLanguage = .english) -> Embedder {
+        Embedder(language: language, preference: Config.fieldAssistContextualSearchEnabled ? .contextual : .standard)
+    }
+
+    /// Whether the contextual model's asset is on the device.
+    static var contextualModelAvailable: Bool { NLContextualBackend.ready(for: .english) != nil }
+
     /// The contextual model when enabled and its asset is present; otherwise the NLEmbedding baseline.
     private static func selectBackend(language: NLLanguage) -> EmbeddingBackend? {
         if Config.contextualEmbeddingEnabled, let contextual = NLContextualBackend.ready(for: language) {
@@ -71,5 +105,16 @@ struct Embedder {
     static func prepareContextualAssetsIfEnabled(language: NLLanguage = .english) async {
         guard Config.contextualEmbeddingEnabled else { return }
         await NLContextualBackend.prepareAssets(for: language)
+    }
+
+    /// Ask for the contextual model's asset for Field Assist's manual search, when it's switched
+    /// on and the asset isn't here. Returns whether the asset is on the device afterwards; a failed
+    /// or offline request returns false and the manuals stay on the standard model.
+    @discardableResult
+    static func prepareFieldAssistAssets(language: NLLanguage = .english) async -> Bool {
+        guard Config.fieldAssistContextualSearchEnabled else { return false }
+        if NLContextualBackend.ready(for: language) != nil { return true }
+        await NLContextualBackend.prepareAssets(for: language)
+        return NLContextualBackend.ready(for: language) != nil
     }
 }

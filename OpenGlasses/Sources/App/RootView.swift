@@ -3,6 +3,8 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject var appState: AppState
     @State private var showLaunchScreen = true
+    @ObservedObject private var manualCapture = ManualCaptureService.shared
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -35,6 +37,18 @@ struct RootView: View {
         // High-impact action confirmation (prompt-injection backstop). Presented whenever a
         // destructive tool call is awaiting the user's approval in agent mode.
         .toolConfirmation(coordinator: appState.toolConfirmationCoordinator)
+        .sheet(item: $manualCapture.request) { request in
+            if CapturedManualCatalog.mayUse {
+                ManualDocumentCamera(request: request).ignoresSafeArea()
+            } else {
+                Text("Manual capture is unavailable under the current policy.")
+                    .onAppear { manualCapture.cancel() }
+            }
+        }
+        .task { await manualCapture.resume() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await manualCapture.resume() } }
+        }
     }
 }
 

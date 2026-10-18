@@ -274,7 +274,9 @@ final class VanStockToolTests: XCTestCase {
     func testACheckThatMatchesNothingSaysSo() async throws {
         _ = try await run(["action": "load", "description": "Igniter", "quantity": 1])
         let answer = try await run(["action": "check", "description": "thermostat"])
-        XCTAssertEqual(answer, "Nothing on the van list matches thermostat. Nothing was changed.")
+        XCTAssertTrue(answer.hasPrefix("Nothing on the van list matches thermostat, by part number or by name"), answer)
+        XCTAssertTrue(answer.contains("do not look it up again"), answer)
+        XCTAssertTrue(answer.hasSuffix("Nothing was changed."), answer)
     }
 
     func testLowListsWhatHasRunOut() async throws {

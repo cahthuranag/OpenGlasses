@@ -71,6 +71,25 @@ targets:
         buildPhase: resources
       - path: Contracts/fixtures/recording-receipt-published-v1.json
         buildPhase: resources
+      # Plan IF P0: shared canonical source, signed report and negative corpus.
+      - path: Contracts/fixtures/captured-manual-v1.json
+        buildPhase: resources
+      - path: Contracts/fixtures/captured-manual-text-v1.md
+        buildPhase: resources
+      - path: Contracts/fixtures/captured-manual-pages-v1.pdf
+        buildPhase: resources
+      - path: Contracts/fixtures/captured-manual-digest-v1.txt
+        buildPhase: resources
+      - path: Contracts/fixtures/captured-manual-negative-v1.json
+        buildPhase: resources
+      - path: Contracts/fixtures/captured-manual-report-v1.json
+        buildPhase: resources
+      - path: Contracts/fixtures/captured-manual-evidence-v1.json
+        buildPhase: resources
+      - path: Contracts/fixtures/captured-manual-receipt-pending-v1.json
+        buildPhase: resources
+      - path: Contracts/fixtures/captured-manual-receipt-full-v1.json
+        buildPhase: resources
       # The report contract's golden report, record, manifest and receipts.
       - path: Contracts/fixtures/office-report-v1.json
         buildPhase: resources

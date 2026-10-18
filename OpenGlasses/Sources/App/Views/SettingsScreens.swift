@@ -251,6 +251,38 @@ struct VoiceTriggersSettingsScreen: View {
 // MARK: - AI & Personality
 
 /// Models, personas, system prompt, and behaviour settings (owner-only; hidden in Simple Mode).
+/// When the assistant gets every tool's full definition with each request, and when it gets a
+/// core set and looks the rest up (Plan IU, `ToolExposurePolicy`). Hidden with the rest of AI &
+/// Personality in Simple Mode.
+struct ToolDefinitionsSettingsSection: View {
+    let presentation: SettingPresentation
+    @State private var mode = Config.userToolDefinitionsMode
+
+    var body: some View {
+        if presentation.isShown {
+            Section {
+                if presentation.isEditable {
+                    Picker("Look Up Tools on Demand", selection: $mode) {
+                        ForEach(ToolDefinitionsMode.allCases) { option in
+                            Text(option.label).tag(option)
+                        }
+                    }
+                    .onChange(of: mode) { _, newValue in
+                        Config.setToolDefinitionsMode(newValue)
+                    }
+                } else {
+                    LabeledContent("Look Up Tools on Demand", value: Config.toolDefinitionsMode.label)
+                    ManagedLockNote(organization: ManagedLockReason.organization)
+                }
+            } header: {
+                Text("Tools")
+            } footer: {
+                Text("With a model that has little room, the assistant gets full instructions for everyday tools and looks up any other tool when it needs it, leaving more room for your conversation. Automatic does this only when the instructions for every tool would fill more than a tenth of the model's room. Always does it with every model. Never sends every tool's instructions with every request.")
+            }
+        }
+    }
+}
+
 struct AIPersonalitySettingsScreen: View {
     @ObservedObject var appState: AppState
     /// Plan HA C4: a page whose only control the organisation pinned is not linked.
@@ -437,6 +469,10 @@ struct AIPersonalitySettingsScreen: View {
             } footer: {
                 Text("Intent Classifier ignores nearby chatter so the AI only responds when you're talking to it. Memory and History let the AI remember who you are across sessions. Smart Routing picks the right model for the task; Agentic Features let the AI take multi-step actions on its own.")
             }
+
+            // Plan IU: on-demand tool definitions. Pinned by an organisation's profile, the row is
+            // hidden from the technician and read-only for the administrator.
+            ToolDefinitionsSettingsSection(presentation: adminGate.presentation(.key(.organizationToolDefinitionsMode)))
 
         }
         .navigationTitle("AI & Personality")

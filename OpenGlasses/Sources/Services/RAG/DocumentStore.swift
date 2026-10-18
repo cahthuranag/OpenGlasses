@@ -43,6 +43,15 @@ final class DocumentStore: ObservableObject {
         /// nil for a practice entry. Set by the same factory; `ModelScope` scores a learning by this
         /// rather than by scanning its prose (contract §7.2).
         var subjectModelToken: String?
+        /// Supplemental label only; `page` remains the physical capture index.
+        var printedPage: Int?
+        /// The edition this passage's document is, set by the retrieval factory when a turn reaches
+        /// past the newest edition (Plan IV P2). The store never sets it.
+        var editionLabel: String?
+        /// Set by a clause search only (Plan IN P3a): how this chunk relates to the clause it was
+        /// found for. Carried rather than recomputed because a continuation chunk need not print
+        /// the clause number at all.
+        var clauseMatch: ClauseReference.Match?
     }
 
     // MARK: - Published
@@ -56,6 +65,9 @@ final class DocumentStore: ObservableObject {
     private let chunker: DocumentChunker
     private let embedder: Embedder
     private let minSimilarity: Float = 0.05
+    /// Captures are never a global/personal corpus. Only the Field Assist source factory grants
+    /// access to an explicitly selected, currently eligible capture namespace.
+    var capturedNamespaceAllowed: (String) -> Bool = { _ in false }
     private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     // MARK: - Init
@@ -84,6 +96,7 @@ final class DocumentStore: ObservableObject {
                 text: String,
                 sourceType: String = "text",
                 namespace: String = "global",
+                pageLabels: [PageLabel] = [],
                 progress: ((Int, Int) -> Void)? = nil) async -> DocumentRef? {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
@@ -98,16 +111,21 @@ final class DocumentStore: ObservableObject {
         insertDocument(id: docId, name: safeName, sourceType: sourceType, namespace: namespace,
                        createdAt: now, chunkCount: chunks.count, charCount: cleaned.count)
 
-        let versionTag = embedder.version.tag
+        // A vault manual is embedded with the model its vault is served by (Plan IV P4), so it
+        // never joins an index another model built; everything else keeps the store's embedder.
+        let chunkEmbedder = ingestEmbedder(namespace: namespace)
+        let versionTag = chunkEmbedder.version.tag
+        let started = Date()
         for chunk in chunks {
-            let embedding = embedder.embed(chunk.text)
+            let embedding = chunkEmbedder.embed(chunk.text)
             insertChunk(documentId: docId, index: chunk.index, text: chunk.text,
                         embedding: embedding.map(vecToData), page: chunk.page, section: chunk.section,
                         kind: chunk.kind, figure: chunk.figure,
-                        createdAt: now, version: embedding != nil ? versionTag : nil)
+                        createdAt: now, version: embedding != nil ? versionTag : nil, location: chunk)
             progress?(chunk.index + 1, chunks.count)
             await Task.yield()
         }
+        if !pageLabels.isEmpty { setPageLabels(pageLabels, documentId: docId) }
 
         refresh()
         // The document's name is its title — of a scanned letter, a report, a prescription — and
@@ -115,6 +133,11 @@ final class DocumentStore: ObservableObject {
         // came out of how much text.
         PrivacyLog.store(.ragDocuments, .ingested, count: chunks.count,
                          characters: cleaned.count, detail: PrivacyToken(sourceType))
+        if Self.isVaultNamespace(namespace) {
+            PrivacyLog.store(.ragDocuments, .indexed, count: chunks.count,
+                             detail: PrivacyToken(Self.modelClass(chunkEmbedder.modelId)),
+                             durationMs: Int(Date().timeIntervalSince(started) * 1000))
+        }
         return documents.first { $0.id == docId }
     }
 
@@ -128,11 +151,25 @@ final class DocumentStore: ObservableObject {
     func query(_ text: String, limit: Int = 4, namespace: String? = nil, documentIds: [String]? = nil,
                kinds: Set<DocumentChunker.Kind> = [.prose]) -> [Passage] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let qv = embedder.embed(trimmed) else { return [] }
+        guard !trimmed.isEmpty else { return [] }
+        let rows = fetchChunks(namespace: namespace, documentIds: documentIds).filter { kinds.contains($0.kind) }
+        let vaultQuery = QueryVectors(text: trimmed, store: self)
+        let qv = rows.contains { !Self.isVaultNamespace($0.namespace) } ? embedder.embed(trimmed) : nil
 
         let current = embedder.version
-        let rows = fetchChunks(namespace: namespace, documentIds: documentIds).filter { kinds.contains($0.kind) }
         let scored = rows.compactMap { row -> Passage? in
+            // A vault manual's chunk is compared with the question embedded by the model that
+            // embedded the chunk (Plan IV P4) and is never re-embedded here: its re-index runs in
+            // the background into a separate column and swaps in whole.
+            if Self.isVaultNamespace(row.namespace) {
+                guard let emb = row.embedding, let q = vaultQuery.vector(forVersionTag: row.embeddingVersion) else { return nil }
+                let sim = Embedder.cosineSimilarity(q, emb)
+                guard sim > minSimilarity else { return nil }
+                return Passage(documentId: row.documentId, documentName: row.documentName,
+                               chunkIndex: row.chunkIndex, text: row.text, similarity: sim,
+                               page: row.page, section: row.section, kind: row.kind, figure: row.figure)
+            }
+            guard let qv else { return nil }
             // A chunk embedded by a different model can't be compared against `qv`. Re-embed it from
             // its text with the active model and persist the result, so the store self-heals after a
             // model swap (lazy migration). Compatible chunks use their stored vector as-is.
@@ -156,6 +193,7 @@ final class DocumentStore: ObservableObject {
                            chunkIndex: row.chunkIndex, text: row.text, similarity: sim,
                            page: row.page, section: row.section, kind: row.kind, figure: row.figure)
         }
+        vaultQuery.logTimings()
         return Array(scored.sorted { $0.similarity > $1.similarity }.prefix(limit))
     }
 
@@ -174,6 +212,91 @@ final class DocumentStore: ObservableObject {
                     text: $0.text, similarity: 0, page: $0.page, section: $0.section,
                     kind: $0.kind, figure: $0.figure)
         }
+    }
+
+    /// Passages sharing the most [[LexicalSupport]] content terms with `text`, most first, ties
+    /// broken by embedding similarity — the lexical route beside `query(_:)`, for the passage an
+    /// embedder cannot see. A sentence model reads a long run of manual text poorly: on the device
+    /// the Lennox flame-sensor section, which uses nearly every word of "how to test the flame
+    /// sensor readings or signal", scored below a page of diagnostic-code rows (build 497).
+    ///
+    /// Prose only, like `query`, and a passage must share at least one term. Its `similarity` is
+    /// the real cosine where the stored vector is current (0 otherwise, which the next `query`
+    /// heals), so the evidence gate judges it exactly as it judges a semantic hit.
+    func passages(sharingTermsWith text: String, limit: Int = 8, namespace: String? = nil,
+                  documentIds: [String]? = nil,
+                  kinds: Set<DocumentChunker.Kind> = [.prose]) -> [Passage] {
+        let terms = LexicalSupport.contentTerms(text)
+        guard !terms.isEmpty else { return [] }
+        let current = embedder.version
+        let rows = fetchChunks(namespace: namespace, documentIds: documentIds).filter { kinds.contains($0.kind) }
+        let vaultQuery = QueryVectors(text: text, store: self)
+        let qv = rows.contains { !Self.isVaultNamespace($0.namespace) } ? embedder.embed(text) : nil
+        let scored = rows
+            .compactMap { row -> (row: ChunkRow, shared: Int, similarity: Float)? in
+                let shared = LexicalSupport.sharedTermCount(text: row.text, queryTerms: terms)
+                guard shared > 0 else { return nil }
+                var similarity: Float = 0
+                if Self.isVaultNamespace(row.namespace) {
+                    if let vector = row.embedding, let q = vaultQuery.vector(forVersionTag: row.embeddingVersion) {
+                        similarity = Embedder.cosineSimilarity(q, vector)
+                    }
+                } else if let qv, let vector = row.embedding,
+                   EmbeddingMigrationPolicy.action(stored: EmbeddingVersion(tag: row.embeddingVersion),
+                                                   current: current) == .reuse {
+                    similarity = Embedder.cosineSimilarity(qv, vector)
+                }
+                return (row, shared, similarity)
+            }
+            .sorted { $0.shared != $1.shared ? $0.shared > $1.shared : $0.similarity > $1.similarity }
+        return scored.prefix(max(limit, 1)).map {
+            Passage(documentId: $0.row.documentId, documentName: $0.row.documentName,
+                    chunkIndex: $0.row.chunkIndex, text: $0.row.text, similarity: $0.similarity,
+                    page: $0.row.page, section: $0.row.section, kind: $0.row.kind, figure: $0.row.figure)
+        }
+    }
+
+    /// Passages that carry a clause number (Plan IN P3a), the clause's own text first: chunks that
+    /// start it, then chunks that start a subclause of it, then the chunk after each of those and
+    /// the rest of its section, then the chunks that cite it — within a group, the chunk that holds
+    /// the number earliest first (see `ClauseReference.offset`), then document order.
+    ///
+    /// The order is the point. A code book cites its busiest clauses dozens of times, and the
+    /// token search's document order would fill the limit with the contents page and early
+    /// cross-references before it reached the clause.
+    func passages(clause: String, namespace: String? = nil,
+                  documentIds: [String]? = nil, limit: Int = 8) -> [Passage] {
+        guard !clause.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+        let rows = fetchChunks(namespace: namespace, documentIds: documentIds)
+        var matched: [String: (row: ChunkRow, match: ClauseReference.Match)] = [:]
+        for row in rows {
+            if let match = ClauseReference.match(clause, in: row.text, section: row.section) {
+                matched[row.id] = (row, match)
+            }
+        }
+        // The chunk after one that starts the clause carries its text on, whether or not it prints
+        // the number again.
+        let byPosition = Dictionary(rows.map { ("\($0.documentId)#\($0.chunkIndex)", $0) },
+                                    uniquingKeysWith: { first, _ in first })
+        for (_, hit) in matched where hit.match >= .startsSubclause {
+            guard let next = byPosition["\(hit.row.documentId)#\(hit.row.chunkIndex + 1)"] else { continue }
+            if (matched[next.id]?.match ?? .cites) <= .cites { matched[next.id] = (next, .continues) }
+        }
+        return matched.values
+            .sorted {
+                if $0.match != $1.match { return $0.match > $1.match }
+                let a = ClauseReference.offset(of: [clause], in: $0.row.text)
+                let b = ClauseReference.offset(of: [clause], in: $1.row.text)
+                if a != b { return a < b }
+                return ($0.row.documentName, $0.row.chunkIndex) < ($1.row.documentName, $1.row.chunkIndex)
+            }
+            .prefix(max(limit, 1))
+            .map {
+                Passage(documentId: $0.row.documentId, documentName: $0.row.documentName,
+                        chunkIndex: $0.row.chunkIndex, text: $0.row.text, similarity: 0, page: $0.row.page,
+                        section: $0.row.section, kind: $0.row.kind, figure: $0.row.figure,
+                        clauseMatch: $0.match)
+            }
     }
 
     /// Chunks whose stored caption is `label` ("Figure 58"), case-insensitively — how a figure a
@@ -221,6 +344,7 @@ final class DocumentStore: ObservableObject {
     /// chunk before it has no entry here. That is why the sheet pages over these rather than over
     /// 1…N: offering a page the store holds nothing for would show a blank.
     func pageTexts(documentId: String) -> [(page: Int, text: String)] {
+        if documentId.hasPrefix("captured:"), !capturedNamespaceAllowed(documentId) { return [] }
         let sql = """
         SELECT page, text FROM doc_chunks
         WHERE document_id = '\(escapedSQL(documentId))' AND page IS NOT NULL
@@ -286,6 +410,7 @@ final class DocumentStore: ObservableObject {
 
     func forget(documentId: String) {
         let id = escapedSQL(documentId)
+        exec("DELETE FROM doc_page_labels WHERE document_id = '\(id)'")
         exec("DELETE FROM doc_chunks WHERE document_id = '\(id)'")
         exec("DELETE FROM documents WHERE id = '\(id)'")
         refresh()
@@ -352,6 +477,7 @@ final class DocumentStore: ObservableObject {
 
         let chunks = chunkCount(documentId: documentId)
         try transaction {
+            try execChecked("DELETE FROM doc_page_labels WHERE document_id = '\(id)'")
             try execChecked("DELETE FROM doc_chunks WHERE document_id = '\(id)'")
             try execChecked("DELETE FROM documents WHERE id = '\(id)' AND namespace = '\(escapedSQL(namespace))'")
             let remainingDocuments = storedNamespace(documentId: documentId) == nil ? 0 : 1
@@ -409,6 +535,7 @@ final class DocumentStore: ObservableObject {
     }
 
     func clearAll() {
+        exec("DELETE FROM doc_page_labels")
         exec("DELETE FROM doc_chunks")
         exec("DELETE FROM documents")
         refresh()
@@ -420,6 +547,7 @@ final class DocumentStore: ObservableObject {
     /// must never be swept by a personal-documents clear.
     func clear(namespace: String) {
         let ns = escapedSQL(namespace)
+        exec("DELETE FROM doc_page_labels WHERE document_id IN (SELECT id FROM documents WHERE namespace = '\(ns)')")
         exec("DELETE FROM doc_chunks WHERE document_id IN (SELECT id FROM documents WHERE namespace = '\(ns)')")
         exec("DELETE FROM documents WHERE namespace = '\(ns)'")
         refresh()
@@ -450,13 +578,13 @@ final class DocumentStore: ObservableObject {
     /// references, study decks) may list. A learning is the organisation's, read only through
     /// retrieval with its disclosure, never picked from a personal list.
     func listExcludingTeamLearnings() -> [DocumentRef] {
-        documents.filter { !Self.isLearningNamespace($0.namespace) }
+        documents.filter { !Self.isLearningNamespace($0.namespace) && !$0.namespace.hasPrefix("captured:") }
     }
 
     /// The personal documents surface: neither a vault's manuals nor a team-learning corpus. Both
     /// are managed from Field Assist, and neither is the wearer's to delete from a document list.
     func personalDocuments() -> [DocumentRef] {
-        documents.filter { !Self.isVaultNamespace($0.namespace) && !Self.isLearningNamespace($0.namespace) }
+        documents.filter { !Self.isVaultNamespace($0.namespace) && !Self.isLearningNamespace($0.namespace) && !$0.namespace.hasPrefix("captured:") }
     }
 
     /// Store `text` as exactly one chunk under a caller-chosen id, replacing whatever that id held
@@ -484,6 +612,42 @@ final class DocumentStore: ObservableObject {
         return documents.first { $0.id == documentId }
     }
 
+    /// IF's page-aware ingestion uses a deterministic source id. Prepare before the SQL
+    /// transaction, recheck cancellation after each yield, then publish all rows atomically.
+    @discardableResult
+    func ingestPages(documentId: String, name: String, pages: [(number: Int, text: String)],
+                     sourceType: String, namespace: String,
+                     stillAllowed: () -> Bool) async -> Bool {
+        guard let db, stillAllowed(), !Task.isCancelled else { return false }
+        let chunks = chunker.chunkPages(pages)
+        var vectors: [Data?] = []
+        for chunk in chunks {
+            guard stillAllowed(), !Task.isCancelled else { return false }
+            vectors.append(embedder.embed(chunk.text).map(vecToData))
+            await Task.yield()
+        }
+        guard stillAllowed(), !Task.isCancelled,
+              sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK else { return false }
+        var committed = false
+        defer { if !committed { sqlite3_exec(db, "ROLLBACK", nil, nil, nil) } }
+        exec("DELETE FROM doc_chunks WHERE document_id = '\(escapedSQL(documentId))'")
+        let now = Date().timeIntervalSince1970
+        insertDocument(id: documentId, name: name, sourceType: sourceType, namespace: namespace,
+                       createdAt: now, chunkCount: chunks.count, charCount: pages.reduce(0) { $0 + $1.text.count })
+        guard sqlite3_errcode(db) == SQLITE_OK || sqlite3_errcode(db) == SQLITE_DONE else { return false }
+        for (index, chunk) in chunks.enumerated() {
+            insertChunk(documentId: documentId, index: index, text: chunk.text, embedding: vectors[index],
+                        page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
+                        createdAt: now, version: vectors[index] == nil ? nil : embedder.version.tag,
+                        location: chunk)
+            guard sqlite3_errcode(db) == SQLITE_OK || sqlite3_errcode(db) == SQLITE_DONE else { return false }
+        }
+        guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { return false }
+        committed = true
+        refresh()
+        return true
+    }
+
     // MARK: - Embedding migration
 
     /// The version stamp the active embedder produces. Chunks tagged differently are "outdated" and
@@ -500,7 +664,7 @@ final class DocumentStore: ObservableObject {
     var outdatedChunkCount: Int {
         let current = embedder.version
         return fetchChunks(namespace: nil, documentIds: nil).reduce(0) { acc, row in
-            row.embedding == nil ? acc
+            row.embedding == nil || Self.isVaultNamespace(row.namespace) ? acc
                 : EmbeddingMigrationPolicy.action(stored: EmbeddingVersion(tag: row.embeddingVersion),
                                                   current: current) == .reembed ? acc + 1 : acc
         }
@@ -512,8 +676,9 @@ final class DocumentStore: ObservableObject {
     @discardableResult
     func reindexOutdated(progress: ((Int, Int) -> Void)? = nil) async -> Int {
         let current = embedder.version
+        // A vault's manuals have their own model and their own re-index (`upgradeVaultEmbeddings`).
         let rows = fetchChunks(namespace: nil, documentIds: nil)
-            .filter { $0.embedding != nil &&
+            .filter { $0.embedding != nil && !Self.isVaultNamespace($0.namespace) &&
                 EmbeddingMigrationPolicy.action(stored: EmbeddingVersion(tag: $0.embeddingVersion),
                                                 current: current) == .reembed }
         var done = 0
@@ -550,6 +715,428 @@ final class DocumentStore: ObservableObject {
         sqlite3_bind_text(stmt, 2, versionTag, -1, SQLITE_TRANSIENT)
         sqlite3_bind_text(stmt, 3, chunkId, -1, SQLITE_TRANSIENT)
         _ = sqlite3_step(stmt)
+    }
+
+    // MARK: - A document's own subject index (Plan IV P5)
+
+    private var indexCache: [String: (chunks: Int, index: BackOfBookIndex?)] = [:]
+
+    /// The document's back-of-book index, parsed from its stored text, or nil when it has none.
+    /// Parsed once per document (and again if its chunks change), and held in memory only: an
+    /// index's entries are the publisher's text, read where they are stored and never copied.
+    func backOfBookIndex(documentId: String) -> BackOfBookIndex? {
+        let count = chunkCount(documentId: documentId)
+        if let cached = indexCache[documentId], cached.chunks == count { return cached.index }
+        let index = BackOfBookIndex.parse(storedText(documentId: documentId))
+        indexCache[documentId] = (count, index)
+        return index
+    }
+
+    // MARK: - A document's shape (Plan IV P6)
+
+    private var clauseNumberedCache: [String: (chunks: Int, value: Bool)] = [:]
+
+    /// Whether the document is clause-numbered — P3's detector (`DocumentChunker.isClauseNumbered`)
+    /// run on its stored text, whose chunks keep their line breaks since P3's re-chunk. Derived, not
+    /// stored, so no re-index: read once per document (and again if its chunks change).
+    func isClauseNumbered(documentId: String) -> Bool {
+        let count = chunkCount(documentId: documentId)
+        if let cached = clauseNumberedCache[documentId], cached.chunks == count { return cached.value }
+        let value = DocumentChunker.isClauseNumbered(storedText(documentId: documentId))
+        clauseNumberedCache[documentId] = (count, value)
+        return value
+    }
+
+    /// A document's chunk texts in order, one per line. The overlap between chunks is left in;
+    /// both readers above count distinct lines, so a repeated one does no harm.
+    private func storedText(documentId: String) -> String {
+        let sql = "SELECT text FROM doc_chunks WHERE document_id = ? ORDER BY chunk_index ASC"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return "" }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        var texts: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0) {
+            texts.append(String(cString: raw))
+        }
+        return texts.joined(separator: "\n")
+    }
+
+    // MARK: - A vault's own embedding model (Plan IV P4)
+
+    /// The model a vault's manuals are indexed with going forward — `Embedder.fieldAssist()` in
+    /// the app (the contextual model when it is switched on and present), injected by tests. Nil
+    /// means the store's own embedder. Every other namespace always uses the store's embedder.
+    var fieldAssistEmbedder: Embedder?
+
+    /// The model new vault manuals are indexed with.
+    var vaultTargetEmbedder: Embedder { fieldAssistEmbedder ?? embedder }
+
+    /// The models a vault chunk's version can be matched to, for embedding a question the same way.
+    private var knownEmbedders: [Embedder] {
+        var list = [embedder]
+        if let fieldAssistEmbedder { list.append(fieldAssistEmbedder) }
+        list.append(standardEmbedder)
+        return list
+    }
+
+    private lazy var standardEmbedder = Embedder(preference: .standard)
+
+    /// An embedder that produces `tag`, or nil when none of the known models does — a chunk the
+    /// question cannot be compared with, which is left out of the similarity search (the exact-
+    /// token and lexical routes still reach it).
+    func embedderProducing(versionTag tag: String?) -> Embedder? {
+        guard let tag else { return nil }
+        return knownEmbedders.first { $0.isAvailable && $0.version.tag == tag }
+    }
+
+    /// The version most of a namespace's chunks carry: the index that answers for it now.
+    func servingVersionTag(namespace: String, excluding documentId: String? = nil) -> String? {
+        var sql = """
+        SELECT c.embedding_version, COUNT(*) AS n FROM doc_chunks c JOIN documents d ON c.document_id = d.id
+        WHERE d.namespace = '\(escapedSQL(namespace))' AND c.embedding IS NOT NULL AND c.embedding_version IS NOT NULL
+        """
+        if let documentId { sql += " AND c.document_id != '\(escapedSQL(documentId))'" }
+        sql += " GROUP BY c.embedding_version ORDER BY n DESC LIMIT 1"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0) else { return nil }
+        return String(cString: raw)
+    }
+
+    /// The model id that answers for a namespace now — what the evidence gate is chosen by.
+    func servingModelId(namespace: String) -> String {
+        guard Self.isVaultNamespace(namespace) else { return embedder.modelId }
+        if let tag = servingVersionTag(namespace: namespace), let version = EmbeddingVersion(tag: tag) {
+            return version.modelId
+        }
+        return vaultTargetEmbedder.modelId
+    }
+
+    /// The embedder a document joining `namespace` is embedded with: a vault's serving model while
+    /// the vault has an index and that model is here, its target otherwise; the store's embedder
+    /// for every other namespace. A vault mid-way through a re-index keeps one model per index.
+    func ingestEmbedder(namespace: String, excluding documentId: String? = nil) -> Embedder {
+        guard Self.isVaultNamespace(namespace) else { return embedder }
+        if let tag = servingVersionTag(namespace: namespace, excluding: documentId),
+           let serving = embedderProducing(versionTag: tag) {
+            return serving
+        }
+        return vaultTargetEmbedder
+    }
+
+    /// The question embedded once per model a vault's chunks use, for one search.
+    struct QueryVectors {
+        let text: String
+        let store: DocumentStore
+        private final class Cache { var vectors: [String: [Float]?] = [:]; var milliseconds: [String: Int] = [:] }
+        private let cache = Cache()
+
+        init(text: String, store: DocumentStore) {
+            self.text = text
+            self.store = store
+        }
+
+        @MainActor func vector(forVersionTag tag: String?) -> [Float]? {
+            guard let tag else { return nil }
+            if let known = cache.vectors[tag] { return known }
+            guard let embedder = store.embedderProducing(versionTag: tag) else {
+                cache.vectors[tag] = .some(nil)
+                return nil
+            }
+            let started = Date()
+            let vector = embedder.embed(text)
+            cache.vectors[tag] = vector
+            cache.milliseconds[tag] = Int(Date().timeIntervalSince(started) * 1000)
+            return vector
+        }
+
+        /// One line per model used: how long embedding the question took. Never the question.
+        @MainActor func logTimings() {
+            for (tag, ms) in cache.milliseconds {
+                PrivacyLog.store(.ragDocuments, .queryEmbedded,
+                                 detail: PrivacyToken(DocumentStore.modelClass(EmbeddingVersion(tag: tag)?.modelId ?? "")),
+                                 durationMs: ms)
+            }
+        }
+    }
+
+    /// The model family for a log line — a closed set, never the full identifier.
+    nonisolated static func modelClass(_ modelId: String) -> String {
+        if modelId.hasPrefix("nl-contextual") { return "contextual" }
+        if modelId.hasPrefix("nl-sentence") { return "sentence" }
+        if modelId.hasPrefix("nl-word") { return "word" }
+        return "other"
+    }
+
+    /// How a vault re-index went.
+    enum UpgradeOutcome: Equatable {
+        /// Every chunk already carries the target model's vectors.
+        case current
+        /// The new index was completed and swapped in.
+        case completed(chunks: Int)
+        /// Stopped part-way (the app went to the background, the setting changed); the vectors
+        /// built so far are kept, and the next run carries on from them.
+        case interrupted(done: Int, total: Int)
+    }
+
+    /// Re-index a vault's manuals with `target`, resumably, without disturbing search.
+    ///
+    /// New vectors go into a pending column chunk by chunk; the index that answers is untouched
+    /// until every chunk of the vault has its new vector, and then all of them swap in one
+    /// transaction. A run that stops part-way keeps what it built, and the next run embeds only
+    /// what is still missing. `progress` reports (manual title, chunks done, chunks to do).
+    func upgradeVaultEmbeddings(namespace: String, to target: Embedder,
+                                progress: ((String, Int, Int) -> Void)? = nil,
+                                shouldContinue: () -> Bool = { true }) async -> UpgradeOutcome {
+        guard Self.isVaultNamespace(namespace), target.isAvailable else { return .current }
+        let tag = target.version.tag
+        let started = Date()
+        var embedded = 0
+        for _ in 0..<3 {
+            let todo = pendingWork(namespace: namespace, targetTag: tag)
+            if todo.total == 0 {
+                exec("UPDATE doc_chunks SET pending_embedding = NULL, pending_version = NULL WHERE document_id IN "
+                     + "(SELECT id FROM documents WHERE namespace = '\(escapedSQL(namespace))')")
+                return embedded > 0 ? .completed(chunks: embedded) : .current
+            }
+            var done = todo.total - todo.missing.count
+            for row in todo.missing {
+                guard shouldContinue(), !Task.isCancelled else { return .interrupted(done: done, total: todo.total) }
+                writePending(chunkId: row.id, vector: target.embed(row.text), versionTag: tag)
+                done += 1
+                embedded += 1
+                progress?(row.title, done, todo.total)
+                await Task.yield()
+            }
+            guard shouldContinue(), !Task.isCancelled else { return .interrupted(done: done, total: todo.total) }
+            // Swap only if nothing joined the vault meanwhile; otherwise go round and embed it too.
+            if pendingWork(namespace: namespace, targetTag: tag).missing.isEmpty {
+                guard swapPending(namespace: namespace, targetTag: tag) else { return .interrupted(done: done, total: todo.total) }
+                refresh()
+                PrivacyLog.store(.ragDocuments, .reembedded, count: embedded, total: todo.total,
+                                 detail: PrivacyToken(Self.modelClass(target.modelId)),
+                                 durationMs: Int(Date().timeIntervalSince(started) * 1000))
+                return .completed(chunks: embedded)
+            }
+        }
+        return .interrupted(done: embedded, total: embedded)
+    }
+
+    /// The vault's chunks not yet on `targetTag`, and of those, the ones with no pending vector.
+    private func pendingWork(namespace: String, targetTag: String) -> (total: Int, missing: [(id: String, title: String, text: String)]) {
+        let sql = """
+        SELECT c.id, d.name, c.text, c.pending_version FROM doc_chunks c JOIN documents d ON c.document_id = d.id
+        WHERE d.namespace = ? AND (c.embedding_version IS NULL OR c.embedding_version != ?)
+        ORDER BY d.name, c.chunk_index
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return (0, []) }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, namespace, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, targetTag, -1, SQLITE_TRANSIENT)
+        var total = 0
+        var missing: [(id: String, title: String, text: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            total += 1
+            let pending = sqlite3_column_type(stmt, 3) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 3))
+            guard pending != targetTag else { continue }
+            missing.append((String(cString: sqlite3_column_text(stmt, 0)), String(cString: sqlite3_column_text(stmt, 1)),
+                            String(cString: sqlite3_column_text(stmt, 2))))
+        }
+        return (total, missing)
+    }
+
+    private func writePending(chunkId: String, vector: [Float]?, versionTag: String) {
+        let sql = "UPDATE doc_chunks SET pending_embedding = ?, pending_version = ? WHERE id = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        if let vector {
+            let data = vecToData(vector)
+            _ = data.withUnsafeBytes { sqlite3_bind_blob(stmt, 1, $0.baseAddress, Int32(data.count), SQLITE_TRANSIENT) }
+        } else {
+            sqlite3_bind_null(stmt, 1)
+        }
+        sqlite3_bind_text(stmt, 2, versionTag, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 3, chunkId, -1, SQLITE_TRANSIENT)
+        _ = sqlite3_step(stmt)
+    }
+
+    /// Every pending vector of the vault becomes its index, in one transaction.
+    private func swapPending(namespace: String, targetTag: String) -> Bool {
+        guard exec("BEGIN IMMEDIATE") else { return false }
+        let inVault = "document_id IN (SELECT id FROM documents WHERE namespace = '\(escapedSQL(namespace))')"
+        let tag = escapedSQL(targetTag)
+        let ok = exec("""
+            UPDATE doc_chunks SET embedding = pending_embedding,
+                embedding_version = CASE WHEN pending_embedding IS NULL THEN NULL ELSE pending_version END,
+                pending_embedding = NULL, pending_version = NULL
+            WHERE \(inVault) AND pending_version = '\(tag)'
+            """)
+        guard ok, exec("COMMIT") else { exec("ROLLBACK"); return false }
+        return true
+    }
+
+    /// How far a vault's re-index has got: chunks on the target model or with a pending vector
+    /// for it, of all its chunks. For the indexing screen and the tests.
+    func upgradeProgress(namespace: String, targetTag: String) -> (done: Int, total: Int) {
+        let work = pendingWork(namespace: namespace, targetTag: targetTag)
+        let all = documentChunkCount(namespace: namespace)
+        return (all - work.missing.count, all)
+    }
+
+    private func documentChunkCount(namespace: String) -> Int {
+        let sql = """
+        SELECT COUNT(*) FROM doc_chunks c JOIN documents d ON c.document_id = d.id WHERE d.namespace = ?
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, namespace, -1, SQLITE_TRANSIENT)
+        return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int(stmt, 0)) : 0
+    }
+
+    // MARK: - Passage locations (Plan IN P0)
+
+    /// Bumped when what the chunker records about a chunk's place changes, so stored rows are
+    /// located again — the `EmbeddingVersion` pattern, for positions rather than vectors. 2: the
+    /// chunker keeps line breaks between sentences and chunks a clause-numbered document at its
+    /// clause headings (Plan IV P3), so a stored document whose text now chunks differently is
+    /// re-chunked under its own id by `PassageLocationMigration`, and one that chunks the same only
+    /// has its positions rewritten.
+    nonisolated static let locationVersion = 2
+
+    /// One chunk's text and place, for the highlight. Its own query rather than `fetchChunks`,
+    /// which decodes every embedding in the namespace to answer for one row.
+    func anchor(documentId: String, chunkIndex: Int) -> PassageAnchor? {
+        if documentId.hasPrefix("captured:"), !capturedNamespaceAllowed(documentId) { return nil }
+        let sql = """
+        SELECT text, page, page_start, page_end, sentences FROM doc_chunks
+        WHERE document_id = ? AND chunk_index = ? LIMIT 1
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(stmt, 2, Int32(chunkIndex))
+        guard sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0) else { return nil }
+        func optionalInt(_ column: Int32) -> Int? {
+            sqlite3_column_type(stmt, column) == SQLITE_NULL ? nil : Int(sqlite3_column_int(stmt, column))
+        }
+        let sentences = sqlite3_column_type(stmt, 4) == SQLITE_NULL ? nil
+            : String(cString: sqlite3_column_text(stmt, 4))
+        return PassageAnchor(documentId: documentId, chunkIndex: chunkIndex, text: String(cString: raw),
+                             page: optionalInt(1), pageStart: optionalInt(2), pageEnd: optionalInt(3),
+                             sentenceStarts: PassageAnchor.decode(sentences))
+    }
+
+    /// Whether any of a document's chunks were stored before the current location version.
+    func needsLocation(documentId: String) -> Bool {
+        let sql = """
+        SELECT COUNT(*) FROM doc_chunks WHERE document_id = ?
+        AND (location_version IS NULL OR location_version < \(Self.locationVersion))
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        return sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int(stmt, 0) > 0
+    }
+
+    /// Write freshly computed places onto a document's existing rows, matched by chunk index, in
+    /// one transaction. Only when the re-chunked text is the stored text, row for row: then the
+    /// document id, the text and the embedding stay exactly as they were, and everything keyed on
+    /// them — a ledger entry, a citation, an evidence label — is untouched. Returns false (and
+    /// writes nothing) when the texts disagree, which is the caller's cue to re-chunk instead.
+    func writeLocations(documentId: String, chunks: [DocumentChunker.Chunk]) -> Bool {
+        let sql = "SELECT chunk_index, text FROM doc_chunks WHERE document_id = ? ORDER BY chunk_index"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        var stored: [(index: Int, text: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            stored.append((Int(sqlite3_column_int(stmt, 0)), String(cString: sqlite3_column_text(stmt, 1))))
+        }
+        sqlite3_finalize(stmt)
+        guard !stored.isEmpty, stored.count == chunks.count,
+              zip(stored, chunks).allSatisfy({ $0.index == $1.index && $0.text == $1.text }) else { return false }
+        guard exec("BEGIN IMMEDIATE") else { return false }
+        let update = """
+        UPDATE doc_chunks SET page_start = ?, page_end = ?, sentences = ?, location_version = ?
+        WHERE document_id = ? AND chunk_index = ?
+        """
+        for chunk in chunks {
+            var row: OpaquePointer?
+            guard sqlite3_prepare_v2(db, update, -1, &row, nil) == SQLITE_OK else { exec("ROLLBACK"); return false }
+            bindLocation(chunk, to: row, from: 1)
+            sqlite3_bind_text(row, 5, documentId, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(row, 6, Int32(chunk.index))
+            let result = sqlite3_step(row)
+            sqlite3_finalize(row)
+            guard result == SQLITE_DONE else { exec("ROLLBACK"); return false }
+        }
+        return exec("COMMIT")
+    }
+
+    /// Replace a document's chunks with a fresh chunking under the same document id, re-embedding
+    /// them — for a document whose text no longer chunks the way it was stored (the extractor
+    /// changed since import). The id is kept so the ledger, citations and evidence still name it.
+    @discardableResult
+    func rechunk(documentId: String, chunks: [DocumentChunker.Chunk]) async -> Bool {
+        guard !chunks.isEmpty, let namespace = storedNamespace(documentId: documentId) else { return false }
+        let chunkEmbedder = ingestEmbedder(namespace: namespace, excluding: documentId)
+        var vectors: [Data?] = []
+        for chunk in chunks {
+            vectors.append(chunkEmbedder.embed(chunk.text).map(vecToData))
+            await Task.yield()
+        }
+        guard exec("BEGIN IMMEDIATE") else { return false }
+        exec("DELETE FROM doc_chunks WHERE document_id = '\(escapedSQL(documentId))'")
+        let now = Date().timeIntervalSince1970
+        for (index, chunk) in chunks.enumerated() {
+            insertChunk(documentId: documentId, index: chunk.index, text: chunk.text, embedding: vectors[index],
+                        page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
+                        createdAt: now, version: vectors[index] == nil ? nil : chunkEmbedder.version.tag,
+                        location: chunk)
+        }
+        exec("UPDATE documents SET chunk_count = \(chunks.count) WHERE id = '\(escapedSQL(documentId))'")
+        guard exec("COMMIT") else { exec("ROLLBACK"); return false }
+        refresh()
+        return true
+    }
+
+    /// Replace the printed page labels recorded for a document.
+    func setPageLabels(_ labels: [PageLabel], documentId: String) {
+        exec("DELETE FROM doc_page_labels WHERE document_id = '\(escapedSQL(documentId))'")
+        let sql = "INSERT OR REPLACE INTO doc_page_labels (document_id, page, label, source) VALUES (?, ?, ?, ?)"
+        for label in labels {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(stmt, 2, Int32(label.page))
+            sqlite3_bind_text(stmt, 3, label.label, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 4, label.source.rawValue, -1, SQLITE_TRANSIENT)
+            _ = sqlite3_step(stmt)
+            sqlite3_finalize(stmt)
+        }
+    }
+
+    /// The printed page labels recorded for a document, as a two-way map.
+    func pageLabels(documentId: String) -> PageLabelMap {
+        let sql = "SELECT page, label, source FROM doc_page_labels WHERE document_id = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return PageLabelMap([]) }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        var labels: [PageLabel] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            labels.append(PageLabel(page: Int(sqlite3_column_int(stmt, 0)),
+                                    label: String(cString: sqlite3_column_text(stmt, 1)),
+                                    source: PageLabel.Source(rawValue: String(cString: sqlite3_column_text(stmt, 2))) ?? .printed))
+        }
+        return PageLabelMap(labels)
     }
 
     // MARK: - SQLite setup
@@ -607,6 +1194,27 @@ final class DocumentStore: ObservableObject {
             exec("UPDATE doc_chunks SET embedding_version = '\(escapedSQL(embedder.version.tag))' "
                  + "WHERE embedding_version IS NULL AND embedding IS NOT NULL")
         }
+        // Where each chunk sits on its page (Plan IN P0). Rows stored before these columns read back
+        // with no location; `PassageLocationMigration` fills them in from the vault's own file on a
+        // later launch, keeping the document id, the chunk text and the embedding as they are.
+        exec("ALTER TABLE doc_chunks ADD COLUMN page_start INTEGER")
+        exec("ALTER TABLE doc_chunks ADD COLUMN page_end INTEGER")
+        exec("ALTER TABLE doc_chunks ADD COLUMN sentences TEXT")
+        exec("ALTER TABLE doc_chunks ADD COLUMN location_version INTEGER")
+        // A vault manual's next index, built beside the one that answers until it is complete
+        // (Plan IV P4).
+        exec("ALTER TABLE doc_chunks ADD COLUMN pending_embedding BLOB")
+        exec("ALTER TABLE doc_chunks ADD COLUMN pending_version TEXT")
+        // The printed page each physical page carries, where the PDF or its header says (decision 4).
+        exec("""
+        CREATE TABLE IF NOT EXISTS doc_page_labels (
+            document_id TEXT NOT NULL,
+            page INTEGER NOT NULL,
+            label TEXT NOT NULL,
+            source TEXT NOT NULL,
+            PRIMARY KEY (document_id, page)
+        )
+        """)
         exec("CREATE INDEX IF NOT EXISTS idx_chunk_doc ON doc_chunks(document_id)")
         exec("CREATE INDEX IF NOT EXISTS idx_doc_ns ON documents(namespace)")
     }
@@ -631,8 +1239,8 @@ final class DocumentStore: ObservableObject {
 
     private func insertChunk(documentId: String, index: Int, text: String, embedding: Data?,
                              page: Int?, section: String?, kind: DocumentChunker.Kind, figure: String?,
-                             createdAt: Double, version: String?) {
-        let sql = "INSERT INTO doc_chunks (id, document_id, chunk_index, text, embedding, page, section, created_at, embedding_version, kind, figure) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                             createdAt: Double, version: String?, location: DocumentChunker.Chunk? = nil) {
+        let sql = "INSERT INTO doc_chunks (id, document_id, chunk_index, text, embedding, page, section, created_at, embedding_version, kind, figure, page_start, page_end, sentences, location_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(stmt) }
@@ -652,7 +1260,22 @@ final class DocumentStore: ObservableObject {
         if let version, embedding != nil { sqlite3_bind_text(stmt, 9, version, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(stmt, 9) }
         sqlite3_bind_text(stmt, 10, kind.rawValue, -1, SQLITE_TRANSIENT)
         if let figure { sqlite3_bind_text(stmt, 11, figure, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(stmt, 11) }
+        bindLocation(location, to: stmt, from: 12)
         _ = sqlite3_step(stmt)
+    }
+
+    /// Binds a chunk's place on its page to four consecutive parameters: start, end, sentences and
+    /// the location version. A chunk without a location (a team learning stored whole) binds nulls,
+    /// and a null version is what tells the migration a row was never located.
+    private func bindLocation(_ chunk: DocumentChunker.Chunk?, to stmt: OpaquePointer?, from first: Int32) {
+        guard let chunk else {
+            for offset in 0..<Int32(4) { sqlite3_bind_null(stmt, first + offset) }
+            return
+        }
+        if let start = chunk.pageStart { sqlite3_bind_int(stmt, first, Int32(start)) } else { sqlite3_bind_null(stmt, first) }
+        if let end = chunk.pageEnd { sqlite3_bind_int(stmt, first + 1, Int32(end)) } else { sqlite3_bind_null(stmt, first + 1) }
+        sqlite3_bind_text(stmt, first + 2, PassageAnchor.encode(chunk.sentenceStarts), -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(stmt, first + 3, Int32(Self.locationVersion))
     }
 
     // MARK: - Fetches
@@ -661,6 +1284,7 @@ final class DocumentStore: ObservableObject {
         let id: String
         let documentId: String
         let documentName: String
+        var namespace: String = ""
         let chunkIndex: Int
         let text: String
         let embedding: [Float]?
@@ -672,13 +1296,15 @@ final class DocumentStore: ObservableObject {
     }
 
     private func fetchChunks(namespace: String?, documentIds: [String]?) -> [ChunkRow] {
+        if let namespace, namespace.hasPrefix("captured:"), !capturedNamespaceAllowed(namespace) { return [] }
         var sql = """
         SELECT c.id, c.document_id, d.name, c.chunk_index, c.text, c.embedding, c.page, c.section,
-               c.embedding_version, c.kind, c.figure
+               c.embedding_version, c.kind, c.figure, d.namespace
         FROM doc_chunks c JOIN documents d ON c.document_id = d.id
         """
         var clauses: [String] = []
         if let ns = namespace { clauses.append("d.namespace = '\(escapedSQL(ns))'") }
+        else { clauses.append("d.namespace NOT LIKE 'captured:%'") }
         if let ids = documentIds, !ids.isEmpty {
             let list = ids.map { "'\(escapedSQL($0))'" }.joined(separator: ", ")
             clauses.append("c.document_id IN (\(list))")
@@ -705,7 +1331,9 @@ final class DocumentStore: ObservableObject {
             let version = sqlite3_column_type(stmt, 8) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 8)) : nil
             let kindTag = sqlite3_column_type(stmt, 9) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 9)) : nil
             let figure = sqlite3_column_type(stmt, 10) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 10)) : nil
-            rows.append(ChunkRow(id: id, documentId: docId, documentName: name, chunkIndex: idx, text: text,
+            let rowNamespace = sqlite3_column_type(stmt, 11) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 11)) : ""
+            rows.append(ChunkRow(id: id, documentId: docId, documentName: name, namespace: rowNamespace,
+                                 chunkIndex: idx, text: text,
                                  embedding: emb, page: page, section: section, embeddingVersion: version,
                                  kind: kindTag.flatMap(DocumentChunker.Kind.init(rawValue:)) ?? .prose,
                                  figure: figure))

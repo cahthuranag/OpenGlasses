@@ -427,6 +427,39 @@ final class ExampleVaultLennoxTests: XCTestCase {
         }
     }
 
+    // MARK: - Field report, build 497
+
+    /// Three turns from one job on this vault, through the session's own retriever. Before the fix,
+    /// "page 34" and a "99" from a spoken model family were exact-token hits on the vent-length
+    /// tables of Installation pp.17–18 — the first pages in document order that print those
+    /// numbers — and they took every slot. The flame-sensor question is the one the device's
+    /// sentence embedder could not answer; on this backend it already could, and it must still.
+    func testTheFieldTurnsReachTheirPagesAndNotTheVentTables() async throws {
+        let (directory, manualsPresent) = try stageExample()
+        guard manualsPresent else { throw XCTSkip("manuals not present in documents/; see documents/README.md") }
+        let store = makeStore()
+        let service = try startSession(from: directory, store: store)
+        let manifest = try XCTUnwrap(VaultRegistry.shared.manifest(id: Self.vaultId))
+        _ = try await VaultImporter.syncDocuments(manifest: manifest, into: store)
+        let retriever = service.manualRetriever(store: VaultRegistry.shared.store(for: manifest))
+
+        func isVentTable(_ p: VaultRetriever.Passage) -> Bool {
+            p.documentName == Self.installation && [17, 18].contains(p.page ?? 0)
+        }
+        for turn in ["Hey check page 34 of the service manual item number two",
+                     "So that's OK the man we have covered this model as well that's the universal manual for SLP 99 UH models"] {
+            let passages = retriever.retrieve(.init(turn: turn, limit: 4)).passages
+            print("[LENNOX] '\(turn)' → \(passages.map(\.citation))")
+            XCTAssertFalse(passages.contains(where: isVentTable), "\(turn) → \(passages.map(\.citation))")
+            XCTAssertTrue(passages.allSatisfy { $0.matchedTokens.isEmpty }, "\(passages.map(\.matchedTokens))")
+        }
+
+        let flame = retriever.retrieve(.init(turn: "And how to test the flame sensor readings or signal", limit: 4))
+        print("[LENNOX] flame sensor → \(flame.passages.map(\.citation))")
+        XCTAssertTrue(flame.passages.contains { $0.documentName == "SLP99UHVK Service Manual" && $0.page == 34 },
+                      "\(flame.passages.map(\.citation))")
+    }
+
     // MARK: - Equipment identity (Plan EL)
 
     func testTheSessionScopesItsAnswersToTheMachineItWasToldAbout() async throws {
@@ -614,8 +647,11 @@ final class ExampleVaultLennoxTests: XCTestCase {
             // The page behind the chip is the page the sentence came from, not a page with the
             // same number in another manual.
             let text = try XCTUnwrap(sheet.currentText, citation.label)
-            let firstSentence = passage.text.prefix(40).trimmingCharacters(in: .whitespacesAndNewlines)
-            XCTAssertTrue(text.contains(firstSentence),
+            // Compared word for word: a chunk keeps the line breaks between its sentences, and the
+            // page's stored text is rebuilt from its chunks' words joined by spaces.
+            func words(_ s: Substring) -> String { s.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+            let firstSentence = words(passage.text.prefix(40))
+            XCTAssertTrue(words(Substring(text)).contains(firstSentence),
                           "\(citation.label) opens a page that does not contain its passage")
         }
 

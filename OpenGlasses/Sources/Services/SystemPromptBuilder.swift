@@ -55,7 +55,53 @@ enum SystemPromptBuilder {
         The one exception: a better-sounding built-in voice is downloaded in the iPhone's Settings > Accessibility > \
         Spoken Content > Voices, and then picked under iOS Voice in the app.
         You cannot change these settings yourself. Some are hidden in Simple Mode or on a phone an organisation manages.
+        Listening: while listening is on (not push-to-talk), the wake phrase works with the phone locked or in a pocket, \
+        and with the glasses as the microphone the request and the reply go through the glasses there too. \
+        Settings > \(title(.devices)) > Glasses > Listen for the wake word on picks the mic that waits for the wake phrase: \
+        On iPhone, the default, the phone's own mic listens; Same as Microphone holds the glasses' mic open instead, and \
+        glasses taken off for \(Int(GlassesSleepPolicy.doffGraceSeconds)) seconds then stop listening until they are put back on.
         """
+    }
+
+    /// The block a prompt carries when a turn's tool definitions are on demand (Plan IU): how to
+    /// get a definition, then a one-line summary of each native tool outside the core set and the
+    /// MCP tools by name. It is built from what is *available*, never from what has been looked up,
+    /// so it is the same text from turn to turn and the prompt's cacheable head does not move.
+    ///
+    /// MCP tools are named but not summarised: their descriptions are written by the server, and
+    /// the system prompt is not a place to raise a third party's text to.
+    static func onDemandToolGuide(native: [(name: String, description: String)], mcpNames: [String]) -> String {
+        var block = """
+        TOOL DEFINITIONS ON DEMAND:
+        Only some of your tools have their full definitions attached to this request. Before you call one of the tools \
+        below for the first time, call \(ToolLookupTool.toolName) with its exact name (several at once is fine): its \
+        definition is attached from your next step, and then you call it. Never guess a tool's arguments, and never \
+        tell the user a tool is unavailable because its definition is not attached yet.
+        """
+        if !native.isEmpty {
+            block += "\n" + native.map { "- \($0.name): \(summary($0.description))" }.joined(separator: "\n")
+        }
+        if !mcpNames.isEmpty {
+            block += "\nTools from connected servers: \(mcpNames.joined(separator: ", "))."
+        }
+        return block
+    }
+
+    /// The longest a tool's one-line summary runs in the on-demand list.
+    static let summaryLimit = 110
+
+    /// A tool's description cut to its first sentence, and to `summaryLimit` characters at a word
+    /// boundary. Pure.
+    static func summary(_ description: String) -> String {
+        let flat = flatten(description)
+        var cut = flat
+        if let end = flat.range(of: ". ") {
+            cut = String(flat[..<end.lowerBound]) + "."
+        }
+        guard cut.count > summaryLimit else { return cut }
+        let prefix = String(cut.prefix(summaryLimit))
+        let trimmed = prefix.range(of: " ", options: .backwards).map { String(prefix[..<$0.lowerBound]) } ?? prefix
+        return trimmed + "…"
     }
 
     /// Collapse a multi-line tool description into one line so it reads as a single bullet.

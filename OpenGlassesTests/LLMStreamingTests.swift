@@ -313,6 +313,41 @@ final class ResponsesStreamingTests: XCTestCase {
         XCTAssertEqual(json["id"] as? String, "resp_1")
     }
 
+    /// The ChatGPT backend's slim stream: a commentary note, then the answer, as separate items.
+    /// The token sink and the parsed reply see only the answer (a tester heard the note spoken).
+    func testCommentaryItemIsNeitherStreamedNorTheReply() async throws {
+        SSEQueueProtocol.queue = [(200, """
+        event: response.output_item.added
+        data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_c","role":"assistant","phase":"commentary","content":[]}}
+
+        event: response.output_text.delta
+        data: {"type":"response.output_text.delta","item_id":"msg_c","output_index":0,"delta":"Need reply thanks, brief."}
+
+        event: response.output_item.done
+        data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_c","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"Need reply thanks, brief."}]}}
+
+        event: response.output_item.added
+        data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_f","role":"assistant","phase":"final_answer","content":[]}}
+
+        event: response.output_text.delta
+        data: {"type":"response.output_text.delta","item_id":"msg_f","output_index":1,"delta":"De nada!"}
+
+        event: response.output_item.done
+        data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","id":"msg_f","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"De nada!"}]}}
+
+        event: response.completed
+        data: {"type":"response.completed","response":{"id":"resp_c","usage":{"input_tokens":3,"output_tokens":4}}}
+
+        """)]
+        var tokens = ""
+        let json = try await service().streamResponsesTurn(request: request) { tokens += $0 }
+        XCTAssertEqual(tokens, "De nada!")
+        let parsed = ResponsesTranslator.parseOutput(json)
+        XCTAssertEqual(parsed.text, "De nada!")
+        XCTAssertEqual(parsed.withheldCommentary, 1)
+        XCTAssertEqual(parsed.rawOutputItems.count, 2, "both items kept for replay")
+    }
+
     func testStreamRejectionSurfacesBackendDetail() async {
         SSEQueueProtocol.queue = [(400, #"{"detail":"Stream must be set to true"}"#)]
         do {

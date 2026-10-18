@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 
+	"avenkin.dev/mobilecore/capturedmanual"
 	"github.com/syncthing/syncthing/lib/protocol"
 )
 
@@ -80,6 +81,45 @@ func Fixtures() (map[string][]byte, error) {
 			return nil, e
 		}
 		out["office-report-receipt-"+stage+"-v1.json"] = []byte(receipt)
+	}
+	// IF source revision 1, delivery revision 4. A capture can be retried/sent independently
+	// without mutating the source manifest or waiting for an ordinary job report.
+	capture, _, _ := capturedmanual.Fixture()
+	record, e := capturedmanual.CanonicalBytes(capture)
+	if e != nil {
+		return nil, e
+	}
+	captureManifest, e := ManifestBytes(ManifestFor([]Attachment{
+		{capture.PDFSHA256, int64(capture.PDFBytes), RoleCapturedManualPDF, "application/pdf", "pages.pdf", Required, AudienceOffice},
+		{capture.TextSHA256, int64(capture.TextBytes), RoleCapturedManualText, "text/markdown", "text.md", Required, AudienceOffice},
+	}))
+	if e != nil {
+		return nil, e
+	}
+	captureReport := ReportFor(Report{OperationID: "fixture-capture-send-4", RecordKind: RecordCapturedManual,
+		RecordID: capture.CaptureID, Revision: 4, OrganizationID: capture.OrganizationID, EnrolmentID: capture.EnrolmentID,
+		OfficeID: report.OfficeID, PhoneTransportID: phoneTransport, JobReference: capture.JobReference,
+		JobID: capture.JobID, JobRevision: capture.JobRevision, Transcript: TranscriptNone, CreatedAt: FixtureNow}, record, captureManifest)
+	captureEnvelope, e := SignReport(captureReport, phone)
+	if e != nil {
+		return nil, e
+	}
+	cm, e := captureReport.Carries(record, captureManifest)
+	if e != nil {
+		return nil, e
+	}
+	out["captured-manual-report-v1.json"] = []byte(captureEnvelope)
+	out["captured-manual-evidence-v1.json"] = captureManifest
+	for _, full := range []bool{false, true} {
+		receipt, e := SignReceipt(ReceiptFor(captureEnvelope, captureReport, cm, func(string) bool { return full }, FixtureNow+120), office)
+		if e != nil {
+			return nil, e
+		}
+		stage := "pending"
+		if full {
+			stage = "full"
+		}
+		out["captured-manual-receipt-"+stage+"-v1.json"] = []byte(receipt)
 	}
 	return out, nil
 }

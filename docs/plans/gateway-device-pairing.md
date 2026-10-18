@@ -1,24 +1,31 @@
 # Plan AR — Gateway Device Pairing (setup-code → approval → per-device token)
 
-**Status:** 🚧 Core shipped ([#116](https://github.com/straff2002/OpenGlasses/pull/116)). The
-deterministic core (setup-code parse/encode, auth-mode selection, response → pairing-state
-mapping, per-device identity) is built and tested (23 tests); `GatewayConfig` device fields, the
-handshake credential fix (active gateway, not the global token), and pairing-response capture
-are in. **Status corrected 2026-07-10:** the "live pairing UI" is *partially* in —
-`onPairingStatusChange` fires (`OpenClawEventClient.swift:9,45,71,253`) but has **zero
-consumers**, `startPairing(setupCode:)` has **zero callers**, and the setup code's decoded
-`url` field is discarded (the user still types the host manually,
-`GatewaySettingsView.swift:367,376`). Settings shows "Paired" only from the persisted
-`deviceToken` plus a static message — there is no Connecting → Waiting-for-approval → Paired
-row yet. **Deferred — backend prerequisite, re-scoped:** the live approval round-trip needs
-the gateway to implement the bootstrap → approval → device-token handshake; that PR must also
-finish the client half already stubbed — wire `startPairing`/`onPairingStatusChange` into the
-settings UI (or delete the dead callback), use `payload.url` for one-scan gateway creation,
-and **only accept pairing tokens while a bootstrap attempt is in flight** (today an
-unsolicited `device.paired` event persists a token at any time, `OpenClawEventClient.swift:264-270`,
-and any `type:"res"` frame is treated as a connect response — over LAN `ws://` a MITM could
-plant pairing state). Until the backend lands, this degrades cleanly to today's shared-token
-flow.
+**Status:** 🚧 Core and client half shipped ([#116](https://github.com/straff2002/OpenGlasses/pull/116),
+then the client half on 2026-10-16). The deterministic core (setup-code parse/encode, auth-mode
+selection, response → pairing-state mapping, per-device identity) is built and tested;
+`GatewayConfig` device fields, the handshake credential fix (active gateway, not the global
+token), and pairing-response capture are in. **Client half, 2026-10-16:**
+- **Token acceptance is gated.** `PairingBootstrapPolicy` (pure, table-tested) decides every
+  device token: an unsolicited `device.paired` token is stored only inside a pairing the wearer
+  started, for that gateway, inside a 10-minute window, and once — while idle, already paired,
+  after a cancel or after the window it is ignored and logged (`pairingTokenIgnored`, reason
+  only). A `res` is read as the handshake's answer only when its `id` matches the connect
+  request this socket sent; anything else is dropped (`responseUncorrelated`). A pairing that
+  ends without a token drops its one-time setup code.
+- **Settings drive it.** Edit Gateway › Device Pairing calls `startPairing(gatewayId:setupCode:)`
+  and shows `onPairingStatusChange` live through `AppState.gatewayPairing` (connecting → waiting
+  for approval → paired, or a clear error, a timeout or a cancel), with a Cancel Pairing button.
+  It sits behind Agent Mode like the rest of the gateway's socket.
+- **`payload.url` is used, by rule.** `SetupCodeAddress` checks it with the event stream's own
+  `EndpointPolicy` rule (no credential, no query, cleartext only to a private host in Release)
+  and fills a gateway that has no address yet; it never replaces a saved address without the
+  wearer confirming, and pairing against the saved address instead is not offered (it would hand
+  the bootstrap token to a server the code was not issued for).
+
+**Still open:** the live approval round trip needs a gateway that implements the bootstrap →
+approval → device-token handshake (until then this degrades to today's shared-token flow); QR
+scan of the setup code (paste ships); and the polish phase (rename this device, the gateway's
+device list).
 
 Today a user connects to an OpenClaw gateway by pasting a **single shared gateway token**
 (`GatewayConfig.token`, a `SecureField` in `GatewaySettingsView`). Every device that connects

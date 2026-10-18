@@ -23,10 +23,14 @@ class MedicalExportService: ObservableObject {
     let configurationStore: FHIRConfigurationStore
     /// Owner of every clinical export file this service creates.
     let leases: MedicalExportLeaseCoordinator
+    /// The session FHIR submissions go out on. Injected so a test can answer them locally.
+    private let transport: URLSession
 
     init(configurationStore: FHIRConfigurationStore = .shared,
-         leases: MedicalExportLeaseCoordinator? = nil) {
+         leases: MedicalExportLeaseCoordinator? = nil,
+         transport: URLSession = .shared) {
         self.configurationStore = configurationStore
+        self.transport = transport
         // Built here rather than as a default argument: the coordinator is main-actor isolated and
         // default arguments are evaluated outside that isolation.
         self.leases = leases ?? MedicalExportLeaseCoordinator()
@@ -65,8 +69,7 @@ class MedicalExportService: ObservableObject {
         do {
             context = try configurationStore.requestContext()
         } catch {
-            return ExportResult(success: false, platform: .fhir,
-                                message: error.localizedDescription, timestamp: Date())
+            return failure(MedicalExportFailure(error))
         }
         return await exportToFHIR(transcript: transcript, duration: duration, date: date,
                                   origin: origin, context: context)
@@ -84,18 +87,18 @@ class MedicalExportService: ObservableObject {
         do {
             guard let built = try fhirSubmissionRequest(transcript: transcript, duration: duration, date: date,
                                                         origin: origin, context: context) else {
-                return ExportResult(success: false, platform: .fhir,
-                                    message: "Invalid FHIR server URL", timestamp: Date())
+                return failure(.invalidServerURL)
             }
             request = built
         } catch {
-            return ExportResult(success: false, platform: .fhir,
-                                message: "Export failed: \(error.localizedDescription)",
-                                timestamp: Date())
+            MedicalExportFailure.log(.submission, error: error)
+            return failure(MedicalExportFailure(error))
         }
 
+        // The reply body is discarded unread: a refused write's `OperationOutcome` can quote the
+        // resource it refused. Only the status decides what the wearer is told.
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await transport.data(for: request)
             let httpResponse = response as? HTTPURLResponse
             let statusCode = httpResponse?.statusCode ?? 0
 
@@ -106,14 +109,138 @@ class MedicalExportService: ObservableObject {
                 hipaaService?.log(action: "FHIR_EXPORT", detail: "status=\(statusCode)")
                 return result
             } else {
-                return ExportResult(success: false, platform: .fhir,
-                                    message: "FHIR server returned HTTP \(statusCode)",
-                                    timestamp: Date())
+                MedicalExportFailure.log(.submission, status: statusCode)
+                return failure(MedicalExportFailure(httpStatus: statusCode))
             }
         } catch {
-            return ExportResult(success: false, platform: .fhir,
-                                message: "Export failed: \(error.localizedDescription)",
-                                timestamp: Date())
+            MedicalExportFailure.log(.submission, error: error)
+            return failure(MedicalExportFailure(error, operation: .submission))
+        }
+    }
+
+    private func failure(_ failure: MedicalExportFailure) -> ExportResult {
+        ExportResult(success: false, platform: .fhir, message: failure.message, timestamp: Date())
+    }
+
+    // MARK: - Clearing
+
+    /// Clear the stored FHIR credential and revoke every export still waiting to be shared,
+    /// subject to owner authorization.
+    ///
+    /// Fails **closed**, like `HIPAAComplianceService.clearAuditLog(authorization:)`: only an
+    /// explicit `.granted` clears, and there is no default argument, so no caller can clear
+    /// without having asked. Clinical identifiers stay — they are shown and edited in place.
+    @discardableResult
+    func clearCredentialAndPendingExports(authorization: OwnerAuthorization) -> FHIRCredentialClearOutcome {
+        guard authorization.isGranted else { return .kept(authorization) }
+        configurationStore.clearCredential()
+        leases.revokeAll()
+        return .cleared
+    }
+
+    // MARK: - Server settings
+
+    /// Save the FHIR server settings from the settings screen: the public configuration, an
+    /// entered credential (empty when none was typed), and the clinical identifiers.
+    ///
+    /// The stored credential stays bound to the address it was saved with
+    /// (`FHIRCredentialBinding`): a new address is refused unless a credential comes with it. The
+    /// credential is written before the address, so a failed write leaves the old pair intact
+    /// rather than the old credential pointing at the new address.
+    func saveServerSettings(_ configuration: FHIRServerConfiguration,
+                            enteredCredential: String,
+                            privateContext: FHIRPrivateContext) -> FHIRServerSaveOutcome {
+        let saved = configurationStore.configuration
+        let entered = enteredCredential.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A store that cannot say whether a credential exists is treated as holding one.
+        let credentialStored = (try? configurationStore.loadCredential(serverID: saved.serverID))
+            .map { !$0.isEmpty } ?? true
+
+        guard FHIRCredentialBinding.maySaveEndpoint(savedBaseURL: saved.baseURL,
+                                                    newBaseURL: configuration.baseURL,
+                                                    credentialStored: credentialStored,
+                                                    credentialEntered: !entered.isEmpty) else {
+            return .credentialBoundToSavedAddress
+        }
+
+        do {
+            if !entered.isEmpty {
+                try configurationStore.storeCredential(FHIRCredential(bearerToken: entered),
+                                                       serverID: configuration.serverID)
+            }
+            configurationStore.save(configuration)
+            try configurationStore.storePrivateContext(privateContext, serverID: configuration.serverID)
+            return .saved(storedCredential: !entered.isEmpty)
+        } catch {
+            return .failed(MedicalExportFailure(error))
+        }
+    }
+
+    // MARK: - Connection test
+
+    /// Ask the server typed into the settings screen for its capability statement, and say how it
+    /// went. Only the status is read; a refusal's body can carry the server's own record text.
+    ///
+    /// The stored credential goes only to the address it was saved with
+    /// (`FHIRConnectionTestPolicy`). Testing any other address sends a credential only if one was
+    /// typed for this test, and otherwise checks that the server answers, with no credential.
+    func testConnection(baseURL: String, enteredCredential: String) async -> String {
+        var candidateConfig = configurationStore.configuration
+        let savedBaseURL = candidateConfig.baseURL
+        candidateConfig.baseURL = baseURL
+        guard let candidate = candidateConfig.endpoint(for: "metadata"),
+              let url = try? EndpointPolicy.requireOpenable(url: candidate, for: .fhirConnectionTest) else {
+            return MedicalExportFailure.invalidServerURL.message
+        }
+
+        let entered = enteredCredential.trimmingCharacters(in: .whitespacesAndNewlines)
+        let credential = FHIRConnectionTestPolicy.credential(
+            savedBaseURL: savedBaseURL,
+            testedBaseURL: baseURL,
+            credentialStored: configurationStore.hasStoredCredential(),
+            credentialEntered: !entered.isEmpty)
+
+        var request = URLRequest(url: url)
+        request.setValue("application/fhir+json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 10
+
+        // Read the stored credential only here, for this one request, and only for its own address.
+        let token: String?
+        switch credential {
+        case .stored:
+            do {
+                token = try configurationStore.loadCredential(serverID: candidateConfig.serverID).bearerToken
+            } catch {
+                return MedicalExportFailure(error).message
+            }
+        case .entered: token = entered
+        case .withheld, .none: token = nil
+        }
+        if let token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        do {
+            let (_, response) = try await transport.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+            if credential == .withheld {
+                if (200...299).contains(status) {
+                    return String(localized: "The FHIR server answered. Your saved credential wasn't sent: it only goes to the address it was saved with.")
+                }
+                if status == 401 || status == 403 {
+                    return String(localized: "The FHIR server answered and asks for a credential. Your saved credential wasn't sent: it only goes to the address it was saved with. To test this address with a credential, tap Replace and enter it.")
+                }
+            }
+
+            if (200...299).contains(status) {
+                return "Connected successfully (HTTP \(status)). The FHIR server is reachable and responded to the capability statement request."
+            }
+            MedicalExportFailure.log(.connectionTest, status: status)
+            return MedicalExportFailure(httpStatus: status).message
+        } catch {
+            MedicalExportFailure.log(.connectionTest, error: error)
+            return MedicalExportFailure(error, operation: .connectionTest).message
         }
     }
 

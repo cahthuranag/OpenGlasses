@@ -120,6 +120,12 @@ enum TurnRecorder {
     /// reply was saved, so it names the thread the reply is actually in. Set by the app at launch.
     static var traceContext: () -> (threadId: String?, fieldSessionId: String?) = { (nil, nil) }
 
+    /// The same, read when the turn began. A turn that closes the job ends its conversation and
+    /// the job on the way: read only at the seal, it named neither and the support report filed the
+    /// job's last turn under "no saved conversation". The seal's reading wins where it has one — a
+    /// turn that starts a job gains both — and the start's fills what the turn itself closed.
+    private static var beganContext: (threadId: String?, fieldSessionId: String?) = (nil, nil)
+
     /// Caps on the trace's lists, so a runaway tool loop or a long prompt cannot grow one turn.
     static let maxPromptBlocks = 32
     static let maxManualPassages = 12
@@ -214,6 +220,7 @@ enum TurnRecorder {
         pendingTranscriber = nil
         sawFirstToken = false
         speechHandedOff = false
+        beganContext = traceContext()
         currentID = ledger.start(timeline)
     }
 
@@ -222,9 +229,11 @@ enum TurnRecorder {
     static func endTurn() {
         guard let id = currentID else { return }
         let context = traceContext()
+        let began = beganContext
+        beganContext = (nil, nil)
         ledger.update(id) {
-            $0.threadId = context.threadId
-            $0.fieldSessionId = context.fieldSessionId
+            $0.threadId = context.threadId ?? began.threadId
+            $0.fieldSessionId = context.fieldSessionId ?? began.fieldSessionId
         }
         currentID = nil
         sawFirstToken = false
@@ -503,6 +512,7 @@ enum TurnRecorder {
         pendingHeld = nil
         traceSink = nil
         traceContext = { (nil, nil) }
+        beganContext = (nil, nil)
     }
 }
 

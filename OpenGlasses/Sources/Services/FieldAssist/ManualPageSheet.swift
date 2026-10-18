@@ -156,6 +156,12 @@ struct ManualPageSheetModel: Equatable {
     /// The caption the citation named on the cited page ("Figure 65"), when it named one — so the
     /// page is recorded under the same label the citation used (Plan GB P1).
     let citedFigure: String?
+    let photographed: Bool
+    let reviewedPhotograph: Bool
+    let printedPages: [Int: Int]
+    /// The passages the answer cited in this document, to be marked where they are found
+    /// (Plan IN P1). Empty for a page opened without one — a figure asked for by number.
+    let citedPassages: [CitedPassage]
 
     private(set) var route: ManualPageRoute
     var integrity: ManualPageIntegrity = .unknown
@@ -164,8 +170,14 @@ struct ManualPageSheetModel: Equatable {
     init(citation: String, documentTitle: String, citedPage: Int,
          manufacturerPDF: URL? = nil, pdfPageCount: Int = 0,
          extractedPages: [Page] = [], publishedURL: URL? = nil,
-         ledgerHash: String? = nil, documentIsPDF: Bool = false, citedFigure: String? = nil) {
+         ledgerHash: String? = nil, documentIsPDF: Bool = false, citedFigure: String? = nil,
+         photographed: Bool = false, reviewedPhotograph:Bool = false, printedPages: [Int: Int] = [:],
+         citedPassages: [CitedPassage] = []) {
         self.citation = citation
+        self.citedPassages = citedPassages
+        self.photographed = photographed
+        self.reviewedPhotograph = reviewedPhotograph
+        self.printedPages = printedPages
         self.citedFigure = citedFigure
         self.documentTitle = documentTitle
         self.manufacturerPDF = manufacturerPDF
@@ -201,6 +213,17 @@ struct ManualPageSheetModel: Equatable {
         extractedPages.first { $0.number == paging.currentPage }?.text
     }
 
+    /// The cited passages on a page, in the order the answer numbered them.
+    func passages(onPage page: Int) -> [CitedPassage] {
+        citedPassages.filter { $0.anchor.page == page }.sorted { $0.number < $1.number }
+    }
+
+    /// The marks for the extracted text of the page on screen — the text fallback marks the same
+    /// passages in the stored text that the PDF route marks on the page.
+    var currentTextMarks: PassageMarks {
+        PassageMarks(passages: citedPassages, page: paging.currentPage, pageText: currentText)
+    }
+
     /// Whether the sheet can offer "Open manufacturer's page" — a bundled original the technician
     /// is not already reading.
     var canOpenOriginal: Bool { manufacturerPDF != nil && route != .manufacturerPDF }
@@ -210,7 +233,10 @@ struct ManualPageSheetModel: Equatable {
     var headerLine: String {
         switch route {
         case .manufacturerPDF:
-            var parts = ["Manufacturer's document", paging.title]
+            var parts = photographed
+                ? [reviewedPhotograph ? "Reviewed photographed manual" : "Photographed manual", "page \(paging.currentPage) of \(pdfPageCount) photographed"]
+                : ["Manufacturer's document", paging.title]
+            if photographed, let printed = printedPages[paging.currentPage], printed > 0 { parts.append("printed page \(printed)") }
             if let clause = integrity.clause { parts.append(clause) }
             return parts.joined(separator: " \u{00B7} ")
         case .extractedText:

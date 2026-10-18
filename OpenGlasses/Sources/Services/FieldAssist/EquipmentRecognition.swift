@@ -18,13 +18,16 @@ enum EquipmentRecognition {
         case alias(model: VaultModelIndex.Model, spelling: String)
         /// Close to exactly one section's spelling: "did you mean …?".
         case near(model: VaultModelIndex.Model, spelling: String, distance: Int)
+        /// A member of the series the whole vault is written for, not one of the sizes its model
+        /// list details — covered by the manuals all the same.
+        case series(stem: String, file: String)
         /// Nothing the vault covers. Still a real machine if the technician says it is.
         case unmatched
 
         var model: VaultModelIndex.Model? {
             switch self {
             case .exact(let model), .alias(let model, _), .near(let model, _, _): return model
-            case .unmatched: return nil
+            case .series, .unmatched: return nil
             }
         }
 
@@ -33,9 +36,13 @@ enum EquipmentRecognition {
             case .exact: return .exact
             case .alias: return .alias
             case .near: return .near
+            case .series: return .series
             case .unmatched: return nil
             }
         }
+
+        /// Whether the vault covers the stated machine: one of its sections, or its series.
+        var isCovered: Bool { kind != nil }
     }
 
     /// Within two insertions or deletions. A changed character counts as two, deliberately: a
@@ -48,7 +55,17 @@ enum EquipmentRecognition {
     /// matches by substring; it is never fuzzily matched.
     static let minimumNearLength = 8
 
+    /// A tester's `SLP99UH090XV36BK` is two edits from both `…090XV36CK` and `…070XV36BK`, so no
+    /// single section claimed it — and the job then told the technician, every turn, that the
+    /// universal SLP99UH manuals did not cover their SLP99UH furnace. A model in the vault's series
+    /// that no one section claims is the series' (`VaultModelIndex.seriesStem`).
     static func resolve(stated: String, index: VaultModelIndex) -> Resolution {
+        let section = resolveSection(stated: stated, index: index)
+        guard section == .unmatched, let stem = index.series(of: stated) else { return section }
+        return .series(stem: stem, file: index.models.first?.file ?? "")
+    }
+
+    private static func resolveSection(stated: String, index: VaultModelIndex) -> Resolution {
         let wanted = normalised(stated)
         guard !wanted.isEmpty, !index.isEmpty else { return .unmatched }
         if let model = index.models.first(where: { normalised($0.name) == wanted }) {
@@ -113,6 +130,13 @@ enum EquipmentRecognition {
                          recognisedAt: Date = Date(),
                          nameplateText: String? = nil) -> EquipmentIdentity {
         let said = stated.trimmingCharacters(in: .whitespacesAndNewlines)
+        if case .series(let stem, let file) = resolution {
+            let name = EquipmentIdentity.seriesName(stem)
+            return EquipmentIdentity(modelToken: said, heading: name, file: file, source: source,
+                                     recognisedAt: recognisedAt, nameplateText: nameplateText,
+                                     statedModel: said,
+                                     vaultMatch: .init(heading: name, section: name, kind: .series))
+        }
         guard let model = resolution.model, let kind = resolution.kind else {
             // Out of the vault: the unit is keyed by what was said, and no section answers for it.
             return EquipmentIdentity(modelToken: said, heading: said, file: "", source: source,

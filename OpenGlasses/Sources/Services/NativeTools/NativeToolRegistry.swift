@@ -5,6 +5,9 @@ import Foundation
 final class NativeToolRegistry {
     private var tools: [String: any NativeTool] = [:]
     let myDayService: MyDayService
+    /// Where `lookup_tools` finds the MCP client, whose offered tools it may also describe (Plan
+    /// IU). Set by `NativeToolRouter.init`, which owns the client; nil leaves the lookup native-only.
+    var mcpClientSource: (@MainActor () -> MCPClient?)?
 
     init(locationService: LocationService, conversationStore: ConversationStore? = nil,
          faceRecognitionService: FaceRecognitionService? = nil, cameraService: CameraService? = nil,
@@ -229,6 +232,7 @@ final class NativeToolRegistry {
             // "Note this for the team" (Plan FP P1): a finding filed for a supervisor's review. The
             // tool checks Field Assist; the team-learning capability is checked by its service.
             register(TeamLearningTool())
+            register(ManualCaptureTool())
             // deliver_report stages the finished record for the composer; iOS makes the technician
             // tap Send, which is the human-in-the-loop step rather than an obstacle.
             register(DeliverReportTool(thread: { [weak conversationStore] in
@@ -239,6 +243,8 @@ final class NativeToolRegistry {
             }))
             // manual_figure puts a numbered drawing on the phone and in the next turn's image slot.
             register(ManualFigureTool(documentStore: documentStore))
+            // show_source opens the page the last answer cited, its passage highlighted (Plan IN P2).
+            register(ShowSourceTool(documentStore: documentStore))
             // Safety Assessment (HECA) — camera high-energy hazard assessment via SafetyAssessmentService.shared.
             register(SafetyAssessmentTool())
             if let camera = cameraService {
@@ -283,6 +289,11 @@ final class NativeToolRegistry {
         var discoveryTool = DiscoverCapabilitiesTool()
         discoveryTool.toolRegistry = self
         register(discoveryTool)
+        // Plan IU: full definitions on demand. Declared only when a turn's exposure is core, and
+        // never listed as a tool of its own (`toolNames`, `ToolDeclarations.declarableNames`).
+        var lookupTool = ToolLookupTool()
+        lookupTool.toolRegistry = self
+        register(lookupTool)
         register(ChineseAppsTool())
         register(AsianMessagingTool())
 
@@ -363,6 +374,8 @@ final class NativeToolRegistry {
     /// HIPAA mode automatically excludes tools that could leak PHI.
     var toolNames: [String] {
         Array(tools.keys).filter { name in
+            // Plan IU: infrastructure for on-demand definitions, not a tool the prompt lists.
+            guard name != ToolLookupTool.toolName else { return false }
             guard Config.isToolEnabled(name) else { return false }
             if Config.hipaaMode, Config.hipaaDisabledTools.contains(name) { return false }
             return true

@@ -426,12 +426,16 @@ struct OpenGlassesApp: App {
                 )) { _ in
                     appState.conversationStore.protectedDataWillBecomeUnavailable()
                     appState.privacyFilter.noteProtectedDataAvailable(false)   // W04.1
+                    // Plan HJ P1: a camera ladder that runs out while locked parks instead of
+                    // giving up where nobody can see it.
+                    appState.cameraService.notePresence(protectedDataAvailable: false)
                 }
                 .onReceive(NotificationCenter.default.publisher(
                     for: UIApplication.protectedDataDidBecomeAvailableNotification
                 )) { _ in
                     appState.conversationStore.protectedDataDidBecomeAvailable()
                     appState.privacyFilter.noteProtectedDataAvailable(true)   // W04.1
+                    appState.cameraService.notePresence(protectedDataAvailable: true)   // Plan HJ P1
                     // The app event log's earlier runs, if a locked launch could not read them.
                     DiagnosticRing.shared.protectedDataDidBecomeAvailable()
                     // Retry a migration that deferred while locked, then sweep abandoned exports.
@@ -612,6 +616,9 @@ struct OpenGlassesApp: App {
             // W04.1: the blur pass is unavailable while backgrounded and through the lock-screen
             // transition, so the outbound relay drops those frames instead of publishing them raw.
             appState.privacyFilter.noteScenePhase(.init(newPhase))
+            // Plan HJ P1: the camera's stream-end table reads where the app is, and coming back to
+            // the front resumes a reconnect that parked while the phone was in a pocket.
+            appState.cameraService.notePresence(scenePhase: .init(newPhase))
             switch newPhase {
             case .background:
                 appState.skillPackSideload.handleBackground()
@@ -1170,6 +1177,10 @@ class AppState: ObservableObject, AppStateProtocol {
         }
     }
     @Published var currentTranscription: String = ""
+    /// The words that opened the turn in flight. Unlike `currentTranscription`, a spoken "yes" to a
+    /// confirmation card does not replace it, so a tool later in the same turn still reads what the
+    /// technician asked for (`TechnicianWords`).
+    private(set) var turnUtterance: String = ""
     @Published var lastResponse: String = ""
     /// In-flight assistant reply for the Chat tab, streamed token-by-token where the provider
     /// supports it (on-device models today). The Chat thread renders this as a live bubble, then
@@ -1345,7 +1356,8 @@ class AppState: ObservableObject, AppStateProtocol {
             fallback: endpoint,
             officeIsDestination: { AppState.officeIsReportDestination },
             reports: reports,
-            evidence: { try await evidence.evidence(for: $0) }))
+            evidence: { try await evidence.evidence(for: $0) },
+            capturedManualAllowed: {CapturedManualOutbox.shared.allows($0)}))
     }
 
     static var officeIsReportDestination: Bool {
@@ -1358,7 +1370,9 @@ class AppState: ObservableObject, AppStateProtocol {
     /// build without the office transport.
     lazy var officeReports: OfficeReportService? = {
         guard let transport = OfficeManagedFolderMobilecoreTransport.makeIfAvailable() else { return nil }
-        return OfficeReportService(seams: .app(transport: transport))
+        var seams = OfficeReportService.Seams.app(transport:transport)
+        seams.recordAllowed = {CapturedManualOutbox.shared.allows($0)}
+        return OfficeReportService(seams:seams)
     }()
 
     /// The documents that go with a job's record, kept as the exact bytes named until the office
@@ -1368,7 +1382,8 @@ class AppState: ObservableObject, AppStateProtocol {
               let directory = OfficeReportEvidenceStore.defaultDirectory() else { return nil }
         let documents = OfficeReportDocuments.Seams.app()
         return OfficeReportEvidenceStore(directory: directory) { op in
-            try OfficeReportDocuments.render(sessionID: op.sessionId, seams: documents)
+            if op.kind == .capturedManual {return try await CapturedManualOutbox.shared.documents(for:op)}
+            return try OfficeReportDocuments.render(sessionID: op.sessionId, seams: documents)
         }
     }()
 
@@ -1688,11 +1703,14 @@ class AppState: ObservableObject, AppStateProtocol {
                 // named: record accepted is delivered, and is not yet a reason to erase.
                 // A recording the office has not acknowledged is owed too.
                 return ids.reduce(0) { $0 + QueuedRecordRows.outstandingCount(in: ops, sessionId: $1) }
-                    + (self.officeReports?.notFullyAccepted(recordIDs: Set(ids)) ?? 0)
+                    + CapturedManualOutbox.shared.unqueuedCount(sessionIDs:Set(ids))
+                    + (self.officeReports?.notFullyAccepted(recordIDs: Set(ids).union(
+                        CapturedManualOutbox.shared.captureIDs(sessionIDs:Set(ids)))) ?? 0)
                     + (self.officeJobRecordings?.unacknowledged(sessionIDs: Set(ids)) ?? 0)
             },
             eraseRecords: { [weak self] ids in
                 guard let self else { return }
+                let captureIDs = CapturedManualOutbox.shared.captureIDs(sessionIDs:Set(ids))
                 // A job's recording goes with the job: out of the office's folder first, while
                 // the phone still knows which bundles they are.
                 self.officeJobRecordings?.withdrawForRemoval(sessionIDs: Set(ids))
@@ -1702,7 +1720,8 @@ class AppState: ObservableObject, AppStateProtocol {
                     self.offlineQueue.delete(id: op.id)
                 }
                 // What this phone kept for the office about those records goes with them.
-                self.officeReports?.forget(recordIDs: Set(ids))
+                for captureID in captureIDs {CapturedManualOutbox.shared.forget(captureID)}
+                self.officeReports?.forget(recordIDs: Set(ids).union(captureIDs))
                 self.officeReportEvidence?.removeAll()
                 DeliverySettings.clearStored()
             })
@@ -1710,6 +1729,10 @@ class AppState: ObservableObject, AppStateProtocol {
     }
 
     private func configureJobSends() {
+        let manuals = CapturedManualOutbox.shared
+        manuals.queue = offlineQueue;manuals.evidence = officeReportEvidence;manuals.reports = officeReports
+        ManualCaptureService.shared.completed = { m in Task {try? await manuals.enqueue(m)} }
+        CapturedManualCatalog.shared.onForget = {manuals.forget($0)}
         jobSends.connect(.init(
             speak: { [weak self] line in await self?.speechService.speak(line, urgency: .low) },
             settings: { Config.deliverySettings },
@@ -1935,6 +1958,8 @@ class AppState: ObservableObject, AppStateProtocol {
             }))
     }
     let openClawEventClient = OpenClawEventClient()
+    /// The event client's connection and pairing state, for the gateway settings (Plan AR).
+    @Published private(set) var gatewayPairing = GatewayPairingSnapshot()
     /// Remote invoke (Plan BH): gateway-initiated device commands, deny-by-default.
     lazy var remoteInvoke: RemoteInvokeService = makeRemoteInvokeService()
     let geminiLiveSession = GeminiLiveSessionManager()
@@ -2148,6 +2173,8 @@ class AppState: ObservableObject, AppStateProtocol {
         erasure.agentDocuments = agentDocs
         erasure.conversations = conversationStore
         erasure.offlineQueue = offlineQueue
+        erasure.capturedManuals = CapturedManualStore.shared
+        erasure.capturedManualDeliveryErasure = {CapturedManualOutbox.shared.forget($0)}
         erasure.learningCandidates = LearningCandidateStore.shared
         erasure.learningEntries = LearningEntryStore.shared
         return MemoryFactServices(
@@ -2661,6 +2688,8 @@ class AppState: ObservableObject, AppStateProtocol {
             erasureStores.recordedSessions = recordedSessionStore
             erasureStores.offlineQueue = offlineQueue
             erasureStores.stagedExports = StagedExportCoordinator.allFamilies
+            erasureStores.capturedManuals = CapturedManualStore.shared
+            erasureStores.capturedManualDeliveryErasure = {CapturedManualOutbox.shared.forget($0)}
             erasureStores.learningCandidates = LearningCandidateStore.shared
             erasureStores.learningEntries = LearningEntryStore.shared
             replaySources.subjects = SubjectErasureCoordinator(stores: erasureStores)
@@ -3147,6 +3176,16 @@ class AppState: ObservableObject, AppStateProtocol {
         // and from being opened, whether or not this has run yet — but leaving one unfinished would
         // leave a manual unreachable forever.
         Task { await VaultManualRemoval.recoverPendingRemovals(documentStore: documentStore) }
+        // Manuals indexed before passages knew their place on the page get it from the vault's own
+        // file, so "show me the page" can mark the passage without a re-import (Plan IN P0).
+        // Queued behind removal recovery by the per-vault lock it takes.
+        // Vault manuals are indexed and searched with Field Assist's own model (Plan IV P4), set
+        // before anything is imported; the re-index onto it runs after the location migration.
+        documentStore.fieldAssistEmbedder = Embedder.fieldAssist()
+        Task { [documentStore] in
+            await PassageLocationMigration.run(store: documentStore)
+            VaultEmbeddingUpgrade.start(store: documentStore)
+        }
         StudyService.shared.configure(llm: llmService, documentStore: documentStore, tts: speechService, camera: cameraService)
 
         // Reading companion (Plan BT) — camera frames for page turns, Study Mode for the
@@ -3277,6 +3316,13 @@ class AppState: ObservableObject, AppStateProtocol {
             Task { @MainActor in
                 await self.triageOpenClawNotification(message)
             }
+        }
+        // Plan AR: the gateway settings show the live connection and any pairing the wearer
+        // started. The snapshot is read on the client's own thread, in step with the status.
+        openClawEventClient.onPairingStatusChange = { [weak self] status in
+            guard let self else { return }
+            let snapshot = self.openClawEventClient.pairingSnapshot(status: status)
+            Task { @MainActor in self.gatewayPairing = snapshot }
         }
         // Remote invoke (Plan BH): gateway-initiated device commands. Parser/policy/reply are
         // pure and tested; the policy denies everything while Agent Mode is off, before the
@@ -3696,6 +3742,16 @@ class AppState: ObservableObject, AppStateProtocol {
             }
         cancellables.append(figureToken)
 
+        // "Show me the page": the cited pages `show_source` resolved, each with its passage marked
+        // (Plan IN P2). Published only while the app is in front; a request made with the phone
+        // locked waits for it and a notification says where it is.
+        let sourcePagesToken = ShowSourceCenter.shared.$presented
+            .compactMap { $0 }
+            .sink { [weak self] request in
+                self?.presentSourcePages(request.pages)
+            }
+        cancellables.append(sourcePagesToken)
+
         // Field Assist: the lens says which machine the answers are for, and says so again when
         // the identity is corrected or forgotten — one transient line on the same path the figure
         // cue uses, and nothing persistent (Plan EL P2). The nil a session end publishes is not a
@@ -3966,6 +4022,10 @@ class AppState: ObservableObject, AppStateProtocol {
         wakeWordService.glassesTurnState = { [weak self] in
             (stoodDown: self?.glassesStoodDown ?? false, worn: self?.glassesService.isWorn)
         }
+        // A backgrounded turn keeps the live hands-free idle session rather than re-tune it, which
+        // iOS refuses from the background (`TurnMicHandoff.sessionSwitch`). Only `.active` counts
+        // as the foreground: an inactive app is on its way to the lock screen.
+        wakeWordService.appInForeground = { UIApplication.shared.applicationState == .active }
 
         wakeWordService.onWakeWordDetected = { [weak self] matchedPhrase in
             Task { @MainActor in
@@ -4604,7 +4664,17 @@ class AppState: ObservableObject, AppStateProtocol {
         /// What the sheet draws: which document, which pages, and the hash the manufacturer's file
         /// is checked against (Plan EK P3).
         let sheet: ManualPageSheetModel
-        var id: String { presenter.citation }
+        /// Further cited pages, after the first, when "show me the relevant pages" asked for all
+        /// of them (Plan IN P2). Paged in the answer's order, each in its own document.
+        var others: [Stop] = []
+
+        struct Stop: Equatable {
+            let presenter: ManualFigurePresenter
+            let sheet: ManualPageSheetModel
+        }
+
+        var stops: [Stop] { [Stop(presenter: presenter, sheet: sheet)] + others }
+        var id: String { stops.map(\.presenter.citation).joined(separator: " | ") }
     }
 
     /// Non-nil while the manual figure sheet should be presented.
@@ -4647,10 +4717,10 @@ class AppState: ObservableObject, AppStateProtocol {
         // A report prepared for the office that has to leave by the share sheet instead is rebuilt
         // for the share sheet (Plan HD): the technician picks where it goes there, so the audience
         // follows the route it actually takes. Their own "going to my office" is carried over.
-        let request: DeliveryRequest
+        var request: DeliveryRequest
         if case .workRecord(let record, let partsRequestIds) = staged.payload,
            resolution.channel != staged.channel, let transcript = staged.transcript,
-           transcript.carriesTranscript {
+           (transcript.carriesTranscript || staged.attachments.contains(where:{$0.kind == .capturedManualPDF || $0.kind == .capturedManualText})) {
             let delivery = session.reportDelivery(for: resolution.channel,
                                                   sessionId: staged.sessionId,
                                                   recipients: staged.recipients,
@@ -4665,6 +4735,7 @@ class AppState: ObservableObject, AppStateProtocol {
         } else {
             request = staged
         }
+        request = CapturedManualOutbox.shared.forPresentation(request)
         if let note = resolution.note {
             addDebugEvent(note)
             Task { await speechService.speak(note) }
@@ -4933,8 +5004,12 @@ class AppState: ObservableObject, AppStateProtocol {
             // has to say so — silence reads as a broken chip, and opening a page that is no longer
             // part of the vault is the thing removal promised would not happen.
             switch session.resolveCitation(citation) {
-            case .figure(let staged):
+            case .figure(var staged):
                 session.logCitationOpened(citation, origin: origin)
+                // The chip opens on its passage, marked, when the answer's passage is still known.
+                staged.citedPassages = ShowSourceCenter.shared.citedPassages(for: citation,
+                                                                             documentId: staged.documentId,
+                                                                             store: documentStore)
                 presentManualFigure(staged)
             case .removed(let title):
                 errorMessage = VaultManualRemovalPresentation.removedCitationNotice(manual: title)
@@ -4969,6 +5044,20 @@ class AppState: ObservableObject, AppStateProtocol {
         // The lens says where the drawing is and nothing else — it cannot render one legibly.
         ManualFigureCue.show(staged, on: glassesDisplay)
         return presenter
+    }
+
+    /// Put several cited pages in front of the technician at once — "show me the relevant pages"
+    /// (Plan IN P2). The first is presented the way a single page is; the rest page after it.
+    func presentSourcePages(_ pages: [FieldSessionService.StagedFigure]) {
+        guard let first = pages.first else { return }
+        let session = FieldSessionService.shared
+        let stops = pages.map { staged in
+            AppState.ManualFigureRequest.Stop(presenter: ManualFigurePresenter.present(staged, session: session),
+                                              sheet: session.manualPageSheet(for: staged))
+        }
+        manualFigureRequest = ManualFigureRequest(presenter: stops[0].presenter, sheet: stops[0].sheet,
+                                                  others: Array(stops.dropFirst()))
+        ManualFigureCue.show(first, on: glassesDisplay)
     }
 
     /// A manual has just been removed from an installed vault (Plan FN).
@@ -6177,8 +6266,9 @@ class AppState: ObservableObject, AppStateProtocol {
             // Someone else ended the conversation while we were suspended; they own the teardown.
             guard inConversation else { return }
             // Plan GU §4: after a full-quality reply the hands-free link was released; take it
-            // back (switch first, then listen) before the follow-up records.
-            await wakeWordService.retakeConversationMicIfReleased()
+            // back (switch first, then listen) before the follow-up records. Likewise when the
+            // conversation landed on the phone from the background and the app is now in front.
+            await wakeWordService.retakeConversationMicIfNeeded()
             guard inConversation else { return }
             isListening = true
             // CO Item 4: if what we just said was a question, give the user room to think before
@@ -6390,7 +6480,8 @@ class AppState: ObservableObject, AppStateProtocol {
                             self.speechService.stopThinkingSound()
                             await self.resumeListeningOrReturnToWakeWord(ensureEngine: true)
                         },
-                        waitForAnnouncement: { await self.turnAnnouncement.waitUntilSpoken() }
+                        waitForAnnouncement: { await self.turnAnnouncement.waitUntilSpoken() },
+                        utterance: query
                     ))
                 }
                 return true
@@ -6684,6 +6775,7 @@ class AppState: ObservableObject, AppStateProtocol {
         }
 
         currentTranscription = text
+        turnUtterance = text
         isListening = false
         errorMessage = nil
         speechService.playEndListeningTone()
@@ -7106,7 +7198,10 @@ class AppState: ObservableObject, AppStateProtocol {
                     await connectivityHandoff.turnEnded()
                     await resumeListeningOrReturnToWakeWord(ensureEngine: true)
                 },
-                waitForAnnouncement: { [self] in await turnAnnouncement.waitUntilSpoken() }
+                waitForAnnouncement: { [self] in await turnAnnouncement.waitUntilSpoken() },
+                // The wearer's words, so a timer or reminder the model sets can be checked against
+                // them (`RelativeTimeGuard`).
+                utterance: query
             ))
         }
     }
@@ -7127,6 +7222,7 @@ class AppState: ObservableObject, AppStateProtocol {
         guard !query.isEmpty else { return }
 
         currentTranscription = query
+        turnUtterance = query
         isListening = false
         errorMessage = nil
 
@@ -7315,7 +7411,10 @@ class AppState: ObservableObject, AppStateProtocol {
                     speechService.stopThinkingSound()
                     await connectivityHandoff.turnEnded()   // Plan GE: apply a change that waited
                 },
-                waitForAnnouncement: { [self] in await turnAnnouncement.waitUntilSpoken() }
+                waitForAnnouncement: { [self] in await turnAnnouncement.waitUntilSpoken() },
+                // The wearer's words, so a timer or reminder the model sets can be checked against
+                // them (`RelativeTimeGuard`).
+                utterance: query
             ))
         }
         currentLLMTask = turn
@@ -7475,7 +7574,8 @@ class AppState: ObservableObject, AppStateProtocol {
             conversationRoute: route,
             displayGlasses: glassesDisplay.isDisplayActive,
             realtime: geminiLiveSession.isActive || openAIRealtimeSession.isActive,
-            carPlay: wakeWordService.carPlayMode))
+            carPlay: wakeWordService.carPlayMode,
+            backgrounded: !wakeWordService.appInForeground()))
         return decision
     }
 

@@ -37,15 +37,19 @@ enum VaultDocumentExtractor {
         let structuredHeadings: Int
         /// Pages that came out as drawings rather than prose (`<!-- page: diagram -->`).
         let diagramPages: Int
+        /// The printed page number each physical page carries, where the PDF's labels or its
+        /// header/footer band say (Plan IN P0, decision 4). Empty for text and EPUB.
+        var pageLabels: [PageLabel] = []
 
         init(text: String, pageCount: Int?, ocrPages: Int = 0, lowConfidencePages: Int = 0,
-             structuredHeadings: Int = 0, diagramPages: Int = 0) {
+             structuredHeadings: Int = 0, diagramPages: Int = 0, pageLabels: [PageLabel] = []) {
             self.text = text
             self.pageCount = pageCount
             self.ocrPages = ocrPages
             self.lowConfidencePages = lowConfidencePages
             self.structuredHeadings = structuredHeadings
             self.diagramPages = diagramPages
+            self.pageLabels = pageLabels
         }
 
         var usedRecognition: Bool { ocrPages > 0 }
@@ -99,7 +103,8 @@ enum VaultDocumentExtractor {
             let layer = structuredPages(of: document)
             guard layer.pages.contains(where: { !$0.isEmpty }) else { throw ExtractionError.noTextLayer(name) }
             return Extracted(text: layer.pages.joined(separator: pageSeparator), pageCount: document.pageCount,
-                             structuredHeadings: layer.headings, diagramPages: layer.diagramPages)
+                             structuredHeadings: layer.headings, diagramPages: layer.diagramPages,
+                             pageLabels: pageLabels(of: document))
         default:
             return try extractNonPDF(from: url)
         }
@@ -133,7 +138,8 @@ enum VaultDocumentExtractor {
         guard let reader, !blank.isEmpty else {
             guard pages.contains(where: { !$0.isEmpty }) else { throw ExtractionError.noTextLayer(name) }
             return Extracted(text: pages.joined(separator: pageSeparator), pageCount: pages.count,
-                             structuredHeadings: layer.headings, diagramPages: layer.diagramPages)
+                             structuredHeadings: layer.headings, diagramPages: layer.diagramPages,
+                             pageLabels: pageLabels(of: document))
         }
 
         var state = checkpoint?.load() ?? OCRCheckpoint(contentHash: "")
@@ -161,7 +167,48 @@ enum VaultDocumentExtractor {
         guard pages.contains(where: { !$0.isEmpty }) else { throw ExtractionError.empty(name) }
         return Extracted(text: pages.joined(separator: pageSeparator), pageCount: pages.count,
                          ocrPages: blank.count, lowConfidencePages: low,
-                         structuredHeadings: layer.headings, diagramPages: layer.diagramPages)
+                         structuredHeadings: layer.headings, diagramPages: layer.diagramPages,
+                         pageLabels: pageLabels(of: document))
+    }
+
+    // MARK: - Printed page numbers (Plan IN P0)
+
+    /// How much of the page's height, at the top and at the bottom, counts as the running header
+    /// or footer a page number is printed in.
+    static let pageNumberBand: CGFloat = 0.09
+
+    /// The printed page each physical page carries. The publisher's own label wins when it says
+    /// something other than the physical number — PDFKit reports "1", "2", … for a document with
+    /// no labels, which says nothing. Otherwise a lone number or roman numeral in the top or bottom
+    /// band is read, so a code book whose PDF carries no labels still maps page 112 to PDF page 130.
+    /// A page that shows neither gets no entry: unknown is not "the same as the physical page".
+    static func pageLabels(of document: PDFDocument) -> [PageLabel] {
+        var labels: [PageLabel] = []
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index) else { continue }
+            let physical = index + 1
+            if let label = page.label?.trimmingCharacters(in: .whitespaces), !label.isEmpty,
+               label != String(physical) {
+                labels.append(PageLabel(page: physical, label: label, source: .pdfLabel))
+                continue
+            }
+            if let printed = printedLabel(on: page) {
+                labels.append(PageLabel(page: physical, label: printed, source: .printed))
+            }
+        }
+        return labels
+    }
+
+    /// The page number printed in a page's header or footer band, else nil.
+    static func printedLabel(on page: PDFPage) -> String? {
+        let bounds = page.bounds(for: .mediaBox)
+        guard bounds.height > 0 else { return nil }
+        let band = bounds.height * pageNumberBand
+        // PDF space has its origin at the bottom left.
+        let bottom = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: band)
+        let top = CGRect(x: bounds.minX, y: bounds.maxY - band, width: bounds.width, height: band)
+        let text = [top, bottom].compactMap { page.selection(for: $0)?.string }.joined(separator: "\n")
+        return PrintedPageBand.label(in: text)
     }
 
     // MARK: - Helpers

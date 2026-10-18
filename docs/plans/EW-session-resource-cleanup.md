@@ -107,12 +107,14 @@ context. Each row in the audit carries its reason.
 
 - `VisualStateService`'s JPEG thumbnails are written to the temp directory and never deleted. A
   disk-hygiene question, owned by [DI](DI-photo-library-hygiene.md), not a session resource.
-- A stall recovery that exhausts its tiers is not picked up by the reconnect ladder. Traced: this
-  is a missing *decision* about what follows the last tier, not a missing release —
+- A stall recovery whose rebuild fails was not picked up by the reconnect ladder. Traced: this
+  was a missing *decision* about what follows the last tier, not a missing release —
   `scheduleReconnect()` refuses to run under `isRecoveringFromStall` on purpose, because two
   rebuilders racing for one process-wide camera capability is how a dropped stream becomes
-  `capabilityAlreadyActive`. Stream-recovery policy, so
-  [BR](BR-realtime-and-stream-hardening.md)'s.
+  `capabilityAlreadyActive`. **Closed by [HJ](HJ-camera-stream-end-recovery.md)
+  ([#739](https://github.com/straff2002/OpenGlasses/pull/739)):** once the flag is cleared, a
+  rebuild that threw hands the end to the ladder through `StreamEndRecoveryPolicy` with the cause
+  `.stallRecoveryFailed`.
 
 ### Owed on device
 

@@ -218,7 +218,9 @@ final class JobTabAccessibilityTests: AccessibilityAuditCase {
         awaitScreen(add, named: "The Jobs list")
         add.tap()
 
-        let resume = app.buttons["Resume Job 1005"]
+        // "Open" while the seeded job runs, "Resume" only if it is paused.
+        let resume = app.buttons.matching(NSPredicate(format: "label IN %@",
+                                                      ["Open Job 1005", "Resume Job 1005"])).firstMatch
         awaitScreen(resume, named: "The open-job question")
         XCTAssertTrue(app.buttons["Finish Job 1005…"].exists)
         XCTAssertTrue(app.buttons["Schedule a job for later"].exists)

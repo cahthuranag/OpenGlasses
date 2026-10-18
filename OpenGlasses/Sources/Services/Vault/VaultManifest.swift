@@ -165,19 +165,52 @@ struct VaultDocument: Codable, Equatable {
     /// Where the manufacturer publishes this manual. Opened outside the app, so it is a link and
     /// never a substitute for the bundled original.
     let sourceUrl: String?
+    let capturedManual: CapturedManualReview?
+    /// Which edition or revision of its work this document is ("2024", "Rev C", "3rd edition"),
+    /// when the vault holds more than one (Plan IV P2; the field Plan IN P3 names). The newest
+    /// edition answers by default and an older one only when asked for — see `DocumentEditions`.
+    /// Optional: two documents whose titles differ only by a year are recognised without it.
+    let edition: String?
 
     init(file: String, title: String, kind: String? = nil,
-         source: String? = nil, sourceUrl: String? = nil) {
+         source: String? = nil, sourceUrl: String? = nil, capturedManual: CapturedManualReview? = nil,
+         edition: String? = nil) {
         self.file = file
         self.title = title
         self.kind = kind
         self.source = source
         self.sourceUrl = sourceUrl
+        self.capturedManual = capturedManual
+        self.edition = edition
     }
 
     enum CodingKeys: String, CodingKey {
-        case file, title, kind, source
+        case file, title, kind, source, edition
         case sourceUrl = "source_url"
+        case capturedManual = "captured_manual"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy:CodingKeys.self)
+        file = try c.decode(String.self,forKey:.file);title = try c.decode(String.self,forKey:.title)
+        kind = try c.decodeIfPresent(String.self,forKey:.kind);source = try c.decodeIfPresent(String.self,forKey:.source)
+        sourceUrl = try c.decodeIfPresent(String.self,forKey:.sourceUrl)
+        edition = try c.decodeIfPresent(String.self, forKey: .edition)
+        capturedManual = c.contains(.capturedManual) ? try c.decode(CapturedManualReview.self,forKey:.capturedManual) : nil
+        if let review = capturedManual, !review.valid {
+            throw DecodingError.dataCorruptedError(forKey:.capturedManual,in:c,debugDescription:"Invalid photographed-manual review metadata")
+        }
+    }
+
+    /// Persisted only after the signed archive and Office assignment have both verified. Binds
+    /// approval/origins to this document's exact text and physical PDF, including title changes.
+    func capturedBinding(text: Data, pdf: Data) throws -> String {
+        guard let review = capturedManual,review.valid,
+              text.count <= CapturedManualContract.maximumTextBytes,pdf.count <= CapturedManualContract.maximumPDFBytes,
+              source?.lowercased().hasSuffix(".pdf") == true,!isPDF else {throw CapturedManualStore.Failure.invalidRequest}
+        _ = try review.pageTexts(text)
+        let encoder = JSONEncoder();encoder.outputFormatting = [.sortedKeys,.withoutEscapingSlashes]
+        return CapturedManualContract.digest(try encoder.encode(self) + Data(CapturedManualContract.digest(text).utf8) + Data(CapturedManualContract.digest(pdf).utf8))
     }
 
     /// Whether this document is itself the manufacturer's PDF (rather than text extracted from one).

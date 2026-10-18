@@ -100,4 +100,27 @@ final class SystemPromptBuilderTests: XCTestCase {
         let guide = SystemPromptBuilder.appGuide(appName: "Avenkin")
         XCTAssertTrue(guide.contains("never send the user there"))
     }
+
+    /// A tester asked whether the wake phrase is heard with the phone locked in a pocket, and the
+    /// model, with no facts, said to keep the app open. The guide now says what the app does: the
+    /// wake phrase works locked while listening is on; the glasses carry a locked turn whichever
+    /// mic waits for the phrase (`TurnMicHandoff.sessionSwitch`: the idle session kept, or a fresh
+    /// one from the default phone-mic listener); glasses holding the idle mic stand down when
+    /// taken off (`GlassesSleepPolicy.doffGraceSeconds`).
+    func testTheGuideSaysWhatListeningDoesWithThePhoneLocked() {
+        let guide = SystemPromptBuilder.appGuide(appName: "Avenkin")
+        XCTAssertTrue(guide.contains("works with the phone locked or in a pocket"))
+        XCTAssertTrue(guide.contains("(not push-to-talk)"))
+        XCTAssertTrue(guide.contains("with the glasses as the microphone the request and the reply go through the glasses there too"),
+                      "not only with Same as Microphone: the default iPhone listener reaches the glasses too")
+        XCTAssertTrue(guide.contains("Settings > \(SettingsCatalog.category(.devices).title) > Glasses > Listen for the wake word on"))
+        XCTAssertTrue(guide.contains(WakeListenMic.sameAsMicrophone.label))
+        XCTAssertTrue(guide.contains("On \(WakeListenMic.iPhone.label), the default"))
+        let stored = UserDefaults.standard.object(forKey: "wakeListenMic")
+        defer { UserDefaults.standard.set(stored, forKey: "wakeListenMic") }
+        UserDefaults.standard.removeObject(forKey: "wakeListenMic")
+        XCTAssertEqual(Config.wakeListenMic, .iPhone, "the guide calls iPhone the default")
+        XCTAssertTrue(guide.contains("\(Int(GlassesSleepPolicy.doffGraceSeconds)) seconds"))
+        XCTAssertFalse(guide.lowercased().contains("keep the app open"))
+    }
 }

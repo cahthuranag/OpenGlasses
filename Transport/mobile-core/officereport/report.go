@@ -16,6 +16,7 @@ import (
 	"errors"
 	"sort"
 
+	"avenkin.dev/mobilecore/capturedmanual"
 	"avenkin.dev/mobilecore/officepreview"
 	"github.com/syncthing/syncthing/lib/protocol"
 )
@@ -29,23 +30,26 @@ const (
 	ReceiptKind  = "avenkin.office-report-receipt"
 
 	// What a report carries.
-	RecordWorkRecord   = "workRecord"
-	RecordPartsRequest = "partsRequest"
-	RecordAddendum     = "addendum"
+	RecordWorkRecord     = "workRecord"
+	RecordPartsRequest   = "partsRequest"
+	RecordAddendum       = "addendum"
+	RecordCapturedManual = "capturedManual"
 
 	// Where the transcript is.
 	TranscriptAttached = "attached"
 	TranscriptOmitted  = "omitted"
 	TranscriptNone     = "none"
 
-	RoleWorkOrder   = "workOrder"
-	RoleAuditExport = "auditExport"
-	RoleTranscript  = "transcript"
-	RolePhoto       = "photo"
-	RoleClip        = "clip"
-	RoleClipPoster  = "clipPoster"
-	RoleSignature   = "signature"
-	RoleAddendum    = "addendum"
+	RoleWorkOrder          = "workOrder"
+	RoleAuditExport        = "auditExport"
+	RoleTranscript         = "transcript"
+	RolePhoto              = "photo"
+	RoleClip               = "clip"
+	RoleClipPoster         = "clipPoster"
+	RoleSignature          = "signature"
+	RoleAddendum           = "addendum"
+	RoleCapturedManualPDF  = "capturedManualPDF"
+	RoleCapturedManualText = "capturedManualText"
 
 	Required = "required"
 	Optional = "optional"
@@ -146,8 +150,8 @@ type Receipt struct {
 var reportFields = []string{"version", "kind", "reportID", "operationID", "recordKind", "recordID", "revision", "organizationID", "enrolmentID", "officeID", "phoneTransportID", "jobReference", "jobID", "jobRevision", "recordSHA256", "recordBytes", "manifestSHA256", "manifestBytes", "transcript", "createdAt"}
 var receiptFields = []string{"version", "kind", "reportID", "reportSHA256", "recordSHA256", "manifestSHA256", "organizationID", "enrolmentID", "officeID", "phoneTransportID", "outcome", "attachmentsCommitted", "attachmentsOutstanding", "receivedAt"}
 
-var mediaTypes = map[string]bool{"application/pdf": true, "application/json": true, "image/jpeg": true, "image/png": true, "video/mp4": true, "video/quicktime": true}
-var roles = map[string]bool{RoleWorkOrder: true, RoleAuditExport: true, RoleTranscript: true, RolePhoto: true, RoleClip: true, RoleClipPoster: true, RoleSignature: true, RoleAddendum: true}
+var mediaTypes = map[string]bool{"application/pdf": true, "application/json": true, "image/jpeg": true, "image/png": true, "video/mp4": true, "video/quicktime": true, "text/markdown": true}
+var roles = map[string]bool{RoleWorkOrder: true, RoleAuditExport: true, RoleTranscript: true, RolePhoto: true, RoleClip: true, RoleClipPoster: true, RoleSignature: true, RoleAddendum: true, RoleCapturedManualPDF: true, RoleCapturedManualText: true}
 
 type envelope struct {
 	Payload   string `json:"payload"`
@@ -280,7 +284,7 @@ func instant(n int64) bool { return n > 0 && n <= maximumSafeInteger }
 func (r Report) valid() bool {
 	return r.Version == 1 && r.Kind == ReportKind && lowerHex(r.ReportID, 64) && safeIdentifier(r.OperationID) &&
 		r.ReportID == ReportID(r.OperationID) &&
-		(r.RecordKind == RecordWorkRecord || r.RecordKind == RecordPartsRequest || r.RecordKind == RecordAddendum) &&
+		(r.RecordKind == RecordWorkRecord || r.RecordKind == RecordPartsRequest || r.RecordKind == RecordAddendum || r.RecordKind == RecordCapturedManual) &&
 		safeIdentifier(r.RecordID) && instant(r.Revision) &&
 		safeIdentifier(r.OrganizationID) && safeIdentifier(r.EnrolmentID) && safeIdentifier(r.OfficeID) && transportID(r.PhoneTransportID) &&
 		plain(r.JobReference, 120) &&
@@ -364,7 +368,9 @@ func (a Attachment) valid() bool {
 	return lowerHex(a.SHA256, 64) && instant(a.Bytes) && roles[a.Role] && mediaTypes[a.MediaType] && fileName(a.Name) &&
 		(a.Requirement == Required || a.Requirement == Optional) && (a.Audience == AudienceOffice || a.Audience == AudienceCustomer) &&
 		// A transcript is never the customer's.
-		(a.Role != RoleTranscript || a.Audience == AudienceOffice)
+		(a.Role != RoleTranscript || a.Audience == AudienceOffice) &&
+		(a.Role != RoleCapturedManualPDF || a.Audience == AudienceOffice && a.MediaType == "application/pdf") &&
+		(a.Role != RoleCapturedManualText || a.Audience == AudienceOffice && a.MediaType == "text/markdown")
 }
 
 func (m Manifest) valid() bool {
@@ -441,6 +447,30 @@ func (r Report) Carries(record, manifest []byte) (Manifest, error) {
 	}
 	if m.has(RoleTranscript) != (r.Transcript == TranscriptAttached) {
 		return Manifest{}, ErrContent
+	}
+	if r.RecordKind == RecordCapturedManual {
+		capture, err := capturedmanual.Read(record)
+		if err != nil || capture.CaptureID != r.RecordID || capture.OwnershipScope != "organization" ||
+			capture.OrganizationID != r.OrganizationID || capture.EnrolmentID != r.EnrolmentID ||
+			capture.JobReference != r.JobReference || capture.JobID != r.JobID || capture.JobRevision != r.JobRevision ||
+			r.Transcript != TranscriptNone || len(m.Attachments) != 2 {
+			return Manifest{}, ErrContent
+		}
+		foundPDF, foundText := false, false
+		for _, a := range m.Attachments {
+			if a.Requirement != Required || a.Audience != AudienceOffice {
+				return Manifest{}, ErrContent
+			}
+			if a.Role == RoleCapturedManualPDF && a.SHA256 == capture.PDFSHA256 && a.Bytes == int64(capture.PDFBytes) {
+				foundPDF = true
+			}
+			if a.Role == RoleCapturedManualText && a.SHA256 == capture.TextSHA256 && a.Bytes == int64(capture.TextBytes) {
+				foundText = true
+			}
+		}
+		if !foundPDF || !foundText {
+			return Manifest{}, ErrContent
+		}
 	}
 	return m, nil
 }

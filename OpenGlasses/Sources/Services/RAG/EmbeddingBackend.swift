@@ -73,20 +73,35 @@ final class NLContextualBackend: EmbeddingBackend {
         self.modelId = "nl-contextual.\(model.modelIdentifier)"
     }
 
+    /// The mean of the token vectors. The model reads at most `maximumSequenceLength` tokens (256)
+    /// and drops the rest silently; measured on two manuals, a sixth of the 200 longest chunks
+    /// reached that limit (Plan IV P4). So a text the model would cut is split in two at a sentence (else a
+    /// word) and each half embedded, recursively, and the token vectors of every piece are pooled
+    /// together — nothing past the limit is lost, and a short text is embedded exactly as before.
     func embed(_ text: String) -> [Float]? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let result = try? model.embeddingResult(for: trimmed, language: nil) else { return nil }
-        let dim = model.dimension
-        var sum = [Float](repeating: 0, count: dim)
+        guard !trimmed.isEmpty else { return nil }
+        var sum = [Float](repeating: 0, count: model.dimension)
         var tokens = 0
-        result.enumerateTokenVectors(in: trimmed.startIndex..<trimmed.endIndex) { vector, _ in
+        accumulate(trimmed, into: &sum, tokens: &tokens, depth: 0)
+        guard tokens > 0 else { return nil }
+        return sum.map { $0 / Float(tokens) }   // mean-pool the token vectors
+    }
+
+    private func accumulate(_ text: String, into sum: inout [Float], tokens: inout Int, depth: Int) {
+        guard let result = try? model.embeddingResult(for: text, language: nil) else { return }
+        if result.sequenceLength >= model.maximumSequenceLength, depth < 6,
+           let (first, second) = ContextualInput.halves(of: text) {
+            accumulate(first, into: &sum, tokens: &tokens, depth: depth + 1)
+            accumulate(second, into: &sum, tokens: &tokens, depth: depth + 1)
+            return
+        }
+        let dim = sum.count
+        result.enumerateTokenVectors(in: text.startIndex..<text.endIndex) { vector, _ in
             for i in 0..<min(vector.count, dim) { sum[i] += Float(vector[i]) }
             tokens += 1
             return true
         }
-        guard tokens > 0 else { return nil }
-        return sum.map { $0 / Float(tokens) }   // mean-pool the token vectors
     }
 
     // MARK: - Process-wide cache + assets
@@ -112,5 +127,36 @@ final class NLContextualBackend: EmbeddingBackend {
     static func prepareAssets(for language: NLLanguage) async {
         guard let model = NLContextualEmbedding(language: language), !model.hasAvailableAssets else { return }
         _ = try? await model.requestAssets()
+    }
+}
+
+/// Splitting a text the contextual model would cut (Plan IV P4). Pure, so the split is tested
+/// without the model.
+enum ContextualInput {
+
+    /// The text in two parts at the sentence end nearest its middle, else at the space nearest
+    /// it; nil for a single word. Neither part is empty, and together they hold every word.
+    static func halves(of text: String) -> (String, String)? {
+        let middle = text.count / 2
+        var best: String.Index?
+        var bestDistance = Int.max
+        func consider(_ index: String.Index) {
+            let distance = abs(text.distance(from: text.startIndex, to: index) - middle)
+            if distance < bestDistance { best = index; bestDistance = distance }
+        }
+        var i = text.startIndex
+        while i < text.endIndex {
+            let next = text.index(after: i)
+            if ".!?;\n".contains(text[i]), next < text.endIndex, text[next].isWhitespace { consider(next) }
+            i = next
+        }
+        if best == nil {
+            for index in text.indices where text[index] == " " { consider(index) }
+        }
+        guard let cut = best else { return nil }
+        let first = text[..<cut].trimmingCharacters(in: .whitespacesAndNewlines)
+        let second = text[cut...].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !first.isEmpty, !second.isEmpty else { return nil }
+        return (first, second)
     }
 }

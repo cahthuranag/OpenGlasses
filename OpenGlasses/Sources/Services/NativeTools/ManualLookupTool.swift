@@ -11,20 +11,24 @@ import Foundation
 final class ManualLookupTool: NativeTool {
     let name = "manual_lookup"
     let description = """
-    Search the OEM manuals loaded into the active Field Assist vault for a fault code, model, \
-    component, or procedure. Pass 'query' with what to look for, or omit it (or set 'use_camera') \
+    Search the OEM manuals and code books loaded into the active Field Assist vault for a fault \
+    code, model, component, procedure, or a clause or rule number (pass it as printed, e.g. \
+    "clause 3.9.4.2", "rule 26-700", "section 110.26"). Pass 'query' with what to look for, or omit it (or set 'use_camera') \
     to read a nameplate / fault display through the camera (the glasses when connected, otherwise the phone) and search on what it says. \
     Returns the matching manual passages, each with a Source line naming the manual and page — \
     cite those lines. If it reports that the manuals do not cover the question, or that they are \
     not for the machine the question names, say so verbatim rather than answering from general \
-    knowledge. Requires an active session in a vault that has manuals.
+    knowledge. Write the query in the manual's own words — the part, procedure, table or rule as \
+    the book would name it — rather than repeating the technician's phrasing; when a result offers \
+    the book's index references or its nearest section headings, those are the words to search \
+    with. Requires an active session in a vault that has manuals.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
         "properties": [
             "query": [
                 "type": "string",
-                "description": "What to look up in the manuals (a fault code, model number, component, or question)."
+                "description": "What to look up in the manuals (a fault code, model number, component, clause number, or question)."
             ],
             "document": [
                 "type": "string",
@@ -43,14 +47,19 @@ final class ManualLookupTool: NativeTool {
     private let ocr: OCRService
     /// Session to read the active vault from; nil means the shared service. Injectable for tests.
     private let injectedSession: FieldSessionService?
+    /// The technician's words this turn. "What did the 2021 code say" asks for an older edition
+    /// even when the model's query leaves the year out (Plan IV P2).
+    private let currentUtterance: @MainActor () -> String?
 
     init(documentStore: DocumentStore?, cameraService: (any FilteredStillProviding)? = nil,
          ocr: OCRService = OCRService(),
-         sessionService: FieldSessionService? = nil) {
+         sessionService: FieldSessionService? = nil,
+         currentUtterance: @escaping @MainActor () -> String? = { TechnicianWords.current() }) {
         self.documentStore = documentStore
         self.cameraService = cameraService
         self.ocr = ocr
         self.injectedSession = sessionService
+        self.currentUtterance = currentUtterance
     }
 
     func execute(args: [String: Any]) async throws -> String {
@@ -64,7 +73,7 @@ final class ManualLookupTool: NativeTool {
         // Published team learnings are searched beside the manuals (Plan FP P2), so a vault with
         // learnings and no manuals is still searchable; the messages below are for one with neither.
         let corpus = session.retrievableCorpus(store: store, documentStore: documentStore)
-        guard store.manifest.hasDocuments || corpus.learnings else {
+        guard store.manifest.hasDocuments || corpus.any else {
             return "The \(store.manifest.name) vault has no manuals. Its reference material is the vault core, which is already in context."
         }
         guard let documentStore else {
@@ -72,7 +81,9 @@ final class ManualLookupTool: NativeTool {
         }
         let namespace = DocumentStore.vaultNamespace(store.manifest.id)
         guard corpus.any else {
-            return "No manuals have been imported for the \(store.manifest.name) vault yet. Import them in Settings → Field Assist → Custom Vaults."
+            // Listed but not searchable: still being indexed, or never indexed — not "never
+            // imported", which sent the model round five rephrasings of the same search.
+            return ManualIndexAvailability.unsearchableSentence(for: store.manifest)
         }
 
         let query = (args["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -99,13 +110,15 @@ final class ManualLookupTool: NativeTool {
         let documentIds = documentFilter.flatMap { filter -> [String]? in
             let needle = filter.lowercased()
             guard !needle.isEmpty else { return nil }
-            let ids = documentStore.list(namespace: namespace)
+            let spaces = session.retrievalNamespaces(vaultId: store.manifest.id).filter { $0.source.isReference }
+            let ids = spaces.flatMap { documentStore.list(namespace: $0.namespace) }
                 .filter { $0.name.lowercased().contains(needle) }
                 .map(\.id)
             return ids.isEmpty ? nil : ids
         }
         if let documentFilter, !documentFilter.isEmpty, documentIds == nil {
-            let titles = documentStore.list(namespace: namespace).map { "\"\($0.name)\"" }.joined(separator: ", ")
+            let titles = session.retrievalNamespaces(vaultId: store.manifest.id).filter { $0.source.isReference }
+                .flatMap { documentStore.list(namespace: $0.namespace) }.map { "\"\($0.name)\"" }.joined(separator: ", ")
             return "No manual titled like '\(documentFilter)'. Loaded manuals: \(titles)."
         }
 
@@ -117,15 +130,73 @@ final class ManualLookupTool: NativeTool {
         }
 
         // The shared factory: manuals and the vault's published team learnings, each tagged.
-        let retriever = session.makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds)
-        let outcome = retriever.retrieve(.init(turn: query, ocrText: ocrText,
-                                               procedureStep: nil, limit: session.manualPassageLimit))
+        // The newest edition unless the query or the technician's words reach past it. A
+        // `document` the model passed is its own choice and is searched as named.
+        let editionRequest = EditionRequest.parse([query, currentUtterance()].compactMap { $0 }.joined(separator: " "),
+                                                  editions: session.documentEditions(of: store))
+        let retriever = session.makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds,
+                                              editionRequest: editionRequest)
+        let outcome = session.retrieveManualPassages(.init(turn: query, ocrText: ocrText, procedureStep: nil),
+                                                     with: retriever, store: store, documentIds: documentIds)
         let disclosure = session.noteRetrieval(outcome)
+        // What "show me the page" opens next, until an answer that cites replaces it (Plan IN P2).
+        if outcome.answers {
+            session.sourceCenter.noteLookup(outcome.passages, sessionId: session.activeSession?.id)
+        }
         let label = query.flatMap { $0.isEmpty ? nil : $0 } ?? "what the label says"
         var result = VaultRetriever.toolResult(outcome, query: label, leadIn: disclosure?.leadIn)
+        // The book's way in (Plan IV P5): what its own index names for these words, when a manual
+        // has one and the passages don't already carry it; and on a first miss, the headings of
+        // the nearest sections, so the one retry #763 allows is in the book's terms.
+        let lookupWords = [query, ocrText].compactMap { $0 }.joined(separator: " ")
+        let references = session.indexReferences(for: lookupWords, store: store, documentIds: documentIds)
+            .filter { ref in !outcome.passages.contains { ClauseReference.match(ref, in: $0.text) != nil || $0.figure == ref } }
+        if !references.isEmpty {
+            result += "\n\n" + Self.indexHint(references)
+        }
+        if !outcome.answers {
+            let misses = session.noteManualLookupMiss()
+            result += "\n\n" + Self.missGuidance(misses: misses)
+            let sections = misses > 1 ? [] : session.closestSections(for: lookupWords, store: store,
+                                                                     documentIds: documentIds, editionRequest: editionRequest)
+            if !sections.isEmpty { result += "\n\n" + Self.sectionsHint(sections) }
+        }
+        if documentIds == nil, let note = session.editionNote(for: editionRequest, store: store) {
+            result += "\n\n" + note
+        }
         if let ocrText {
             result = "Read from the label: \(ocrText.replacingOccurrences(of: "\n", with: " "))\n\n" + result
         }
         return result
+    }
+
+    /// The book's own index pointing elsewhere than the passages.
+    static func indexHint(_ references: [String]) -> String {
+        "The manual's own index lists these for those words: "
+            + references.map { $0.hasPrefix("Table") ? $0 : "rule \($0)" }.joined(separator: ", ")
+            + ". If the passages above don't answer, look them up by number."
+    }
+
+    /// The nearest sections, offered after a first miss.
+    static func sectionsHint(_ sections: [String]) -> String {
+        "The nearest sections in the manuals are headed: " + sections.joined(separator: "; ")
+            + ". If one of them is what was asked about, one more lookup in those words is worth it."
+    }
+
+    /// What the model is told after a search that found nothing it may answer from. Field report:
+    /// on a code-book vault one question about a cord's capacity ran this tool five times in a
+    /// turn, each a rephrasing, each refused with the same sentence, and the technician got no
+    /// answer at all. A different wording reaches the same pages; the second miss in a turn says
+    /// to stop and answer.
+    static func missGuidance(misses: Int) -> String {
+        guard misses > 1 else {
+            return "Nothing in the loaded manuals answers this. Do not run manual_lookup again with a "
+                + "rephrasing of the same question: other wordings reach the same pages. Tell the "
+                + "technician the manuals do not cover it, or ask for the one detail that would change "
+                + "the search (a model number, a table, clause or page number)."
+        }
+        return "That is \(misses) searches this turn that found nothing. Stop searching and answer the "
+            + "technician now: say the loaded manuals do not cover it, and give what you do have from "
+            + "the passages and the vault already in front of you."
     }
 }

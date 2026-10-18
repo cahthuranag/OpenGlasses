@@ -101,6 +101,13 @@ enum ManualFigureCue {
 
     /// "Figure 58, page 44, on your phone".
     static func line(for staged: FieldSessionService.StagedFigure) -> String {
+        if staged.documentTitle.hasPrefix("Reviewed photographed manual · ") {
+            return "\(staged.documentTitle), photographed page \(staged.page), on your phone"
+        }
+        if staged.documentId.hasPrefix("captured:") {
+            let source = staged.documentTitle.components(separatedBy:" · capture ").first ?? "Photographed manual"
+            return "\(source), photographed page \(staged.page), on your phone"
+        }
         let name = staged.figure.flatMap { $0.isEmpty ? nil : $0 } ?? "Drawing"
         return "\(name), page \(staged.page), on your phone"
     }

@@ -64,6 +64,27 @@ final class ManualPagePolicyTests: XCTestCase {
                        .present(reason: .diagramForQuestion), "a real code in the hits is a reference")
     }
 
+    /// Field report, build 497: "why did you open installation, I said page 34 of the service
+    /// manual" — a request for a page — opened the vent table its search had found on page 17.
+    func testATurnThatNamesAPageOpensNoOtherPage() {
+        typealias P = FigureAutoOpenPolicy
+        XCTAssertEqual(P.decide(turnKind: .showMe, passageKind: .captioned, tokenHits: [],
+                                namedPages: [34], passagePage: 17),
+                       .none(reason: .otherPageNamed))
+        XCTAssertEqual(P.decide(turnKind: .question, passageKind: .diagram, tokenHits: ["24VAXC"],
+                                namedPages: [34], passagePage: nil),
+                       .none(reason: .otherPageNamed), "a passage with no page is not the page named")
+        XCTAssertEqual(P.decide(turnKind: .showMe, passageKind: .captioned, tokenHits: [],
+                                namedPages: [34, 35], passagePage: 34),
+                       .present(reason: .askedForPage), "the page asked for still opens")
+        XCTAssertEqual(P.decide(turnKind: .question, passageKind: .captioned, tokenHits: [],
+                                namedPages: [34], passagePage: 34),
+                       .attachToModelOnly(reason: .tableNotAskedFor), "on the named page the usual rules apply")
+        XCTAssertEqual(P.decide(turnKind: .reading, passageKind: .captioned, tokenHits: [],
+                                namedPages: [34], passagePage: 34),
+                       .none(reason: .reading))
+    }
+
     // MARK: - Tokens
 
     func testDecimalsStayWholeAndAreNotCodes() {

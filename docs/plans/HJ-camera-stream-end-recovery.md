@@ -1,7 +1,10 @@
 # Plan HJ — Camera Recovery When the Glasses End the Stream (and the Phone Is Locked)
 
-**Status:** 📋 Planned 2026-10-02 — nothing built. P0 (pure table) and P1 (wiring) are headless and
-ship as one PR; P2 is a device session and rides with Plan [EO](EO-hevc-glasses-stream.md) P2.
+**Status:** 🚧 P0 + P1 shipped 2026-10-15 (headless, one PR): `StreamEndRecoveryPolicy` +
+`StreamEndHistory`, wired into `MetaCameraBackend`, `CameraService` and the app's scene-phase and
+protected-data handlers — see **P1 as built** below. Re-verified against main first: open items 1–6
+were all still open. **P2** (the locked-phone device matrix) is owed and rides with Plan
+[EO](EO-hevc-glasses-stream.md) P2; **P3** is conditional on what P2 finds.
 **Note 2026-10-10:** row 3a's process-wide half is done in Plan
 [HX](HX-glasses-link-and-device-state.md)'s follow-ups, for a refusal of the build
 (`insufficientSDKVersion`): the camera is stopped when the refusal latches, which ends the
@@ -226,6 +229,47 @@ an unlock does: resume a parked ladder once at rung 0 **only** from a stopped ca
 
 **Gates:** full suite green, Release build green, `SWIFT_EMIT_LOC_STRINGS=NO` on headless builds,
 build number bumped in all five spec pairs; index row and this Status line updated in the same PR.
+
+### P1 as built (2026-10-15)
+
+Where the build settled something the plan left open, or departs from its sketch:
+
+- **`Cause` has a fifth case, `.compatibilityRefusal(notice:)`.** Row 3a needs to tell a refusal from
+  the other `stopRetrying` session errors, and the classified disposition alone cannot. It is built
+  at the edge for `datAppOnTheGlassesUpdateRequired` and `insufficientSDKVersion` (the two errors
+  `DATCompatibilityMessage` words). A `Trigger` (`streamStopped` / `stallRecoveryFailed`) and a
+  `SessionFailure` feed a pure cause builder: a compatibility refusal, then a session
+  `stopRetrying`, then a stream `stopRetrying`, then the trigger, then transient errors.
+- **Row 3a and `SDKRefusalLatch` coexist.** For `insufficientSDKVersion` the latch still stops the
+  camera process-wide; whichever runs first, the other finds nothing to do (the table stands down
+  once the intent is cleared, and the latch's stop is harmless after a give-up). A give-up for a
+  compatibility refusal posts no camera notice of its own, because the compatibility notice already
+  says the same sentence.
+- **Foreground rows 5–6 ask `StreamReconnectPolicy.next`**, so the foreground cadence is still run
+  by the gate that always ran it; the backend no longer calls it directly. `mayAct` is unchanged.
+- **One end per episode.** `StreamEndHistory` records an end when the ladder is *entered* (the
+  `.stoppedWhileWanted` row or the stall handoff, with `isReconnecting` false). A session error is
+  read as the cause of the end the stream's `.stopped` reports, not counted as a second end; P2 says
+  whether a session can end with no stream `.stopped` at all.
+- **Park copy.** A park shows, once the app is in front, the plan's locked sentence — or, when the
+  phone was not locked, "The glasses camera stopped while Avenkin was in the background. It will try
+  again when you open Avenkin." (new copy, same shape). A row-3 park appends the classifier's own
+  reason ("Glasses are too hot…"). A flap or budget park adds nothing: the foreground flap copy says
+  the camera "has stopped trying", which would be untrue for a camera about to try again.
+- **Resuming.** `onForeground` takes the stream's own state: stopped, stopping or no stream resumes
+  the ladder once from rung 0 with a fresh history and the parked notice; paused, starting, waiting
+  for the device or streaming is `.awaitSDKResume` — the park is lifted and the state listener's rows
+  act on what the SDK does next. A park also ends on the wearer's Start or Stop, or on the SDK
+  resuming the stream by itself, and its errors go with it (they describe the episode before it).
+- **Presence.** `CameraService.notePresence(scenePhase:)` and `notePresence(protectedDataAvailable:)`
+  derive one presence (`StreamEndRecoveryPolicy.presence`): protected data gone is `locked` whatever
+  the phase; `.inactive` keeps the previous presence, except that a phone unlocked but not yet in
+  front reads `background`. The backend hears it only on change.
+- **Logging.** New camera events `streamEndDecision`, `streamEnded`, `reconnectParked`,
+  `reconnectUnparked`, `presenceChanged` and `sessionStateChanged`, with two new fields: `phase`
+  (presence) and a new `codec` key. `streamEnded` carries the seconds since the stream last came
+  back, which is P2's flap shape.
+- **Build number.** Not bumped in the PR: the house rule now is a separate commit on main after merge.
 
 ## P2 — Device session: the lock matrix (deferred; rides with EO P2)
 

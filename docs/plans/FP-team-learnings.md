@@ -841,6 +841,14 @@ it. `DeliveryRequest.confirmation` still says "Job report"; a bundle needs its o
    `subject` of kind `symptom` within an equipment type, matched by the office's own vocabulary
    rather than free text, and how is its reach bounded so a dryer finding never answers for a
    dishwasher? Not needed for P1–P3; it changes retrieval, so it is decided before P4.
+   *(2026-10-16: proposed in Plan [IM](IM-experience-recordings.md) decision 4 — a
+   `symptom(equipmentType, phrase)` subject bounded by a closed equipment-type list; owner to confirm.)*
+8. **Job recordings as an origin** (noted 2026-10-18, from a comparison against two
+   field-service knowledge-management products, both of which treat recorded sessions as the raw
+   material of a knowledge base). Plan [IM](IM-experience-recordings.md) covers recordings made
+   on purpose to capture experience (origin `recollection`). Still open: whether a job recorded
+   under Plan HE, already delivered to the office behind consent and a blur pass, feeds the same
+   review pass under the same person-approves rule. Office-side only; the phone is unchanged.
 
 Related: [F Field Assist](F-field-assist.md), [ED manual retrieval](ED-vault-manual-retrieval.md),
 [EG vault packs](EG-vault-packs.md), [EJ retrieval fidelity](EJ-manual-retrieval-fidelity.md),

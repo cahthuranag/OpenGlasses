@@ -9,6 +9,9 @@ enum RetrievalSource: String, Equatable, Codable, Sendable {
     case manual
     /// An approved team learning published for the vault (`learning:<id>`).
     case teamLearning
+    case capturedManual
+
+    var isReference: Bool { self != .teamLearning }
 }
 
 /// Retrieves reference-tier passages for a Field Assist turn and decides, deterministically,
@@ -49,8 +52,8 @@ struct VaultRetriever {
         let similarity: Float
         /// Similarity plus the token boost — the ranking key.
         let score: Float
-        /// Code-like tokens from the request found verbatim in this passage.
-        let matchedTokens: [String]
+        /// Code-like tokens — and clause numbers — from the request found verbatim in this passage.
+        var matchedTokens: [String]
         /// Subtracted from `score` when this passage names a model the session is not working on
         /// (Plan EL §4). Kept beside `score` rather than folded into it so a passage's own strength
         /// stays readable in a log or a test while the ranking reflects the machine in the room.
@@ -65,6 +68,14 @@ struct VaultRetriever {
         /// The manual, or an approved team learning (Plan FP P2). A learning's `documentName` is
         /// its contract §7.1 citation name, so `citation` renders it unchanged.
         var source: RetrievalSource = .manual
+        var printedPage: Int?
+        /// The passage's edition, when the turn asked for an older edition or to compare (Plan IV
+        /// P2). The model is told it before the text, and the `Source:` line stays the document's
+        /// own title, so a citation still opens its page.
+        var editionLabel: String?
+        /// How the passage relates to a clause number the request named (Plan IN P3a), when it
+        /// does. Ranks the clause's own text ahead of passages that only cite it.
+        var clauseMatch: ClauseReference.Match?
 
         typealias Source = RetrievalSource
 
@@ -85,7 +96,7 @@ struct VaultRetriever {
         /// diagram and "page 44" of a procedure are read very differently.
         var citation: String {
             var parts = [documentName]
-            if let page { parts.append("page \(page)") }
+            if let page { parts.append("page \(page)" + (printedPage.map { " (printed \($0))" } ?? "")) }
             if kind == .diagram {
                 guard let figure, !figure.isEmpty else {
                     return parts.joined(separator: ", ") + " (diagram)"
@@ -118,6 +129,12 @@ struct VaultRetriever {
     /// Exact whole-token search, for the code-like tokens the embedder cannot represent — a bare
     /// "ZX9" has no word vector, so without this a fault-code query would retrieve nothing.
     typealias TokenSearch = (_ token: String, _ limit: Int) -> [DocumentStore.Passage]
+    /// Search by clause number (Plan IN P3a), the clause's own text first — see
+    /// `DocumentStore.passages(clause:)`.
+    typealias ClauseSearch = (_ clause: String, _ limit: Int) -> [DocumentStore.Passage]
+    /// Search by the question's content words ([[LexicalSupport]]), most shared first — see
+    /// `DocumentStore.passages(sharingTermsWith:)`. The lexical route beside the embedding one.
+    typealias TermSearch = (_ query: String, _ limit: Int) -> [DocumentStore.Passage]
 
     /// Whether a document (by id) was read by recognition. Nil means "unknown", treated as no.
     typealias Provenance = (_ documentId: String) -> Bool
@@ -179,17 +196,22 @@ struct VaultRetriever {
 
     var query: QueryFunction
     var tokenSearch: TokenSearch?
+    var clauseSearch: ClauseSearch?
+    var termSearch: TermSearch?
     var provenance: Provenance?
     var availability: Availability?
     var policy = RetrievalEvidencePolicy()
     var modelScope: ModelScope?
 
     init(query: @escaping QueryFunction, tokenSearch: TokenSearch? = nil,
+         clauseSearch: ClauseSearch? = nil, termSearch: TermSearch? = nil,
          provenance: Provenance? = nil, availability: Availability? = nil,
          policy: RetrievalEvidencePolicy = RetrievalEvidencePolicy(),
          modelScope: ModelScope? = nil) {
         self.query = query
         self.tokenSearch = tokenSearch
+        self.clauseSearch = clauseSearch
+        self.termSearch = termSearch
         self.provenance = provenance
         self.availability = availability
         self.policy = policy
@@ -202,10 +224,60 @@ struct VaultRetriever {
             .filter { !$0.isEmpty }
         guard !parts.isEmpty else { return .insufficient(reason: RetrievalEvidencePolicy.insufficientSentence) }
 
-        // Boost tokens: anything code-like the technician said or the camera read.
-        let boostTokens = Array(Set(
-            CodeTokenizer.codeTokens(from: request.turn ?? "") + CodeTokenizer.codeTokens(from: request.ocrText ?? "")
+        // Clause numbers the technician named ("clause 3.9.4.2", "rule 26-700") are matched whole
+        // (Plan IN P3a); their pieces are kept out of the per-token boost, or "26-700" would boost
+        // every passage that prints a 26.
+        let clauses = ClauseReference.references(in: request.turn ?? "")
+        // Boost tokens: anything code-like the technician said or the camera read, and any word
+        // they said in capitals ("QXRT"). A page they named is where to look, not something to
+        // look for, so its number is not one of them.
+        let spokenTurn = PageReference.removingReferences(from: ClauseReference.removingReferences(from: request.turn ?? ""))
+        let designations = Set(CodeTokenizer.capitalisedDesignations(from: spokenTurn))
+        let spokenTokens = Array(Set(
+            CodeTokenizer.codeTokens(from: spokenTurn) + designations
+                + CodeTokenizer.codeTokens(from: request.ocrText ?? "")
         )).sorted()
+
+        // The lexical criterion compares a passage against everything that was searched, not just
+        // the spoken turn: a nameplate's words and the running procedure step are as much a part of
+        // what was asked as the sentence is.
+        let queryTerms = LexicalSupport.contentTerms(parts.joined(separator: " "))
+
+        // The exact-token search runs first, because what it finds decides which tokens count.
+        // Its hits come back in document order, so for a token printed in more passages than the
+        // search returns, which of them came back was decided by the manual's page order, not by
+        // the token. A bare number is the usual case and is dropped from the boost: "34", "99",
+        // "090" are table cells on page after page, and in the field (build 497) the first
+        // vent-length tables of the installation instructions took every slot, for a page number
+        // and for a fragment of a spoken model number alike; in a code book "14" (a wire gauge)
+        // is on hundreds of pages and the first four pages of the book took them. It neither ranks
+        // a passage first nor carries one past the gate. A number that names few passages ("what
+        // does the 120 VAC output feed" on a drawing) is kept. A code or a designation is kept
+        // however often it is printed — a cord type recurs in every table that lists it, and
+        // again in each edition of a book — but when it overflows the search, the passages kept for it are the ones
+        // that share the most of the question's words, not the first in page order. A word in
+        // capitals counts only when the search finds it at all.
+        let searchLimit = max(request.limit * 2, 4)
+        var tokenHits: [String: [DocumentStore.Passage]] = [:]
+        if let tokenSearch {
+            for token in spokenTokens {
+                var hits = tokenSearch(token, searchLimit + 1)
+                if hits.count > searchLimit {
+                    if CodeTokenizer.isNumber(token) { continue }
+                    hits = Self.sharingMostWords(tokenSearch(token, Int.max), queryTerms: queryTerms,
+                                                 limit: searchLimit)
+                }
+                tokenHits[token] = hits
+            }
+        }
+        let boostTokens = spokenTokens.filter { token in
+            // Without a token search nothing can vouch for a word in capitals, and every number
+            // is kept as it always was.
+            guard tokenSearch != nil else { return !designations.contains(token) }
+            if designations.contains(token) { return !(tokenHits[token] ?? []).isEmpty }
+            // A number that overflowed has no entry.
+            return !CodeTokenizer.isNumber(token) || tokenHits[token] != nil
+        }
 
         // Query each part; the OCR part is queried as its tokens joined so a whole nameplate
         // dump does not drown the embedding in boilerplate.
@@ -218,23 +290,55 @@ struct VaultRetriever {
         }
 
         var merged: [String: Passage] = [:]
-        func consider(_ raw: DocumentStore.Passage) {
+        func consider(_ raw: DocumentStore.Passage, foundForClause searched: String? = nil) {
             let key = "\(raw.documentId)#\(raw.chunkIndex)"
-            let matched = boostTokens.filter { CodeTokenizer.contains(raw.text, token: $0) }
-            let candidate = scored(raw, matched: matched)
-            if let existing = merged[key], existing.rankScore >= candidate.rankScore { return }
+            var matched = boostTokens.filter { CodeTokenizer.contains(raw.text, token: $0) }
+            var clauseMatch = raw.clauseMatch
+            for clause in clauses {
+                // A continuation chunk need not print the number; the clause search vouches for it.
+                let match = ClauseReference.match(clause, in: raw.text, section: raw.section)
+                    ?? (clause == searched ? raw.clauseMatch : nil)
+                guard let match else { continue }
+                matched.append(clause)
+                clauseMatch = max(clauseMatch ?? match, match)
+            }
+            var candidate = scored(raw, matched: matched)
+            candidate.clauseMatch = clauseMatch
+            if let existing = merged[key] {
+                // Two routes reached the same chunk: keep the better score, and everything either
+                // route knew about why it matched.
+                var kept = existing.rankScore >= candidate.rankScore ? existing : candidate
+                kept.matchedTokens = Array(Set(existing.matchedTokens + candidate.matchedTokens)).sorted()
+                kept.clauseMatch = [existing.clauseMatch, candidate.clauseMatch].compactMap { $0 }.max()
+                merged[key] = kept
+                return
+            }
             merged[key] = candidate
         }
         for q in queries {
-            query(q, max(request.limit * 2, 4)).forEach(consider)
+            query(q, searchLimit).forEach { consider($0) }
         }
-        if let tokenSearch {
-            for token in boostTokens {
-                tokenSearch(token, max(request.limit * 2, 4)).forEach(consider)
+        for token in boostTokens {
+            tokenHits[token]?.prefix(searchLimit).forEach { consider($0) }
+        }
+        if let clauseSearch {
+            for clause in clauses {
+                clauseSearch(clause, searchLimit).forEach { consider($0, foundForClause: clause) }
+            }
+        }
+        // The lexical route (field report, build 497). "How to test the flame sensor readings or
+        // signal" shares every content word but one with the Service Manual's flame-sensor
+        // section — the one that says to read the signal in Field Test Mode — and the device's
+        // sentence embedder ranked that passage 159th of 708, below a page of diagnostic-code
+        // table rows that merely mention a flame. An embedder that cannot see a passage leaves it
+        // unreachable unless something else proposes it; the question's own words do.
+        if let termSearch, !queryTerms.isEmpty {
+            for q in queries {
+                termSearch(q, searchLimit).forEach { consider($0) }
             }
         }
 
-        // Exact-token hits rank ahead of everything else, then score within each group. An
+        // Exact-token hits rank ahead of everything else, then words and score within each group. An
         // embedder scores a whole manual's prose alike (0.87–0.91 on the word-average backend), so
         // an additive boost cannot lift the row that actually names the code above prose that
         // merely sounds like it. Filling rather than replacing: token hits take the first slots,
@@ -249,13 +353,57 @@ struct VaultRetriever {
         // gone" rather than a quotation from it.
         let candidates = availability.map { check in Array(merged.values).filter { check($0.documentId) } }
             ?? Array(merged.values)
-        let ranked = candidates.filter { !$0.matchedTokens.isEmpty }.sorted(by: precedes)
-            + candidates.filter { $0.matchedTokens.isEmpty }.sorted(by: precedes)
-        // The lexical criterion compares a passage against everything that was searched, not just
-        // the spoken turn: a nameplate's words and the running procedure step are as much a part of
-        // what was asked as the sentence is.
-        return policy.decide(ranked, limit: request.limit,
-                             queryTerms: LexicalSupport.contentTerms(parts.joined(separator: " ")))
+        //
+        // A clause number ranks above both (Plan IN P3a), by how the passage holds the clause: the
+        // passage that starts it, then its subclauses, then the text that carries it on, then the
+        // passages that only cite it. Without a clause in the request every passage is in group 0
+        // or 1, which is the ordering above unchanged.
+        func group(_ p: Passage) -> Int {
+            (p.clauseMatch?.rawValue ?? 0) * 2 + (p.matchedTokens.isEmpty ? 0 : 1)
+        }
+        // Inside a group, the passage that shares more of the question's content words leads, and
+        // the score decides between passages that share as many (field report, build 497). On the
+        // device the sentence embedder ranked the flame-sensor section — four of the question's
+        // five words, and the answer — below diagnostic-code rows sharing none, and the score alone
+        // handed the model those rows. On the word-average backend the score is flat (every
+        // passage 0.84–0.92), so the words were already the only real signal. Measured on the
+        // Lennox pair with the lexical route beside it (`RetrievalGateCalibrationTests`): recall@4
+        // under the nl-word gate 0.77 → 0.88 with the out-of-scope refusals unchanged at 0.78, and
+        // under the sentence model's gate 0.12 → 0.53. Neither half does it alone: without the
+        // route the passage is never a candidate, and without this order it is one, ranked last.
+        // Without content terms (a bare "E223") every passage
+        // shares none and the order is the score order, as before. Two rules stay ahead of the
+        // words: a passage matching more of the spoken codes leads a token group, and a row for
+        // another model sorts below this one's (Plan EL) whatever it shares.
+        let shared = Dictionary(candidates.map {
+            (Self.key($0), LexicalSupport.sharedTermCount(text: $0.text, queryTerms: queryTerms))
+        }, uniquingKeysWith: max)
+        let ranked = candidates.sorted { a, b in
+            if group(a) != group(b) { return group(a) > group(b) }
+            if !clauses.isEmpty, a.clauseMatch != nil, b.clauseMatch != nil {
+                let offsets = (ClauseReference.offset(of: clauses, in: a.text),
+                               ClauseReference.offset(of: clauses, in: b.text))
+                if offsets.0 != offsets.1 { return offsets.0 < offsets.1 }
+            }
+            if (a.modelPenalty > 0) != (b.modelPenalty > 0) { return b.modelPenalty > 0 }
+            if a.matchedTokens.count != b.matchedTokens.count { return a.matchedTokens.count > b.matchedTokens.count }
+            let words = (shared[Self.key(a)] ?? 0, shared[Self.key(b)] ?? 0)
+            return words.0 != words.1 ? words.0 > words.1 : precedes(a, b)
+        }
+        return policy.decide(ranked, limit: request.limit, queryTerms: queryTerms)
+    }
+
+    private static func key(_ p: Passage) -> String { "\(p.documentId)#\(p.chunkIndex)" }
+
+    /// The `limit` passages sharing the most of the question's content terms, ties in the order
+    /// given (document order, from the token search).
+    static func sharingMostWords(_ passages: [DocumentStore.Passage], queryTerms: Set<String>,
+                                 limit: Int) -> [DocumentStore.Passage] {
+        passages.enumerated()
+            .map { (offset: $0.offset, passage: $0.element,
+                    shared: LexicalSupport.sharedTermCount(text: $0.element.text, queryTerms: queryTerms)) }
+            .sorted { $0.shared != $1.shared ? $0.shared > $1.shared : $0.offset < $1.offset }
+            .prefix(limit).map(\.passage)
     }
 
     private func scored(_ raw: DocumentStore.Passage, matched: [String]) -> Passage {
@@ -269,8 +417,9 @@ struct VaultRetriever {
                        text: raw.text, page: raw.page, section: raw.section,
                        similarity: raw.similarity, score: raw.similarity + boost, matchedTokens: matched,
                        modelPenalty: penalty,
-                       recognisedFromScan: raw.source == .manual && (provenance?(raw.documentId) ?? false),
-                       kind: raw.kind, figure: raw.figure, source: raw.source)
+                       recognisedFromScan: raw.source.isReference && (provenance?(raw.documentId) ?? false),
+                       kind: raw.kind, figure: raw.figure, source: raw.source, printedPage:raw.printedPage,
+                       editionLabel: raw.editionLabel)
     }
 
     // MARK: - Rendering
@@ -315,14 +464,17 @@ struct VaultRetriever {
         if case .teamLearningOnly = outcome { return (.teamLearningOnly(selected), notice) }
         // A bounded `.sufficient` keeps its promise: a learning is never sufficient alone, so a
         // budget that kept only learnings demotes the outcome rather than relabelling it.
-        guard selected.contains(where: { $0.source == .manual }) else { return (.teamLearningOnly(selected), notice) }
+        guard selected.contains(where: { $0.source.isReference }) else { return (.teamLearningOnly(selected), notice) }
         return (.sufficient(selected), notice)
     }
 
     /// One numbered passage as the model reads it: a team learning is labelled as one before its
     /// text, so it is never read as the manual's words.
     static func passageLine(_ index: Int, _ p: Passage) -> String {
-        let label = p.source == .teamLearning ? Passage.teamLearningLabel + " " : (p.kindLabel.map { $0 + " " } ?? "")
+        let label = p.source == .teamLearning ? Passage.teamLearningLabel + " "
+            : (p.source == .capturedManual ? "PHOTOGRAPHED MANUAL (unreviewed; original job/date in citation) " : "")
+                + (p.kindLabel.map { $0 + " " } ?? "")
+                + (p.editionLabel.map { "(edition: \($0)) " } ?? "")
         return "[\(index + 1)] \(label)\(p.text)\nSource: \(p.citation)"
             + (p.recognisedFromScan ? " " + Passage.provenanceNote : "")
     }
@@ -335,7 +487,7 @@ struct VaultRetriever {
     static func teamLearningOnlyInstruction(leadIn: String?) -> String {
         let opening = leadIn.map { "Open your answer with exactly this sentence: \"\($0.trimmingCharacters(in: .whitespaces))\" — then give the finding. " }
             ?? "Open your answer by saying the manual does not cover this and that what follows is your crew's own finding. "
-        return "The loaded manuals do not cover this. What was retrieved instead is \(Passage.teamLearningLabel): "
+        return "No passage in the loaded manuals answers this closely enough. What was retrieved instead is \(Passage.teamLearningLabel): "
             + opening
             + "Name it as your crew's finding, not the manufacturer's instruction — circumstances differ — repeat its Source line, "
             + "and never let it override a safety note."
@@ -450,8 +602,14 @@ struct RetrievalEvidencePolicy: Equatable {
     var tokenBoost: Float = 0.25
     var maxBoost: Float = 0.5
 
+    /// What a turn the gate turned away is told. It says the search came up short, not that the
+    /// manuals are silent: measured on a field manual pair, the device gate (Plan IV P1) refuses a
+    /// third of the in-scope questions it cannot place, and "the manuals do not cover this" told a
+    /// technician something false about a book that does cover it.
     static let insufficientSentence =
-        "The loaded manuals do not cover this. Ask the technician for the model number, or recommend escalation rather than guessing."
+        "No passage in the loaded manuals answers this closely enough to rely on. Say you couldn't find it "
+        + "in the manuals — not that they don't cover it — and ask the technician for the model number or "
+        + "different words, or recommend escalation rather than guessing."
 
     init(similarityFloor: Float = 0.30, margin: Float = .infinity, minSharedTerms: Int = 0,
          sharedFraction: Double = 0, tokenBoost: Float = 0.25, maxBoost: Float = 0.5) {
@@ -490,12 +648,31 @@ struct RetrievalEvidencePolicy: Equatable {
     ///   nothing. Fractions of 0.5 and 0.6 refuse no in-scope question at all but drop insufficiency
     ///   recall to 0.562 and 0.688, which is the wrong trade: a technician who has to rephrase is
     ///   recoverable, a confident answer from the wrong manual is not.
-    /// - `nl-sentence`, `nl-contextual` — **unmeasured — device run pending.** Left at today's
-    ///   values (floor 0.30, no margin, no lexical criterion) rather than guessed: their cosines
-    ///   span a different range and the lexical rule may be unnecessary once similarity separates.
+    /// - `nl-sentence` — **measured** (2026-10-17, the device's model run on a Mac through the
+    ///   same retriever, `Scripts/retrieval-eval`): the same rule as `nl-word`. The bare 0.30 floor
+    ///   refused none of the 18 out-of-scope Lennox questions, because this model's cosines sit
+    ///   between 0.2 and 0.6 for everything and no floor separates an answer from a near miss. With
+    ///   the lexical criterion it refuses 15 of 18, and recall@4 and hit@1 are unchanged on the
+    ///   Lennox set and on a code book's 68-question local answer key. The cost is in-scope
+    ///   refusals, 0 → 6 of 18 on Lennox and 0 → 2 of 68 on the code book, every one of them a
+    ///   question whose four passages held no answering page anyway: it now hears "the manuals do
+    ///   not cover this" instead of an answer built from the wrong pages. Gentler settings were
+    ///   measured and buy back refusals only by answering out-of-scope questions again (one shared
+    ///   term: 1 in-scope and 6 of 18 out-of-scope refused; 3 terms at 0.6: 4 and 14). The two
+    ///   backends share one rule because the criterion reads words, not cosines.
+    /// - `nl-contextual` — **measured** (Plan IV P4, the device's framework model run on a Mac):
+    ///   three shared terms, scaled 0.6. The bare floor refused none of the 18 out-of-scope Lennox
+    ///   questions. Swept on both sets, 0.6 refuses 12 of them with no in-scope question refused
+    ///   and recall unchanged (Lennox 0.94, code book hit@4 0.53); 0.75, the other models' rule,
+    ///   refuses 14 but turns away one in-scope question and drops Lennox recall to 0.89. Looser
+    ///   settings refuse 2–7. This model ranks the answering passage high enough that the stricter
+    ///   rule only costs answers.
     static func `default`(for modelId: String) -> RetrievalEvidencePolicy {
-        if modelId.hasPrefix("nl-word") {
+        if modelId.hasPrefix("nl-word") || modelId.hasPrefix("nl-sentence") {
             return RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.75)
+        }
+        if modelId.hasPrefix("nl-contextual") {
+            return RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.6)
         }
         return RetrievalEvidencePolicy()
     }
@@ -526,13 +703,13 @@ struct RetrievalEvidencePolicy: Equatable {
         let evidence = ranked.filter { isEvidence($0, bestSimilarity: best, queryTerms: queryTerms) }
         guard !evidence.isEmpty else { return .insufficient(reason: Self.insufficientSentence) }
         let take = max(limit, 1)
-        guard let bestManual = evidence.first(where: { $0.source == .manual }) else {
+        guard let bestManual = evidence.first(where: { $0.source.isReference }) else {
             return .teamLearningOnly(Array(evidence.prefix(take)))
         }
         var chosen = Array(evidence.prefix(take))
         // The limit must not cut the one passage that makes this sufficient: if learnings filled
         // every slot, the last of them gives way to the best manual passage.
-        if !chosen.contains(where: { $0.source == .manual }) { chosen[chosen.count - 1] = bestManual }
+        if !chosen.contains(where: { $0.source.isReference }) { chosen[chosen.count - 1] = bestManual }
         return .sufficient(chosen)
     }
 }

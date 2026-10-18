@@ -148,16 +148,17 @@ enum MicRoutePolicy {
         return options
     }
 
-    /// The one retry when the conversation session could not be made active with `failed`.
+    /// The one retry when the conversation session could not be made active with `failed`: the
+    /// same route **mixable** (`categoryOptions(for:mixWithOthers: true)`, hands-free still
+    /// allowed — the idle Bluetooth hold's shape), at the cost of not pausing other audio. Nil when
+    /// `failed` was already mixable — there is nothing gentler left to ask for.
     ///
-    /// A non-mixable session cannot be activated while the app is in the background
-    /// (`AVAudioSession.ErrorCode.cannotInterruptOthers`): the wake phrase is heard with the phone
-    /// in a pocket, the switch is refused, and the hands-free port then reads as missing and the
-    /// turn — and its reply — landed on the phone mic and loudspeaker. The retry asks for the same
-    /// route **mixable**: the shape the idle Bluetooth hold already activates in the background
-    /// (`categoryOptions(for:mixWithOthers: true)`, hands-free still allowed), so the turn stays on
-    /// the glasses at the cost of not pausing other audio. Nil when `failed` was already mixable —
-    /// there is nothing gentler left to ask for.
+    /// It was added for the backgrounded wake-word turn (`cannotInterruptOthers` with the phone in
+    /// a pocket), and device logs from build 497 show it does not rescue that turn: re-tuning the
+    /// already-active session from the background is refused whatever the options, and the
+    /// hands-free port then drops out of the list. That turn now keeps the live idle session
+    /// instead (`TurnMicHandoff.sessionSwitch`); this retry is what is left for a refusal the
+    /// keep does not cover.
     static func conversationRetryOptions(for route: MicRoute,
                                          failed: AVAudioSession.CategoryOptions) -> AVAudioSession.CategoryOptions? {
         guard !failed.contains(.mixWithOthers) else { return nil }

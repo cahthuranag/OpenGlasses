@@ -22,6 +22,9 @@ final class OfficeReportSink: SyncSink {
         /// this phone keeps until the office has them — and where its transcript is.
         var evidence: @MainActor (QueuedOp) async throws
             -> (evidence: [OfficeReportService.Evidence], transcript: OfficeReport.Transcript)
+        /// Explicit compatible test-peer selection and current scope/privacy/policy checks.
+        /// No peer negotiation exists yet: absence denies capture publication.
+        var capturedManualAllowed: @MainActor (QueuedOp) -> Bool = { _ in false }
     }
 
     /// Whether a phone's records go to an office over the managed folders: it joined one by its
@@ -32,7 +35,7 @@ final class OfficeReportSink: SyncSink {
     }
 
     /// Ops a report can carry; everything else is the fallback's.
-    static let handledKinds: Set<OpKind> = [.workRecord, .partsRequest]
+    static let handledKinds: Set<OpKind> = [.workRecord, .partsRequest, .capturedManual]
 
     static let waitingReason = "waiting for the office"
     static let evidencePendingReason = "the office has the record and is waiting for its evidence"
@@ -42,13 +45,17 @@ final class OfficeReportSink: SyncSink {
     init(seams: Seams) { self.seams = seams }
 
     func deliver(_ op: QueuedOp) async -> SyncOutcome {
+        if op.kind == .capturedManual,
+           (!seams.officeIsDestination() || !seams.capturedManualAllowed(op)) {
+            return .waiting(reason:"waiting for a compatible authorised office and current capture policy")
+        }
         guard Self.handledKinds.contains(op.kind), seams.officeIsDestination() else {
             return await seams.fallback.deliver(op)
         }
         do {
             var evidence: [OfficeReportService.Evidence] = []
             var transcript = OfficeReport.Transcript.none
-            if op.kind == .workRecord { (evidence, transcript) = try await seams.evidence(op) }
+            if op.kind == .workRecord || op.kind == .capturedManual { (evidence, transcript) = try await seams.evidence(op) }
             guard let submission = Self.submission(for: op, evidence: evidence, transcript: transcript) else {
                 return .permanent(reason: "this record can't be written as a report for the office")
             }
@@ -79,6 +86,11 @@ final class OfficeReportSink: SyncSink {
         var jobID = ""
         var jobRevision: Int64 = 0
         switch op.kind {
+        case .capturedManual:
+            guard let m = try? CapturedManualContract.read(op.payload), m.sessionID == op.sessionId,
+                  m.ownershipScope == "organization", m.poolIntent == "jobOnly" else { return nil }
+            kind = .capturedManual; recordID = m.captureID
+            jobReference = m.jobReference;jobID = m.jobID;jobRevision = m.jobRevision
         case .workRecord:
             kind = .workRecord
             recordID = op.sessionId

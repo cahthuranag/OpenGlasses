@@ -57,11 +57,21 @@ final class TextSegmentJoinerTests: XCTestCase {
 
     func testResponsesReplyInTwoMessagesIsNotGlued() {
         let response: [String: Any] = ["output": [
-            ["type": "message", "phase": "commentary",
-             "content": [["type": "output_text", "text": "Vou procurar a hora exata."]]],
+            ["type": "message", "content": [["type": "output_text", "text": "Vou procurar a hora exata."]]],
             ["type": "message", "content": [["type": "output_text", "text": "Tens razão, são três horas."]]],
         ]]
         XCTAssertEqual(ResponsesTranslator.parseOutput(response).text,
                        "Vou procurar a hora exata. Tens razão, são três horas.")
+    }
+
+    /// The glued case was a commentary line before the answer. A commentary message is no longer
+    /// part of the reply at all (`ResponsesTranslator.isCommentary`), so only the answer is said.
+    func testResponsesCommentaryLineIsNotJoinedIntoTheAnswer() {
+        let response: [String: Any] = ["output": [
+            ["type": "message", "phase": "commentary",
+             "content": [["type": "output_text", "text": "Vou procurar a hora exata."]]],
+            ["type": "message", "content": [["type": "output_text", "text": "Tens razão, são três horas."]]],
+        ]]
+        XCTAssertEqual(ResponsesTranslator.parseOutput(response).text, "Tens razão, são três horas.")
     }
 }

@@ -128,4 +128,35 @@ final class CitationLineParserTests: XCTestCase {
         let tooLong = String(repeating: "a", count: CitationLineParser.maxTitleLength + 1)
         XCTAssertTrue(CitationLineParser.parse("Source: \(tooLong)").isEmpty)
     }
+    /// A tester's job 1027: two manuals in one Source line, separated by a semicolon, were saved as
+    /// one citation to a page the answer never named.
+    func testASemicolonSeparatesTwoManuals() {
+        let cited = CitationLineParser.parse(
+            "Source: SLP99UHVK Installation Instructions, page 47; Service Manual, page 20.")
+        XCTAssertEqual(cited.map(\.label),
+                       ["SLP99UHVK Installation Instructions, page 47", "Service Manual, page 20"])
+    }
+
+    func testSemicolonSeparatedCoreFilesAreEachTheirOwn() {
+        XCTAssertEqual(CitationLineParser.parse("Source: error_codes.md; service_values.md").map(\.label),
+                       ["error_codes.md", "service_values.md"])
+    }
+
+    func testAPageAfterASemicolonKeepsItsTitle() {
+        XCTAssertEqual(CitationLineParser.parse("Source: SLP99UHVK Service Manual, page 20; page 21").map(\.label),
+                       ["SLP99UHVK Service Manual, page 20", "SLP99UHVK Service Manual, page 21"])
+    }
+
+    func testASecondPageForOneTitleIsASecondCitation() {
+        XCTAssertEqual(CitationLineParser.parse("Source: SLP99UHVK Service Manual, page 20, page 47").map(\.label),
+                       ["SLP99UHVK Service Manual, page 20", "SLP99UHVK Service Manual, page 47"])
+    }
+
+    func testAPageRangeKeepsBothEnds() throws {
+        let cited = try XCTUnwrap(CitationLineParser.parse("Source: SLP99UHVK Service Manual, pages 64\u{2013}65").first)
+        XCTAssertEqual(cited.page, 64)
+        XCTAssertEqual(cited.throughPage, 65)
+        XCTAssertEqual(cited.label, "SLP99UHVK Service Manual, pages 64\u{2013}65")
+        XCTAssertEqual(CitationLineParser.parse("Source: Service Manual, pages 64-65").first?.throughPage, 65)
+    }
 }

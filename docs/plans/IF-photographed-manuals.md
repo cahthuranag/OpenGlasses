@@ -1,13 +1,18 @@
 # Plan IF — Photographed Manuals (the binder on the bench becomes a manual the phone can read)
 
-**Status:** 📝 Drafted 2026-10-10 — nothing implemented. A technician at an older unit photographs
+**Status:** 🚧 P0 implemented 2026-10-11 — [contract](../../Contracts/captured-manual.md), shared
+Swift/Go golden and negative checks, Office-report verifier extension and
+[lifecycle inventory](IF-lifecycle-inventory.md). P1 durable capture core implemented 2026-10-15: protected staging, resumable redacted
+checkpoints, immutable atomic bundles, lifecycle tombstones and erasure linkage. The portable
+contract/core suite passes 64 tests. P2 retrieval core is implemented (2026-10-16): captured-only prompt/manual/equipment lookup, exact scope, physical page routing and retained citations pass focused simulator checks. P3 phone capture/local-use code is implemented (2026-10-16), with on-device Vision recognition, recovery and list/view/forget surfaces. Portable checks and 25 focused simulator checks pass. Physical-device qualification remains owed in [the device guide](../field-assist/photographed-manuals.md). P4 signed-delivery code is implemented (2026-10-16): immutable required PDF/text evidence, exact signed receipts, measured Office-audience attachment budgets, and original-session departure/erasure accounting. Production peer compatibility remains denied until a qualified Office peer can be explicitly selected; the in-memory signed peer is a test seam. P5 phone import code is implemented (2026-10-16): authenticated signed provenance, exact Ready supersession, retained historical source files and reviewed photographed-page routing. Live private Office/pilot qualification remains owed. Pool-review submission remains unavailable. The combined stack builds on main build 502 and passes 190 focused simulator tests (one skipped, zero failures), including the registry matrix, signed receipts, policy recheck, erasure and reviewed-copy second-phone round trip.
+Drafted 2026-10-10. A technician at an older unit photographs
 the pages of the paper manual that came with it; the phone recognises the text on each page on
 device, makes the pages answerable in the same job, attaches them to the job in text and image
 form, and sends them to Avenkin Office, where the organisation decides whether they join the pool
 of manuals every technician gets. The pool itself, and the review that gates it, live in the office
 (private plan, proposed FX23); the phone never publishes to the pool directly.
 **Reviewed:** 2026-10-11 against worktree `if-photographed-manuals`, `7410e1c6` (build 494).
-The design and acceptance gates below incorporate the review; nothing is implemented. This is
+The design and acceptance gates below incorporate the review; P0 implementation is recorded above. This is
 the photographed-manual draft formerly headed HW. Plan HW remains glasses stream integrity.
 **Track:** Field Assist (B2B).
 **Related:** Plan [EF](EF-scanned-manual-import.md) (per-page recognition, confidence counts, the
@@ -439,38 +444,38 @@ Nothing in this plan builds the office half; it names the contract the office wi
 
 ## Build order (one PR each)
 
-- **P0 — contracts and lifecycle inventory, headless.** `Contracts/captured-manual.md`, golden
+- **P0 — contracts and lifecycle inventory, headless (implemented 2026-10-11).** `Contracts/captured-manual.md`, golden
   fixtures and portable checks; explicit proposed extensions to office-report kinds/roles/media
   types and signed vault document provenance. Fix canonical bytes, file bounds, page mapping,
   original job/unit/ownership, policy intent, receipts, supersession lineage and peer
   compatibility before building queue producers. Inventory erasure, departure, page lookup and
   all retrieval gates against build 494. This phase defines interfaces; no phone sender or
   office implementation is claimed.
-- **P1 — durable capture core, headless.** Manifest/store/assembler, ordered image staging,
+- **P1 — durable capture core, headless (implemented 2026-10-15).** Manifest/store/assembler, ordered image staging,
   protected/no-backup checkpointing, injectable languages/limits/thermal policy, redaction before
   persistence, printed-number finder, byte-stable `text.md`/PDF, page map and bundle digests.
   Add capture/document/job linkage, tombstone/cancellation and SensitiveStore/subject/departure
   erasure seams. Test interrupted recovery, filesystem failures and late callbacks. Nothing is
   indexed or queued until a complete validated revision commits atomically.
-- **P2 — retrieval, evidence and page core, headless.** Explicit page-aware ingest/retract,
+- **P2 — retrieval, evidence and page core, headless (implemented 2026-10-16).** Explicit page-aware ingest/retract,
   eligible namespaces in the existing FP factory, captured-only corpus/title/equipment gates,
   reference-evidence classification, both provenance notes, source-aware HUD/work-record
   evidence, capture citation/page models, and the pure supersession state machine. Add capability
   and HIPAA/profile checks across services. Production-default pagination and captured-only
   retrieval tests are gates, not just a happy-path fixture.
-- **P3 — phone capture and local-use surfaces.** Frozen single-flight request, VisionKit sheet,
+- **P3 — phone capture and local-use surfaces (code implemented 2026-10-16; physical qualification owed).** Frozen single-flight request, VisionKit sheet,
   `manual_capture`, job action, progress/recovery, photographed-page routing and Custom Vaults
   list/view/forget. Check a real binder on the oldest supported phone: glare, forty pages,
   cancellation/lock/relaunch, memory/thermal behaviour and time to answerable; set shipping
   limits and record results in the vault guide. This phase delivers local use, without claiming
   the office can receive a capture.
-- **P4 — delivery through signed records.** The new payload/op, measured attachment partition,
+- **P4 — delivery through signed records (phone code implemented 2026-10-16; live peer qualification owed).** The new payload/op, measured attachment partition,
   audience separation, immutable queue/evidence storage, `OfficeReportSink` interception and
   compatible Swift/Go report validators, signed receipts, original-job correlation and departure
   outstanding counts. Queue paths never fall through to local success. Validate an early capture
   and later ordinary job report with the opt-in office test peer. Pool-review submission remains
-  disabled until the provenance round trip in P5 is supported; `jobOnly` evidence can still travel.
-- **P5 — reviewed-copy import, supersession and pilot.** Preserve signed per-document origin,
+  disabled until the provenance round trip in P5 is supported. The sender defaults to incompatible: `jobOnly` publication requires an explicitly qualified peer; no production compatibility negotiation or selector is claimed.
+- **P5 — reviewed-copy import and supersession (phone code implemented 2026-10-16; live pilot owed).** Preserve signed per-document origin,
   OCR/page metadata and approval attribution through archive installation/indexing; activate
   the P2 supersession state machine only on Ready. Verify a pilot crew: one technician
   photographs, the office approves, and a second phone answers with the scan warning and office

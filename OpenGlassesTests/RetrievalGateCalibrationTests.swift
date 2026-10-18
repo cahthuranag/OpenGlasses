@@ -65,6 +65,10 @@ final class RetrievalGateCalibrationTests: XCTestCase {
               anchors: [serviceManual: [63], installation: [61]]),
         .init(query: "high fire manifold pressure",
               anchors: [serviceManual: [65, 66, 67], installation: [62, 63, 64]]),
+        // Field report, build 497: asked on a job, answered by neither route the device had — its
+        // sentence embedder ranked the flame-sensor section 159th.
+        .init(query: "And how to test the flame sensor readings or signal",
+              anchors: [serviceManual: [34], installation: [64]]),
     ]
 
     /// Questions these two manuals do not answer: other manufacturers, other equipment, figures the
@@ -120,6 +124,7 @@ final class RetrievalGateCalibrationTests: XCTestCase {
         ("floor 0.30 + terms >= 3 + fraction 0.75",
          RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.75)),
         ("default(for: nl-word)", RetrievalEvidencePolicy.default(for: "nl-word.en")),
+        ("default(for: nl-sentence)", RetrievalEvidencePolicy.default(for: "nl-sentence.en")),
     ]
 
     // MARK: - Fixture
@@ -161,11 +166,17 @@ final class RetrievalGateCalibrationTests: XCTestCase {
         return store
     }
 
+    /// The shipped routes — embedding query, exact-token, clause and lexical search — over the
+    /// store, the same retriever the local eval runners use (`RetrievalEval.retriever`).
     private func retriever(over store: DocumentStore, policy: RetrievalEvidencePolicy) -> VaultRetriever {
-        VaultRetriever(query: { query, limit in store.query(query, limit: limit) },
-                       tokenSearch: { token, limit in store.passages(containingToken: token, limit: limit) },
-                       provenance: nil,
-                       policy: policy)
+        RetrievalEval.retriever(over: store, policy: policy)
+    }
+
+    /// The labelled sets in the local eval's answer-key form, so the production-path column and
+    /// the miss breakdown are the same instrument the code-book eval uses.
+    private static var answerKey: [RetrievalEval.Question] {
+        positives.map { RetrievalEval.Question(q: $0.query, pages: $0.anchors.mapValues { Array($0).sorted() }) }
+            + negatives.map { RetrievalEval.Question(q: $0, outOfScope: true) }
     }
 
     // MARK: - The measurement
@@ -250,6 +261,29 @@ final class RetrievalGateCalibrationTests: XCTestCase {
         print("[GATE] shipped default still answers: \(answered)")
         print("[GATE] shipped default refuses in scope: \(refused)")
 
+        // The production path, beside the ranked-prefix table above: each question asked as a
+        // turn is (`retrieve(limit: 4)` through the gate), which is what the model is handed. The
+        // prefix method gates a 25-deep ranked list; this gates every candidate and keeps four, so
+        // the two can differ by a question or two. Every round of retrieval work reads both
+        // (Plan IV P0), and on a Mac `Scripts/retrieval-eval` prints the same lines for the
+        // device's embedding model.
+        print("[GATE] production path | variant | recall@4 | hit@1 | insufficiency recall | in-scope refused")
+        for (name, policy) in Self.variants {
+            let report = RetrievalEval.run(Self.answerKey,
+                                           gated: retriever(over: store, policy: policy), open: open, store: store,
+                                           classifyMisses: false)
+            print("[GATE] production path | \(name) | \(fmt(Float(report.hit4) / Float(report.scored))) | "
+                  + "\(fmt(Float(report.hit1) / Float(report.scored))) | "
+                  + "\(fmt(Float(report.refused) / Float(report.outOfScope))) | \(report.inScopeRefused)")
+        }
+        let production = RetrievalEval.run(Self.answerKey, gated: retriever(over: store, policy: shipped),
+                                           open: open, store: store)
+        for line in production.lines(label: "Lennox calibration, shipped gate", embedder: Embedder().modelId) {
+            print(line)
+        }
+        XCTAssertEqual(production.scored, Self.positives.count)
+        XCTAssertEqual(production.outOfScope, Self.negatives.count)
+
         // --- Findings asserted, one at a time ---
 
         // Retrieval itself works: every question, in scope or not, comes back with passages. That is
@@ -269,6 +303,13 @@ final class RetrievalGateCalibrationTests: XCTestCase {
         }
 
         let chosen = try XCTUnwrap(scores["default(for: nl-word)"])
+
+        if Embedder().modelId.hasPrefix("nl-sentence") {
+            // On the device's model the floor refuses nothing either; the measured default must.
+            let device = try XCTUnwrap(scores["default(for: nl-sentence)"])
+            XCTAssertGreaterThan(device.insufficiency, baseline.insufficiency,
+                                 "the nl-sentence default must reject more than the floor alone")
+        }
 
         if Embedder().modelId.hasPrefix("nl-word") {
             // The lexical criterion is the only one that rejects anything on this backend, which is
@@ -299,6 +340,25 @@ final class RetrievalGateCalibrationTests: XCTestCase {
             XCTAssertLessThanOrEqual(chosen.falseRefusals, flat.falseRefusals,
                                      "scaling the count must refuse no more in-scope questions than the flat count")
         }
+    }
+
+    // MARK: - The committed answer key
+
+    /// `examples/vaults/lennox-slp99/eval/calibration.jsonl` is these sets in the local eval's
+    /// answer-key form, for `Scripts/retrieval-eval` on a Mac. It must say exactly what the arrays
+    /// above say, or the two runners measure different things. Runs without the manuals.
+    func testTheCommittedAnswerKeyIsTheLabelledSets() throws {
+        let url = Self.documentsDirectory.deletingLastPathComponent()
+            .appendingPathComponent("eval/calibration.jsonl")
+        let committed = RetrievalEval.loadAnswerKey(try String(contentsOf: url, encoding: .utf8))
+        func normalised(_ qs: [RetrievalEval.Question]) -> [String] {
+            qs.map { q in
+                let pages = (q.pages ?? [:]).sorted { $0.key < $1.key }
+                    .map { "\($0.key)=\($0.value.sorted())" }.joined(separator: ";")
+                return "\(q.q)|\(pages)|\(q.outOfScope == true)"
+            }
+        }
+        XCTAssertEqual(normalised(committed), normalised(Self.answerKey))
     }
 
     // MARK: - Identity (Plan EL)

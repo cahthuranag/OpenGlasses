@@ -19,6 +19,8 @@ struct MedicalExportSettingsView: View {
     @State private var testResultMessage = ""
     @State private var isTesting = false
     @State private var saveMessage: String?
+    /// A device-owner prompt for Clear is on screen; a second tap must not stack another.
+    @State private var isAuthorizingClear = false
 
     private var store: FHIRConfigurationStore { exportService.configurationStore }
 
@@ -30,7 +32,11 @@ struct MedicalExportSettingsView: View {
                     Button {
                         selectedPlatform = platform
                         config.platformType = platform.rawValue
-                        store.save(config)
+                        // Only the platform is saved here. The server address is saved by
+                        // Save Configuration, which keeps the credential bound to its address.
+                        var saved = store.configuration
+                        saved.platformType = platform.rawValue
+                        store.save(saved)
                     } label: {
                         HStack(spacing: 12) {
                             Text(platform.flag)
@@ -254,16 +260,35 @@ struct MedicalExportSettingsView: View {
                     }
                     .buttonStyle(.borderless)
                     Button("Clear", role: .destructive) {
-                        store.clearCredential()
-                        tokenDraft = ""
-                        hasStoredCredential = false
-                        isReplacingCredential = false
-                        saveMessage = "Credential cleared."
+                        clearCredential()
                     }
                     .buttonStyle(.borderless)
+                    .disabled(isAuthorizingClear)
                 }
+                Text("Kept only on this phone. Clearing it asks for Face ID, Touch ID or your passcode, and also deletes any exports still waiting to be shared.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             } else {
                 SecretInputField(placeholder: "Pre-obtained OAuth token", text: $tokenDraft)
+            }
+        }
+    }
+
+    /// Clearing needs the device owner: fail-closed, so a cancelled or unavailable prompt clears
+    /// nothing, and the row says so rather than looking as if it worked.
+    private func clearCredential() {
+        guard !isAuthorizingClear else { return }
+        isAuthorizingClear = true
+        OwnerGateAuth.authorize(reason: String(localized: "Clear the FHIR credential and pending exports")) { authorization in
+            Task { @MainActor in
+                isAuthorizingClear = false
+                let outcome = exportService.clearCredentialAndPendingExports(authorization: authorization)
+                if outcome.didClear {
+                    tokenDraft = ""
+                    hasStoredCredential = false
+                    isReplacingCredential = false
+                }
+                saveMessage = outcome.message
             }
         }
     }
@@ -297,57 +322,27 @@ struct MedicalExportSettingsView: View {
     }
 
     private func saveConfiguration() {
-        store.save(config)
-        do {
-            if !tokenDraft.isEmpty {
-                try store.storeCredential(FHIRCredential(bearerToken: tokenDraft))
-                tokenDraft = ""
-                isReplacingCredential = false
-                hasStoredCredential = true
-            }
-            try store.storePrivateContext(
-                FHIRPrivateContext(patientID: patientIDDraft, practitionerID: practitionerIDDraft)
-            )
-            saveMessage = "Configuration saved."
-        } catch {
-            saveMessage = error.localizedDescription
+        let outcome = exportService.saveServerSettings(
+            config,
+            enteredCredential: tokenDraft,
+            privateContext: FHIRPrivateContext(patientID: patientIDDraft, practitionerID: practitionerIDDraft)
+        )
+        if case .saved(let storedCredential) = outcome, storedCredential {
+            tokenDraft = ""
+            isReplacingCredential = false
+            hasStoredCredential = true
         }
+        saveMessage = outcome.message
     }
 
+    /// The service decides which credential, if any, the test may send: the stored one goes only
+    /// to the address it was saved with (`FHIRConnectionTestPolicy`).
     private func testConnection() {
         isTesting = true
+        let baseURL = config.baseURL
+        let entered = tokenDraft
         Task {
-            guard let candidate = config.endpoint(for: "metadata"),
-                  let url = try? EndpointPolicy.requireOpenable(url: candidate, for: .fhirConnectionTest) else {
-                testResultMessage = "Invalid server URL."
-                showTestResult = true
-                isTesting = false
-                return
-            }
-
-            var request = URLRequest(url: url)
-            request.setValue("application/fhir+json", forHTTPHeaderField: "Accept")
-            request.timeoutInterval = 10
-
-            // Read the credential only here, for this one request.
-            let draft = tokenDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let token = (try? store.loadCredential())?.bearerToken ?? (draft.isEmpty ? nil : draft) {
-                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            }
-
-            do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-
-                if (200...299).contains(status) {
-                    testResultMessage = "Connected successfully (HTTP \(status)). The FHIR server is reachable and responded to the capability statement request."
-                } else {
-                    testResultMessage = "Server responded with HTTP \(status). Check your URL and authentication credentials."
-                }
-            } catch {
-                testResultMessage = "Connection failed: \(error.localizedDescription)"
-            }
-
+            testResultMessage = await exportService.testConnection(baseURL: baseURL, enteredCredential: entered)
             showTestResult = true
             isTesting = false
         }

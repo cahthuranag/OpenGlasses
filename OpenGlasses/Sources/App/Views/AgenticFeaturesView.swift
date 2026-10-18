@@ -58,20 +58,20 @@ struct AgenticFeaturesView: View {
             }
 
             if enabled {
-                // Plan CN — a separate grant from Agent Mode itself. Enabling agents authorises
-                // dispatching text tasks; sending camera frames to the same endpoint is a
-                // different promise, so it is a different switch and it starts off.
+                // Plan CN — a separate switch from Agent Mode itself, so camera frames can be
+                // withheld while text tasks still dispatch. It defaults on since Plan EH P1
+                // (`Config.agentVisionAttachmentEnabled`).
                 Section {
                     InfoToggle(
                         title: "Let Agents See",
                         isOn: $visionAttachment,
-                        info: "Off by default. When on, a task you hand to a remote agent can carry one still from the camera, so the agent reads a label, serial plate or form directly instead of working from the assistant's description of it. Pin a frame first to choose exactly what it sees; otherwise the current view is used, and only when your request refers to something visible. The image is blurred for bystander faces if that setting is on, and never sent in HIPAA mode. Custom agent endpoints also need an image field named in their configuration."
+                        info: "On by default. A task you hand to a remote agent can carry one still from the camera, so the agent reads a label, serial plate or form directly instead of working from the assistant's description of it. Pin a frame first to choose exactly what it sees; otherwise the current view is used, and only when your request refers to something visible. The image is blurred for bystander faces if that setting is on, and never sent in HIPAA mode. Custom agent endpoints also need an image field named in their configuration."
                     )
                     .onChange(of: visionAttachment) { _, on in
                         Config.setAgentVisionAttachmentEnabled(on)
                     }
                 } footer: {
-                    Text("A camera frame leaves your device for whichever agent endpoint you've configured. Separate from Agentic Features itself, so turning agents on never starts sending pictures on its own.")
+                    Text("On by default. When a task you give an agent is about something in view, or you've pinned a frame, one still from the camera goes with it to the agent endpoint you've configured. Turn this off to send agents text only.")
                 }
 
                 // Safety supervisor (Plan S) — deterministic veto rules before any agent action.

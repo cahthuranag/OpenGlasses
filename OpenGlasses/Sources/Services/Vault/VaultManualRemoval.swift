@@ -148,11 +148,14 @@ enum VaultManualRemoval {
     /// retriever, three tools, a parts lookup and a page sheet, and the one that forgets is the one
     /// that quotes a manual the reader deleted.
     static func availabilityCheck(forVault vaultId: String,
-                                  documentStore: DocumentStore?) -> (String) -> Bool {
+                                  documentStore: DocumentStore?,capturedCatalog:CapturedManualCatalog? = nil) -> (String) -> Bool {
         let pending = pendingDocumentIds(for: vaultId)
         let namespace = DocumentStore.vaultNamespace(vaultId)
+        let catalog = capturedCatalog ?? .shared
         return { documentId in
             guard !pending.contains(documentId) else { return false }
+            if VaultImporter.documentLedger(for:vaultId).entries.first(where:{$0.documentId == documentId})?.capturedManual != nil,
+               !catalog.reviewedDocumentAllowed(documentId,vaultID:vaultId) {return false}
             return documentStore?.list(namespace: namespace).contains { $0.id == documentId } ?? false
         }
     }

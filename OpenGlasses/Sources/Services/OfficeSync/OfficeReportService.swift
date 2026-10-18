@@ -97,6 +97,7 @@ final class OfficeReportService: ObservableObject {
         var sign: (Data) async throws -> Data = { try await OfficePhoneIdentity.shared.signOfficeReport($0) }
         var load: () -> Ledger = { Ledger() }
         var save: (Ledger) throws -> Void = { _ in }
+        var recordAllowed: @MainActor (Entry) -> Bool = { _ in true }
     }
 
     enum Failure: Error, Equatable {
@@ -154,6 +155,16 @@ final class OfficeReportService: ObservableObject {
     func forget(recordIDs: Set<String>) {
         var next = ledger
         next.entries.removeAll { recordIDs.contains($0.recordID) }
+        try? commit(next)
+    }
+
+    /// Suppress before an erasure's first await. Poll retries withdrawal of any published files;
+    /// a suspended publish can never resume attachment delivery for a suppressed record.
+    func suppress(recordIDs: Set<String>) {
+        var next = ledger
+        for index in next.entries.indices where recordIDs.contains(next.entries[index].recordID) {
+            next.entries[index].superseded = true
+        }
         try? commit(next)
     }
 
@@ -233,7 +244,8 @@ final class OfficeReportService: ObservableObject {
                 jobID: submission.jobID, jobRevision: submission.jobRevision, record: submission.record,
                 manifest: manifest, transcript: submission.transcript,
                 createdAt: Int64(submission.createdAt.timeIntervalSince1970)),
-              OfficeReport.transcriptAgrees(report, attachments: submission.evidence.map(\.attachment)),
+              OfficeReport.recordAgrees(report, record: submission.record,
+                                        attachments: submission.evidence.map(\.attachment)),
               let payload = OfficeReport.payloadBytes(report) else {
             throw Failure.notReportable("This record can't be written as a report for the office.")
         }
@@ -259,6 +271,7 @@ final class OfficeReportService: ObservableObject {
     /// Sign (once), publish the report with its record and manifest, then each attachment.
     private func publish(_ operationID: String, record: Data, held: OfficeCheckIn.Held) async throws {
         guard let entry = ledger.entries.first(where: { $0.operationID == operationID }) else { return }
+        guard !entry.superseded,seams.recordAllowed(entry) else {throw CocoaError(.userCancelled)}
         guard OfficeReport.digest(record) == entry.recordSHA256 else {
             throw Failure.notReportable("The record has changed since its report was written.")
         }
@@ -269,6 +282,8 @@ final class OfficeReportService: ObservableObject {
             signature = try await seams.sign(entry.payload).base64EncodedString()
             try update(operationID) { $0.signature = signature }
         }
+        guard let current = ledger.entries.first(where:{$0.operationID == operationID}),
+              !current.superseded,seams.recordAllowed(current) else {throw CocoaError(.userCancelled)}
         let published = Data(try await seams.transport.publishReport(
             payloadBase64: entry.payload.base64EncodedString(), signatureBase64: signature,
             recordBase64: record.base64EncodedString(),
@@ -297,11 +312,14 @@ final class OfficeReportService: ObservableObject {
     /// file is not there, the folders have closed — is tried on the next pass; the rest still go.
     private func publishAttachments(_ operationID: String) async throws {
         guard let entry = ledger.entries.first(where: { $0.operationID == operationID }),
-              entry.published != nil, !entry.withdrawn else { return }
+              entry.published != nil, !entry.withdrawn, !entry.superseded,
+              seams.recordAllowed(entry) else { return }
         var firstFailure: Error?
         for (digest, path) in entry.files.sorted(by: { $0.key < $1.key })
         where !entry.attachmentsPublished.contains(digest) {
             do {
+                guard let current = ledger.entries.first(where:{$0.operationID == operationID}),
+                      !current.superseded,seams.recordAllowed(current) else {return}
                 try await seams.transport.publishReportAttachment(sha256: digest, path: path)
                 try update(operationID) { $0.attachmentsPublished.append(digest) }
             } catch {
@@ -344,10 +362,14 @@ final class OfficeReportService: ObservableObject {
         let before = ledger
         var firstFailure: Error?
         let listed = try OfficeManagedFolders.decodeReportReceipts(try await seams.transport.reportReceipts())
-        let open = ledger.entries.filter { !$0.superseded && !$0.withdrawn && $0.published != nil }
+        let open = ledger.entries.filter { !$0.withdrawn && $0.published != nil }
         if !listed.isEmpty || !open.isEmpty {
             // The gate first: a receipt is read against the binding that verifies now.
             let held = try await seams.held()
+            for entry in ledger.entries where entry.published != nil && !entry.withdrawn
+                && (entry.superseded || !seams.recordAllowed(entry)) {
+                do {try await withdraw(entry.operationID)} catch {firstFailure = firstFailure ?? error}
+            }
             for receipt in listed {
                 do {
                     try take(receipt, held: held)

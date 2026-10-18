@@ -80,6 +80,7 @@ enum SensitiveStore: String, CaseIterable {
     case upcomingJobs
     case vanStock
     case learningCandidates
+    case capturedManuals
     case learningEntries
     case orgEnrolment
     case safetyAssessments
@@ -620,6 +621,15 @@ enum SensitiveStore: String, CaseIterable {
                           ownerPaths: ["OpenGlasses/Sources/Services/FieldAssist/VanStock/VanStockStore.swift"],
                           location: "Application Support/FieldAssist/van-stock.json, and van-stock-previous.json "
                               + "(the list from before the last takeover, one generation)")
+
+        case .capturedManuals:
+            return Record(store: self, dataClass: .documentCorpus, subjectLinkage: .thirdPartySubject,
+                          protection: .complete, backupExcluded: true, retention: .none,
+                          deleteAll: .api("CapturedManualStore.removeAll()"),
+                          deleteSubject: .api("CapturedManualStore.deleteMatching(_:)"),
+                          owner: "CapturedManualStore",
+                          ownerPaths: ["OpenGlasses/Sources/Services/FieldAssist/CapturedManual/CapturedManualStore.swift"],
+                          location: "Documents/CapturedManuals (sealed revisions, staging, checkpoints, selection and tombstones)")
 
         case .learningCandidates:
             // Team-learning candidates (Plan FP P1): what a technician filed for their supervisor to

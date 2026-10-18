@@ -54,6 +54,7 @@ struct ActiveJobView: View {
             timeSection
             unitSection
             workSection
+            PhotographedManualSection()
             // The job's evidence, with the face-blur state stated in plain words beside it. What
             // of it goes out is decided at close, in `JobEvidenceReviewView`; what this section is
             // for is knowing, mid-job, that the pictures and clips are landing somewhere.

@@ -11,15 +11,17 @@ enum OfficeManualImport {
         let archiveSHA256: String
         let receivedAt: Date
         let manifest: VaultManifest
+        let capturedDocumentBindings: [String:String]
         fileprivate init(assignment: OfficeManualAssignment.Verified, files: [String: Data],
                          verification: VaultArchiveVerification, archiveSHA256: String,
-                         receivedAt: Date, manifest: VaultManifest) {
+                         receivedAt: Date, manifest: VaultManifest, capturedDocumentBindings: [String:String]) {
             self.assignment = assignment
             self.files = files
             self.verification = verification
             self.archiveSHA256 = archiveSHA256
             self.receivedAt = receivedAt
             self.manifest = manifest
+            self.capturedDocumentBindings = capturedDocumentBindings
         }
     }
 
@@ -80,8 +82,17 @@ enum OfficeManualImport {
               requiredFiles.allSatisfy({ extracted.files[$0] != nil }), manifest.documentsIncluded else {
             throw Refusal.unsafeManifest
         }
+        var bindings: [String:String] = [:]
+        for document in manifest.documents where document.capturedManual != nil {
+            guard document.capturedManual?.organizationID == p.organizationID,
+                  (document.capturedManual?.approvedAt ?? Int64.max) <= Int64(receivedSeconds),
+                  let text = extracted.files[manifest.documentRelativePath(document)],
+                  let path = manifest.documentSourceRelativePath(document),let pdf = extracted.files[path],
+                  let digest = try? document.capturedBinding(text:text,pdf:pdf) else {throw Refusal.unsafeManifest}
+            bindings[document.file] = digest
+        }
         return Prepared(assignment: assignment, files: extracted.files,
                         verification: verification, archiveSHA256: p.archiveSHA256,
-                        receivedAt: receivedAt, manifest: manifest)
+                        receivedAt: receivedAt, manifest: manifest,capturedDocumentBindings:bindings)
     }
 }

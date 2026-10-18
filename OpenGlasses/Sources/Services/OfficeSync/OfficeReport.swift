@@ -26,7 +26,7 @@ enum OfficeReport {
 
     /// What a report carries.
     enum RecordKind: String, Codable, Sendable {
-        case workRecord, partsRequest, addendum
+        case workRecord, partsRequest, addendum, capturedManual
     }
 
     /// Where the transcript is: an attachment for the office, kept on the phone by the
@@ -37,6 +37,7 @@ enum OfficeReport {
 
     enum Role: String, Codable, Sendable, CaseIterable {
         case workOrder, auditExport, transcript, photo, clip, clipPoster, signature, addendum
+        case capturedManualPDF, capturedManualText
     }
 
     enum Requirement: String, Codable, Sendable {
@@ -49,7 +50,7 @@ enum OfficeReport {
     }
 
     static let mediaTypes: Set<String> = [
-        "application/pdf", "application/json", "image/jpeg", "image/png", "video/mp4", "video/quicktime"]
+        "application/pdf", "application/json", "image/jpeg", "image/png", "video/mp4", "video/quicktime", "text/markdown"]
 
     /// How much of a report the office has committed. Later cases follow earlier ones.
     enum Outcome: String, Codable, Sendable, Comparable {
@@ -279,12 +280,36 @@ enum OfficeReport {
         attachments.contains { $0.role == Role.transcript.rawValue } == (report.transcript == Transcript.attached.rawValue)
     }
 
+    /// IF P0's standalone capture extension. After verifying the signed envelope, check the
+    /// exact record bytes and bind its source revision, original job and required evidence to
+    /// the report. This is a verifier seam, not a producer or a compatibility negotiation.
+    static func recordAgrees(_ report: Report, record: Data, attachments: [Attachment]) -> Bool {
+        guard record.count == report.recordBytes, digest(record) == report.recordSHA256,
+              transcriptAgrees(report, attachments: attachments) else { return false }
+        guard report.recordKind == RecordKind.capturedManual.rawValue else { return true }
+        guard report.transcript == Transcript.none.rawValue,
+              let capture = try? CapturedManualContract.read(record), capture.captureID == report.recordID,
+              capture.ownershipScope == "organization", capture.organizationID == report.organizationID,
+              capture.enrolmentID == report.enrolmentID, capture.jobReference == report.jobReference,
+              capture.jobID == report.jobID, capture.jobRevision == report.jobRevision,
+              attachments.count == 2 else { return false }
+        return [(Role.capturedManualPDF, capture.pdfSHA256, capture.pdfBytes),
+                (Role.capturedManualText, capture.textSHA256, capture.textBytes)].allSatisfy { role, digest, bytes in
+            attachments.contains { $0.role == role.rawValue && $0.sha256 == digest && $0.bytes == bytes
+                && $0.requirement == Requirement.required.rawValue && $0.audience == Audience.office.rawValue }
+        }
+    }
+
     private static func valid(_ a: Attachment) -> Bool {
         hex(a.sha256, count: 64) && instant(a.bytes) && Role(rawValue: a.role) != nil
             && mediaTypes.contains(a.mediaType) && fileName(a.name)
             && Requirement(rawValue: a.requirement) != nil && Audience(rawValue: a.audience) != nil
             // A transcript is never the customer's.
             && (a.role != Role.transcript.rawValue || a.audience == Audience.office.rawValue)
+            && (a.role != Role.capturedManualPDF.rawValue
+                || (a.audience == Audience.office.rawValue && a.mediaType == "application/pdf"))
+            && (a.role != Role.capturedManualText.rawValue
+                || (a.audience == Audience.office.rawValue && a.mediaType == "text/markdown"))
     }
 
     // MARK: - Receipt

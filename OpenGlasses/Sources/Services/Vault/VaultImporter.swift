@@ -134,6 +134,10 @@ enum VaultImporter {
                     try fm.copyItem(at: sourceDir.appendingPathComponent(relative), to: dest)
                 }
             }
+            // Receipts are app-written trust records, never author-supplied payload files. Even
+            // a folder that lists this reserved path cannot forge a signed Office review handoff.
+            let suppliedReceipt = staging.appendingPathComponent(VaultReceipt.filename)
+            if fm.fileExists(atPath:suppliedReceipt.path) {try fm.removeItem(at:suppliedReceipt)}
             // Swap staging → baseline (the read-only authoritative copy).
             try? fm.removeItem(at: baseline)
             try fm.createDirectory(at: baseline.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -181,7 +185,8 @@ enum VaultImporter {
                               scanReader: ScannedPageReader? = defaultScanReader,
                               renderPolicy: ScanRenderPolicy = ScanRenderPolicy(),
                               progress: DocumentProgress? = nil,
-                              recognitionProgress: RecognitionProgress? = nil) async throws -> VaultDocumentLedger {
+                              recognitionProgress: RecognitionProgress? = nil,
+                              capturedCatalog:CapturedManualCatalog? = nil) async throws -> VaultDocumentLedger {
         try await VaultOperationLock.withLock(manifest.id) {
             // An interrupted removal is finished before anything is diffed. Skipped when the caller
             // injected its own directories, because then this is not the installed vault's layout
@@ -192,7 +197,7 @@ enum VaultImporter {
             return try await syncDocumentsLocked(
                 manifest: manifest, into: store, baseline: baseline, ledgerDirectory: ledgerDirectory,
                 scanReader: scanReader, renderPolicy: renderPolicy,
-                progress: progress, recognitionProgress: recognitionProgress)
+                progress: progress, recognitionProgress: recognitionProgress,capturedCatalog:capturedCatalog ?? .shared)
         }
     }
 
@@ -204,7 +209,7 @@ enum VaultImporter {
                                             scanReader: ScannedPageReader?,
                                             renderPolicy: ScanRenderPolicy,
                                             progress: DocumentProgress?,
-                                            recognitionProgress: RecognitionProgress?) async throws -> VaultDocumentLedger {
+                                            recognitionProgress: RecognitionProgress?,capturedCatalog:CapturedManualCatalog) async throws -> VaultDocumentLedger {
         // A removal that completed since this call was queued has already reduced the manifest in
         // the registry; re-reading it here is what stops a queued re-index re-ingesting the manual
         // the removal just took out.
@@ -213,6 +218,7 @@ enum VaultImporter {
         let root = baseline ?? baselineDirectory(for: manifest.id)
         let ledgerDir = ledgerDirectory ?? overlayDirectory(for: manifest.id)
         let namespace = DocumentStore.vaultNamespace(manifest.id)
+        capturedCatalog.documents = store
 
         var desired: [VaultDocumentLedger.Desired] = []
         for document in manifest.documents {
@@ -225,14 +231,36 @@ enum VaultImporter {
             let originalHash = manifest.documentSourceRelativePath(document)
                 .flatMap { try? Data(contentsOf: root.appendingPathComponent($0)) }
                 .map(VaultDocumentLedger.hash(of:))
-            desired.append(.init(file: document.file, title: document.title,
+            var binding:String?
+            if let review = document.capturedManual {
+                guard let receipt = receipt(for:manifest.id),receipt.verification == .signed,
+                      receipt.capturedOrganizationID == review.organizationID,
+                      let sourcePath = manifest.documentSourceRelativePath(document) else {
+                    throw ImportError.documentFailed("Photographed-manual approval requires its authenticated Office assignment and signed archive.")
+                }
+                let pdfURL = root.appendingPathComponent(sourcePath)
+                binding = try await Task.detached(priority:.utility) {
+                    guard let size = try pdfURL.resourceValues(forKeys:[.fileSizeKey]).fileSize,
+                          size <= CapturedManualContract.maximumPDFBytes else {throw CapturedManualStore.Failure.limits}
+                    let pdf = try Data(contentsOf:pdfURL)
+                    guard try CapturedManualMedia.pageCount(pdf) == review.pageCount else {throw CapturedManualStore.Failure.invalidRequest}
+                    return try document.capturedBinding(text:data,pdf:pdf)
+                }.value
+                guard receipt.capturedDocumentBindings?[document.file] == binding else {
+                    throw ImportError.documentFailed("Reviewed manual metadata or source files changed after authentication.")
+                }
+            }
+            desired.append(.init(file: document.file, title: document.capturedManual?.citationName(title:document.title) ?? document.title,
                                  contentHash: VaultDocumentLedger.hash(of: data),
-                                 sourceContentHash: originalHash))
+                                 sourceContentHash: originalHash,capturedManual:document.capturedManual,capturedBinding:binding))
         }
 
         var ledger = VaultDocumentLedger.load(from: ledgerDir)
         let plan = VaultDocumentLedger.plan(current: ledger, desired: desired)
-        guard !plan.isNoop else { return ledger }
+        guard !plan.isNoop else {
+            try capturedCatalog.reconcileReviewedVault(manifest.id)
+            return ledger
+        }
         // The gate sits here rather than at the top: work that only forgets is cleanup, and a
         // vault whose licence lapsed still has to be able to shed manuals it no longer lists.
         guard plan.toIngest.isEmpty || FieldAssistEntitlement.shared.has(.ownVaults) else {
@@ -252,6 +280,24 @@ enum VaultImporter {
         for want in plan.toIngest {
             let url = root.appendingPathComponent(manifest.documentRelativePath(
                 manifest.documents.first { $0.file == want.file } ?? VaultDocument(file: want.file, title: want.title)))
+            if let review = want.capturedManual {
+                let data = try Data(contentsOf:url)
+                let id = UUID().uuidString
+                let allowed = {
+                    FieldAssistEntitlement.shared.has(.ownVaults) && capturedCatalog.accessAllowed()
+                        && capturedCatalog.scopeForVault(manifest.id).organizationID == review.organizationID
+                }
+                guard await store.ingestPages(documentId:id,name:want.title,pages:try review.pageTexts(data),
+                    sourceType:recognisedSourceType,namespace:namespace,stillAllowed:allowed),
+                    let ref = store.documents.first(where:{$0.id == id}),ref.chunkCount > 0 else {
+                    ledger.entries = entries;try? ledger.save(to:ledgerDir)
+                    throw ImportError.documentFailed("Reviewed photographed manual did not reach Ready indexing.")
+                }
+                entries.append(.init(file:want.file,title:want.title,documentId:ref.id,contentHash:want.contentHash,
+                    chunkCount:ref.chunkCount,ocrPages:review.ocrPages,lowConfidencePages:review.lowConfidencePages,
+                    sourceContentHash:want.sourceContentHash,capturedManual:review,capturedBinding:want.capturedBinding))
+                continue
+            }
             let extracted: VaultDocumentExtractor.Extracted
             do {
                 // Recognised pages are checkpointed under the content hash so an interrupted
@@ -271,7 +317,8 @@ enum VaultImporter {
             }
             let sourceType = extracted.usedRecognition ? recognisedSourceType : "vault_document"
             let ref = await store.ingest(name: want.title, text: extracted.text,
-                                         sourceType: sourceType, namespace: namespace) { done, total in
+                                         sourceType: sourceType, namespace: namespace,
+                                         pageLabels: extracted.pageLabels) { done, total in
                 progress?(want.title, done, total)
             }
             guard let ref else {
@@ -289,6 +336,7 @@ enum VaultImporter {
         }
         ledger.entries = entries
         try ledger.save(to: ledgerDir)
+        try capturedCatalog.reconcileReviewedVault(manifest.id)
         return ledger
     }
 

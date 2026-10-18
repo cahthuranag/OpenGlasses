@@ -59,6 +59,8 @@ extension DomainCalcTool { var executionSemantics: ToolExecutionSemantics { .rea
 extension FoodAnalysisTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 extension ShazamTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 extension DiscoverCapabilitiesTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
+/// Reads the app's own tool definitions (Plan IU); touches nothing.
+extension ToolLookupTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 extension ProcessingSummaryTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 extension YieldToHumanTool { var executionSemantics: ToolExecutionSemantics { .read() } }
 /// Reads an already-published frame rather than triggering the shutter, so no hardware moves.
@@ -129,6 +131,17 @@ extension PinFrameTool {
 // worst.
 extension ManualFigureTool {
     var executionSemantics: ToolExecutionSemantics { .local(idempotency: .intrinsic) }
+}
+// Opens the page the last answer cited, on the phone. Nothing leaves the device; a redelivered
+// call presents the same pages again, and the notification for a locked phone has one identifier,
+// so a second one replaces the first rather than stacking.
+extension ShowSourceTool {
+    var executionSemantics: ToolExecutionSemantics { .local(idempotency: .intrinsic) }
+}
+// Opens a request for the technician to scan, or forgets a saved capture. The tool itself does
+// not trigger a shutter or send anything; a timeout cannot undo a request already presented.
+extension ManualCaptureTool {
+    var executionSemantics: ToolExecutionSemantics { .local() }
 }
 extension NewTopicTool {
     var executionSemantics: ToolExecutionSemantics { .local(idempotency: .intrinsic) }

@@ -64,6 +64,7 @@ subject column distinguishes the wearer from a third party who never installed t
 | agentNotificationQueue | `AgentNotificationQueue` | personalMemory | wearer | platformDefault | no | none | none — entries are consumed as the agent triages them | n/a — no subject linkage |
 | agentSchedule | `AgentScheduler` | personalMemory | wearer | platformDefault | no | none | none — tasks are cancelled individually | n/a — no subject linkage |
 | brainGraph | `BrainStore` | knowledgeGraph | thirdPartySubject | completeUntilFirstUserAuthentication | yes | none | none — no whole-graph clear; erasure is per entity | `BrainStore.forget(entityName:)` |
+| capturedManuals | `CapturedManualStore` | documentCorpus | thirdPartySubject | complete | yes | none | `CapturedManualStore.removeAll()` | `CapturedManualStore.deleteMatching(_:)` |
 | capturedPhotos | `AppState` | media | thirdPartySubject | platformDefault | no | none | none — photos are the wearer's media, managed in Photos | none — a photo is not indexed by who appears in it |
 | clinicalAuditLog | `HIPAAComplianceService` | operationalAudit | wearer | complete | yes | cap 1000 | `HIPAAComplianceService.clearAuditLog` | none — an audit entry is evidence; it is content-free by design |
 | clinicalConfiguration | `FHIRConfigurationStore` | preference | wearer | platformDefault | no | none | none — configuration, cleared by reconfiguring | n/a — no subject linkage |

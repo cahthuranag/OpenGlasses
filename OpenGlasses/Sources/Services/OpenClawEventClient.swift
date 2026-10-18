@@ -1,5 +1,15 @@
 import Foundation
 
+/// What the gateway settings show about the event client: the last status it reported, the
+/// gateway its socket is for, and the running or most recent pairing (Plan AR).
+struct GatewayPairingSnapshot: Equatable {
+    var status: PairingStatus? = nil
+    var connectionGatewayId: String? = nil
+    var pairingGatewayId: String? = nil
+    var lastPairingGatewayId: String? = nil
+    var lastPairingEnd: PairingBootstrapPolicy.EndReason? = nil
+}
+
 /// WebSocket client for receiving proactive notifications from OpenClaw.
 /// Connects to the OpenClaw gateway's WebSocket endpoint, authenticates,
 /// and listens for heartbeat/cron events to speak through TTS.
@@ -7,6 +17,10 @@ import Foundation
 /// Plan EH P1: the handshake is the shared `OpenClawConnectParams` (challenge-timestamped device
 /// signature, closed-schema params) and the reply is read through `PairingResponseInterpreter`,
 /// which understands the 2.0 `hello-ok` and its pairing-required details.
+///
+/// Plan AR: a device token is stored only as `PairingBootstrapPolicy` allows — an unsolicited
+/// `device.paired` only inside a pairing the wearer started, and a `res` only when it answers the
+/// connect request this socket sent.
 class OpenClawEventClient {
     var onNotification: ((String) -> Void)?
     /// Surfaces live pairing/connection state to the gateway settings UI.
@@ -28,6 +42,36 @@ class OpenClawEventClient {
     private var challenge: GatewayChallenge?
     /// The gateway's hello-ok for this socket (role, scopes, catalog).
     private(set) var gatewayHello: GatewayHello?
+    /// The `id` of the connect request this socket is waiting on. Only the `res` carrying it is
+    /// read as the handshake's answer; any other `res` is dropped.
+    private var pendingConnectId: String?
+
+    /// Plan AR: the wearer-started pairing, if one is running, and when it gives up.
+    private var bootstrap: PairingBootstrapPolicy.State = .idle
+    private var bootstrapTimer: DispatchWorkItem?
+    /// How the most recent pairing ended, and which gateway it was for.
+    private(set) var lastPairingEnd: PairingBootstrapPolicy.EndReason?
+    private(set) var lastPairingGatewayId: String?
+    private let clock: () -> Date
+    private let bootstrapWindow: TimeInterval
+
+    /// The gateway the running pairing is for, if any.
+    var pairingGatewayId: String? {
+        if case let .bootstrapping(gatewayId, _) = bootstrap { return gatewayId }
+        return nil
+    }
+
+    /// The gateway this client's socket is for (or was last for).
+    var connectionGatewayId: String? { currentGateway?.id }
+
+    /// Everything the gateway settings show, read together with the status it accompanies.
+    func pairingSnapshot(status: PairingStatus) -> GatewayPairingSnapshot {
+        GatewayPairingSnapshot(status: status,
+                               connectionGatewayId: connectionGatewayId,
+                               pairingGatewayId: pairingGatewayId,
+                               lastPairingGatewayId: lastPairingGatewayId,
+                               lastPairingEnd: lastPairingEnd)
+    }
 
     /// Has this socket completed the connect handshake? `isConnected` is set only by a `.paired`
     /// hello-ok, so it is exactly "the peer proved it is our gateway" — the predicate names that
@@ -35,8 +79,12 @@ class OpenClawEventClient {
     /// this an on-path attacker could inject a request frame instead of the gateway's hello-ok.
     private var isAuthenticated: Bool { isConnected }
 
-    init(socketFactory: @escaping GatewaySocketFactory = URLSessionGatewaySocket.make) {
+    init(socketFactory: @escaping GatewaySocketFactory = URLSessionGatewaySocket.make,
+         clock: @escaping () -> Date = { Date() },
+         bootstrapWindow: TimeInterval = PairingBootstrapPolicy.window) {
         self.socketFactory = socketFactory
+        self.clock = clock
+        self.bootstrapWindow = bootstrapWindow
     }
 
     func connect() {
@@ -54,25 +102,67 @@ class OpenClawEventClient {
 
     func disconnect() {
         sendDeviceEvent(type: "connection", payload: ["status": "disconnected"])
+        // A pairing does not outlive its socket: a teardown is a cancel.
+        applyBootstrap(.cancelled)
         shouldReconnect = false
         isConnected = false
         challenge = nil
         gatewayHello = nil
+        pendingConnectId = nil
         socket?.cancel()
         socket = nil
         onPairingStatusChange?(.disconnected)
         PrivacyLog.gatewayConnection(.disconnected)
     }
 
-    /// Begin device pairing with a setup code: store it on the active gateway and reconnect, so
-    /// the handshake presents the bootstrap token. The gateway returns a per-device token once
-    /// the device is approved (captured in `handleConnectResponse`).
-    func startPairing(setupCode: String) {
-        guard let gateway = Self.activeGateway() else {
-            onPairingStatusChange?(.error("No gateway configured"))
+    /// Begin device pairing with a setup code, from the wearer's own press in the gateway
+    /// settings: store the code on that gateway and reconnect to it, so the handshake presents the
+    /// bootstrap token. This opens the only window in which an unsolicited `device.paired` token
+    /// is stored (`PairingBootstrapPolicy`); it closes on the first stored token, a cancel, a
+    /// disconnect, or after `bootstrapWindow`.
+    ///
+    /// The gateway is named rather than resolved: a gateway being paired for the first time has
+    /// no credential yet, so it is not one of `Config.enabledGateways`.
+    func startPairing(gatewayId: String, setupCode: String) {
+        guard Config.agentModeEnabled else {
+            PrivacyLog.gatewayConnection(.inactive)
+            onPairingStatusChange?(.error("Agent Mode is off"))
             return
         }
+        guard SetupCode.decode(setupCode) != nil,
+              let gateway = Self.pairableGateway(gatewayId) else {
+            onPairingStatusChange?(.error("No gateway to pair"))
+            return
+        }
+        // Close whatever was running first: a pairing it cancels drops its own setup code.
+        disconnect()
         Config.setGatewaySetupCode(gatewayId: gateway.id, setupCode: setupCode)
+        lastPairingEnd = nil
+        lastPairingGatewayId = gateway.id
+        applyBootstrap(.started(gatewayId: gateway.id, at: clock(), window: bootstrapWindow))
+        PrivacyLog.gatewayConnection(.pairingStarted, peer: PrivateIdentifier(gateway.id))
+        let timer = DispatchWorkItem { [weak self] in
+            guard let self, self.pairingGatewayId != nil else { return }
+            self.applyBootstrap(.timerFired(at: self.clock()))
+            // Nobody approved in time: close the pairing socket and carry on as at launch.
+            if self.pairingGatewayId == nil, self.lastPairingEnd == .timedOut {
+                self.disconnect()
+                self.connect()
+            }
+        }
+        bootstrapTimer?.cancel()
+        bootstrapTimer = timer
+        // A second past the deadline, so the wall clock agrees the window has closed.
+        DispatchQueue.main.asyncAfter(deadline: .now() + bootstrapWindow + 1, execute: timer)
+        shouldReconnect = true
+        reconnectDelay = 2
+        establishConnection()
+    }
+
+    /// The wearer abandoned the pairing they started. The socket closes; if another gateway is
+    /// set up and Agent Mode is on, the client reconnects to it as it would at launch.
+    func cancelPairing() {
+        guard pairingGatewayId != nil else { return }
         disconnect()
         connect()
     }
@@ -80,8 +170,10 @@ class OpenClawEventClient {
     // MARK: - Private
 
     private func establishConnection() {
-        // Use the new multi-gateway config; fall back to legacy if needed
-        guard let gateway = Self.activeGateway() else {
+        // A running pairing pins its gateway; otherwise the multi-gateway config, falling back
+        // to legacy if needed.
+        let pairing = pairingGatewayId.flatMap(Self.pairableGateway)
+        guard let gateway = pairing ?? Self.activeGateway() else {
             PrivacyLog.gatewayConnection(.notConfigured)
             return
         }
@@ -90,11 +182,13 @@ class OpenClawEventClient {
         // socket's handshake, or the inbound gate would open on a peer that never proved itself.
         isConnected = false
         gatewayHello = nil
+        pendingConnectId = nil
         onPairingStatusChange?(.connecting)
 
         let wsURL = Self.webSocketURL(for: gateway)
         guard let url = try? EndpointPolicy.requireOpenable(wsURL, for: .openClawEventStream) else {
             PrivacyLog.gatewayConnection(.endpointMalformed, peer: PrivateIdentifier(gateway.id))
+            onPairingStatusChange?(.error("Gateway address not allowed"))
             return
         }
 
@@ -106,6 +200,15 @@ class OpenClawEventClient {
         PrivacyLog.gatewayConnection(.connecting, transport: Self.transport(for: gateway),
                                      peer: PrivateIdentifier(gateway.id))
         startReceiving(on: socket)
+    }
+
+    /// The saved gateway a pairing targets: enabled, speaking the OpenClaw protocol, and with an
+    /// address — its credential is what the pairing is about to get.
+    private static func pairableGateway(_ gatewayId: String) -> GatewayConfig? {
+        Config.savedGateways.first {
+            $0.id == gatewayId && $0.enabled && $0.gatewayProvider.usesOpenClawProtocol
+                && (!$0.lanHost.isEmpty || !$0.tunnelHost.isEmpty)
+        }
     }
 
     /// Find the first enabled gateway that uses the OpenClaw WebSocket protocol.
@@ -267,11 +370,19 @@ class OpenClawEventClient {
     /// connection state, and surface the status. Pure interpretation lives in
     /// `PairingResponseInterpreter`; this applies its side effects.
     private func handleConnectResponse(_ json: [String: Any]) {
+        // Only the answer to the connect this socket sent is the handshake. Any other `res` —
+        // the reply to a device event, or one planted on a cleartext LAN socket — carries no
+        // connection state and no credential.
+        guard let id = json["id"] as? String, let expected = pendingConnectId, id == expected else {
+            PrivacyLog.gatewayConnection(.responseUncorrelated)
+            return
+        }
+        pendingConnectId = nil
         let outcome = PairingResponseInterpreter.interpretResponse(json)
 
         if let token = outcome.deviceToken, let gatewayId = currentGateway?.id {
-            Config.setDeviceCredentials(gatewayId: gatewayId, deviceToken: token)
-            PrivacyLog.gatewayConnection(.devicePaired, peer: PrivateIdentifier(gatewayId))
+            storeDeviceToken(token, gatewayId: gatewayId,
+                             offer: .connectReplyToken(gatewayId: gatewayId, at: clock()))
         }
 
         switch outcome.status {
@@ -310,12 +421,13 @@ class OpenClawEventClient {
             challenge = GatewayChallenge.parse(event: json)
             sendConnectHandshake()
         case "device.paired":
-            // Deliberately ungated: pairing depends on this arriving before the handshake can
-            // succeed. Narrowing it to the bootstrap window is Plan AR's separate item.
-            if let outcome = PairingResponseInterpreter.interpretPairedEvent(payload),
-               let token = outcome.deviceToken, let gatewayId = currentGateway?.id {
-                Config.setDeviceCredentials(gatewayId: gatewayId, deviceToken: token)
-                PrivacyLog.gatewayConnection(.devicePaired, peer: PrivateIdentifier(gatewayId))
+            // Not gated on the handshake — the approval can arrive before it succeeds — but gated
+            // on the wearer's own pairing: outside it, whatever the server sends, nothing is stored.
+            guard let outcome = PairingResponseInterpreter.interpretPairedEvent(payload),
+                  let token = outcome.deviceToken else { return }
+            let gatewayId = currentGateway?.id
+            if storeDeviceToken(token, gatewayId: gatewayId,
+                                offer: .pairedEventToken(gatewayId: gatewayId, at: clock())) {
                 onPairingStatusChange?(.paired)
             }
         case "heartbeat", "cron":
@@ -333,6 +445,47 @@ class OpenClawEventClient {
         default:
             break
         }
+    }
+
+    // MARK: - Pairing bootstrap (Plan AR)
+
+    /// Ask the policy about a device token and store it only on `.store`. Returns whether it was
+    /// stored. Nothing from the token or the frame is logged.
+    @discardableResult
+    private func storeDeviceToken(_ token: String, gatewayId: String?,
+                                  offer: PairingBootstrapPolicy.Event) -> Bool {
+        let verdict = applyBootstrap(offer)
+        guard verdict == .store, let gatewayId else {
+            if case let .ignore(reason)? = verdict {
+                PrivacyLog.gatewayConnection(.pairingTokenIgnored, detail: PrivacyToken(reason.rawValue))
+            }
+            return false
+        }
+        Config.setDeviceCredentials(gatewayId: gatewayId, deviceToken: token)
+        PrivacyLog.gatewayConnection(.devicePaired, peer: PrivateIdentifier(gatewayId))
+        return true
+    }
+
+    /// Run an event through the policy and apply what it says. A bootstrap that ends without a
+    /// token drops the setup code — its bootstrap token is one-time — and says so to the settings.
+    @discardableResult
+    private func applyBootstrap(_ event: PairingBootstrapPolicy.Event) -> PairingBootstrapPolicy.TokenVerdict? {
+        let pairing = pairingGatewayId
+        let transition = PairingBootstrapPolicy.apply(event, to: bootstrap)
+        bootstrap = transition.state
+        if let ended = transition.ended {
+            bootstrapTimer?.cancel()
+            bootstrapTimer = nil
+            lastPairingEnd = ended
+            PrivacyLog.gatewayConnection(.pairingEnded, detail: PrivacyToken(ended.rawValue))
+            if ended != .paired, let pairing {
+                Config.clearGatewaySetupCode(gatewayId: pairing)
+            }
+            if ended == .timedOut {
+                onPairingStatusChange?(.error("Pairing timed out"))
+            }
+        }
+        return transition.token
     }
 
     private func sendConnectHandshake() {
@@ -355,9 +508,11 @@ class OpenClawEventClient {
 
         // Shared builder: role/scopes, closed-schema client block, and — when the gateway issued
         // a challenge — the Ed25519 device-identity block signed at the challenge's timestamp.
+        let connectId = UUID().uuidString
+        pendingConnectId = connectId
         let connectMsg: [String: Any] = [
             "type": "req",
-            "id": UUID().uuidString,
+            "id": connectId,
             "method": "connect",
             "params": OpenClawConnectParams.build(
                 displayName: "Avenkin",

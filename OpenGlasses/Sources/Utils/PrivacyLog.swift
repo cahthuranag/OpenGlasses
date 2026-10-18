@@ -286,6 +286,10 @@ enum PrivacyLog {
     enum ToolRunEvent: String {
         case succeeded, failed, outcomeUnknown
         case stillRunning, lateCompletion, resolvedLate, reconciled
+        /// A relative time the wearer said ("in 15 minutes") replaced the model's value for a timer
+        /// or reminder. `detail` is how far apart they were (`RelativeTimeGuard.Disagreement`);
+        /// neither value, nor the utterance, has a parameter.
+        case relativeTimeOverridden
     }
 
     @discardableResult
@@ -615,6 +619,19 @@ enum PrivacyLog {
         /// rebuild), and `seconds` the time from the end of the teardown to the first fresh
         /// picture.
         case stallEpisode
+        /// HJ P1. `streamEndDecision` is the stream-end table's answer for a wanted stream that
+        /// ended: `detail` the decision, `state` the cause, `phase` where the app was
+        /// (`foreground`, `background`, `locked`), `codec` the codec the stream was built with,
+        /// `attempt` the rung and `count` the ends in the flap window, this one included.
+        /// `streamEnded` is one end entering the ladder, with `elapsed` the time the stream had
+        /// run since it last came back. `reconnectParked` is a ladder that stopped climbing
+        /// outside the foreground and kept the intent; `reconnectUnparked` is the app coming back
+        /// to the front, with `detail` what that did (`resumeLadder`, `awaitSDKResume`,
+        /// `nothing`). `presenceChanged` is the app's presence as the camera hears it.
+        case streamEndDecision, streamEnded, reconnectParked, reconnectUnparked, presenceChanged
+        /// HJ P1, log-only. The device session's own state, with `phase` and `codec` beside it,
+        /// so a device session can say whether a session ever ends without a stream `.stopped`.
+        case sessionStateChanged
     }
 
     @discardableResult
@@ -624,7 +641,8 @@ enum PrivacyLog {
                        frameRate: Int? = nil, width: Int? = nil, height: Int? = nil,
                        attempt: Int? = nil, ofAttempts: Int? = nil, count: Int? = nil,
                        kilobytes: Int? = nil, bytes: Int? = nil, silence: Double? = nil,
-                       seconds: Double? = nil,
+                       seconds: Double? = nil, phase: PrivacyToken? = nil,
+                       codec: PrivacyToken? = nil,
                        error: SafeErrorSummary? = nil) -> PrivacyEvent {
         var fields: [PrivacyEvent.Field] = [
             .init(.source, .token(PrivacyToken(source.rawValue))),
@@ -644,6 +662,8 @@ enum PrivacyLog {
         if let bytes { fields.append(.init(.bytes, .count(bytes))) }
         if let silence { fields.append(.init(.silence, .seconds(silence))) }
         if let seconds { fields.append(.init(.elapsed, .seconds(seconds))) }
+        if let phase { fields.append(.init(.phase, .token(phase))) }
+        if let codec { fields.append(.init(.codec, .token(codec))) }
         if let error { fields.append(.init(.error, .summary(error))) }
         return emit(.init(.capture, .camera, fields))
     }
@@ -1056,6 +1076,15 @@ enum PrivacyLog {
         case challengeReceived, handshakeSent, authRejected
         case sessionRotated, sessionCompacted
         case devicePaired, pairingPending
+        /// The wearer started pairing (Plan AR). `peer` is the gateway being paired.
+        case pairingStarted
+        /// A pairing bootstrap ended: `detail` is `paired`, `cancelled` or `timedOut`.
+        case pairingEnded
+        /// A device token arrived and was not stored: `detail` is the policy's reason, never
+        /// anything from the frame.
+        case pairingTokenIgnored
+        /// A `res` frame that does not answer our outstanding connect request was dropped.
+        case responseUncorrelated
         case deviceEventSent
         /// An inbound `type:"req"` frame arrived before the connect handshake completed and was
         /// dropped unanswered. Carries nothing from the frame — it is attacker-controlled.
@@ -1459,6 +1488,16 @@ enum PrivacyLog {
         // A turn whose conversation mic is Bluetooth put on the phone, with the reason token
         // (`stoodDown`, `notWorn`, `portUnavailable`).
         case turnMicOnPhone
+        // A backgrounded turn kept the live idle hands-free session as it was rather than re-tune
+        // it (iOS refuses that from the background); the route token only.
+        case conversationKeptIdleSession
+        // A backgrounded turn handed the session back and activated it afresh in the hands-free
+        // shape instead of re-tuning it in place; the route token and an outcome token
+        // (`activated`, `failed`, `deferred`).
+        case conversationFreshActivation
+        // A follow-up took the conversation's Bluetooth mic back from the phone; the configured
+        // route token and the route the follow-up landed on.
+        case turnMicRetaken
     }
 
     @discardableResult
@@ -1500,12 +1539,19 @@ enum PrivacyLog {
         case apiError, streamError, streamRetry, requestFailed
         case toolCallsParsed, toolCallDropped, toolsPayloadRejected, yieldedToHuman
         case emptyCompletion, imageSkipped, reasoningProduced, reasoningResolved, reasoningRetried
+        // A Responses turn's commentary-phase messages held back from the reply: a count and an
+        // outcome token (`answered`, `toolCall`, `noAnswer`), never the text.
+        case commentaryWithheld
         // Plan GC — the OpenAI endpoint a turn took, and a Responses refusal retried on Chat
         // Completions. Endpoint and reason tokens only.
         case routeSelected, routeFallback
         case spendCap
         // Plan GD3 — the field-mode tool profile trimmed the declared tools: counts and a digest.
         case toolProfileApplied
+        // Plan IU — how much of the tool set a turn declared in full (`full`/`core`) and why
+        // (`setting`/`contextShare`/`default`/`onDevice`), or tools added mid-conversation (`added`,
+        // reason `lookup`/`undeclaredCall`). Counts and estimated tokens only, never a tool name.
+        case toolExposure
         // Plan GE — the conversation moved onto the phone or back; route tokens and counts only.
         case offlineHandoff, offlineTurn
         case agentSelected, catalogDiscovered, catalogUnavailable
@@ -1514,6 +1560,9 @@ enum PrivacyLog {
         // once more, and a turn whose thinking blocks were dropped rather than replayed over a
         // changed prefix. Model and call-site tokens and counts only.
         case structuredRetry, thinkingDropped
+        // A turn used every tool round it is allowed and its wrap-up still asked for tools: those
+        // calls were answered, not run. Count and provider label only.
+        case toolBudgetSpent
     }
 
     /// How an utterance was classified. The utterance itself, and the classifier's free-form
@@ -1804,6 +1853,9 @@ enum PrivacyLog {
         case recordWritten, writeFailed, cleared, evicted, deleteFailed
         case migrated, legacyRetired, legacyRetireFailed
         case ingested, reembedded, appended, recovered
+        /// A vault manual indexed, and a question embedded for a vault search (Plan IV P4): how
+        /// many chunks, which model family, how long. Never a title or a question.
+        case indexed, queryEmbedded
         /// A distillation pass over the knowledge graph: how many rows it changed, of how many
         /// considered. Counts only — which fact was promoted or retired is the wearer's content.
         case distilled
@@ -1817,11 +1869,12 @@ enum PrivacyLog {
                       slot: PrivacyToken? = nil, scope: StoreScope? = nil,
                       count: Int? = nil, total: Int? = nil, characters: Int? = nil,
                       bytes: Int? = nil, detail: PrivacyToken? = nil,
-                      error: SafeErrorSummary? = nil) -> PrivacyEvent {
+                      error: SafeErrorSummary? = nil, durationMs: Int? = nil) -> PrivacyEvent {
         var fields: [PrivacyEvent.Field] = [
             .init(.store, .token(PrivacyToken(store.rawValue))),
             .init(.event, .token(PrivacyToken(event.rawValue))),
         ]
+        if let durationMs { fields.append(.init(.duration, .milliseconds(durationMs))) }
         if let slot { fields.append(.init(.slot, .token(slot))) }
         if let scope { fields.append(.init(.scope, .token(PrivacyToken(scope.rawValue)))) }
         if let count { fields.append(.init(.count, .count(count))) }
@@ -2233,6 +2286,8 @@ struct PrivacyEvent: Equatable {
         // A second duration on the one line, beside `elapsed`, which there is the time the
         // rebuild took to show a picture.
         case silence
+        // Plan HJ P1 — the codec a glasses stream was built with, beside a stream-end decision.
+        case codec
     }
 
     /// The only shapes a field value can take. There is no `case text(String)` — that absence is

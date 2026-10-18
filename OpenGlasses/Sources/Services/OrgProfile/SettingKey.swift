@@ -21,12 +21,16 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     case organizationReportRecipients
     /// Transcripts in reports to the office: `always` or `never` (Plan HD).
     case organizationReportTranscriptInternal
+    case capturedManualsPolicy
     /// The organisation's accent, locked: every screen takes it and the picker is read-only.
     /// To offer a colour the technician may change, the profile sets `accentColorName` instead.
     case organizationAccentColor
     /// The technician's name as their team sees it (Plan FP P3), on a phone the organisation
     /// enrols per person. Set and locked by the profile; the technician sets it otherwise.
     case technicianDisplayName
+    /// When tool definitions go on demand (Plan IU): `automatic`, `always` or `never`. Set and
+    /// locked by the profile — the Settings row is then not the technician's to change.
+    case organizationToolDefinitionsMode
 
     // Organisation policy — tighten only.
     case organizationAllowsUnsignedVaults
@@ -90,7 +94,8 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     var kind: Kind {
         switch self {
         case .organizationDisplayName, .organizationJobSigningKey, .organizationJobReportChannel,
-             .organizationReportTranscriptInternal, .organizationAccentColor, .technicianDisplayName:
+             .organizationReportTranscriptInternal, .organizationAccentColor, .technicianDisplayName, .capturedManualsPolicy,
+             .organizationToolDefinitionsMode:
             return .profileOwned(.string)
         case .organizationReportRecipients:
             return .profileOwned(.strings)
@@ -129,6 +134,11 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
             return nil
         case (.organizationJobReportChannel, .string(let raw)):
             return DeliveryChannel(rawValue: raw) == nil ? "not a delivery channel this build knows" : nil
+        case (.organizationToolDefinitionsMode, .string(let raw)):
+            // Deny by default: a mode this build does not know is a named drop, never a guess.
+            return ToolDefinitionsMode(rawValue: raw) == nil ? "not one of automatic, always or never" : nil
+        case (.capturedManualsPolicy, .string(let raw)):
+            return ["off", "jobOnly", "reviewToPool"].contains(raw) ? nil : "not a photographed-manual policy"
         case (.organizationReportTranscriptInternal, .string(let raw)):
             // Deny by default: a value this build does not know is a named drop, never a guess.
             return ReportTranscriptPolicy.InternalRule(rawValue: raw) == nil

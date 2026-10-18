@@ -23,6 +23,8 @@ final class AppleRemindersTool: NativeTool, @unchecked Sendable {
 
     private let eventStore: EventKitDayStore
     private let now: () -> Date
+    /// The wearer's words for this call's turn, when there are any to check against.
+    private let utterance: () -> String?
 
     @MainActor
     convenience init() {
@@ -30,9 +32,11 @@ final class AppleRemindersTool: NativeTool, @unchecked Sendable {
     }
 
     @MainActor
-    init(eventStore: EventKitDayStore, now: @escaping () -> Date = Date.init) {
+    init(eventStore: EventKitDayStore, now: @escaping () -> Date = Date.init,
+         utterance: @escaping () -> String? = RelativeTimeGuard.utteranceForCurrentCall) {
         self.eventStore = eventStore
         self.now = now
+        self.utterance = utterance
     }
 
     func execute(args: [String: Any]) async throws -> String {
@@ -54,13 +58,23 @@ final class AppleRemindersTool: NativeTool, @unchecked Sendable {
             return "No reminder text provided."
         }
 
+        let currentTime = now()
         let due: Date?
-        switch ReminderDuePolicy.validate(args["due_at"] as? String, now: now()) {
-        case .valid(let date): due = date
-        case .invalidISO8601:
-            return "The due_at value must be an absolute ISO-8601 date and time."
-        case .past:
-            return "That due date is in the past. Choose a future date or time."
+        // "In 15 minutes" in the wearer's own words beats the model's arithmetic (see
+        // `RelativeTimeGuard`); otherwise the model's absolute value is validated as before.
+        switch ReminderDueResolution.resolve(modelDueAt: args["due_at"] as? String,
+                                             utterance: utterance(), now: currentTime) {
+        case .parsed(let date, let disagreement):
+            RelativeTimeGuard.logOverride(tool: name, disagreement)
+            due = date
+        case .model(let dueAt):
+            switch ReminderDuePolicy.validate(dueAt, now: currentTime) {
+            case .valid(let date): due = date
+            case .invalidISO8601:
+                return "The due_at value must be an absolute ISO-8601 date and time."
+            case .past:
+                return "That due date is in the past. Choose a future date or time."
+            }
         }
 
         try eventStore.saveReminder(title: title, dueDate: due, hasTime: due != nil)
@@ -146,16 +160,18 @@ enum ReminderDuePolicy {
         guard let text = value?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
             return .valid(nil)
         }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        var date = formatter.date(from: text)
-        if date == nil {
-            formatter.formatOptions = [.withInternetDateTime]
-            date = formatter.date(from: text)
-        }
-        guard let date else { return .invalidISO8601 }
+        guard let date = parse(text) else { return .invalidISO8601 }
         guard date > now else { return .past }
         return .valid(date)
+    }
+
+    /// An absolute ISO-8601 date and time, with or without fractional seconds.
+    static func parse(_ text: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: text) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: text)
     }
 }
 

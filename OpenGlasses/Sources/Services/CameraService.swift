@@ -252,6 +252,35 @@ class CameraService: ObservableObject, FilteredStillProviding {
         CameraFeatureGate.availability(of: feature, given: backend.capabilities)
     }
 
+    // MARK: - Where the app is (Plan HJ P1)
+
+    /// The two signals iOS gives, kept so either can arrive alone. The camera hears the presence
+    /// they describe (`StreamEndRecoveryPolicy.presence`), and only when it changes.
+    private var scenePhase: PrivacyFilterAvailability.Phase = .active
+    private var protectedDataAvailable = true
+    private(set) var presence: StreamEndRecoveryPolicy.Presence = .foreground
+
+    /// Fed from the app's scene-phase handler.
+    func notePresence(scenePhase: PrivacyFilterAvailability.Phase) {
+        self.scenePhase = scenePhase
+        forwardPresence()
+    }
+
+    /// Fed from `UIApplication.protectedDataWillBecomeUnavailable` / `…DidBecomeAvailable`.
+    func notePresence(protectedDataAvailable: Bool) {
+        self.protectedDataAvailable = protectedDataAvailable
+        forwardPresence()
+    }
+
+    private func forwardPresence() {
+        let next = StreamEndRecoveryPolicy.presence(scenePhase: scenePhase,
+                                                    protectedDataAvailable: protectedDataAvailable,
+                                                    previous: presence)
+        guard next != presence else { return }
+        presence = next
+        backend.notePresence(next)
+    }
+
     // MARK: - Backend events
 
     private func handle(_ event: CameraBackendEvent) {

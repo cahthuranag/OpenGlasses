@@ -148,19 +148,33 @@ enum ResponsesTranslator {
     /// from day one (the lesson the chat-completions path learned live): only `name` is truly
     /// required — a missing call id is synthesised, missing arguments default to `{}`.
     ///
-    /// `rawOutputItems` is the `output` array exactly as received (reasoning items, `phase`,
-    /// `encrypted_content` and all) for `assistantHistoryMessage(…rawOutputItems:)` to keep.
+    /// The reply is the text of the message items that are *not* commentary
+    /// (`isCommentary`): `final_answer`, `partial_answer`, and a message with no `phase` at all,
+    /// which is what every backend that does not label its messages sends. A commentary message
+    /// is the model's interim narration — a preamble before a tool call, or a terse note to itself
+    /// about how it means to answer, which a tester heard spoken as the reply (2026-10-16) — and
+    /// is never spoken or shown as the answer. `withheldCommentary` counts the commentary items held back, for the
+    /// caller's diagnostic. A turn left with no text and no tool call is an empty reply, and the
+    /// caller's ordinary empty-reply handling takes it.
+    ///
+    /// `rawOutputItems` is the `output` array exactly as received (reasoning items, commentary
+    /// messages, `phase`, `encrypted_content` and all) for `assistantHistoryMessage(…rawOutputItems:)`
+    /// to keep: the replay is verbatim, the withholding is only about what the wearer hears.
     static func parseOutput(_ response: [String: Any])
-        -> (text: String, toolCalls: [ToolInvocation], rawOutputItems: [[String: Any]]) {
-        // Text from every message item and block, in order. Joined, not concatenated: a reply
-        // in two messages (a commentary line, then the answer) must not run one sentence into
-        // the next.
+        -> (text: String, toolCalls: [ToolInvocation], rawOutputItems: [[String: Any]], withheldCommentary: Int) {
+        // Text from every answer message item and block, in order. Joined, not concatenated: a
+        // reply in two messages must not run one sentence into the next.
         var texts: [String] = []
         var toolCalls: [ToolInvocation] = []
+        var withheldCommentary = 0
         let output = response["output"] as? [[String: Any]] ?? []
         for (index, item) in output.enumerated() {
             switch item["type"] as? String {
             case "message":
+                if isCommentary(item) {
+                    withheldCommentary += 1
+                    continue
+                }
                 for block in item["content"] as? [[String: Any]] ?? []
                 where block["type"] as? String == "output_text" {
                     texts.append(block["text"] as? String ?? "")
@@ -176,7 +190,17 @@ enum ResponsesTranslator {
                 break   // reasoning items etc. — not ours to consume, only to replay
             }
         }
-        return (TextSegmentJoiner.join(texts), toolCalls, output)
+        return (TextSegmentJoiner.join(texts), toolCalls, output, withheldCommentary)
+    }
+
+    /// Whether an output item is a commentary-phase message: interim narration, not the answer.
+    ///
+    /// The ChatGPT backend labels assistant messages with `phase` — `commentary` (preamble or
+    /// progress narration; more output may follow), `partial_answer`, `final_answer` — and the
+    /// upstream client treats a missing phase as "unknown, keep the legacy behaviour". So only an
+    /// explicit `commentary` is withheld; anything else, or nothing, is answer text.
+    static func isCommentary(_ item: [String: Any]) -> Bool {
+        item["type"] as? String == "message" && item["phase"] as? String == "commentary"
     }
 
     /// `incomplete_details.reason` (e.g. `max_output_tokens`) when the response stopped short
@@ -229,6 +253,13 @@ enum ResponsesTranslator {
         /// reached) as the result, so the caller can name it (Plan GC Decision 9). Off by default:
         /// the subscription path keeps treating a stream without `response.completed` as failed.
         let acceptIncomplete: Bool
+        /// Commentary-phase message items announced by `response.output_item.added`, by
+        /// `output_index` and by item id — the two ways a text delta names the item it belongs to.
+        /// Their deltas are withheld: the live bubble shows the answer, never the interim note.
+        private var commentaryOutputIndices: Set<Int> = []
+        private var commentaryItemIDs: Set<String> = []
+        /// How many text deltas were withheld as commentary. A count, for tests and diagnostics.
+        private(set) var withheldCommentaryDeltas = 0
 
         init(acceptIncomplete: Bool = false) {
             self.acceptIncomplete = acceptIncomplete
@@ -255,7 +286,17 @@ enum ResponsesTranslator {
             let type = (event.event ?? json["type"] as? String) ?? ""
             switch type {
             case "response.output_text.delta":
+                if isCommentaryDelta(json) {
+                    withheldCommentaryDeltas += 1
+                    return nil
+                }
                 return json["delta"] as? String
+            case "response.output_item.added":
+                if let item = json["item"] as? [String: Any], ResponsesTranslator.isCommentary(item) {
+                    if let index = json["output_index"] as? Int { commentaryOutputIndices.insert(index) }
+                    if let id = item["id"] as? String, !id.isEmpty { commentaryItemIDs.insert(id) }
+                }
+                return nil
             case "response.output_item.done":
                 if let item = json["item"] as? [String: Any] {
                     doneItems.append(item)
@@ -276,6 +317,13 @@ enum ResponsesTranslator {
             default:
                 return nil
             }
+        }
+
+        /// Whether a text delta belongs to an item announced as commentary.
+        private func isCommentaryDelta(_ json: [String: Any]) -> Bool {
+            if let id = json["item_id"] as? String, commentaryItemIDs.contains(id) { return true }
+            if let index = json["output_index"] as? Int, commentaryOutputIndices.contains(index) { return true }
+            return false
         }
     }
 

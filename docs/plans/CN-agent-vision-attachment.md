@@ -66,7 +66,7 @@ Rules, each with a reason it exists:
 
 | Rule | Behaviour |
 |---|---|
-| Setting off (**default**) | `.skip(.disabled)` — see *Consent* below |
+| Setting off (the default until EH P1; on since) | `.skip(.disabled)` — see *Consent* below |
 | Agent Mode off | `.skip(.agentModeOff)` — dispatch itself is already blocked; belt and braces |
 | HIPAA mode | `.skip(.hipaaMode)` — hard-disable, mirroring the Plan AQ precedent |
 | Pin held | `.attach(.pinned)` — the pin *is* the aiming gesture; it beats a live frame |
@@ -105,7 +105,7 @@ interpolated at the call site.
 
 **Tests** (`OpenGlassesTests/AgentAttachmentTests.swift`): full policy truth table walked by
 `CaseIterable` over reasons; pinned-beats-live precedence; stale-pin skip at the boundary; HIPAA
-hard-skip regardless of every other input; default-off; degenerate-frame rejection; provenance line
+hard-skip regardless of every other input; setting off skips; degenerate-frame rejection; provenance line
 shape for both sources; referential-matcher corpus with positive controls.
 
 ---
@@ -146,8 +146,15 @@ timeout here surfaces as "couldn't start the agent", which sends the user lookin
 Sending a camera frame to a third-party endpoint is egress, and `agentModeEnabled` does not cover it.
 The user granted "dispatch text tasks to my agent"; quietly upgrading that to "and ship frames from a
 head-mounted camera to the same endpoint" is a scope expansion they didn't agree to. Hence the
-distinct default-off setting, sited next to the other Agent Mode controls with copy that says plainly
-what leaves the device.
+distinct setting, sited next to the other Agent Mode controls with copy that says plainly what leaves
+the device. It shipped default-off; since EH P1 it defaults **on** (see *Config*), so it is now the
+way to withhold frames rather than the grant that sends them. *Copy reworded 2026-10-16:* the
+toggle's info text and footer used to say it was off by default and that turning agents on never
+started sending pictures. Both now say it is on by default; the footer says a still goes with a task
+about something in view, or with a pinned frame, to the configured agent endpoint, and that turning
+it off sends agents text only. The footer's new string is translated into all twelve catalog
+languages; the info text is not in the catalog (`InfoToggle` shows it verbatim, like every other
+info text).
 
 **Tests:** custom-config omits the image when `imageField` is empty; OpenClaw param shape;
 default-implementation shim keeps two-argument callers working; `dispatch` honours a policy `.skip`
@@ -162,7 +169,7 @@ without failing the run; prompt carries the provenance line iff an attachment is
 - **Device smoke.** Pin a real label → dispatch → confirm the agent's answer reflects detail the
   spoken description didn't contain. This is the whole point of the plan and it can't be proven
   headless.
-- **Privacy-filter ordering.** See below — resolve on device before flipping the setting on.
+- **Privacy-filter ordering.** Resolved without a device run — see *Resolved* below.
 
 ---
 

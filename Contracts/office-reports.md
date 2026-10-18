@@ -125,7 +125,7 @@ published once.
 | `version`, `kind` | `1`, `avenkin.office-report` |
 | `reportID` | The digest of `operationID`; as in the file's name |
 | `operationID` | The phone's identifier for this send: its queued operation. New for every revision |
-| `recordKind` | `workRecord`, `partsRequest` or `addendum` |
+| `recordKind` | `workRecord`, `partsRequest`, `addendum` or the IF extension `capturedManual` |
 | `recordID` | What the record is about, stable across revisions: the job session for a work record or an addendum, the request for a parts request |
 | `revision` | Positive, and higher for each later report of the same `recordKind` and `recordID` from this enrolment |
 | `organizationID`, `enrolmentID`, `officeID`, `phoneTransportID` | The pairing it is sent under |
@@ -162,8 +162,8 @@ attachment has exactly these members, in this order:
 | Member | Meaning |
 |---|---|
 | `sha256`, `bytes` | The attachment's digest and size (at least 1 byte) |
-| `role` | `workOrder`, `auditExport`, `transcript`, `photo`, `clip`, `clipPoster`, `signature` or `addendum` |
-| `mediaType` | `application/pdf`, `application/json`, `image/jpeg`, `image/png`, `video/mp4` or `video/quicktime` |
+| `role` | `workOrder`, `auditExport`, `transcript`, `photo`, `clip`, `clipPoster`, `signature`, `addendum`, `capturedManualPDF` or `capturedManualText` |
+| `mediaType` | `application/pdf`, `application/json`, `image/jpeg`, `image/png`, `video/mp4`, `video/quicktime` or `text/markdown` |
 | `name` | What to call it for a person: 1–120 ASCII letters, digits, dot, underscore or hyphen, not beginning with a dot. **It never selects a path** |
 | `requirement` | `required` or `optional` |
 | `audience` | `office` (the organisation's own eyes only) or `customer` (may be passed on to the customer the job was for) |
@@ -314,6 +314,28 @@ key other than the office application key; a receipt for another report, another
 another record or manifest, or another phone; a receipt whose counts are not the manifest's, or
 whose outcome its counts cannot have; each message under the other's domain; and extra, missing,
 duplicate, nested and fractional fields.
+
+## IF photographed-manual extension (contract only)
+
+[Captured manual v1](captured-manual.md) §5 adds a standalone `capturedManual` record whose
+recordID is captureID and whose record bytes are the canonical source manifest. Its report
+revision is a separate delivery counter. Original ownership/enrolment/job fields must agree;
+transcript is `none`; exactly two required Office-only attachments carry the manifest's exact
+PDF and Markdown sizes/digests. The PDF role requires application/pdf, the text role requires
+text/markdown. These reserved roles cannot be marked customer-facing. A deliberate non-Office
+share belongs to the later phone sharing surface, not to this reserved intake contract.
+
+Swift `recordAgrees` and Go `Report.Carries` check that correlation after signature/digest
+verification; the capture bundle validator separately checks the actual files and page map.
+Both files must arrive before the whole capture is accepted. Matching signed receipts alone
+advance standing, and transport success never does. Capture/source revisions are immutable;
+early send and later job references reconcile by capture identity without blocking the job.
+
+This extends the verifiers and fixtures only: no capture producer, durable sender, Office
+intake or compatibility negotiation is implemented here. P4 requires an explicitly selected
+peer supporting `captured-manual-v1`; older peers refuse the unknown kind and the phone must
+keep a capture pending. Pool review remains unavailable until P5's authenticated provenance
+round trip. Existing v1 report fixtures and signing domains are unchanged.
 
 ## 11. Open points
 

@@ -121,6 +121,8 @@ final class SubjectErasureCoordinator {
         var recordedSessions: RecordedSessionStore?
         var conversations: ConversationStore?
         var offlineQueue: OfflineQueue?
+        var capturedManuals: CapturedManualStore?
+        var capturedManualDeliveryErasure: ((String) -> Void)?
         var learningCandidates: LearningCandidateStore?
         var learningEntries: LearningEntryStore?
 
@@ -140,6 +142,7 @@ final class SubjectErasureCoordinator {
         .conversationRecallIndex,
         .vaultLedger,
         // Sources.
+        .capturedManuals,
         .ragDocuments,
         .brainGraph,
         .semanticMemory,
@@ -207,6 +210,8 @@ final class SubjectErasureCoordinator {
                 receipt = eraseRecallIndex(subject)
             case .vaultLedger:
                 receipt = eraseVaultLedger(subject)
+            case .capturedManuals:
+                receipt = eraseCapturedManuals(subject)
             case .ragDocuments:
                 receipt = eraseDocuments(subject)
             case .brainGraph:
@@ -442,6 +447,41 @@ final class SubjectErasureCoordinator {
             }
         }
         return .complete(.vaultLedger, removed: removed)
+    }
+
+    private func eraseCapturedManuals(_ subject: ErasureSubject) -> ErasureReceipt {
+        guard let captured = stores.capturedManuals else {
+            return .unsupported(.capturedManuals, "no photographed-manual store was supplied")
+        }
+        if case .memoryFact = subject { return .complete(.capturedManuals) }
+        do {
+            let count = try captured.deleteMatching { metadata, text in
+                let matches: Bool
+                switch subject {
+                case .document(let id): matches = id == "captured:\(metadata.key)"
+                case .conversationThread(let id): matches = metadata.sessionID == id || metadata.conversationThreadID == id
+                case .person:
+                    let token = subject.searchToken
+                    matches = !token.isEmpty && [text, metadata.title, metadata.author, metadata.jobReference,
+                        metadata.statedModel, metadata.serial].contains { $0.localizedCaseInsensitiveContains(token) }
+                case .memoryFact: matches = false
+                }
+                if matches {
+                    stores.capturedManualDeliveryErasure?(metadata.captureID)
+                    // Forget removes the entire capture, including retained revisions. Retract
+                    // every derived revision even when source deletion needs an unlock/retry.
+                    for document in stores.documents?.documents ?? []
+                        where document.id.hasPrefix("captured:\(metadata.captureID):") {
+                        stores.documents?.forget(documentId: document.id)
+                    }
+                }
+                return matches
+            }
+            // There is no remote delete protocol for a captured report in v1.
+            return .complete(.capturedManuals, removed: count)
+        } catch {
+            return .unsupported(.capturedManuals, "photographed-manual erasure is incomplete; retry when protected data is available")
+        }
     }
 
     private func eraseDocuments(_ subject: ErasureSubject) -> ErasureReceipt {

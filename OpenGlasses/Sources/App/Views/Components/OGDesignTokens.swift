@@ -92,6 +92,14 @@ enum OGTheme {
         /// sizes a badge is drawn in — so this deepens the red rather than
         /// dropping a convention people read instantly.
         static let badge = OGColorToken(fixed: 0xC62828)
+        /// The marker over a cited passage on a manual page (Plan IN P1). A highlighter
+        /// yellow on the page, which is paper in both appearances, and a deep amber
+        /// behind the extracted-text fallback, which sits on the dark canvas.
+        static let passageHighlight = OGColorToken(light: 0xFFD84D, dark: 0x8A6A00)
+        /// A PDF page — white in light and dark alike, because PDFKit draws paper.
+        static let paper = OGColorToken(fixed: 0xFFFFFF)
+        /// Type printed on a manual page.
+        static let printedInk = OGColorToken(fixed: 0x000000)
     }
 
     /// Opacity roles. Named because the contrast audit asserts against them —
@@ -125,6 +133,10 @@ enum OGTheme {
         /// A divider or hairline over a media ground. Below the quiet floor on
         /// purpose: it is decoration, not text, and nothing asserts it.
         static let onMediaHairline = 0.3
+        /// The passage highlight behind extracted text on the canvas.
+        static let passageHighlight = 0.55
+        /// The passage highlight on a PDF page, where PDFKit multiplies it over the type.
+        static let passageHighlightOnPaper = 0.5
     }
 
     /// Adaptive pair helper: most tokens carry explicit light/dark values
@@ -447,6 +459,11 @@ extension OGTheme {
         .init("media attention label on black", foreground: mediaWarnLabelToken, on: Token.media),
         .init("media error label on black", foreground: mediaErrorLabelToken, on: Token.media),
         .init("badge label on badge", foreground: Token.onInk, on: Token.badge),
+        // The cited passage, marked on a manual page and in the extracted-text fallback.
+        .init("highlighted passage on a manual page", foreground: Token.printedInk, on: Token.paper,
+              wash: (OGColorToken(fixed: Token.passageHighlight.light.hex), Opacity.passageHighlightOnPaper)),
+        .init("highlighted passage on canvas", foreground: Token.label, on: Token.canvas,
+              wash: (Token.passageHighlight, Opacity.passageHighlight)),
         // The Home Screen widget: the app's card surface, a solid accent button, and the
         // neutral quick-action chips (the label at 10% over the surface).
         .init("widget title on widget surface", foreground: Token.label, on: widgetSurfaceToken),

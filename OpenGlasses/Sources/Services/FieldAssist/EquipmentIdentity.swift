@@ -40,6 +40,8 @@ struct EquipmentIdentity: Codable, Equatable {
             case near
             /// Part of a spelling: a nameplate split in two, a model said by its tail.
             case partial
+            /// A member of the series the vault covers as a whole, not one of its listed sizes.
+            case series
         }
 
         let heading: String
@@ -111,6 +113,12 @@ struct EquipmentIdentity: Codable, Equatable {
     /// no section (Plan GB P2).
     var isOutOfVault: Bool { statedModel != nil && vaultMatch == nil }
 
+    /// Covered by the vault's series rather than by one of its listed sizes.
+    var isSeriesMember: Bool { vaultMatch?.kind == .series }
+
+    /// "SLP99UH series" — the section a series member is recorded against.
+    static func seriesName(_ stem: String) -> String { "\(stem) series" }
+
     /// The vault section, when the report should name it beside what was said: never for an exact
     /// match, which would say the same thing twice.
     var vaultSectionIfDifferent: String? {
@@ -136,6 +144,12 @@ struct EquipmentIdentity: Codable, Equatable {
 
     /// The line the model sees at the top of every turn while this equipment is active.
     var promptBlock: String {
+        if isSeriesMember, let series = vaultMatch?.section {
+            return "ACTIVE EQUIPMENT: \(stated) (\(provenancePhrase), \(Self.clock(recognisedAt))) — "
+                + "a \(series) model. The loaded manuals cover the \(series) as a whole: answer from "
+                + "them without calling the model unlisted or unconfirmed. Only where they give a figure "
+                + "per size (input, airflow, temperature rise, cabinet) say which listed size it is for."
+        }
         if isOutOfVault {
             return "ACTIVE EQUIPMENT: \(stated) (\(provenancePhrase), \(Self.clock(recognisedAt))) — "
                 + "not a model the loaded manuals cover. Say so when you answer from them, and say "
@@ -147,6 +161,10 @@ struct EquipmentIdentity: Codable, Equatable {
 
     /// What the tool prefixes its answer with once it has recorded the machine.
     var announcement: String {
+        if isSeriesMember, let series = vaultMatch?.section {
+            return "Active equipment: \(stated) (\(provenancePhrase)) — a \(series) model, covered by "
+                + "the loaded manuals."
+        }
         if isOutOfVault {
             return "Active equipment: \(stated) (\(provenancePhrase)) — not a model the loaded manuals cover."
         }

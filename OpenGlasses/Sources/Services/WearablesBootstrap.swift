@@ -48,6 +48,13 @@ enum WearablesBootstrap {
     /// Call this before touching `Wearables.shared` — the return value is the permission to.
     @discardableResult
     static func ensureConfigured() -> Bool {
+        // Plan JE: the store copy offers no glasses, so the SDK is never configured there — no
+        // Bluetooth prompt, no call to Meta, and every glasses path degrades to "unavailable" with
+        // a reason that says so. Not counted as an attempt: nothing was tried.
+        guard GlassesSupportPolicy.isSupported else {
+            failureReason = GlassesSupportPolicy.unavailableReason()
+            return false
+        }
         if didAttempt { return isConfigured }
         didAttempt = true
         // Before configure(), so the SDK's analytics uploader can never win a race with it.
@@ -76,6 +83,7 @@ enum WearablesBootstrap {
 
     /// One-line state for diagnostics/debug surfaces.
     static var statusDescription: String {
+        if !GlassesSupportPolicy.isSupported { return "not in this version (store copy)" }
         if isConfigured { return "configured" }
         if let failureReason { return "unavailable — \(failureReason)" }
         return "not configured"

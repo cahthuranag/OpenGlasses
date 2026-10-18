@@ -876,8 +876,9 @@ struct GlassesPrivacySettingsScreen: View {
 
     var body: some View {
         Form {
-            // Plan HA C3: the glasses' own settings, one row away whatever the hero card shows.
-            if glasses.isShown {
+            // Plan HA C3: the glasses' own settings, one row away whatever the hero card shows —
+            // on a copy that offers glasses (Plan JE).
+            if glasses.isShown && GlassesSupportPolicy.isSupported {
                 Section {
                     NavigationLink {
                         GlassesSettingsView(appState: appState)

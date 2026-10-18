@@ -218,4 +218,28 @@ final class WidgetGlassesPresentationTests: XCTestCase {
         defaults.set(Data("not json".utf8), forKey: WidgetGlassesSnapshot.storageKey)
         XCTAssertNil(WidgetGlassesSnapshot.load(from: defaults))
     }
+
+    // MARK: - Plan JE: whether the app offers glasses at all
+
+    private func freshDefaults() -> UserDefaults {
+        let suite = "WidgetGlassesPresentationTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return defaults
+    }
+
+    /// Nothing written reads as not offered: a store copy's widget draws no glasses line before the
+    /// app has run, rather than a line the app cannot explain.
+    func testSupportIsNotAssumedUntilTheAppWritesIt() {
+        XCTAssertFalse(WidgetGlassesSupport.read(from: freshDefaults()))
+    }
+
+    func testSupportRoundTripsAndReportsOnlyAChange() {
+        let defaults = freshDefaults()
+        XCTAssertTrue(WidgetGlassesSupport.write(true, to: defaults), "first write is a change")
+        XCTAssertTrue(WidgetGlassesSupport.read(from: defaults))
+        XCTAssertFalse(WidgetGlassesSupport.write(true, to: defaults), "same value: no reload owed")
+        XCTAssertTrue(WidgetGlassesSupport.write(false, to: defaults))
+        XCTAssertFalse(WidgetGlassesSupport.read(from: defaults))
+    }
 }

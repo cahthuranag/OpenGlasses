@@ -252,6 +252,9 @@ final class StorageIdentifierGuardTests: XCTestCase {
         XCTAssertEqual(WidgetGlassesSnapshot.homeWidgetKind, "\(Self.name)HomeWidget",
                        "WidgetGlassesSnapshot.homeWidgetKind changed. Every placed Home Screen widget "
                            + "would disappear, and the app would reload a kind nobody has.")
+        XCTAssertEqual(WidgetGlassesSupport.storageKey, "widgetGlassesSupported",
+                       "WidgetGlassesSupport.storageKey changed. The widget would read a key the app "
+                           + "no longer writes and draw no glasses line on any copy (Plan JE).")
     }
 
     /// The watch targets compile none of the phone's shared files, so each keeps its own literal.

@@ -12,7 +12,8 @@ struct OpenGlassesHomeWidget: Widget {
                 .containerBackground(AccentColors.widgetSurface, for: .widget)
         }
         .configurationDisplayName("Avenkin")
-        .description("Whether your glasses are connected, their battery, and a quick Listen toggle.")
+        // Static metadata, shown on every copy: a store copy offers no glasses (Plan JE).
+        .description("A quick Listen toggle, and your glasses' connection and battery when you use them.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
@@ -20,12 +21,20 @@ struct OpenGlassesHomeWidget: Widget {
 struct HomeWidgetEntry: TimelineEntry {
     let date: Date
     let isListening: Bool
-    let glasses: WidgetGlassesLine
+    /// Nil on a copy that offers no glasses (Plan JE): the widget then draws no glasses line.
+    let glasses: WidgetGlassesLine?
 }
 
 struct HomeWidgetProvider: TimelineProvider {
-    /// The gallery and the placeholder show a connected pair, which is what the widget is for.
+    /// Whether the app offers glasses at all, as it last wrote. Absent reads as not offered.
+    private static var glassesSupported: Bool {
+        WidgetGlassesSupport.read(from: SharedAppState.defaults)
+    }
+
+    /// The gallery and the placeholder show a connected pair, which is what the widget is for —
+    /// on a copy that offers glasses. Without them it shows the Listen toggle alone.
     private static func sample(_ date: Date) -> HomeWidgetEntry {
+        guard glassesSupported else { return HomeWidgetEntry(date: date, isListening: true, glasses: nil) }
         let snapshot = WidgetGlassesSnapshot(phase: .connected, battery: 72, writtenAt: date)
         return HomeWidgetEntry(date: date, isListening: true,
                                glasses: WidgetGlassesPresentation.render(snapshot: snapshot, now: date,
@@ -36,8 +45,9 @@ struct HomeWidgetProvider: TimelineProvider {
     /// the widget learned about glasses; the extension cannot read whether glasses were ever
     /// added, so that reads as "not added" until the app's first launch writes one.
     private static func entries(now: Date) -> [HomeWidgetEntry] {
-        let snapshot = WidgetGlassesSnapshot.load(from: SharedAppState.defaults)
         let listening = SharedAppState.isListening
+        guard glassesSupported else { return [HomeWidgetEntry(date: now, isListening: listening, glasses: nil)] }
+        let snapshot = WidgetGlassesSnapshot.load(from: SharedAppState.defaults)
         return WidgetGlassesPresentation.entryDates(for: snapshot, now: now).map { date in
             HomeWidgetEntry(date: date, isListening: listening,
                             glasses: WidgetGlassesPresentation.render(snapshot: snapshot, now: date,
@@ -80,7 +90,14 @@ struct HomeWidgetView: View {
         }
     }
 
-    private var glasses: WidgetGlassesLine { entry.glasses }
+    private var glasses: WidgetGlassesLine? { entry.glasses }
+
+    /// Photo is the glasses' camera when they are in use, and the phone's otherwise — dimmed, not
+    /// hidden, for glasses that are added but away; full strength on a copy without glasses.
+    private var photoOpacity: Double {
+        guard let glasses else { return 1 }
+        return glasses.glassesUsable ? 1 : 0.4
+    }
 
     private var smallView: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -152,7 +169,7 @@ struct HomeWidgetView: View {
                     .frame(width: 96, height: 30)
                     .background(Color.primary.opacity(0.1), in: Capsule())
                 }
-                .opacity(glasses.glassesUsable ? 1 : 0.4)
+                .opacity(photoOpacity)
             }
         }
     }
@@ -167,28 +184,35 @@ struct HomeWidgetView: View {
                     .foregroundStyle(.primary)
                 Spacer()
             }
-            HStack(spacing: 10) {
-                Image(systemName: glasses.symbol)
-                    .font(.title3)
-                    .foregroundStyle(glasses.tone == .connected ? accent : Color.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(glasses.deviceName ?? "Glasses")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(glasses.text)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+            if let glasses {
+                HStack(spacing: 10) {
+                    Image(systemName: glasses.symbol)
+                        .font(.title3)
+                        .foregroundStyle(glasses.tone == .connected ? accent : Color.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(glasses.deviceName ?? "Glasses")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(glasses.text)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    batteryLabel(font: .subheadline.weight(.medium))
+                    statusDot
                 }
-                Spacer()
-                batteryLabel(font: .subheadline.weight(.medium))
-                statusDot
+                .padding(10)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(glasses.accessibilityLabel)
+            } else {
+                HStack {
+                    Spacer()
+                    statusDot
+                }
             }
-            .padding(10)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(glasses.accessibilityLabel)
             Spacer()
             Button(intent: ToggleListeningIntent()) {
                 HStack {
@@ -206,31 +230,34 @@ struct HomeWidgetView: View {
             HStack(spacing: 8) {
                 quickActionLink(url: "openglasses://action/ask", icon: "questionmark.circle.fill", label: "Ask")
                 quickActionLink(url: "openglasses://action/photo", icon: "camera.fill", label: "Photo")
-                    .opacity(glasses.glassesUsable ? 1 : 0.4)
+                    .opacity(photoOpacity)
                 quickActionLink(url: "openglasses://action/describe", icon: "eye.fill", label: "Describe")
             }
         }
     }
 
     /// The glasses' state in one line — words, then the live battery — read by VoiceOver as one
-    /// element.
+    /// element. Nothing on a copy that offers no glasses.
+    @ViewBuilder
     private func glassesLine(font: Font) -> some View {
-        HStack(spacing: 4) {
-            Text(glasses.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            batteryLabel(font: font)
+        if let glasses {
+            HStack(spacing: 4) {
+                Text(glasses.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                batteryLabel(font: font)
+            }
+            .font(font)
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(glasses.accessibilityLabel)
         }
-        .font(font)
-        .foregroundStyle(.secondary)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(glasses.accessibilityLabel)
     }
 
     /// "72%", with a bolt while charging. Nothing unless the reading is live.
     @ViewBuilder
     private func batteryLabel(font: Font) -> some View {
-        if glasses.batteryText != nil || glasses.charging {
+        if let glasses, glasses.batteryText != nil || glasses.charging {
             HStack(spacing: 2) {
                 if glasses.charging {
                     Image(systemName: "bolt.fill")
@@ -264,7 +291,7 @@ struct HomeWidgetView: View {
     /// is shown by the Listen button's own state.
     private var statusDot: some View {
         Circle()
-            .fill(glasses.tone == .connected ? accent : Color.secondary)
+            .fill(glasses?.tone == .connected ? accent : Color.secondary)
             .frame(width: 8, height: 8)
             .overlay(
                 Circle()

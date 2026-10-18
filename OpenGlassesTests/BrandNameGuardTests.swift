@@ -396,6 +396,19 @@ final class BrandNameGuardTests: XCTestCase {
         XCTAssertTrue(hub.contains("\(tagline) \(deviceLine)"), "the About footer carries the tagline and device line")
     }
 
+    func testTheHomepagePositioningIncludesIPhoneAndHeadphones() throws {
+        let body = try text("index.html")
+        for line in [
+            "Your AI. Your terms.",
+            "Avenkin is a private AI assistant that works for you, not for a platform: your choice "
+                + "of AI, your memory on your device, on your iPhone, through headphones or AirPods, "
+                + "from your watch or with your glasses.",
+            "On your iPhone, through headphones or AirPods, from your wrist, or hands-free with glasses."
+        ] {
+            XCTAssertTrue(body.contains(line), "index.html is missing \"\(line)\"")
+        }
+    }
+
     // MARK: - The script
 
     /// The repository is what a run of the script produces: running it now would change nothing.

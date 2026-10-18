@@ -63,7 +63,7 @@ final class RemoteInvokeService: ObservableObject {
     private var rateState: RemoteInvokeRateState
 
     private static let auditKey = "remoteInvokeAuditLog"
-    private static let auditLimit = 100
+    nonisolated static let auditLimit = 100
 
     init(environment: Environment, executor: RemoteCommandExecutor) {
         self.environment = environment
@@ -136,6 +136,6 @@ final class RemoteInvokeService: ObservableObject {
     private static func loadAudit() -> [RemoteInvokeAuditEntry] {
         guard let data = UserDefaults.standard.data(forKey: auditKey),
               let entries = try? JSONDecoder().decode([RemoteInvokeAuditEntry].self, from: data) else { return [] }
-        return entries
+        return Array(entries.prefix(auditLimit))
     }
 }

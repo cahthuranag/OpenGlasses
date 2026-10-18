@@ -134,13 +134,11 @@ final class AgentSafetyTests: XCTestCase {
 
     // MARK: - PlanExecutor
 
-    func testExecutorRunsStepsInOrderWithNarrationAndReinjection() async {
+    func testExecutorRunsStepsInOrderWithProgress() async {
         let router = FakeRouter()
         let executor = PlanExecutor(router: router)
-        var narrated: [String] = []
-        var reinjections = 0
-        executor.onNarrate = { narrated.append($0) }
-        executor.onReinject = { _ in reinjections += 1 }
+        var progress: [Int] = []
+        executor.onStep = { index, _, _ in progress.append(index) }
 
         let plan = AgentPlan(goal: "g", steps: [
             AgentStep(tool: "find_session", rationale: "find the work order"),
@@ -151,8 +149,8 @@ final class AgentSafetyTests: XCTestCase {
         XCTAssertEqual(router.calls.map(\.0), ["find_session", "capture_photo"])
         XCTAssertEqual(result.completedSteps, 2)
         XCTAssertFalse(result.aborted)
-        XCTAssertEqual(narrated, ["find the work order", "photo the gauge"])
-        XCTAssertEqual(reinjections, 2)                          // re-injected after each executed step
+        XCTAssertEqual(progress, [1, 2])
+        XCTAssertEqual(Mirror(reflecting: executor).children.compactMap(\.label).filter { $0.hasPrefix("on") }, ["onStep"])
     }
 
     func testExecutorAbortsRemainingStepsOnFailure() async {

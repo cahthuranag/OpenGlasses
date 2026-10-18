@@ -158,7 +158,8 @@ enum AgentSummarizer {
         return "\(number) \(plural)"
     }
 
-    /// Join clauses with commas and a trailing "and" before the last (Oxford-free for speech).
+    /// Join clauses for speech: two with "and", three or more with commas and a serial comma
+    /// before the final "and" ("a, b, and c").
     static func joinClauses(_ clauses: [String]) -> String {
         switch clauses.count {
         case 0: return ""

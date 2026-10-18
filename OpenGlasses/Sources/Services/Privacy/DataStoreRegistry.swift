@@ -64,6 +64,7 @@ enum SensitiveStore: String, CaseIterable {
     case agentSchedule
     case agentNotificationQueue
     case notificationDigest
+    case goals
 
     // Media
     case recordings
@@ -111,6 +112,7 @@ enum SensitiveStore: String, CaseIterable {
     case debugEventLog
     case diagnosticBreadcrumbs
     case turnTraces
+    case activityTrail
     case spotlightIndex
 
     // Skills
@@ -480,6 +482,21 @@ enum SensitiveStore: String, CaseIterable {
                           owner: "NotificationDigestService",
                           ownerPaths: ["OpenGlasses/Sources/Services/Digest/NotificationDigestService.swift"],
                           location: "Documents/notification_digest.json")
+
+        case .goals:
+            // The wearer's goals (Plan IW P1): what they want done, its steps, and what the
+            // assistant may offer for each. Their own list, not inferred knowledge, so never a
+            // memory fact. Excluded from backup because the erasure walk reaches it: a goal can
+            // name a person ("plan Sam's party"), and forgetting that person removes the goal.
+            return Record(store: self, dataClass: .personalMemory, subjectLinkage: .wearer,
+                          protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
+                          retention: .policy("at most \(GoalStore.capacity); finished goals kept "
+                                             + "\(GoalStore.finishedRetentionDays) days, or a shorter HIPAA retention"),
+                          deleteAll: .api("GoalStore.deleteAll()"),
+                          deleteSubject: .api("GoalStore.forget(matching:)"),
+                          owner: "GoalStore",
+                          ownerPaths: ["OpenGlasses/Sources/Services/Goals/GoalStore.swift"],
+                          location: "Application Support/Goals/goals.json")
 
         case .recordings:
             return Record(store: self, dataClass: .media, subjectLinkage: .thirdPartySubject,
@@ -982,6 +999,22 @@ enum SensitiveStore: String, CaseIterable {
                           owner: "TurnTraceStore",
                           ownerPaths: ["OpenGlasses/Sources/Services/Diagnostics/TurnTrace.swift"],
                           location: "Application Support/Diagnostics/turn-traces.json")
+
+        case .activityTrail:
+            // What the assistant did for the wearer (Plan IW P1): one row per side-effecting tool
+            // call, confirmation, refusal, held action, scheduled run and message spoken straight
+            // away — never a read, never the conversation. A fixed title, and as detail the
+            // approval line, a plan's goal or the lead of a result; in HIPAA mode the title only.
+            // Links to the operation journal and a job's thread by reference, not by copy.
+            return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,
+                          protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
+                          retention: .policy("\(ActivityRetention.horizonDays) days, at most "
+                                             + "\(ActivityRetention.maximumEntries) entries, or a shorter HIPAA retention"),
+                          deleteAll: .api("ActivityStore.deleteAll()"),
+                          deleteSubject: .api("ActivityStore.forget(matching:)"),
+                          owner: "ActivityStore",
+                          ownerPaths: ["OpenGlasses/Sources/Services/Activity/ActivityStore.swift"],
+                          location: "Application Support/Activity/activity.json")
 
         case .diagnosticBreadcrumbs:
             return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,

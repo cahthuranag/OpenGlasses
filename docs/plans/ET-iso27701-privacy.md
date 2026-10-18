@@ -60,6 +60,7 @@ subject column distinguishes the wearer from a third party who never installed t
 <!-- BEGIN GENERATED: data-lifecycle-matrix -->
 | Store | Owner | Data class | Subject | Protection | Backup excluded | Retention | Delete all | Delete subject |
 |---|---|---|---|---|---|---|---|---|
+| activityTrail | `ActivityStore` | operationalAudit | wearer | completeUntilFirstUserAuthentication | yes | 14 days, at most 1000 entries, or a shorter HIPAA retention | `ActivityStore.deleteAll()` | `ActivityStore.forget(matching:)` |
 | agentDocuments | `AgentDocumentStore` | personalMemory | wearer | platformDefault | no | none | `AgentDocumentStore.save(_:content:) to default content` | `AgentDocumentStore.removeLines(containing:)` |
 | agentNotificationQueue | `AgentNotificationQueue` | personalMemory | wearer | platformDefault | no | none | none — entries are consumed as the agent triages them | n/a — no subject linkage |
 | agentSchedule | `AgentScheduler` | personalMemory | wearer | platformDefault | no | none | none — tasks are cancelled individually | n/a — no subject linkage |
@@ -82,6 +83,7 @@ subject column distinguishes the wearer from a third party who never installed t
 | fieldDeliverySettings | `DeliverySettings` | preference | wearer | platformDefault | no | none | none — configuration, cleared by reconfiguring | n/a — no subject linkage |
 | fieldSessionLogs | `SessionLogger` | operationalAudit | wearer | platformDefault | no | none | none — a session log is the engineer's compliance record | n/a — no subject linkage |
 | geofenceReminders | `GeofenceTool` | locationData | wearer | platformDefault | no | none | none — reminders are removed individually as they fire | n/a — no subject linkage |
+| goals | `GoalStore` | personalMemory | wearer | completeUntilFirstUserAuthentication | yes | at most 50; finished goals kept 90 days, or a shorter HIPAA retention | `GoalStore.deleteAll()` | `GoalStore.forget(matching:)` |
 | healthSummaryCache | `HealthSummaryCache` | clinical | wearer | completeUntilFirstUserAuthentication | yes | 24-hour TTL per summary, checked on every read | `HealthSummaryCache.clear()` | none — holds only the wearer's own numbers; cleared as a whole |
 | installedSkills | `InstalledSkillStore` | skillDefinition | none | platformDefault | no | none | none — skills are uninstalled individually | n/a — no subject linkage |
 | jobDeliveryQueue | `DeliveryQueueStore` | operationalAudit | wearer | completeUntilFirstUserAuthentication | yes | cap 200 | `DeliveryQueueStore.removeAll()` | n/a — no subject linkage |

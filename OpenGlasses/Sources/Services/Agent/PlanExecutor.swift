@@ -50,8 +50,15 @@ final class PlanExecutor {
             // observed. A fresh run of the same plan gets a fresh run id and executes normally —
             // re-running a plan is a decision, not a redelivery.
             let stepInvocationID = "\(runID)#\(index)"
-            switch await router.executeRoot(name: step.tool, args: step.args, origin: .model,
-                                            invocationID: stepInvocationID) {
+            // Plan IW P1: the router records the step on the activity trail as a planned step,
+            // with the plan's goal beside it. Only the step's tool, action and reason ride along —
+            // never its arguments.
+            let context = PlannedStepContext(goal: plan.goal, step: step.record)
+            let outcome = await ActivityScope.$plannedStep.withValue(context) {
+                await router.executeRoot(name: step.tool, args: step.args, origin: .model,
+                                         invocationID: stepInvocationID)
+            }
+            switch outcome {
             case .completed(let text):
                 completed += 1
                 transcript.append("✓ \(step.tool): \(String(text.prefix(120)))")

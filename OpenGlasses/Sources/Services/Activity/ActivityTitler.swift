@@ -101,6 +101,13 @@ enum ActivityTitler {
         ], reads: ["list", "about"]),
         "agent_diary": .init("Wrote in my diary"),
         "edit_agent_docs": .init("Updated my instructions"),
+        // Plan IW P1. Proposing, revising and declining a goal change nothing stored — the goal is
+        // kept only on 'accept' — so they are not actions here.
+        "goals": .init("Changed a goal", actions: [
+            "accept": "Added a goal for you", "step_done": "Marked a goal step done",
+            "skip": "Skipped a goal step", "complete": "Marked a goal done", "pause": "Paused a goal",
+            "resume": "Picked a goal back up", "abandon": "Set a goal aside", "edit": "Changed a goal",
+        ], reads: ["list", "status", "next", "add", "revise", "decline"]),
         "manage_schedule": .init("Changed a scheduled task", actions: [
             "create": "Scheduled a task for you", "enable": "Turned on a scheduled task",
             "disable": "Turned off a scheduled task", "delete": "Deleted a scheduled task",

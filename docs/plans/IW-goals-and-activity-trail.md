@@ -1,6 +1,6 @@
 # Plan IW — Goals and the Activity Trail ("what are we working on, what did you do, what's next")
 
-**Status:** 🚧 P0 built 2026-10-19 (pure core; P1 stores/feeders/tools and P2 screens unbuilt). Drafted 2026-10-18. See [P0 as built](#p0-as-built).
+**Status:** 🚧 P0 + P1 built 2026-10-19 (stores, feeders, `goals`/`activity` tools; P2 screens and My Day unbuilt). Drafted 2026-10-18. See [P0 as built](#p0-as-built) and [P1 as built](#p1-as-built).
 **Builds on:** Plan [S](S-plan-then-execute-and-safety-supervisor.md) (`AgentPlan`/`AgentPlanner`/
 `PlanValidator`/`PlanExecutor`/`AgentRunner`), `AgentScheduler` + `manage_schedule`,
 `AgentNotificationQueue`, Plan [BZ](BZ-notification-digest.md) (digest), Plan
@@ -302,6 +302,94 @@ the privacy-logging gate; gitleaks over the branch.
 **Decisions taken (2026-10-19):** (1) goals work without Agent Mode — only check-ins and
 `scheduled_check` need it; (2) evidence completion is suggest-only; (3) trail horizon 14 days /
 1000 entries; (4) reads are not recorded; (5) the Home tile is deferred past P2.
+
+### P1 as built
+
+Built 2026-10-19 on the P0 core, unchanged except where noted. No screen, no My Day source, no
+check-in scheduler kind (all P2).
+
+- **Stores.** `GoalStore` (`Services/Goals/`) — `Application Support/Goals/goals.json`, at most 50
+  goals; at the cap the goal that finished longest ago makes room, and a 51st open goal is refused
+  rather than an open one dropped. A goal marked done or set aside is kept 90 days from its new
+  `finishedAt` (the one field added to `Goal`; stamped and cleared by the store), fewer when a
+  shorter HIPAA retention is set; open goals never expire. An unreadable file is never overwritten;
+  one goal that does not decode costs that goal only. `ActivityStore` (`Services/Activity/`) —
+  `Application Support/Activity/activity.json`, pruned through `ActivityRetention` on open and on
+  every append; a file locked before first unlock is not written over until it can be read and
+  merged. Both first-unlock, backup-excluded, `RecordJSONCodec` on disk. Registered as
+  `SensitiveStore.goals` (personalMemory) and `.activityTrail` (operationalAudit), wearer-linked,
+  with `deleteAll()` and `forget(matching:)`, and walked by the subject erasure (Memory screen's
+  forget and the ledger replay): a goal that names the person goes whole, a trail row that names them
+  goes. The ET matrix is regenerated.
+- **HIPAA.** With compliance mode on an entry keeps its title only — `ActivityStore.append` drops
+  the detail before it is written — and `hipaaRetentionDays` shortens both horizons (never
+  lengthens them). Outside compliance mode the HIPAA setting does not apply.
+- **One seam.** `ActivityRecording` (`record`, `settle(operationID:outcome:)`); production
+  `ActivityRecorder` over `ActivityStore.shared`, wired by AppState into the router, the scheduler
+  and the notification queue. Unwired (tests, headless) records nothing. Pure builders in
+  `ActivityFeed`.
+- **Feeders and hook points.**
+  - `NativeToolRouter.execute` wraps the old body (`authorizeAndDispatch`) and records one entry
+    after it returns: every dispatched call whose `ActivityTitler` title is non-nil (so every read,
+    and a writing tool's read actions, make none), with `.asked` (or `.scheduled` inside a scheduled
+    run) and the approval line as detail when the wearer was asked; and one entry for each
+    `.refuse` (its `ToolRefusalReason`), `.block` (`blocked_by_safety`), confirm with no
+    coordinator (`no_confirmation`), withdrawn consent (`consent_withdrawn`), unbound approval (its
+    refusal code), decline (`declined`) and `.hold` (`.heldForYou`, `.waitingOnYou`). Refused and
+    held rows have fixed titles naming the tool ("Your OK to use the send message tool") and no
+    detail. Every row of a dispatched call carries `operation:<invocationID>`; a redelivered
+    operation settles its existing row instead of adding one.
+  - `OperationJournal`: the router's journal sink (and reconciliation) passes each settled state
+    to `settle` — `.unknown` → `uncertain`, `.completed` → `done`, `.failed` → `failed`. A timed-out
+    write is recorded uncertain and flips to done when the late answer lands.
+  - `AgentScheduler`: each run of a task records `Ran <task name>` (`.scheduledRun`, `.scheduled`)
+    with the first 200 characters of a non-`[NOTHING]` result, independent of `speakResult`; the
+    run's own tool calls are tagged scheduled through the `ActivityScope.scheduledTask` task-local.
+    A deferred run records nothing.
+  - `PlanExecutor`: each step runs inside `ActivityScope.plannedStep` (the plan's goal and the
+    step's `PlannedStepRecord`), so the router records it as `.plannedStep`, origin `.agent`, with
+    the plan's goal as detail — one entry per side-effecting step, not two.
+  - `HeldRecommendationStore`: the held row is written at the router's hold verdict, the same moment
+    `onActionHeld` feeds the store, so a held action is one row; the store itself is unchanged.
+  - `AgentNotificationQueue.deliverImmediately`: once a message has actually been said (spoken or
+    through a live session) it records `Passed on an update` (`.toldYou`) with the message's lead.
+  - Field Assist: `activityJobThread` (the active job's thread while it is bound) adds
+    `thread:<id>` to every row made during a job, so a part recorded or a record sent links to the
+    job instead of copying its work record.
+- **What the trail does not record:** reads; the wearer's words (titles are fixed templates; detail
+  is the approval line cut before any quoted body, a plan's goal or a result the assistant
+  produced); calls stopped by a switched-off AI feature, a withheld egress or an unknown tool;
+  goal proposals, revisions and declines (nothing stored). No standing grant or read-only gate
+  exists yet, so `.standingGrant` and `.readOnly` are not produced (IX).
+- **Tools.** `goals` — `list`, `status`, `next` (one goal, or across goals), `add` (the wearer's
+  steps through `GoalProposalParser` with the live disabled-tool predicate; only a title → the
+  drafter), `accept` / `revise` / `decline` (the yes, edit and no of a held proposal), `step_done`,
+  `skip`, `complete`, `pause`, `resume`, `abandon`, `edit`. Semantics `.local` with a 60 s budget;
+  the titler treats list/status/next/add/revise/decline as reads. Works without Agent Mode; a
+  `scheduled_check` offer is refused with a spoken sentence when it is off. `activity` — `today`,
+  `this_morning`, `since` (ISO 8601 or `HH:mm`), `next` (goal next steps, scheduled tasks due within
+  24 h while Agent Mode is on — `ScheduleDuePolicy.nextDue` — and waiting-on-you rows from the last
+  day). Read semantics; offline `.local` (`goals` `.degraded`: suggesting steps needs a model);
+  `activity` joins `localSafeTools` and the on-device everyday list. An organisation closes either
+  through `closedTools` with no code of its own (the disabled set the registry reads).
+- **`GoalDrafter`.** One structured completion through `LLMService.completeStructured` behind the
+  `GoalDraftModel` protocol, the schema the parser reads, today's date and zone in the prompt, and
+  `scheduled_check` offered to the model only with Agent Mode on. The proposal is held (one at a
+  time, 15 minutes) and read back through `GoalPhraser`; nothing is stored until `accept`, which
+  takes the default cadence (two days before it is due) unless the wearer says otherwise.
+- **`DigestSource.goal`** ("Goal"); `MyDayDigestPolicy` keeps it out of My Day's digest rows (P2
+  adds a goals source of its own).
+- In-PR: `RecordJSONCodec` keeps one pair of formatters instead of one per date (the stores write
+  every row on every change), and `AgentSummarizer.joinClauses`' comment now matches its serial
+  comma.
+
+**Decisions taken in P1 (2026-10-19):** (1) one entry per held action, written by the router —
+the held-recommendation store is not a second writer; (2) side-effecting plan steps only (decision
+4 holds for plans); (3) a goal proposal is stored only on an explicit `accept`, wearer-dictated
+steps included; (4) HIPAA retention shortens the horizons only in compliance mode, and for goals
+only finished ones; (5) a job links by its conversation thread (`thread:<id>`) rather than a new ref
+kind; (6) `goals` stays out of the small-model safe set (ten actions); `activity` joins it; neither
+is added to the always-declared core set.
 
 ## Risks
 

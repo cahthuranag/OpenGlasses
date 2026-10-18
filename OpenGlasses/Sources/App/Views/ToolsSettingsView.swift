@@ -70,6 +70,8 @@ struct ToolsSettingsView: View {
             "send_via": "Multi-Channel Message",
             "meeting_summary": "Meeting Summary",
             "fitness_coach": "Fitness Coach",
+            "goals": "Goals",
+            "activity": "Activity",
             "openclaw_skills": "OpenClaw Skills",
             "voice_skills": "Voice Skills",
             "object_memory": "Object Memory",

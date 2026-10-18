@@ -24,6 +24,7 @@ enum OfflineToolPolicy {
     /// The classification, by tool name.
     static let table: [String: Availability] = [
         // Local — the phone does the whole job.
+        "activity": .local,                // the phone's own trail, goals and schedule
         "agent_diary": .local,
         "audio_recording": .local,
         "brain": .local,
@@ -105,6 +106,7 @@ enum OfflineToolPolicy {
         "ask_local_phrase": .degraded,     // the smaller on-device model does the translating
         "capture_photo": .degraded,        // captures fine; seeing it needs a vision model
         "daily_briefing": .degraded,       // calendar and reminders, no weather
+        "goals": .degraded,                // kept on the phone; suggesting steps needs a model
         "golf_mode": .degraded,
         "identify_color": .degraded,
         "live_translate": .degraded,

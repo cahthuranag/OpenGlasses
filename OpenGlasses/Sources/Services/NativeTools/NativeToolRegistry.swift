@@ -97,6 +97,10 @@ final class NativeToolRegistry {
         register(HomeKitTool())
         register(SiriShortcutsTool())
         register(QuickActionTool())
+        // Plan IW P1: the wearer's goals, and "what have you done / what's next". Both work without
+        // Agent Mode and without signal; only a goal step's scheduled check needs Agent Mode.
+        register(GoalsTool())
+        register(ActivityTool())
         if let store = conversationStore {
             register(ConversationSummaryTool(conversationStore: store))
             register(SessionSearchTool(conversationStore: store))

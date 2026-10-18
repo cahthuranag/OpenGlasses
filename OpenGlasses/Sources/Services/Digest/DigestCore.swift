@@ -12,6 +12,9 @@ import Foundation
 
 enum DigestSource: String, Codable, CaseIterable {
     case calendar, geofence, proactive, agent, reminder, sync
+    /// A goal's check-in (Plan IW). The case and its tag land with the goal stores; the check-in
+    /// that produces it is scheduled in a later phase.
+    case goal
 
     /// The deterministic fallback line's tag: `[Calendar] Standup in 8 min`.
     var displayTag: String {
@@ -22,6 +25,7 @@ enum DigestSource: String, Codable, CaseIterable {
         case .agent: return "Agent"
         case .reminder: return "Reminder"
         case .sync: return "Sync"
+        case .goal: return "Goal"
         }
     }
 }

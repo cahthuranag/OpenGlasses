@@ -32,19 +32,28 @@ enum RecordJSONCodec {
     }
 
     static func format(_ date: Date) -> String {
-        formatter(fractional: true).string(from: date)
+        Formatters.shared.fractional.string(from: date)
     }
 
     /// Accepts `Z` or a numeric offset (`+13:00`), with or without fractional seconds.
     static func parse(_ raw: String) -> Date? {
-        formatter(fractional: true).date(from: raw) ?? formatter(fractional: false).date(from: raw)
+        Formatters.shared.fractional.date(from: raw) ?? Formatters.shared.plain.date(from: raw)
     }
 
-    /// A fresh formatter per call: `ISO8601DateFormatter` is not `Sendable`, and these run rarely.
-    private static func formatter(fractional: Bool) -> ISO8601DateFormatter {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = fractional ? [.withInternetDateTime, .withFractionalSeconds]
-                                             : [.withInternetDateTime]
-        return formatter
+    /// One pair of formatters for the process. The stores (Plan IW P1) write every row on every
+    /// change, so a formatter per date would cost a formatter per row per write. Configured once and
+    /// never mutated afterwards; Foundation's formatters are safe to use from several threads once
+    /// configured, which is the guarantee the `@unchecked Sendable` leans on.
+    private final class Formatters: @unchecked Sendable {
+        static let shared = Formatters()
+        let fractional: ISO8601DateFormatter
+        let plain: ISO8601DateFormatter
+
+        private init() {
+            fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+        }
     }
 }

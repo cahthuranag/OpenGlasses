@@ -125,6 +125,8 @@ final class SubjectErasureCoordinator {
         var capturedManualDeliveryErasure: ((String) -> Void)?
         var learningCandidates: LearningCandidateStore?
         var learningEntries: LearningEntryStore?
+        var goals: GoalStore?
+        var activity: ActivityStore?
 
         init() {}
     }
@@ -156,6 +158,8 @@ final class SubjectErasureCoordinator {
         .recordedSessions,
         .learningCandidates,
         .learningEntries,
+        .activityTrail,
+        .goals,
         .recordings,
         .jobRecordingBundles,
         .jobRecordingCapture,
@@ -241,6 +245,10 @@ final class SubjectErasureCoordinator {
                 receipt = eraseLearningCandidates(subject)
             case .learningEntries:
                 receipt = eraseLearningEntries(subject)
+            case .activityTrail:
+                receipt = eraseActivityTrail(subject)
+            case .goals:
+                receipt = eraseGoals(subject)
             case .recordings:
                 receipt = .unsupported(store, "a recording is not indexed by who is audible in it; "
                                        + "erasure is per file from the recordings screen")
@@ -612,6 +620,28 @@ final class SubjectErasureCoordinator {
         }
         guard case .person = subject else { return .complete(.learningEntries) }
         return .complete(.learningEntries, removed: entries.deleteMatching(subject.searchToken))
+    }
+
+    /// Trail rows that name the person (Plan IW P1). A thread or a document is not what a row is
+    /// about, so those subjects find nothing here.
+    private func eraseActivityTrail(_ subject: ErasureSubject) -> ErasureReceipt {
+        guard let activity = stores.activity else {
+            return .unsupported(.activityTrail, "no activity trail was supplied")
+        }
+        guard case .person = subject else { return .complete(.activityTrail) }
+        return .complete(.activityTrail, removed: activity.forget(matching: subject.searchToken))
+    }
+
+    /// Goals that name the person, whole (Plan IW P1).
+    private func eraseGoals(_ subject: ErasureSubject) -> ErasureReceipt {
+        guard let goals = stores.goals else {
+            return .unsupported(.goals, "no goal store was supplied")
+        }
+        guard case .person = subject else { return .complete(.goals) }
+        guard !goals.isUnreadable else {
+            return .unsupported(.goals, "the goals file could not be opened; nothing in it was changed")
+        }
+        return .complete(.goals, removed: goals.forget(matching: subject.searchToken))
     }
 
     private func eraseConversations(_ subject: ErasureSubject) -> ErasureReceipt {

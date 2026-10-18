@@ -59,14 +59,13 @@ enum ToolPermissionGate {
                 return false
             }
         case "fitness_coach":
-            let healthStore = HKHealthStore()
+            // Exactly what the tool reads (past workouts and their active energy) and writes
+            // (a finished workout and its energy); the sets are the tool's own, so the prompt
+            // cannot ask for one thing while the tool uses another.
             guard HKHealthStore.isHealthDataAvailable() else { return false }
-            let readTypes: Set<HKObjectType> = [
-                HKObjectType.quantityType(forIdentifier: .stepCount)!,
-                HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            ]
             do {
-                try await healthStore.requestAuthorization(toShare: [], read: readTypes)
+                try await HKHealthStore().requestAuthorization(toShare: FitnessCoachingTool.healthKitShareTypes,
+                                                               read: FitnessCoachingTool.healthKitReadTypes)
                 return true
             } catch {
                 return false

@@ -54,6 +54,21 @@ struct FitnessCoachingTool: NativeTool {
     ]
 
     private let healthStore = HKHealthStore()
+
+    /// The HealthKit types this tool reads: past workouts and the active energy their
+    /// statistics are summed from. `ToolPermissionGate` asks for exactly these when the tool
+    /// is switched on, so the Settings prompt and the tool's own requests never drift
+    /// (`ToolPermissionGateTests` pins the two together).
+    static let healthKitReadTypes: Set<HKObjectType> = [
+        HKObjectType.workoutType(),
+        HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+    ]
+
+    /// The HealthKit types this tool writes: the finished workout and its active energy.
+    static let healthKitShareTypes: Set<HKSampleType> = [
+        HKObjectType.workoutType(),
+        HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+    ]
     private static var activeWorkout: ActiveWorkout?
 
     struct ActiveWorkout {
@@ -199,9 +214,8 @@ struct FitnessCoachingTool: NativeTool {
         let workoutType = HKObjectType.workoutType()
 
         // Request read access
-        let readTypes: Set<HKObjectType> = [workoutType]
         do {
-            try await healthStore.requestAuthorization(toShare: [], read: readTypes)
+            try await healthStore.requestAuthorization(toShare: [], read: Self.healthKitReadTypes)
         } catch {
             return "Unable to access HealthKit: \(error.localizedDescription)"
         }
@@ -250,11 +264,8 @@ struct FitnessCoachingTool: NativeTool {
     private func saveWorkoutToHealthKit(workout: ActiveWorkout, duration: TimeInterval, calories: Double) async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else { return false }
 
-        let workoutType = HKObjectType.workoutType()
-        let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
-
         do {
-            try await healthStore.requestAuthorization(toShare: [workoutType, energyType], read: [])
+            try await healthStore.requestAuthorization(toShare: Self.healthKitShareTypes, read: [])
         } catch {
             return false
         }

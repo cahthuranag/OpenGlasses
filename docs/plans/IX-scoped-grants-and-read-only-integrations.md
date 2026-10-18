@@ -163,8 +163,8 @@ request itself). Tests must show the BC floor still fires for lock/unlock regard
 - Settings › **Integrations & Permissions** (new row under Devices & Privacy): one row per
   `Integration` with the three-way picker and the "Always ask" toggle; a **Standing permissions**
   list (scope, tool, when, revoke) backed by the consent records; the three registry switches that
-  have no UI today (`smartHomeControlEnabled`, `aiMessagingEnabled`, `healthVaultAIEnabled`) land
-  here as well.
+  have no UI today (`smartHomeControlEnabled`, `aiMessagingEnabled`, `healthVaultAIEnabled`) get
+  their first home in Plan [JC](JC-planning-sweep-fixes.md) item 2 and may be gathered here.
 - Support report (FV) gains a content-free "standing grants active: N; integrations read-only:
   [calendar]" line. Copy never names a plan letter.
 

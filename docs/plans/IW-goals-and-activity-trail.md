@@ -208,12 +208,12 @@ suggestion rules; daily sentence cap), `GoalPhraser` (status, next, proposal rea
 `ActivityEntry` + codec + `ActivityTitler`, `ActivityPhraser` ("today" windows in the wearer's
 zone; ≤ 35 s), `ActivityRetention`. Also fixes while the file is open: `AgentStep` gains a
 `Codable` projection (`PlannedStepRecord { tool, actionKey, rationale }`) so plan runs can be
-recorded, and `AgentScheduler` runs `intervalMinutes == 0` tasks once per calendar day (the view's
-promise) with a test. Tests: `GoalProposalParserTests` (lengths, past dates, unknown action kinds,
+recorded. (The once-daily scheduler defect this plan first claimed is Plan [JC](JC-planning-sweep-fixes.md)
+item 1; if JC has not landed, IW P0 takes it.) Tests: `GoalProposalParserTests` (lengths, past dates, unknown action kinds,
 disabled-tool actions dropped), `GoalAdvancePolicyTests` (table), `GoalPhraserTests` (exact strings),
 `ActivityTitlerTests` (every side-effecting registered tool has a title template — a table test
 over the registry like `ToolEffectClassPolicyTests`), `ActivityPhraserTests` (windows, cap,
-waiting-on-you last), `ActivityRetentionTests`, `AgentSchedulerDailyTaskTests`.
+waiting-on-you last), `ActivityRetentionTests`.
 
 **P1 — Stores, feeders, tools.** `GoalStore`, `ActivityStore` (+ `DataStoreRegistry` records,
 ET matrix regenerated, erasure walk), the router/journal/scheduler/executor/held/queue feeders,

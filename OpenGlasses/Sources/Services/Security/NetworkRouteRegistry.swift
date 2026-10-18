@@ -140,7 +140,7 @@ enum NetworkRoute: String, CaseIterable, Sendable {
     // rule as MusicKit and MapKit search); only the attribution-mark download is ours.
     case weatherAttributionMark
     case newsHeadlines
-    /// Apple's public podcast directory: a show looked up by the words the wearer said (Plan JE).
+    /// Apple's public podcast directory: a show looked up by the words the wearer said (Plan JF).
     case podcastDirectory
     case currencyRates
     case aircraftOverhead

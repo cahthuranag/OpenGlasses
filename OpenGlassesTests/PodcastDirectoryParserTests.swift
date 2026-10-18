@@ -1,7 +1,7 @@
 import XCTest
 @testable import OpenGlasses
 
-/// Plan JE — the directory's JSON becomes shows and episodes, and only podcasts.apple.com pages
+/// Plan JF — the directory's JSON becomes shows and episodes, and only podcasts.apple.com pages
 /// are ever openable. Every id, title and name in the fixtures is invented.
 final class PodcastDirectoryParserTests: XCTestCase {
 

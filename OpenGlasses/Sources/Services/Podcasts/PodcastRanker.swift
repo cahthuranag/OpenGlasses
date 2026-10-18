@@ -1,6 +1,6 @@
 import Foundation
 
-/// Picks the show and the episode the wearer meant from what the directory returned (Plan JE).
+/// Picks the show and the episode the wearer meant from what the directory returned (Plan JF).
 /// Pure.
 enum PodcastRanker {
 

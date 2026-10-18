@@ -1,7 +1,7 @@
 import Foundation
 
 /// Turns "the latest episode of The Daily", "99% Invisible podcast" or "an episode of Serial about
-/// the trial" into a show name and an episode hint (Plan JE). Pure.
+/// the trial" into a show name and an episode hint (Plan JF). Pure.
 ///
 /// The model usually passes the show alone in `query` and the hint in `episode`; the parser also
 /// copes with the whole spoken phrase landing in `query`, because that is what happens.

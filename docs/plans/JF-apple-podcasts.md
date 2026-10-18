@@ -1,4 +1,4 @@
-# Plan JE — Podcasts by Name, in Apple Podcasts
+# Plan JF — Podcasts by Name, in Apple Podcasts
 
 **Status:** ✅ Shipped 2026-10-18 — `play_podcast`: "play the latest episode of The Daily" looks the
 show up in Apple's public podcast directory, picks the episode, and opens it in the Podcasts app;

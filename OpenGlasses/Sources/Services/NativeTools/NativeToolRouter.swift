@@ -85,6 +85,14 @@ final class NativeToolRouter: ToolExecutionAuthority {
     /// spoken success after the fact.
     var onOperationStatusChange: ((OperationRecord) -> Void)?
 
+    /// The activity trail (Plan IW P1). Every side-effecting call that runs, and every call the
+    /// ladder confirms, refuses or holds, becomes one entry; reads make none. Nil — record nothing
+    /// — until AppState wires it, so a headless router writes to no store.
+    var activityRecorder: ActivityRecording?
+    /// The conversation thread of the Field Assist job in progress, so a job's actions link to the
+    /// job rather than being copied out of its work record. Wired by AppState.
+    var activityJobThread: () -> String? = { nil }
+
     /// Names of tools routed since the last `takeTurnToolNames()` — lets the memory loop
     /// (Memory & Recall Phase 3) see which tools a turn used, to spot repeated multi-step
     /// requests worth saving as a skill.
@@ -205,6 +213,22 @@ final class NativeToolRouter: ToolExecutionAuthority {
     /// classified utterance, a Siri Action, and a skill pack's `.tool` binding — so the policy
     /// ladder is evaluated exactly once against the *real* target and its final arguments.
     func execute(_ call: ResolvedToolCall) async -> ToolExecutionOutcome {
+        var gate: ActivityGateRecord?
+        let outcome = await authorizeAndDispatch(call, gate: &gate)
+        recordActivity(call, gate: gate, outcome: outcome)
+        return outcome
+    }
+
+    /// How the ladder treated a call, captured for the trail as the call goes through. Nil when
+    /// nothing was decided about it — a switched-off feature, a withheld egress, an unknown tool,
+    /// a call cancelled before dispatch.
+    private struct ActivityGateRecord {
+        var gate: ActivityToolGate
+        let effectClass: ToolEffectClass
+    }
+
+    private func authorizeAndDispatch(_ call: ResolvedToolCall,
+                                      gate: inout ActivityGateRecord?) async -> ToolExecutionOutcome {
         let name = call.name
         let args = call.arguments.rawValues
         // Phase 3: track tools used this turn for skill detection. A composed child records its
@@ -253,6 +277,13 @@ final class NativeToolRouter: ToolExecutionAuthority {
             seam: profile.seam,
             effectClass: profile.effectClass))
 
+        // What the trail records if the call goes on to dispatch (Plan IW P1).
+        var dispatchGate = ActivityGateRecord(gate: .ran(approvalSummary: nil),
+                                              effectClass: profile.effectClass)
+        func stopped(_ stop: ActivityToolGate) -> ActivityGateRecord {
+            ActivityGateRecord(gate: stop, effectClass: profile.effectClass)
+        }
+
         switch decision {
         case .allow:
             break
@@ -261,14 +292,19 @@ final class NativeToolRouter: ToolExecutionAuthority {
         // happened, and repeating the call reaches the same answer.
         case .refuse(let reason, let message):
             authorizationEvents.record(call: call, verdict: reason.rawValue)
+            gate = stopped(.refused(code: reason.rawValue))
             return .rejected(reason: message)
 
         case .block(let message):
             PrivacyLog.toolGate(.blockedBySafety, tool: name)
+            gate = stopped(.refused(code: ActivityFeed.RefusalCode.blockedBySafety))
             return .rejected(reason: message)
 
         case .hold(let summary, let message):
             onActionHeld?(summary)
+            // The same moment `onActionHeld` feeds the held-recommendation store: one trail entry
+            // per held action, written here where the tool is known.
+            gate = stopped(.held)
             PrivacyLog.toolGate(.heldForReengagement, tool: name,
                                 detail: PrivacyToken(safetyContext.autonomy.rawValue))
             return .rejected(reason: message)
@@ -277,6 +313,7 @@ final class NativeToolRouter: ToolExecutionAuthority {
             guard let coordinator = confirmationCoordinator else {
                 // No confirmation UI wired (e.g. headless): fail closed rather than actuate blind.
                 PrivacyLog.toolGate(.noConfirmationCoordinator, tool: name)
+                gate = stopped(.refused(code: ActivityFeed.RefusalCode.noConfirmation))
                 return .rejected(reason: ToolAuthorizationPolicy.unavailableConfirmationMessage(name))
             }
             // The confirmation summary quotes the arguments back ("send \'meet at 8\' to …"),
@@ -290,9 +327,11 @@ final class NativeToolRouter: ToolExecutionAuthority {
                                                              binding: asked)
             switch decision {
             case .consentWithdrawn:
+                gate = stopped(.refused(code: ActivityFeed.RefusalCode.consentWithdrawn))
                 return .rejected(reason: RemoteActionConsentGate.withdrawnMessage(tool: name))
             case .denied:
                 PrivacyLog.toolGate(.declinedByUser, tool: name)
+                gate = stopped(.declined)
                 return .rejected(reason: ToolAuthorizationPolicy.declineMessage(name))
             case .approved(let nonce):
                 // Switched off while the wearer was being asked: the feature's own refusal, not a
@@ -309,8 +348,10 @@ final class NativeToolRouter: ToolExecutionAuthority {
                 if let refusal = verdict.refusal {
                     authorizationEvents.record(call: call, verdict: refusal.rawValue)
                     PrivacyLog.toolGate(.approvalNotBound, tool: name)
+                    gate = stopped(.refused(code: refusal.rawValue))
                     return .rejected(reason: ApprovalGrantStore.refusalMessage(refusal, tool: name))
                 }
+                dispatchGate.gate = .ran(approvalSummary: summary)
             }
         }
 
@@ -329,6 +370,7 @@ final class NativeToolRouter: ToolExecutionAuthority {
         // 1. Check native tools first.
         if let tool = registry.tool(named: name) {
             PrivacyLog.toolDispatch(.native, tool: name)
+            gate = dispatchGate
             let semantics = Self.semantics(tool.executionSemantics, toolName: name,
                                            glassesConnected: glassesCameraConnected(),
                                            routerDefault: toolTimeoutSeconds)
@@ -363,6 +405,7 @@ final class NativeToolRouter: ToolExecutionAuthority {
             // Already screened above, before anybody was asked to approve anything.
             let outboundArgs = screenedArgs ?? args
             PrivacyLog.toolDispatch(.mcp, tool: name)
+            gate = dispatchGate
             // A third-party server's tool declares nothing about itself, so it gets the same
             // assumption an unclassified native tool gets: it reached outside, we can't stop it,
             // and we don't know what a timeout left behind.
@@ -380,11 +423,38 @@ final class NativeToolRouter: ToolExecutionAuthority {
             // The task description is the request being handed to the gateway agent — the
             // wearer's instruction in full.
             PrivacyLog.toolDispatch(.gateway, tool: name)
+            gate = dispatchGate
             // The bridge answers authoritatively or not at all — it has no timeout race of its own.
             return ToolExecutionOutcome(await bridge.delegateTask(task: taskDesc, toolName: name))
         }
 
         return .failedBeforeExecution(reason: "Unknown tool: \(name)")
+    }
+
+    // MARK: - Activity trail (Plan IW P1)
+
+    /// Write the trail entry for a call the ladder decided about. Reads make none (the titler
+    /// returns nil for them); a plan step is recorded as a planned step with the plan's goal, and
+    /// a call inside a scheduled run as scheduled.
+    private func recordActivity(_ call: ResolvedToolCall, gate: ActivityGateRecord?,
+                                outcome: ToolExecutionOutcome) {
+        guard let activityRecorder, let gate else { return }
+        let actionKey = call.arguments.rawValues["action"] as? String
+        // Only the plan step itself: a call it composes is recorded as an ordinary action.
+        let plannedStep = call.context.depth == 0 ? ActivityScope.plannedStep : nil
+        guard let entry = ActivityFeed.toolCall(
+            tool: call.name, actionKey: actionKey, effectClass: gate.effectClass, gate: gate.gate,
+            outcome: outcome, invocationOrigin: call.context.origin,
+            scheduledTask: ActivityScope.scheduledTask, plannedStep: plannedStep,
+            operationID: call.context.invocationID, jobThreadID: activityJobThread(),
+            at: Date()) else { return }
+        activityRecorder.record(entry)
+    }
+
+    /// A journal state change, passed on to the trail entry for the same operation.
+    private func settleActivity(_ record: OperationRecord) {
+        guard let outcome = ActivityFeed.outcome(of: record.state) else { return }
+        activityRecorder?.settle(operationID: record.operationID, outcome: outcome)
     }
 
     // MARK: - AI feature gate (Plan HR P2 item 6)
@@ -460,10 +530,12 @@ final class NativeToolRouter: ToolExecutionAuthority {
             switch resolution {
             case .recorded(let record):
                 self.onOperationStatusChange?(record)
+                self.settleActivity(record)
             case .late(let record):
                 PrivacyLog.toolRun(.resolvedLate, tool: record.toolName,
                                    detail: PrivacyToken(record.state.rawValue))
                 self.onOperationStatusChange?(record)
+                self.settleActivity(record)
             case .unknownOperation:
                 break
             }
@@ -482,7 +554,10 @@ final class NativeToolRouter: ToolExecutionAuthority {
                   let outcome = await reconciler.reconcile(operationID: record.operationID,
                                                            idempotencyKey: record.idempotencyKey)
             else { continue }
-            operationJournal.resolve(operationID: record.operationID, outcome: outcome, at: now)
+            if case .recorded(let settledRecord) = operationJournal.resolve(
+                operationID: record.operationID, outcome: outcome, at: now) {
+                settleActivity(settledRecord)
+            }
             settled += 1
         }
         if settled > 0 {

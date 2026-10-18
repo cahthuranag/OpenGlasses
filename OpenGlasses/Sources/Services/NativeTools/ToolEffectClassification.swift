@@ -162,6 +162,11 @@ extension PartsRequestTool { var executionSemantics: ToolExecutionSemantics { .l
 // van_stock writes the phone's own log of what is on the van and nothing else (Plan IH P1). Its
 // strongest action is a write; a repeated identical write inside a few seconds is recorded once.
 extension VanStockTool { var executionSemantics: ToolExecutionSemantics { .local() } }
+// goals writes the wearer's own goal list on the phone (Plan IW P1). Its strongest action is a
+// write; 'add' with no steps waits on one structured model call, so it gets that call's budget.
+extension GoalsTool { var executionSemantics: ToolExecutionSemantics { .local(timeout: .seconds(60)) } }
+// activity reads the trail, the goals and the scheduled tasks, and changes nothing.
+extension ActivityTool { var executionSemantics: ToolExecutionSemantics { .read() } }
 // Files, amends or withdraws a candidate in the phone's own store; nothing leaves the device in P1.
 extension TeamLearningTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 // Readings and evidence choices are written onto the open job and nowhere else (Plan GB P3).

@@ -53,6 +53,12 @@ struct DroppedAction: Equatable, Sendable {
     let reason: DroppedActionReason
 }
 
+/// What one action came to on its own.
+enum SingleActionOutcome: Equatable, Sendable {
+    case accepted(StepAction)
+    case dropped(DroppedActionReason)
+}
+
 enum GoalProposalOutcome: Equatable, Sendable {
     case accepted(GoalProposal, droppedActions: [DroppedAction])
     case rejected([GoalProposalProblem])
@@ -147,6 +153,20 @@ struct GoalProposalParser {
     }
 
     // MARK: - Actions
+
+    /// One suggested action on its own, judged by the same rules as a proposal's — what the
+    /// `goals` tool uses when the wearer changes a single step's offer (Plan IW P1).
+    func parseAction(_ data: Data) -> SingleActionOutcome {
+        guard let raw = try? JSONDecoder().decode(RawAction.self, from: data) else {
+            return .dropped(.invalid(field: "action"))
+        }
+        switch resolve(raw) {
+        case .success(let action):
+            return isPermitted(action) ? .accepted(action) : .dropped(.notPermitted)
+        case .failure(let drop):
+            return .dropped(drop.reason)
+        }
+    }
 
     private struct Drop: Error { let reason: DroppedActionReason }
 

@@ -41,6 +41,10 @@ class AgentNotificationQueue: ObservableObject {
     /// digest can aggregate it. Wired by AppState.
     var onQueued: ((QueuedNotification) -> Void)?
 
+    /// The activity trail (Plan IW P1). A message spoken straight away never reaches the digest,
+    /// so it is recorded here as something the assistant told the wearer. Wired by AppState.
+    var activityRecorder: ActivityRecording?
+
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         storageURL = docs.appendingPathComponent("agent_notification_queue.json")
@@ -59,7 +63,7 @@ class AgentNotificationQueue: ObservableObject {
         if appState.isConnected && !appState.glassesIdle && !appState.isProcessing && !appState.isListening {
             // Glasses connected, worn, and idle — deliver immediately
             Task {
-                await deliverImmediately(message: message, waitForResponse: priority != .low, personaId: personaId, personaName: personaName)
+                await deliverImmediately(message: message, waitForResponse: priority != .low, personaId: personaId, personaName: personaName, source: source)
             }
         } else {
             // Queue for later
@@ -115,7 +119,8 @@ class AgentNotificationQueue: ObservableObject {
                 for notification in queue where !notification.delivered {
                     await deliverImmediately(
                         message: notification.message,
-                        waitForResponse: notification.priority == .high
+                        waitForResponse: notification.priority == .high,
+                        source: notification.source
                     )
                     // Small gap between notifications
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -134,7 +139,7 @@ class AgentNotificationQueue: ObservableObject {
 
     /// Speak a message and optionally wait for the user's response.
     /// If from a specific persona, announce which agent and activate that persona's wake word.
-    private func deliverImmediately(message: String, waitForResponse: Bool, personaId: String? = nil, personaName: String? = nil) async {
+    private func deliverImmediately(message: String, waitForResponse: Bool, personaId: String? = nil, personaName: String? = nil, source: String = "") async {
         guard let appState else { return }
 
         // Don't speak to glasses in the case
@@ -167,6 +172,7 @@ class AgentNotificationQueue: ObservableObject {
                injector.liveSessionIdentity == identity,
                LiveAnnouncementDelivery.deliver(message, using: injector) {
                 appState.lastResponse = message
+                noteToldYou(message: message, source: source)
                 PrivacyLog.agent(.notifications, .deliveredViaSession, characters: message.count)
                 return
             }
@@ -195,6 +201,7 @@ class AgentNotificationQueue: ObservableObject {
         let liveIdentity = liveInjector?.liveSessionIdentity
         await appState.speechService.speak(spokenMessage)
         appState.lastResponse = message
+        noteToldYou(message: message, source: source)
         if let liveInjector, appState.activeLiveInjector === liveInjector,
            liveInjector.canInject, liveInjector.liveSessionIdentity == liveIdentity {
             liveInjector.updateAppContext("The app announced to the wearer: " + spokenMessage, key: "announcement")
@@ -211,6 +218,12 @@ class AgentNotificationQueue: ObservableObject {
             appState.transcriptionService.startRecording()
             appState.updateLiveActivity()
         }
+    }
+
+    /// Put a delivered message on the trail. Called once the message has actually been said — a
+    /// delivery skipped because the glasses are in their case records nothing.
+    func noteToldYou(message: String, source: String, at now: Date = Date()) {
+        activityRecorder?.record(ActivityFeed.toldYou(message: message, source: source, at: now))
     }
 
     /// When there are many queued items, ask the LLM to summarize them.
@@ -241,7 +254,7 @@ class AgentNotificationQueue: ObservableObject {
             }
             appState.lastResponse = response
             appState.speechService.stopThinkingSound()
-            await deliverImmediately(message: response, waitForResponse: true)
+            await deliverImmediately(message: response, waitForResponse: true, source: "summary")
         } catch {
             appState.speechService.stopThinkingSound()
             PrivacyLog.agent(.notifications, .summaryFailed, error: SafeErrorSummary(error))

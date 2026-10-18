@@ -37,6 +37,8 @@ final class SubjectErasureTests: XCTestCase {
     private var exports: StagedExportCoordinator!
     private var spotlight: RecordingSpotlightIndexer!
     private var learningCandidates: LearningCandidateStore!
+    private var goals: GoalStore!
+    private var activity: ActivityStore!
 
     private var queuePath: URL { workspace.appendingPathComponent("offline_queue.sqlite") }
 
@@ -63,6 +65,8 @@ final class SubjectErasureTests: XCTestCase {
         queue = OfflineQueue(path: queuePath)
         spotlight = RecordingSpotlightIndexer()
         learningCandidates = LearningCandidateStore(directory: workspace)
+        goals = GoalStore(directory: workspace, hipaaRetentionDays: { nil })
+        activity = ActivityStore(directory: workspace, hipaaMode: { false }, hipaaRetentionDays: { nil })
         exports = StagedExportCoordinator(
             channel: .agentExport, rootDirectoryName: "unused",
             store: ProtectedExportFileStore(
@@ -105,6 +109,8 @@ final class SubjectErasureTests: XCTestCase {
         stores.conversations = conversations
         stores.offlineQueue = queue
         stores.learningCandidates = learningCandidates
+        stores.goals = goals
+        stores.activity = activity
         return stores
     }
 
@@ -155,6 +161,16 @@ final class SubjectErasureTests: XCTestCase {
             equipment: nil, spokenModel: nil,
             finding: "\(canary)'s unit trips on a cold start", symptom: nil, fix: nil,
             evidence: .init(), author: "Sam Tane", createdAt: Date(), redactions: []))
+
+        // A goal that names them, and a trail row whose approval line does (Plan IW P1).
+        goals.add(Goal(id: UUID(), title: "Plan \(canary)'s farewell", createdAt: Date(),
+                       steps: [GoalStep(id: UUID(), title: "Book the hall")], source: .wearer))
+        goals.add(Goal(id: UUID(), title: "Clear the garage", createdAt: Date(), source: .wearer))
+        activity.append(ActivityEntry(id: UUID(), at: Date(), kind: .action,
+                                      title: "Sent a message for you",
+                                      detail: "You approved: Send a message to \(canary)",
+                                      tool: "send_message", authorisation: .asked,
+                                      origin: .wearer, outcome: .done))
     }
 
     /// Everything a store will say about the subject after it is supposed to be gone.
@@ -182,6 +198,8 @@ final class SubjectErasureTests: XCTestCase {
         note("agentDocuments.prompt", agentDocuments.agentContext())
         note("recordedSessions", recordedSessions.sessions.map(\.transcript).joined(separator: ","))
         note("learningCandidates", learningCandidates.candidates.map(\.finding).joined(separator: ","))
+        note("goals", goals.goals.map { "\($0.title) \($0.steps.map(\.title))" }.joined(separator: ","))
+        note("activityTrail", activity.entries.map { "\($0.title) \($0.detail ?? "")" }.joined(separator: ","))
         note("recallIndex", recallIndex.search(phrase: canary, limit: 50).map(\.text).joined(separator: ","))
         note("documents", documents.passages(containingToken: canary, limit: 50)
             .map(\.text).joined(separator: ","))
@@ -206,6 +224,8 @@ final class SubjectErasureTests: XCTestCase {
         recordedSessions = RecordedSessionStore(documentsDirectory: workspace)
         queue = OfflineQueue(path: queuePath)
         learningCandidates = LearningCandidateStore(directory: workspace)
+        goals = GoalStore(directory: workspace, hipaaRetentionDays: { nil })
+        activity = ActivityStore(directory: workspace, hipaaMode: { false }, hipaaRetentionDays: { nil })
         social = SocialContextStore(defaults: defaults)
         contextualNotes = ContextualNoteStore(defaults: defaults)
         objectMemory = ObjectMemoryStore(defaults: defaults)
@@ -224,6 +244,8 @@ final class SubjectErasureTests: XCTestCase {
         let survivors = residue()
         XCTAssertTrue(survivors.isEmpty,
                       "the subject survived in: \(survivors.keys.sorted().joined(separator: ", "))")
+        XCTAssertEqual(goals.goals.map(\.title), ["Clear the garage"],
+                       "a goal that does not name the subject is the wearer's, and stays")
 
         // The one place the name may still appear, and why: the queued request a peer needs in
         // order to delete its own copy.

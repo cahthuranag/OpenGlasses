@@ -27,7 +27,7 @@ enum AppleOnDeviceToolSet {
     static let everydayPriority: [String] = [
         "get_datetime", "get_weather", "where_am_i", "calendar", "reminder", "set_timer",
         "set_alarm", "calculate", "flashlight", "brightness", "music_control", "step_count",
-        "health_summary", "device_info",
+        "health_summary", "device_info", "activity",
     ]
 
     /// Last, because it needs the network and its answer is the longest: a real search call,

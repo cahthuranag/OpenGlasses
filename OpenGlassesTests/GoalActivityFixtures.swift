@@ -46,3 +46,31 @@ enum GoalActivityFixture {
                       origin: .wearer, outcome: outcome)
     }
 }
+
+// MARK: - P1 fixtures
+
+/// A recorder that keeps what it is told, for the feeder tests.
+@MainActor
+final class FakeActivityRecorder: ActivityRecording {
+    private(set) var entries: [ActivityEntry] = []
+    private(set) var settled: [(operationID: String, outcome: ActivityOutcome)] = []
+
+    func record(_ entry: ActivityEntry) { entries.append(entry) }
+
+    func settle(operationID: String, outcome: ActivityOutcome) {
+        settled.append((operationID, outcome))
+        guard let index = entries.lastIndex(where: { $0.refs.contains(.operation(operationID)) }) else { return }
+        entries[index].outcome = outcome
+    }
+}
+
+extension GoalActivityFixture {
+    /// A fresh directory under the temporary folder; the caller removes it.
+    static func workspace(_ label: String) -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(label)_\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+}
+

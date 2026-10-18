@@ -193,10 +193,13 @@ struct Goal: Codable, Equatable, Sendable, Identifiable {
     /// The persona the goal was made under, when one was active.
     var persona: String?
     let source: GoalSource
+    /// When the goal was marked done or set aside (Plan IW P1) — what the store's 90-day retention
+    /// of finished goals counts from. Nil while the goal is active or paused.
+    var finishedAt: Date?
 
     init(id: UUID, title: String, why: String? = nil, createdAt: Date, dueAt: Date? = nil,
          state: GoalState = .active, checkIn: CheckInCadence = .none, steps: [GoalStep] = [],
-         persona: String? = nil, source: GoalSource) {
+         persona: String? = nil, source: GoalSource, finishedAt: Date? = nil) {
         self.id = id
         self.title = title
         self.why = why
@@ -207,6 +210,7 @@ struct Goal: Codable, Equatable, Sendable, Identifiable {
         self.steps = steps
         self.persona = persona
         self.source = source
+        self.finishedAt = finishedAt
     }
 
     /// Steps that count toward progress: everything the wearer has not skipped.
@@ -214,7 +218,7 @@ struct Goal: Codable, Equatable, Sendable, Identifiable {
     var doneStepCount: Int { steps.filter { $0.state == .done }.count }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, why, createdAt, dueAt, state, checkIn, steps, persona, source
+        case id, title, why, createdAt, dueAt, state, checkIn, steps, persona, source, finishedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -237,6 +241,7 @@ struct Goal: Codable, Equatable, Sendable, Identifiable {
         steps = try container.decodeIfPresent([GoalStep].self, forKey: .steps) ?? []
         persona = try container.decodeIfPresent(String.self, forKey: .persona)
         source = try container.decode(GoalSource.self, forKey: .source)
+        finishedAt = try container.decodeIfPresent(Date.self, forKey: .finishedAt)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -251,5 +256,6 @@ struct Goal: Codable, Equatable, Sendable, Identifiable {
         try container.encode(steps, forKey: .steps)
         try container.encodeIfPresent(persona, forKey: .persona)
         try container.encode(source, forKey: .source)
+        try container.encodeIfPresent(finishedAt, forKey: .finishedAt)
     }
 }

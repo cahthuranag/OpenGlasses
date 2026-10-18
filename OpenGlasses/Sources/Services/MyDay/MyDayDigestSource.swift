@@ -44,6 +44,10 @@ enum MyDayDigestPolicy {
             item.priority == .high
         case .calendar, .proactive, .reminder:
             false
+        case .goal:
+            // My Day gets its own goals source (Plan IW P2); mirroring a goal's check-in through
+            // the digest as well would show the same step twice.
+            false
         }
     }
 

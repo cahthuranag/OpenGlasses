@@ -11,6 +11,9 @@ class AgentScheduler: ObservableObject {
 
     private var timer: Timer?
     weak var appState: AppState?
+    /// The activity trail (Plan IW P1): one entry per run, whether or not its result is spoken —
+    /// the run history this scheduler otherwise keeps only as `lastRun`. Wired by AppState.
+    var activityRecorder: ActivityRecording?
 
     /// Built-in scheduled tasks. Users can add more via quick actions.
     struct ScheduledTask: Codable, Identifiable {
@@ -175,6 +178,23 @@ class AgentScheduler: ObservableObject {
     /// caller must NOT mark it as run.
     private enum TaskRunOutcome { case completed, deferred }
 
+    /// What one prompt run came to: whether it counts as run, and — when it did run — what the
+    /// trail records about it.
+    private struct PromptRun {
+        let outcome: TaskRunOutcome
+        let result: ScheduledRunResult?
+
+        static let deferred = PromptRun(outcome: .deferred, result: nil)
+        static let notRun = PromptRun(outcome: .completed, result: nil)
+    }
+
+    /// One trail entry for one run (Plan IW P1). Deliberately independent of `speakResult`: a
+    /// result nobody heard is exactly the one the trail has to show.
+    static func recordRun(of task: ScheduledTask, result: ScheduledRunResult,
+                          recorder: ActivityRecording?, at now: Date) {
+        recorder?.record(ActivityFeed.scheduledRun(taskName: task.name, result: result, at: now))
+    }
+
     /// Execute a scheduled task, switching to its designated model/persona if specified.
     @discardableResult
     private func executeTask(_ task: ScheduledTask) async -> TaskRunOutcome {
@@ -200,8 +220,15 @@ class AgentScheduler: ObservableObject {
             PrivacyLog.agent(.scheduler, .modelSwitched, model: PrivacyToken(modelId))
         }
 
-        // Run the task
-        let outcome = await executeAgentPrompt(task.prompt, speakResult: task.speakResult, personaId: task.personaId, personaName: personaName)
+        // Run the task. Inside the run, the router knows its tool calls are the scheduled task's.
+        let run = await ActivityScope.$scheduledTask.withValue(task.name) {
+            await executeAgentPrompt(task.prompt, speakResult: task.speakResult,
+                                     personaId: task.personaId, personaName: personaName)
+        }
+        let outcome = run.outcome
+        if let result = run.result {
+            Self.recordRun(of: task, result: result, recorder: activityRecorder, at: Date())
+        }
 
         // Restore previous model
         if task.personaId != nil || task.modelId != nil {
@@ -214,8 +241,8 @@ class AgentScheduler: ObservableObject {
     }
 
     @discardableResult
-    private func executeAgentPrompt(_ prompt: String, speakResult: Bool, personaId: String? = nil, personaName: String? = nil) async -> TaskRunOutcome {
-        guard let appState else { return .completed }
+    private func executeAgentPrompt(_ prompt: String, speakResult: Bool, personaId: String? = nil, personaName: String? = nil) async -> PromptRun {
+        guard let appState else { return .notRun }
 
         // Don't let a scheduled task auto-load the on-device model. Loading the (multi-GB)
         // MLX model is slow and, on launch, makes startup drag (and has crashed). If the
@@ -262,7 +289,7 @@ class AgentScheduler: ObservableObject {
             let trimmed = processed.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed == "[NOTHING]" || trimmed.lowercased().contains("[nothing]") {
                 PrivacyLog.agent(.scheduler, .taskProducedNothing)
-                return .completed
+                return PromptRun(outcome: .completed, result: .nothingToReport)
             }
 
             appState.lastResponse = processed
@@ -280,14 +307,14 @@ class AgentScheduler: ObservableObject {
             // The response is what the agent found out about the wearer's day — the single most
             // content-bearing string this file holds — so only its length survives.
             PrivacyLog.agent(.scheduler, .taskCompleted, characters: processed.count)
-            return .completed
+            return PromptRun(outcome: .completed, result: .reported(processed))
         } catch LocalLLMError.backgrounded {
             // On-device model can't run while backgrounded — defer, don't consume the run.
             PrivacyLog.agent(.scheduler, .taskDeferred, reason: PrivacyToken("backgrounded"))
             return .deferred
         } catch {
             PrivacyLog.agent(.scheduler, .taskFailed, error: SafeErrorSummary(error))
-            return .completed
+            return PromptRun(outcome: .completed, result: .failed)
         }
     }
 

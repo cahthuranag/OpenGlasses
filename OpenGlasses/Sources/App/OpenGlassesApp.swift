@@ -2181,6 +2181,9 @@ class AppState: ObservableObject, AppStateProtocol {
         erasure.capturedManualDeliveryErasure = {CapturedManualOutbox.shared.forget($0)}
         erasure.learningCandidates = LearningCandidateStore.shared
         erasure.learningEntries = LearningEntryStore.shared
+        // Plan IW P1: goals and the activity trail can name a person; forgetting them reaches both.
+        erasure.goals = GoalStore.shared
+        erasure.activity = ActivityStore.shared
         return MemoryFactServices(
             stores: MemoryFactStores(semantic: userMemory, brain: BrainStore.shared,
                                      agentDocuments: agentDocs, objects: .shared,
@@ -2464,6 +2467,18 @@ class AppState: ObservableObject, AppStateProtocol {
                            state: PrivacyToken(record.state.rawValue),
                            tool: PrivacyToken(record.toolName))
         }
+        // Plan IW P1: the activity trail. The router records what it ran, confirmed, refused or
+        // held; a Field Assist job's actions link to the job's thread rather than copying its
+        // work record.
+        let activityRecorder = ActivityRecorder(store: .shared)
+        nativeToolRouter.activityRecorder = activityRecorder
+        nativeToolRouter.activityJobThread = {
+            guard let session = FieldSessionService.shared.activeSession, session.isActive,
+                  !session.conversationThreadDetached else { return nil }
+            return session.conversationThreadId
+        }
+        agentScheduler.activityRecorder = activityRecorder
+        agentNotificationQueue.activityRecorder = activityRecorder
         // Anything a previous process left in flight is unknown until a tool that can check says
         // otherwise. Off the launch path; nothing waits on it.
         Task { @MainActor [weak self] in
@@ -2696,6 +2711,8 @@ class AppState: ObservableObject, AppStateProtocol {
             erasureStores.capturedManualDeliveryErasure = {CapturedManualOutbox.shared.forget($0)}
             erasureStores.learningCandidates = LearningCandidateStore.shared
             erasureStores.learningEntries = LearningEntryStore.shared
+            erasureStores.goals = GoalStore.shared
+            erasureStores.activity = ActivityStore.shared
             replaySources.subjects = SubjectErasureCoordinator(stores: erasureStores)
             replaySources.keyring = .shared
             replaySources.classFiles = { erasable in

@@ -317,6 +317,8 @@ final class DataStoreRegistryTests: XCTestCase {
             (.learningCandidates, LearningCandidateStore.fileProtection),
             (.learningEntries, LearningEntryStore.fileProtection),
             (.vanStock, VanStockStore.fileProtection),
+            (.goals, GoalStore.fileProtection),
+            (.activityTrail, ActivityStore.fileProtection),
         ]
         for (store, protection) in declared {
             XCTAssertEqual(protection, .completeUntilFirstUserAuthentication,
@@ -325,6 +327,21 @@ final class DataStoreRegistryTests: XCTestCase {
                            "\(store.rawValue): the registry must describe the class the owner writes")
         }
         XCTAssertEqual(SensitiveStore.faces.record.protection, .complete)
+    }
+
+    @MainActor
+    func testGoalStoreAttributesMatchTheRegistry() throws {
+        let store = GoalStore(directory: workspace, hipaaRetentionDays: { nil })
+        store.add(Goal(id: UUID(), title: "Registry probe", createdAt: Date(), source: .wearer))
+        try assertAttributes(of: workspace.appendingPathComponent("goals.json"), match: .goals)
+    }
+
+    @MainActor
+    func testActivityStoreAttributesMatchTheRegistry() throws {
+        let store = ActivityStore(directory: workspace, hipaaMode: { false }, hipaaRetentionDays: { nil })
+        store.append(ActivityEntry(id: UUID(), at: Date(), kind: .action, title: "Saved a note for you",
+                                   authorisation: .asked, origin: .wearer, outcome: .done))
+        try assertAttributes(of: workspace.appendingPathComponent("activity.json"), match: .activityTrail)
     }
 
     @MainActor

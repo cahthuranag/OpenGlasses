@@ -36,6 +36,8 @@ final class CalendarTool: NativeTool, @unchecked Sendable {
     ]
 
     private let eventStore: EventKitDayStore
+    private let calendar: Calendar
+    private let now: @Sendable () -> Date
 
     @MainActor
     convenience init() {
@@ -43,8 +45,10 @@ final class CalendarTool: NativeTool, @unchecked Sendable {
     }
 
     @MainActor
-    init(eventStore: EventKitDayStore) {
+    init(eventStore: EventKitDayStore, calendar: Calendar = .current, now: @escaping @Sendable () -> Date = { Date() }) {
         self.eventStore = eventStore
+        self.calendar = calendar
+        self.now = now
     }
 
     func execute(args: [String: Any]) async throws -> String {
@@ -257,15 +261,45 @@ final class CalendarTool: NativeTool, @unchecked Sendable {
     }
 
     private func parseDate(_ str: String) -> Date? {
+        Self.resolveDate(str, now: now(), calendar: calendar)
+    }
+
+    /// Resolves a typed or spoken date to the start of that day in `calendar`'s time zone.
+    ///
+    /// An explicit year ("2027-01-15", "01/15/2027") is kept as given. A month and day alone
+    /// ("Jan 15", "January 15") resolve to their next occurrence on or after `now`'s day, so a
+    /// January date asked for in December lands in the coming year rather than the one just
+    /// ending. 29 February resolves to the next year that has one.
+    nonisolated static func resolveDate(_ str: String, now: Date, calendar: Calendar) -> Date? {
         let formatter = DateFormatter()
-        for format in ["yyyy-MM-dd", "MM/dd/yyyy", "MM-dd-yyyy", "MMM d", "MMMM d"] {
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        if let locale = calendar.locale {
+            formatter.locale = locale
+        }
+
+        for format in ["yyyy-MM-dd", "MM/dd/yyyy", "MM-dd-yyyy"] {
             formatter.dateFormat = format
             if let date = formatter.date(from: str) {
-                // Set year to current if not specified
-                let cal = Calendar.current
-                var components = cal.dateComponents([.month, .day], from: date)
-                components.year = cal.component(.year, from: Date())
-                return cal.date(from: components)
+                return calendar.startOfDay(for: date)
+            }
+        }
+
+        let today = calendar.startOfDay(for: now)
+        for format in ["MMM d", "MMMM d"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: str) {
+                let monthDay = calendar.dateComponents([.month, .day], from: date)
+                // `nextDate(after:)` is exclusive, so step back a second to include today.
+                guard let justBeforeToday = calendar.date(byAdding: .second, value: -1, to: today) else {
+                    return nil
+                }
+                return calendar.nextDate(
+                    after: justBeforeToday,
+                    matching: monthDay,
+                    matchingPolicy: .strict,
+                    direction: .forward
+                )
             }
         }
         return nil

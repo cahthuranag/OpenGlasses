@@ -136,6 +136,10 @@ struct VaultRetriever {
     /// `DocumentStore.passages(sharingTermsWith:)`. The lexical route beside the embedding one.
     typealias TermSearch = (_ query: String, _ limit: Int) -> [DocumentStore.Passage]
 
+    /// The searched corpus's term statistics (Plan IV P7), asked for once per retrieval — see
+    /// `DocumentStore.termStatistics(namespaces:)`. Nil ranks by shared-word count, as before.
+    typealias TermStatisticsSource = () -> LexicalSupport.TermStatistics?
+
     /// Whether a document (by id) was read by recognition. Nil means "unknown", treated as no.
     typealias Provenance = (_ documentId: String) -> Bool
 
@@ -198,6 +202,7 @@ struct VaultRetriever {
     var tokenSearch: TokenSearch?
     var clauseSearch: ClauseSearch?
     var termSearch: TermSearch?
+    var termStatistics: TermStatisticsSource?
     var provenance: Provenance?
     var availability: Availability?
     var policy = RetrievalEvidencePolicy()
@@ -205,6 +210,7 @@ struct VaultRetriever {
 
     init(query: @escaping QueryFunction, tokenSearch: TokenSearch? = nil,
          clauseSearch: ClauseSearch? = nil, termSearch: TermSearch? = nil,
+         termStatistics: TermStatisticsSource? = nil,
          provenance: Provenance? = nil, availability: Availability? = nil,
          policy: RetrievalEvidencePolicy = RetrievalEvidencePolicy(),
          modelScope: ModelScope? = nil) {
@@ -212,6 +218,7 @@ struct VaultRetriever {
         self.tokenSearch = tokenSearch
         self.clauseSearch = clauseSearch
         self.termSearch = termSearch
+        self.termStatistics = termStatistics
         self.provenance = provenance
         self.availability = availability
         self.policy = policy
@@ -375,8 +382,19 @@ struct VaultRetriever {
         // shares none and the order is the score order, as before. Two rules stay ahead of the
         // words: a passage matching more of the spoken codes leads a token group, and a row for
         // another model sorts below this one's (Plan EL) whatever it shares.
-        let shared = Dictionary(candidates.map {
-            (Self.key($0), LexicalSupport.sharedTermCount(text: $0.text, queryTerms: queryTerms))
+        //
+        // With the corpus's term statistics the words are weighed rather than counted (Plan IV
+        // P7): BM25F, a section or clause heading's words counting three times a body word's. A
+        // count treats a word printed on most of a book's pages like the rare word that names the
+        // subject asked about, and cannot tell the passage whose heading names the subject
+        // from one that mentions it in passing. Measured at the shipped candidate depth with the
+        // device models: the answering passage first 0.35 → 0.39 of a code book's local answer key
+        // (contextual model) and 0.67 → 0.83 of the field manual pair's, with no question lost.
+        let statistics = candidates.isEmpty || queryTerms.isEmpty ? nil : termStatistics?()
+        let lexical = Dictionary(candidates.map { passage in
+            (Self.key(passage), statistics.map {
+                $0.score(queryTerms: queryTerms, text: passage.text, heading: passage.section)
+            } ?? Double(LexicalSupport.sharedTermCount(text: passage.text, queryTerms: queryTerms)))
         }, uniquingKeysWith: max)
         let ranked = candidates.sorted { a, b in
             if group(a) != group(b) { return group(a) > group(b) }
@@ -387,7 +405,7 @@ struct VaultRetriever {
             }
             if (a.modelPenalty > 0) != (b.modelPenalty > 0) { return b.modelPenalty > 0 }
             if a.matchedTokens.count != b.matchedTokens.count { return a.matchedTokens.count > b.matchedTokens.count }
-            let words = (shared[Self.key(a)] ?? 0, shared[Self.key(b)] ?? 0)
+            let words = (lexical[Self.key(a)] ?? 0, lexical[Self.key(b)] ?? 0)
             return words.0 != words.1 ? words.0 > words.1 : precedes(a, b)
         }
         return policy.decide(ranked, limit: request.limit, queryTerms: queryTerms)

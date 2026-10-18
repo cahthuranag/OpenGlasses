@@ -1735,6 +1735,8 @@ final class FieldSessionService: ObservableObject {
                 tagged(documentStore?.passages(sharingTermsWith: query, limit: limit, namespace: space.namespace,
                                                documentIds: ids(for: space)) ?? [], space)
             }
+        }, termStatistics: {
+            documentStore?.termStatistics(namespaces: searched.map(\.namespace))
         }, provenance: { documentId in
             if documentId.hasPrefix("captured:") { return true }
             return manualNamespaces.contains { namespace in

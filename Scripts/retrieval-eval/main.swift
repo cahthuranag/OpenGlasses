@@ -64,7 +64,8 @@ struct RetrievalEvalMain {
         let report = RetrievalEval.run(questions,
                                        gatedFor: { RetrievalEval.retriever(over: store, policy: policy, editions: editions, turn: $0) },
                                        openFor: { RetrievalEval.retriever(over: store, policy: open, editions: editions, turn: $0) },
-                                       store: store)
+                                       store: store,
+                                       passageLimit: env["RETRIEVAL_EVAL_PASSAGES"] == "4" ? nil : ManualPassageLimit())
         let label = (env["RETRIEVAL_EVAL_LABEL"] ?? "local vault") + (env["RETRIEVAL_EVAL_GATE"].map { " gate=\($0)" } ?? "")
         for line in report.lines(label: label, embedder: embedder.modelId) {
             print(line)

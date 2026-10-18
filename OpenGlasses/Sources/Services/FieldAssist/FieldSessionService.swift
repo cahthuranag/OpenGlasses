@@ -1403,8 +1403,22 @@ final class FieldSessionService: ObservableObject {
         guard let documentStore else { return RetrievalEvidencePolicy() }
         return .default(for: documentStore.servingModelId(namespace: DocumentStore.vaultNamespace(vaultId)))
     }
-    /// How many manual passages a turn may carry.
-    var manualPassageLimit = 4
+    /// How many manual passages a turn or a lookup carries: four, or six when the best passage is
+    /// from a clause-numbered document (Plan IV P6).
+    var passageLimit = ManualPassageLimit()
+
+    /// Retrieve manual passages with the shape-dependent limit (Plan IV P6). The larger number is
+    /// asked for only when a manual this retrieval may search (`documentIds`, or the whole vault)
+    /// is clause-numbered, so a vault of prose manuals retrieves exactly as before.
+    func retrieveManualPassages(_ request: VaultRetriever.Request, with retriever: VaultRetriever,
+                                store: VaultStore, documentIds: [String]? = nil) -> RetrievalOutcome {
+        guard let documentStore else { return retriever.retrieve(request) }
+        let searchesClauseNumbered = documentStore.list(namespace: DocumentStore.vaultNamespace(store.manifest.id))
+            .filter { documentIds?.contains($0.id) ?? true }
+            .contains { documentStore.isClauseNumbered(documentId: $0.id) }
+        return passageLimit.retrieve(request, with: retriever, searchesClauseNumbered: searchesClauseNumbered,
+                                     isClauseNumbered: { documentStore.isClauseNumbered(documentId: $0) })
+    }
 
     /// System-prompt addendum for the active session, or nil when no session is active.
     /// Hooked into `LLMService.buildSystemPrompt`. When the vault declares a reference tier and
@@ -1494,8 +1508,9 @@ final class FieldSessionService: ObservableObject {
             break
         }
         let editionRequest = EditionRequest.parse(searchTurn, editions: documentEditions(of: store))
-        let outcome = manualRetriever(store: store, editionRequest: editionRequest).retrieve(
-            .init(turn: searchTurn, procedureStep: runner?.currentStep?.title, limit: manualPassageLimit))
+        let outcome = retrieveManualPassages(.init(turn: searchTurn, procedureStep: runner?.currentStep?.title),
+                                             with: manualRetriever(store: store, editionRequest: editionRequest),
+                                             store: store)
         // Support trace: which pages went to the model, by citation — or that the gate refused.
         TurnRecorder.noteManualPassages(outcome.passages.map(\.citation), refused: !outcome.answers)
         let disclosure = noteRetrieval(outcome)

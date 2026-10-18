@@ -553,6 +553,36 @@ final class VaultManualRetrievalTests: XCTestCase {
         XCTAssertTrue(description.contains("cite those lines"), "the existing guidance stays")
     }
 
+    // MARK: - More passages where a passage is one clause (Plan IV P6)
+
+    func testAClauseNumberedManualSendsSixPassagesToTheTurnAndTheLookup() async throws {
+        let store = makeStore()
+        let service = try await startSessionWithManual(store: store, manualText: ManualPassageLimitTests.clauseNumberedBook())
+        service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 0)
+        let tool = ManualLookupTool(documentStore: store, sessionService: service)
+
+        let lookup = try await tool.execute(args: ["query": "which lid colour and tag for the panel"])
+        XCTAssertTrue(lookup.contains("\n[6] "), lookup)
+        XCTAssertFalse(lookup.contains("\n[7] "), lookup)
+        let turn = try XCTUnwrap(service.promptContext(turn: "which lid colour and tag for the panel"))
+        XCTAssertTrue(turn.contains("\n[6] "), turn)
+        XCTAssertFalse(turn.contains("omitted by the context budget"), turn)
+    }
+
+    func testAProseManualStillSendsFour() async throws {
+        let store = makeStore()
+        let service = try await startSessionWithManual(store: store, manualText: ManualPassageLimitTests.proseManual())
+        service.retrievalPolicy = RetrievalEvidencePolicy(similarityFloor: 0)
+        let tool = ManualLookupTool(documentStore: store, sessionService: service)
+
+        let lookup = try await tool.execute(args: ["query": "blue dial green lamp fuse reading"])
+        XCTAssertTrue(lookup.contains("\n[4] "), lookup)
+        XCTAssertFalse(lookup.contains("\n[5] "), lookup)
+        let turn = try XCTUnwrap(service.promptContext(turn: "blue dial green lamp fuse reading"))
+        XCTAssertTrue(turn.contains("\n[4] "), turn)
+        XCTAssertFalse(turn.contains("\n[5] "), turn)
+    }
+
     func testEvidencePolicyTruthTable() {
         let policy = RetrievalEvidencePolicy(similarityFloor: 0.3)
         let weak = VaultRetriever.Passage(documentId: "d", documentName: "M", chunkIndex: 0, text: "x", page: nil,

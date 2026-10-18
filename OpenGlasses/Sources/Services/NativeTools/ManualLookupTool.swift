@@ -136,8 +136,8 @@ final class ManualLookupTool: NativeTool {
                                                   editions: session.documentEditions(of: store))
         let retriever = session.makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds,
                                               editionRequest: editionRequest)
-        let outcome = retriever.retrieve(.init(turn: query, ocrText: ocrText,
-                                               procedureStep: nil, limit: session.manualPassageLimit))
+        let outcome = session.retrieveManualPassages(.init(turn: query, ocrText: ocrText, procedureStep: nil),
+                                                     with: retriever, store: store, documentIds: documentIds)
         let disclosure = session.noteRetrieval(outcome)
         // What "show me the page" opens next, until an answer that cites replaces it (Plan IN P2).
         if outcome.answers {

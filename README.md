@@ -2,9 +2,9 @@
 
 ### Your AI. Your terms.
 
-Avenkin is a private AI assistant that works for you, not for a platform: your choice of AI, your memory on your device, on your phone, your watch or your glasses.
+Avenkin is a private AI assistant that works for you, not for a platform: your choice of AI, your memory on your device, on your iPhone, through headphones or AirPods, from your watch or with your glasses.
 
-**On your phone, from your wrist, or hands-free with glasses.**
+**On your iPhone, through headphones or AirPods, from your wrist, or hands-free with glasses.**
 
 Ask about what you see, translate a conversation, remember the details, and get things done. Buy once, with no subscription to us—a cloud AI provider you choose bills its own usage. With the [on-device setup](#offline-ai-right-on-your-iphone), the conversation runs offline on your iPhone.
 

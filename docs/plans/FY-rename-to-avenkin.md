@@ -659,6 +659,10 @@ are done; item 9 is owed on device. Deviations and additions:
    - Device line: **"On your phone, from your wrist, or hands-free with glasses."** Not "better with
      your watch": today the watch is a remote that needs the phone nearby, and most of its controls
      drive glasses (Plan CS drafts the standalone watch). The copy can say more when CS ships.
+     **Reworded 2026-10-18 (iPhone-first, by Greig):** sentence ends "…on your iPhone, through
+     headphones or AirPods, from your watch or with your glasses."; device line "On your iPhone,
+     through headphones or AirPods, from your wrist, or hands-free with glasses." — the same text
+     on README, about, index, onboarding and the About footer, held by `BrandNameGuardTests`.
    - Claims stay as precise as the README's: "offline" and "fully private" only for the on-device
      setup; "buy once, no subscription to us", since cloud AI providers bill their own usage.
    Final wording is the owner's.

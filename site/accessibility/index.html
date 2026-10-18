@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>Accessibility · Avenkin</title>
+<meta name="description" content="Reading, spoken descriptions, captions and voice controls in Avenkin. Explore the current accessibility features, setup and work still being validated.">
+<link rel="stylesheet" href="/assets/site.css">
+<link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="stage">
+<header class="site-header">
+  <a class="brand" href="/"><img src="/assets/mark.svg" alt="" width="30" height="30">Avenkin</a>
+  <nav class="site-nav" aria-label="Main">
+    <a href="/app/">The app</a>
+    <a href="/memory/">Memory</a>
+    <a href="/accessibility/" aria-current="page">Accessibility</a>
+    <a href="/field-assist/">Field Assist</a>
+    <a href="/office/">Office</a>
+    <a href="/pricing/">Plans</a>
+  </nav>
+</header>
+<section class="page-hero">
+  <p class="kicker">Accessibility</p>
+  <h1>Read, listen, ask.</h1>
+  <p class="lede">Spoken help with text and the camera view, captions for conversations, and ways to use Avenkin by voice. Start on your iPhone, with headphones or AirPods, or with compatible glasses.</p>
+  <div class="actions">
+    <a class="button" href="https://testflight.apple.com/join/1dcAytte">Try the beta on TestFlight</a>
+    <a class="button ghost" href="#getting-started">How to get started</a>
+  </div>
+</section>
+</div>
+<main id="main" tabindex="-1">
+  <div class="wrap">
+    <section class="section">
+      <div class="section-head">
+        <p class="eyebrow">Current capabilities</p>
+        <h2>Help with everyday information.</h2>
+        <p>Reading Assistant and Blind Assistant are available live presets. Features depend on the selected model, permissions and camera view.</p>
+      </div>
+      <div class="tiles">
+        <article class="tile">
+          <p class="eyebrow">Read</p>
+          <h3>Hear text aloud</h3>
+          <p>Ask for text from a label, menu, sign or document. Reading Assistant focuses on visible text and can help translate or summarise it.</p>
+          <p class="say">&ldquo;Read this label.&rdquo;</p>
+        </article>
+        <article class="tile">
+          <p class="eyebrow">Describe</p>
+          <h3>Ask about the camera view</h3>
+          <p>With a vision-capable model, ask for a spoken description or follow up about a detail. The answer depends on what the camera can capture.</p>
+          <p class="say">&ldquo;Describe what is in front of me.&rdquo;</p>
+        </article>
+        <article class="tile">
+          <p class="eyebrow">Follow along</p>
+          <h3>Captions and translation</h3>
+          <p>Enable ambient captions for a running transcript, or translate spoken language. Language support and offline availability depend on your speech and translation setup.</p>
+          <p class="say">&ldquo;Start translating Spanish to English.&rdquo;</p>
+        </article>
+        <article class="tile">
+          <p class="eyebrow">Start</p>
+          <h3>Use voice and shortcuts</h3>
+          <p>Start requests with the microphone control, an enabled wake word or Siri. App Shortcuts can also be assigned to the iPhone Action button.</p>
+          <p class="say">&ldquo;Hey Siri, ask Avenkin a question.&rdquo;</p>
+        </article>
+        <article class="tile">
+          <p class="eyebrow">Operate</p>
+          <h3>VoiceOver and spoken feedback</h3>
+          <p>The app includes VoiceOver labels, spoken feedback and session announcements. Complete setup and recovery with blind participants are still being validated.</p>
+        </article>
+        <article class="tile">
+          <p class="eyebrow">Listen</p>
+          <h3>Choose your audio route</h3>
+          <p>Use your phone, headphones, AirPods or compatible glasses for spoken replies. Check both the microphone and where replies play before starting a longer session.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="getting-started">
+      <div class="section-head">
+        <p class="eyebrow">First use</p>
+        <h2>Start with one useful task.</h2>
+      </div>
+      <div class="body">
+        <ol>
+          <li><strong>Install the beta on an iPhone running iOS 26 or later.</strong> You can begin with the phone camera; glasses are optional.</li>
+          <li><strong>Choose your services.</strong> Set up an AI model, speech recognition and a spoken voice. Descriptions need a vision-capable model.</li>
+          <li><strong>Grant the permissions the task needs.</strong> Check camera and microphone access, then ask a short question to confirm the audio route.</li>
+          <li><strong>Try Reading Assistant or Blind Assistant.</strong> Begin with clearly printed text and a fresh camera capture. Ask a follow-up to check the result.</li>
+        </ol>
+        <p>Compatible Meta glasses need their own pairing, registration and camera permissions. The <a href="/docs/BUILDING.md#availability-and-first-use">first-use guide</a> covers these steps, and the <a href="/docs/CAPABILITIES.md#accessibility">accessibility notes</a> describe current limits.</p>
+      </div>
+    </section>
+  </div>
+
+  <section class="statement">
+    <div class="wrap">
+      <p class="kicker">Your setup, your choice</p>
+      <h2>Know where the processing happens.</h2>
+      <div class="trio">
+        <div><h3>No separate accessibility unlock</h3><p>Accessibility features have no separate paid unlock. Your selected cloud AI or speech provider may charge for usage.</p></div>
+        <div><h3>Local storage, chosen services</h3><p>Saved context is stored on your iPhone. Images, audio or recalled context may go to the services you select. <a href="/privacy.html">Read the privacy policy</a>.</p></div>
+        <div><h3>Prepare for offline use</h3><p>Local operation needs compatible downloaded AI, speech and voice assets. Automatic offline takeover and reliable local vision with a pocketed phone are not established.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <section class="section">
+      <div class="section-head">
+        <p class="eyebrow">Work in progress</p>
+        <h2>Built features need real-world validation.</h2>
+      </div>
+      <div class="body">
+        <p>Independent setup, reliable reading and recovery during daily use still need testing with blind participants and real hardware. Avenkin can misread text or miss details; it supplements existing mobility aids and cannot establish that a route or crossing is safe.</p>
+        <p>We want to progress this with the people who will use it. Feedback on setup, spoken feedback, reading and recovery will help set the priorities.</p>
+      </div>
+      <div class="actions">
+        <a class="button" href="mailto:g@skunkworks.kiwi?subject=Avenkin%20accessibility%20feedback">Share accessibility feedback</a>
+        <a class="button ghost" href="/memory/">How memory works</a>
+      </div>
+    </section>
+  </div>
+</main>
+<footer class="site-footer">
+  <a href="/privacy.html">Privacy</a>
+  <a href="/support.html">Support</a>
+  <a href="/security.html">Security</a>
+  <a href="/source/">Source licence</a>
+  <a href="/terms/">Terms</a>
+  <span>&copy; 2026 Skunkworks NZ Ltd</span>
+</footer>
+</body>
+</html>

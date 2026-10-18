@@ -298,11 +298,13 @@ class LLMService: ObservableObject {
 
 
     #if canImport(FoundationModels)
-    private var _appleSession: Any?
+    /// The Apple `Tool` adapters for the tool names last offered, rebuilt when the names change
+    /// (Plan JD P0). The session itself is never cached — see `sendAppleOnDeviceImpl`.
+    private var _appleToolCache: (names: [String], tools: Any)?
     @available(iOS 26.0, *)
-    private var appleSession: LanguageModelSession? {
-        get { _appleSession as? LanguageModelSession }
-        set { _appleSession = newValue }
+    private var appleToolCache: (names: [String], tools: [any Tool])? {
+        get { _appleToolCache.flatMap { cache in (cache.tools as? [any Tool]).map { (cache.names, $0) } } }
+        set { _appleToolCache = newValue.map { ($0.names, $0.tools as Any) } }
     }
     #endif
 
@@ -1101,7 +1103,8 @@ class LLMService: ObservableObject {
             case .local:
                 return try await sendLocal(text, systemPrompt: promptForTurn, config: modelConfig, includeTools: includeTools, imageData: turnImage, onToken: onToken)
             case .appleOnDevice:
-                return try await sendAppleOnDevice(text, systemPrompt: promptForTurn)
+                return try await sendAppleOnDevice(text, systemPrompt: promptForTurn,
+                                                   includeTools: hasNativeTools, carryHistory: true)
             case .openai, .groq, .deepseek, .mistral, .zai, .qwen, .minimax, .xai, .openrouter, .custom:
                 return try await sendOpenAICompatible(text, systemPrompt: promptForTurn, volatileTail: tailForTurn, config: modelConfig, includeTools: effectiveIncludeTools, imageData: turnImage, smallContext: smallContext, onToken: onToken, onStreamReset: onStreamReset)
             }
@@ -1346,7 +1349,8 @@ class LLMService: ObservableObject {
         case .local:
             return try await sendLocal(text, systemPrompt: system, config: config, includeTools: false, imageData: nil)
         case .appleOnDevice:
-            return try await sendAppleOnDevice(text, systemPrompt: system)
+            return try await sendAppleOnDevice(text, systemPrompt: system,
+                                               includeTools: false, carryHistory: false)
         case .openai, .groq, .deepseek, .mistral, .zai, .qwen, .minimax, .xai, .openrouter, .custom:
             return try await sendOpenAICompatible(text, systemPrompt: system, config: config, includeTools: false, imageData: nil)
         }
@@ -1919,7 +1923,8 @@ class LLMService: ObservableObject {
 
             case .appleOnDevice:
                 let prompt = systemPrompt + "\n\nReturn ONLY a single valid JSON object matching the requested shape — no prose, no code fences."
-                let text = try await sendAppleOnDevice(userText, systemPrompt: prompt)
+                let text = try await sendAppleOnDevice(userText, systemPrompt: prompt,
+                                                       includeTools: false, carryHistory: false)
                 return AssessmentJSON.object(fromText: text)
 
             case .local:
@@ -1942,7 +1947,7 @@ class LLMService: ObservableObject {
     func invalidateOnDeviceSession() {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
-            appleSession = nil
+            appleToolCache = nil
         }
         #endif
     }
@@ -1972,7 +1977,8 @@ class LLMService: ObservableObject {
             guard localOnly else {
                 throw LLMError.missingAPIKey("Local providers cannot be used as cloud agent")
             }
-            return try await sendAppleOnDevice(text, systemPrompt: systemPrompt)
+            return try await sendAppleOnDevice(text, systemPrompt: systemPrompt,
+                                               includeTools: includeTools, carryHistory: true)
         case .openai, .groq, .deepseek, .mistral, .zai, .qwen, .minimax, .xai, .openrouter, .custom:
             return try await sendOpenAICompatible(text, systemPrompt: systemPrompt, config: config, includeTools: includeTools, imageData: nil)
         }
@@ -3872,20 +3878,35 @@ class LLMService: ObservableObject {
 
     // MARK: - Apple Foundation Models (On-Device)
 
-    private func sendAppleOnDevice(_ text: String, systemPrompt: String) async throws -> String {
+    private func sendAppleOnDevice(_ text: String, systemPrompt: String,
+                                   includeTools: Bool, carryHistory: Bool) async throws -> String {
         #if canImport(FoundationModels)
         guard #available(iOS 26.0, *) else {
             throw LLMError.missingAPIKey("Apple Intelligence requires iOS 26+")
         }
-        return try await sendAppleOnDeviceImpl(text, systemPrompt: systemPrompt)
+        return try await sendAppleOnDeviceImpl(text, systemPrompt: systemPrompt,
+                                               includeTools: includeTools, carryHistory: carryHistory)
         #else
         throw LLMError.missingAPIKey("Apple Foundation Models requires iOS 26+")
         #endif
     }
 
     #if canImport(FoundationModels)
+    /// One turn on Apple's on-device model (Plan JD P0).
+    ///
+    /// The session is **built for the turn**: fresh instructions (the lean prompt changes every
+    /// turn — date, location, memory), the tool adapters for the names `AppleOnDeviceToolSet`
+    /// chose, and the last few turns of the app's own `conversationHistory` as the transcript. It
+    /// is not kept between turns: the app's history is the one record a cleared or reloaded
+    /// conversation already keeps consistent, and the first design — one session for the life of
+    /// the preset — answered every turn with the instructions of the first.
+    ///
+    /// Tools run inside `respond(to:)`: the framework calls each adapter, which hops to the main
+    /// actor and `NativeToolRouter.executeRoot`, and folds the result into the same turn. A window
+    /// the model reports as full is retried with a shorter carry, then none.
     @available(iOS 26.0, *)
-    private func sendAppleOnDeviceImpl(_ text: String, systemPrompt: String) async throws -> String {
+    private func sendAppleOnDeviceImpl(_ text: String, systemPrompt: String,
+                                       includeTools: Bool, carryHistory: Bool) async throws -> String {
         let availability = SystemLanguageModel.default.availability
         guard case .available = availability else {
             switch availability {
@@ -3906,36 +3927,165 @@ class LLMService: ObservableObject {
             }
         }
 
-        if appleSession == nil {
-            appleSession = LanguageModelSession(instructions: systemPrompt)
-        }
+        let tools = includeTools ? appleTools() : []
+        let history = carryHistory
+            ? recentTupleHistory(AppleSessionPolicy.carriedEntryLimit, stripToolMarkup: false)
+            : []
 
-        let session = appleSession!
-        let response = try await session.respond(to: text)
+        // Respond, shrinking the carried history when the window is full. The retry rebuilds the
+        // session — a session that has thrown for size holds the oversize transcript.
+        let (session, firstAnswer) = try await appleRespond(
+            to: text, instructions: systemPrompt, tools: tools, history: history,
+            carry: carryHistory ? AppleSessionPolicy.carriedEntryLimit : 0)
+        var answer = firstAnswer
 
-        // Uncertainty gate (Plan BI): no tool channel is wired on the Apple on-device path, so a
-        // hedged or freshness-sensitive answer gets one transparent web-grounded re-ask.
-        var answer = response.content
+        // Uncertainty gate (Plan BI): with `web_search` now a real tool on this path, the re-ask is
+        // the backstop for an answer the model hedged without searching. The session keeps the
+        // turn's transcript, so its rewrite is context-aware; the shared history feeds the
+        // grounding prompt for cross-answer reconciliation.
         if !MedicalLLMRoutingPolicy.isEnforced(
                hipaaMode: Config.hipaaMode, localOnly: Config.hipaaLocalOnly),
            Config.localWebSearchFallbackEnabled,
+           !offlineHandoffTurn,
            UncertaintyDetector.assess(question: text, answer: answer).shouldSearch {
-            // The Apple session is stateful (it holds its own transcript), so its rewrite is
-            // context-aware without an explicit history block; the shared conversationHistory
-            // still feeds the grounding prompt for cross-answer reconciliation.
             let recent = recentTupleHistory(6, stripToolMarkup: false)
+            let reaskSession = session
             answer = await UncertaintyReask.answer(
                 question: text,
                 originalAnswer: answer,
                 history: recent,
                 search: { query in try await WebSearchTool().execute(args: ["query": query]) },
                 rewriteQuery: { q in
-                    try await session.respond(to: "Rewrite this follow-up as ONE self-contained web search query, using our conversation for context. If it already stands alone, output it unchanged. Output only the query, nothing else: \(q)").content
+                    try await reaskSession.respond(to: "Rewrite this follow-up as ONE self-contained web search query, using our conversation for context. If it already stands alone, output it unchanged. Output only the query, nothing else: \(q)").content
                 },
-                regenerate: { grounding in try await session.respond(to: grounding).content }
+                regenerate: { grounding in try await reaskSession.respond(to: grounding).content }
             )
         }
+
+        if carryHistory {
+            // The turn joins the app's history — the record the next session is built from, and
+            // what a follow-up ("what about tomorrow?") reads. The first design never wrote here,
+            // so the on-device conversation existed only inside a session nothing else could see.
+            conversationHistory.append(["role": "user", "content": text])
+            conversationHistory.append(["role": "assistant", "content": answer])
+            trimHistory()
+        }
         return answer
+    }
+
+    /// One `respond(to:)`, with the session built for it. A window the model reports as full is
+    /// retried with the next shorter carry until there is nothing left to drop.
+    @available(iOS 26.0, *)
+    private func appleRespond(to text: String, instructions: String, tools: [any Tool],
+                              history: [(role: String, content: String)],
+                              carry initialCarry: Int) async throws -> (LanguageModelSession, String) {
+        var carry = initialCarry
+        while true {
+            let session = LanguageModelSession(
+                tools: tools,
+                transcript: AppleToolBridge.transcript(instructions: instructions, tools: tools,
+                                                       history: history, carry: carry))
+            do {
+                let answer = try await session.respond(to: text).content
+                return (session, answer)
+            } catch LanguageModelSession.GenerationError.exceededContextWindowSize {
+                guard let shorter = AppleSessionPolicy.carryAfterOverflow(carry) else {
+                    throw LLMError.outputTruncated(provider: "Apple Intelligence")
+                }
+                PrivacyLog.model(.contextRecovery, provider: PrivacyToken("appleOnDevice"),
+                                 count: shorter, total: carry)
+                carry = shorter
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as LanguageModelSession.GenerationError {
+                throw Self.appleGenerationFailure(error)
+            } catch let error as LanguageModelSession.ToolCallError {
+                // An adapter never throws, so this is the framework's own tool plumbing.
+                PrivacyLog.model(.requestFailed, provider: PrivacyToken("appleOnDevice"),
+                                 detail: PrivacyToken("toolCall"), error: SafeErrorSummary(error.underlyingError))
+                throw LLMError.invalidResponse("Apple Intelligence could not run a tool: \(error.underlyingError.localizedDescription)")
+            }
+        }
+    }
+
+    /// The Apple adapters for this turn's tool names, rebuilt only when the names change. A tool
+    /// whose schema the framework rejects is dropped and logged, never fatal.
+    @available(iOS 26.0, *)
+    private func appleTools() -> [any Tool] {
+        guard let router = nativeToolRouter else { return [] }
+        let registry = router.registry
+        let names = AppleOnDeviceToolSet.priorityNames(
+            registered: registry.toolNames,
+            fieldAssistActive: Config.fieldAssistActive,
+            offlineHandoff: offlineHandoffTurn)
+        if let cache = appleToolCache, cache.names == names { return cache.tools }
+
+        let dispatch: @Sendable (String, String) async -> String = { [weak self] name, json in
+            await self?.runAppleTool(name: name, argumentsJSON: json)
+                ?? "Error: the assistant is no longer available"
+        }
+        var candidates: [(AppleOnDeviceToolSet.Candidate, NativeToolAdapter)] = []
+        for name in names {
+            guard let tool = registry.tool(named: name) else { continue }
+            do {
+                let adapter = try AppleToolBridge.adapter(
+                    name: name, description: tool.description,
+                    parameters: tool.parametersSchema, dispatch: dispatch)
+                let root = AppleToolSchema.root(toolName: name, parameters: tool.parametersSchema)
+                let tokens = AppleToolSchema.estimatedTokens(
+                    name: name, description: adapter.description, root: root)
+                candidates.append((.init(name: name, estimatedTokens: tokens), adapter))
+            } catch {
+                PrivacyLog.model(.toolsPayloadRejected, provider: PrivacyToken("appleOnDevice"),
+                                 detail: PrivacyToken(name), error: SafeErrorSummary(error))
+            }
+        }
+        let kept = Set(AppleOnDeviceToolSet.fit(candidates.map(\.0)).map(\.name))
+        let tools: [any Tool] = candidates.filter { kept.contains($0.0.name) }.map(\.1)
+        PrivacyLog.model(.toolProfileApplied, provider: PrivacyToken("appleOnDevice"),
+                         count: tools.count, total: names.count)
+        appleToolCache = (names, tools)
+        return tools
+    }
+
+    /// One tool call from the on-device model, through the same authority as every other caller.
+    /// Returns text in every case: the result, or the reason there is none, for the model to relay.
+    private func runAppleTool(name: String, argumentsJSON: String) async -> String {
+        guard let router = nativeToolRouter else { return "Error: tools are not available" }
+        let args = AppleToolArguments.dictionary(fromJSON: argumentsJSON)
+        PrivacyLog.localModel(.toolCall, model: PrivacyToken("appleOnDevice"), tool: PrivacyToken(name))
+        toolCallStatus = .executing(name)
+        let startedAt = Date()
+        let outcome = await router.executeRoot(name: name, args: args)
+        TurnRecorder.addToolTime(since: startedAt)
+        toolCallStatus = .idle
+        switch outcome {
+        case .completed(let text): return text
+        case .outcomeUnknown(_, let message): return message
+        case .rejected(let reason), .failedBeforeExecution(let reason): return "Error: \(reason)"
+        }
+    }
+
+    /// The app's error for a generation the framework refused. Each case names its own way out,
+    /// because the generic line ("something went wrong") was what the wearer heard before.
+    @available(iOS 26.0, *)
+    nonisolated static func appleGenerationFailure(_ error: LanguageModelSession.GenerationError) -> LLMError {
+        switch error {
+        case .guardrailViolation, .refusal:
+            return .modelDeclined(provider: "Apple Intelligence")
+        case .exceededContextWindowSize:
+            return .outputTruncated(provider: "Apple Intelligence")
+        case .assetsUnavailable:
+            return .missingAPIKey("Apple Intelligence isn't available right now — try again in a moment, or add an API key in Settings → AI Models")
+        case .unsupportedLanguageOrLocale:
+            return .invalidConfiguration("Apple Intelligence doesn't support this language yet — choose a cloud model in Settings → AI Models")
+        case .rateLimited, .concurrentRequests:
+            return .invalidResponse("Apple Intelligence is busy — try again in a moment")
+        case .unsupportedGuide, .decodingFailure:
+            return .invalidResponse("Apple Intelligence returned something the app could not read")
+        @unknown default:
+            return .invalidResponse("Apple Intelligence error: \(error.localizedDescription)")
+        }
     }
     #endif
 
@@ -4486,7 +4636,8 @@ class LLMService: ObservableObject {
                 return try await sendLocal(text, systemPrompt: leanPrompt, config: localConfig,
                                            includeTools: hasNativeTools)
             case .appleOnDevice:
-                return try await sendAppleOnDevice(text, systemPrompt: leanPrompt)
+                return try await sendAppleOnDevice(text, systemPrompt: leanPrompt,
+                                                   includeTools: hasNativeTools, carryHistory: true)
             default:
                 // `medicalInferenceModel` cannot return a remote model while this policy is active.
                 throw LLMError.invalidConfiguration(MedicalLLMRoutingPolicy.unavailableMessage)

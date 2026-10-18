@@ -383,7 +383,7 @@ final class BrandNameGuardTests: XCTestCase {
         let sentence = "Avenkin is a private AI assistant that works for you, not for a platform: your "
             + "choice of AI, your memory on your device, on your phone, your watch or your glasses."
         let deviceLine = "On your phone, from your wrist, or hands-free with glasses."
-        for page in ["README.md", "about.html", "index.html"] {
+        for page in ["README.md", "about.html"] {
             let body = try text(page)
             for line in [tagline, sentence, deviceLine] {
                 XCTAssertTrue(body.contains(line), "\(page) is missing \"\(line)\"")
@@ -393,6 +393,19 @@ final class BrandNameGuardTests: XCTestCase {
         XCTAssertTrue(onboarding.contains("Text(\"\(tagline)\")") && onboarding.contains(sentence))
         let hub = try text("OpenGlasses/Sources/App/Views/SettingsView.swift")
         XCTAssertTrue(hub.contains("\(tagline) \(deviceLine)"), "the About footer carries the tagline and device line")
+    }
+
+    func testTheHomepagePositioningIncludesIPhoneAndHeadphones() throws {
+        let body = try text("index.html")
+        for line in [
+            "Your AI. Your terms.",
+            "Avenkin is a private AI assistant that works for you, not for a platform: your choice "
+                + "of AI, your memory on your device, on your iPhone, through headphones or AirPods, "
+                + "from your watch or with your glasses.",
+            "On your iPhone, through headphones or AirPods, from your wrist, or hands-free with glasses."
+        ] {
+            XCTAssertTrue(body.contains(line), "index.html is missing \"\(line)\"")
+        }
     }
 
     // MARK: - The script

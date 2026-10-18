@@ -207,6 +207,10 @@ extension OpenClawSkillsTool {
 extension OpenAppTool {
     var executionSemantics: ToolExecutionSemantics { .external(.bestEffort, idempotency: .intrinsic) }
 }
+/// Looks a show up, then hands the wearer to the Podcasts app; opening twice lands in one place.
+extension PodcastTool {
+    var executionSemantics: ToolExecutionSemantics { .external(.bestEffort, idempotency: .intrinsic) }
+}
 extension DirectionsTool {
     var executionSemantics: ToolExecutionSemantics { .external(.bestEffort, idempotency: .intrinsic) }
 }

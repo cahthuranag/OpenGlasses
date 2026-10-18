@@ -207,7 +207,7 @@ enum ToolExposureCore {
         // Looking things up.
         "web_search", "get_news",
         // The phone and the glasses.
-        "device_info", "flashlight", "brightness", "music_control",
+        "device_info", "flashlight", "brightness", "music_control", "play_podcast",
         // Notes and memory.
         "save_note", "list_notes", "memory_search", "brain",
         // People.

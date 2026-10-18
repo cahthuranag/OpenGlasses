@@ -238,9 +238,9 @@ final class BrandNameGuardTests: XCTestCase {
             + "phone and one tap away (P2.2); this phone needs none of it."
 
         static let allowed: [Allowed] = [
-            Allowed(path: onboarding, snippet: "on your phone, your watch or your glasses.",
-                    reason: "The owner's positioning sentence (P2.1), verbatim: glasses named last, as "
-                        + "one device among three."),
+            Allowed(path: onboarding, snippet: "from your watch or with your glasses.",
+                    reason: "The owner's positioning sentence (P2.1, reworded iPhone-first 2026-10-18), "
+                        + "verbatim: glasses named last, as one device among several."),
             Allowed(path: onboarding, snippet: "\"To connect smart glasses, if you use them\"",
                     reason: "The Bluetooth permission row. Bluetooth is only for glasses, and the row "
                         + "says so rather than implying the phone needs it."),
@@ -381,9 +381,10 @@ final class BrandNameGuardTests: XCTestCase {
     func testThePositioningIsTheOwnersWording() throws {
         let tagline = "Your AI. Your terms."
         let sentence = "Avenkin is a private AI assistant that works for you, not for a platform: your "
-            + "choice of AI, your memory on your device, on your phone, your watch or your glasses."
-        let deviceLine = "On your phone, from your wrist, or hands-free with glasses."
-        for page in ["README.md", "about.html"] {
+            + "choice of AI, your memory on your device, on your iPhone, through headphones or AirPods, "
+            + "from your watch or with your glasses."
+        let deviceLine = "On your iPhone, through headphones or AirPods, from your wrist, or hands-free with glasses."
+        for page in ["README.md", "about.html", "index.html"] {
             let body = try text(page)
             for line in [tagline, sentence, deviceLine] {
                 XCTAssertTrue(body.contains(line), "\(page) is missing \"\(line)\"")

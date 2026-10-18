@@ -318,7 +318,7 @@ struct OnboardingView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
 
-                    Text("Avenkin is a private AI assistant that works for you, not for a platform: your choice of AI, your memory on your device, on your phone, your watch or your glasses.")
+                    Text("Avenkin is a private AI assistant that works for you, not for a platform: your choice of AI, your memory on your device, on your iPhone, through headphones or AirPods, from your watch or with your glasses.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

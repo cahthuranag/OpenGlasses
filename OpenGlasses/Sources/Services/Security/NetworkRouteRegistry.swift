@@ -140,6 +140,8 @@ enum NetworkRoute: String, CaseIterable, Sendable {
     // rule as MusicKit and MapKit search); only the attribution-mark download is ours.
     case weatherAttributionMark
     case newsHeadlines
+    /// Apple's public podcast directory: a show looked up by the words the wearer said (Plan JD).
+    case podcastDirectory
     case currencyRates
     case aircraftOverhead
     case aedDirectory
@@ -214,6 +216,7 @@ extension NetworkRoute {
         case .webSearch: return "Run a web search for a query the wearer or the model produced."
         case .weatherAttributionMark: return "Download the Apple Weather mark shown beside weather data, as Apple requires; the request names a fixed image and nothing about the wearer."
         case .newsHeadlines: return "Fetch news headlines for a topic."
+        case .podcastDirectory: return "Look a podcast up by name in Apple's public directory so its episode can open in the Podcasts app; only the words the wearer said are sent."
         case .currencyRates: return "Fetch published exchange rates."
         case .aircraftOverhead: return "Fetch aircraft positions near the device's coarse location."
         case .aedDirectory: return "Look up publicly listed defibrillator locations near the device."
@@ -274,7 +277,7 @@ extension NetworkRoute {
             return [.promptText, .credential]
         case .conversationRecallSummary:
             return [.transcript, .healthFact]
-        case .webSearch, .newsHeadlines:
+        case .webSearch, .newsHeadlines, .podcastDirectory:
             return [.promptText]
         case .aircraftOverhead, .aedDirectory:
             return [.location]
@@ -337,7 +340,7 @@ extension NetworkRoute {
              .asrModelDownload, .fingerspellingModelDownload, .localizationCatalogDownload,
              .clawHubCatalog, .vaultPackCatalog, .weatherAttributionMark:
             return .firstPartyCloud
-        case .webSearch, .newsHeadlines, .currencyRates,
+        case .webSearch, .newsHeadlines, .podcastDirectory, .currencyRates,
              .aircraftOverhead, .aedDirectory, .twitchChatSocket, .playbookHTTPStep:
             return .publicWeb
         case .homeAssistantCommand, .homeAssistantEntityCache, .hermesBridgeSession,
@@ -421,6 +424,7 @@ extension NetworkRoute {
         case .webSearch: return ["WebSearchTool"]
         case .weatherAttributionMark: return ["WeatherAttributionMarkLoader"]
         case .newsHeadlines: return ["NewsTool"]
+        case .podcastDirectory: return ["AppleLookupPodcastDirectory"]
         case .currencyRates: return ["CurrencyTool"]
         case .aircraftOverhead: return ["AircraftOverheadTool"]
         case .aedDirectory: return ["AEDFinder"]

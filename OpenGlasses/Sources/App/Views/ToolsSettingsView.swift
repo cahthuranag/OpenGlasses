@@ -43,6 +43,7 @@ struct ToolsSettingsView: View {
             "get_directions": "Directions",
             "identify_song": "Song Recognition",
             "music_control": "Music Control",
+            "play_podcast": "Podcasts",
             "convert_currency": "Currency Conversion",
             "phone_call": "Phone Call",
             "send_message": "Send Message",

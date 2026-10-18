@@ -139,6 +139,7 @@ enum OfflineToolPolicy {
         "find_nearby": .needsNetwork,
         "get_directions": .needsNetwork,
         "get_news": .needsNetwork,
+        "play_podcast": .needsNetwork,    // the directory lookup; Podcasts itself may have downloads
         "get_weather": .needsNetwork,
         "home_assistant": .needsNetwork,
         "identify_medication": .needsNetwork,

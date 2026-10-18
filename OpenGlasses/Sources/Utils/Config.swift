@@ -4786,7 +4786,7 @@ struct Config {
     static let internetRequiringTools: Set<String> = [
         "get_weather", "web_search", "get_news", "convert_currency",
         "identify_song", "translate", "define_word", "daily_briefing",
-        "find_nearby", "get_directions", "openclaw_skills"
+        "find_nearby", "get_directions", "openclaw_skills", "play_podcast"
     ]
 
     static var offlineModeEnabled: Bool {

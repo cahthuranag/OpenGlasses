@@ -62,8 +62,11 @@ final class OnboardingFlowTests: XCTestCase {
     /// Field Assist technicians use glasses, though not all the time: open for them, one tap away
     /// for everyone else.
     func testGlassesStartOpenOnlyForSomeoneSetUpForFieldAssist() {
-        XCTAssertTrue(OnboardingFlow.glassesStartOpen(fieldAssistSetUp: true))
-        XCTAssertFalse(OnboardingFlow.glassesStartOpen(fieldAssistSetUp: false))
+        XCTAssertTrue(OnboardingFlow.glassesStartOpen(fieldAssistSetUp: true, glassesSupported: true))
+        XCTAssertFalse(OnboardingFlow.glassesStartOpen(fieldAssistSetUp: false, glassesSupported: true))
+        // Plan JE: a copy that offers no glasses never opens the rows, Field Assist or not.
+        XCTAssertFalse(OnboardingFlow.glassesStartOpen(fieldAssistSetUp: true, glassesSupported: false))
+        XCTAssertFalse(OnboardingFlow.glassesStartOpen(fieldAssistSetUp: false, glassesSupported: false))
     }
 
     // MARK: - The session card afterwards

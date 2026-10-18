@@ -4,7 +4,8 @@ import AppIntents
 /// "Hey Siri, connect OpenGlasses" — works from HomePod, Watch, Lock Screen.
 struct ConnectGlassesIntent: AppIntent {
     static var title: LocalizedStringResource = "Connect Avenkin"
-    static var description = IntentDescription("Connect to your smart glasses and start listening")
+    // Static metadata, shown on every copy — so it is worded for a copy without glasses too (Plan JE).
+    static var description = IntentDescription("Start listening, on your smart glasses when you use them")
 
     static var isDiscoverable: Bool { true }
     static var openAppWhenRun: Bool = true
@@ -22,8 +23,10 @@ struct ConnectGlassesIntent: AppIntent {
 
         if appState.isConnected {
             return .result(value: "Connected and listening")
-        } else {
+        } else if GlassesSupportPolicy.isSupported {
             return .result(value: "Listening on your phone — glasses aren't connected")
+        } else {
+            return .result(value: "Listening on your phone")
         }
     }
 
@@ -37,7 +40,7 @@ struct ConnectGlassesIntent: AppIntent {
 /// "Hey Siri, disconnect OpenGlasses" — works from HomePod, Watch, Lock Screen.
 struct DisconnectGlassesIntent: AppIntent {
     static var title: LocalizedStringResource = "Disconnect Avenkin"
-    static var description = IntentDescription("Disconnect from your smart glasses to save battery")
+    static var description = IntentDescription("Disconnect smart glasses you're using, to save their battery")
 
     static var isDiscoverable: Bool { true }
     static var openAppWhenRun: Bool = false
@@ -49,6 +52,9 @@ struct DisconnectGlassesIntent: AppIntent {
             throw IntentError.appNotRunning
         }
 
+        guard GlassesSupportPolicy.isSupported else {
+            return .result(value: GlassesSupportPolicy.unavailableReason())
+        }
         if appState.isConnected {
             appState.disconnectGlasses()
             return .result(value: "Glasses disconnected")
@@ -67,7 +73,7 @@ struct DisconnectGlassesIntent: AppIntent {
 /// "Hey Siri, toggle OpenGlasses" — connects if off, disconnects if on.
 struct ToggleGlassesIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Avenkin"
-    static var description = IntentDescription("Connect or disconnect your smart glasses")
+    static var description = IntentDescription("Start listening, or disconnect smart glasses you're using")
 
     static var isDiscoverable: Bool { true }
     static var openAppWhenRun: Bool = true
@@ -84,8 +90,10 @@ struct ToggleGlassesIntent: AppIntent {
             return .result(value: "Glasses disconnected")
         } else {
             await appState.connectAndListen()
-            return .result(value: appState.isConnected ? "Connected and listening"
-                                                       : "Listening on your phone — glasses aren't connected")
+            if appState.isConnected { return .result(value: "Connected and listening") }
+            return .result(value: GlassesSupportPolicy.isSupported
+                           ? "Listening on your phone — glasses aren't connected"
+                           : "Listening on your phone")
         }
     }
 

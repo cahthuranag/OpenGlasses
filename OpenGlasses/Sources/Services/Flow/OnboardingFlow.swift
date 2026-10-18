@@ -49,8 +49,11 @@ enum OnboardingFlow {
 
     /// Whether the glasses rows start open on the device step. Open for someone set up for Field
     /// Assist (a licence, or an organisation's profile), who is the likeliest to be holding a pair;
-    /// one tap away for everyone else.
-    static func glassesStartOpen(fieldAssistSetUp: Bool) -> Bool { fieldAssistSetUp }
+    /// one tap away for everyone else — and never open on a copy that offers no glasses (Plan JE),
+    /// where the view shows no glasses section at all.
+    static func glassesStartOpen(fieldAssistSetUp: Bool, glassesSupported: Bool) -> Bool {
+        glassesSupported && fieldAssistSetUp
+    }
 
     /// The session card's headline when no glasses are connected. With glasses added, their state
     /// is the news ("Glasses Not Connected", or the registration's own status); without them this

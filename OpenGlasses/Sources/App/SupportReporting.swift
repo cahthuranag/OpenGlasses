@@ -179,6 +179,7 @@ extension AppState {
             "App: \(app.version) (\(app.build))",
             "Source: " + (app.commit.map { "\($0) when the Xcode project was generated" } ?? "not stamped"),
             "Installed from: \(app.channel.rawValue) (\(app.bundleID))",
+            GlassesSupportPolicy.reportLine,
             "System: \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
             "Device: \(Self.hardwareIdentifier)",
             // The app's language and region, then the phone's own list: `en_MX` alone cannot say

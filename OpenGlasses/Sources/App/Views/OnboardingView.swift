@@ -81,7 +81,8 @@ struct OnboardingView: View {
     // Add a device (page 7, Plan FY P2). The glasses rows start open for someone set up for
     // Field Assist, and one tap away for everyone else.
     @State private var showingGlassesSetup = OnboardingFlow.glassesStartOpen(
-        fieldAssistSetUp: LicenseService.shared.activeLicense != nil || OrgProfileManager.shared.isManaged)
+        fieldAssistSetUp: LicenseService.shared.activeLicense != nil || OrgProfileManager.shared.isManaged,
+        glassesSupported: GlassesSupportPolicy.isSupported)
     @State private var cameraGranted = false
     @State private var metaRegistered = false
     @State private var registrationStatus = ""
@@ -1202,13 +1203,17 @@ struct OnboardingView: View {
                         requestLocationPermission()
                     }
 
-                    permissionRow(
-                        icon: "antenna.radiowaves.left.and.right",
-                        title: "Bluetooth",
-                        detail: "To connect smart glasses, if you use them",
-                        granted: bluetoothConfigured
-                    ) {
-                        configureWearablesSDK()
+                    // Plan JE: the Bluetooth prompt is the Meta SDK's; a copy without glasses has
+                    // nothing to ask it for.
+                    if GlassesSupportPolicy.isSupported {
+                        permissionRow(
+                            icon: "antenna.radiowaves.left.and.right",
+                            title: "Bluetooth",
+                            detail: "To connect smart glasses, if you use them",
+                            granted: bluetoothConfigured
+                        ) {
+                            configureWearablesSDK()
+                        }
                     }
 
                     permissionRow(
@@ -1416,35 +1421,39 @@ struct OnboardingView: View {
                     thisPhoneRow
                 }
 
-                Section {
-                    if showingGlassesSetup {
-                        // iOS Camera permission — what the glasses' video arrives through
-                        permissionRow(
-                            icon: "camera.fill",
-                            title: "Camera",
-                            detail: "Required to stream video from your Meta glasses",
-                            granted: cameraGranted
-                        ) {
-                            await requestCameraPermission()
-                        }
+                // Plan JE: a copy that offers no glasses asks about no glasses — this phone is
+                // the device, and the step ends with the one button below.
+                if GlassesSupportPolicy.isSupported {
+                    Section {
+                        if showingGlassesSetup {
+                            // iOS Camera permission — what the glasses' video arrives through
+                            permissionRow(
+                                icon: "camera.fill",
+                                title: "Camera",
+                                detail: "Required to stream video from your Meta glasses",
+                                granted: cameraGranted
+                            ) {
+                                await requestCameraPermission()
+                            }
 
-                        // Meta AI integration
-                        permissionRow(
-                            icon: "AvenkinMark",
-                            title: "Meta AI Integration",
-                            detail: "Links Avenkin to your glasses via the Meta AI app",
-                            granted: metaRegistered
-                        ) {
-                            await connectToMetaAI()
+                            // Meta AI integration
+                            permissionRow(
+                                icon: "AvenkinMark",
+                                title: "Meta AI Integration",
+                                detail: "Links Avenkin to your glasses via the Meta AI app",
+                                granted: metaRegistered
+                            ) {
+                                await connectToMetaAI()
+                            }
+                        } else {
+                            addGlassesRow
                         }
-                    } else {
-                        addGlassesRow
-                    }
-                } header: {
-                    Text("Smart glasses")
-                } footer: {
-                    if showingGlassesSetup {
-                        registrationFooter
+                    } header: {
+                        Text("Smart glasses")
+                    } footer: {
+                        if showingGlassesSetup {
+                            registrationFooter
+                        }
                     }
                 }
             }
@@ -1463,7 +1472,10 @@ struct OnboardingView: View {
         }
         .onAppear {
             cameraGranted = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
-            metaRegistered = bluetoothConfigured && Wearables.shared.registrationState.rawValue >= 3
+            // `isConfigured`, not the page's own flag: that flag is set after a configure() that may
+            // have failed (or, on a copy without glasses, never ran), and an unconfigured
+            // `Wearables.shared` is a fatalError, not a throw.
+            metaRegistered = WearablesBootstrap.isConfigured && Wearables.shared.registrationState.rawValue >= 3
         }
     }
 
@@ -1568,8 +1580,10 @@ struct OnboardingView: View {
         // whether it worked. Both ends of the wait are spoken: it started, and how it finished.
         SessionAnnouncer.say("Registering with Meta AI")
         await appState.connectGlasses(awaitLink: false)
-        let state = Wearables.shared.registrationState
-        metaRegistered = state.rawValue >= 3
+        // Behind the bootstrap's truth: `connectGlasses` degrades to "SDK unavailable" without
+        // configuring, and an unconfigured `Wearables.shared` is a fatalError.
+        let stateRaw = WearablesBootstrap.isConfigured ? Wearables.shared.registrationState.rawValue : 0
+        metaRegistered = stateRaw >= 3
         registrationStatus = metaRegistered
             ? ""
             : "Open the Meta AI app to approve, then tap Connect again"

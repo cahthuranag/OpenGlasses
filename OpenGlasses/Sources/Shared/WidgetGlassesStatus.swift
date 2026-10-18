@@ -98,6 +98,28 @@ struct WidgetGlassesSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+/// Whether the app that owns the widget offers glasses at all (Plan JE: the App Store copy does
+/// not). The app writes it when its services start; the widget reads it and draws no glasses line
+/// without it. Absent reads as not offered, so a store copy's widget never shows a line the app
+/// cannot explain, and a TestFlight copy's shows one from the app's first launch after the update.
+enum WidgetGlassesSupport {
+    /// **Storage key.** Shared between the app and the widget extension. Pinned by
+    /// `StorageIdentifierGuardTests`.
+    static let storageKey = "widgetGlassesSupported"
+
+    static func read(from defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: storageKey) as? Bool ?? false
+    }
+
+    /// Writes the value and reports whether it changed, so the caller reloads the widget only then.
+    @discardableResult
+    static func write(_ supported: Bool, to defaults: UserDefaults) -> Bool {
+        guard defaults.object(forKey: storageKey) as? Bool != supported else { return false }
+        defaults.set(supported, forKey: storageKey)
+        return true
+    }
+}
+
 /// One glasses line on the widget: the words, a symbol, how loudly to show it, and the battery
 /// when there is a live one.
 struct WidgetGlassesLine: Equatable, Sendable {

@@ -98,5 +98,28 @@ final class WearablesBootstrapTests: XCTestCase {
         XCTAssertNil(WearablesBootstrap.failureReason)
         XCTAssertEqual(WearablesBootstrap.statusDescription, "not configured")
     }
+
+    // MARK: - Plan JE: the store copy
+
+    /// The one `ensureConfigured()` call in this file, and it is safe: with the glasses suspended
+    /// the gate answers before `configure()` is reached, so no SDK state leaks into the bundle.
+    /// Pins that a store copy never configures the SDK and says why.
+    func testAStoreCopyNeverConfiguresTheSDK() {
+        WearablesBootstrap.resetForTesting()
+        GlassesSupportPolicy.overrideForTesting = .notInThisVersion
+        defer {
+            GlassesSupportPolicy.overrideForTesting = nil
+            WearablesBootstrap.resetForTesting()
+        }
+
+        XCTAssertFalse(WearablesBootstrap.ensureConfigured())
+        XCTAssertFalse(WearablesBootstrap.isConfigured)
+        XCTAssertEqual(WearablesBootstrap.failureReason, GlassesSupportPolicy.unavailableReason())
+        XCTAssertEqual(WearablesBootstrap.statusDescription, "not in this version (store copy)")
+        XCTAssertThrowsError(try WearablesBootstrap.requireConfigured()) { error in
+            XCTAssertEqual((error as? WearablesBootstrap.Unavailable)?.errorDescription,
+                           "Meta SDK not registered — " + GlassesSupportPolicy.unavailableReason())
+        }
+    }
     #endif
 }

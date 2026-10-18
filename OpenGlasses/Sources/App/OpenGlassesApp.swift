@@ -874,7 +874,11 @@ class AppState: ObservableObject, AppStateProtocol {
     private var glassesUse = GlassesUse()
     /// Whether glasses are part of this person's setup — added now (registered or listed by the
     /// SDK) or at any time before (`Config.glassesAdded`). Not whether they are reachable.
-    var glassesAdded: Bool { glassesPhase.glassesAdded || Config.glassesAdded }
+    /// Always false on a copy that offers no glasses (Plan JE): the pill, the widget's phase and
+    /// the session card's headline all read this, so the store copy shows no glasses anywhere.
+    var glassesAdded: Bool {
+        GlassesSupportPolicy.isSupported && (glassesPhase.glassesAdded || Config.glassesAdded)
+    }
     /// Why the glasses are or are not connected, for the views that say so (Plan HX P3). Mirrors
     /// `glassesService.reachability`. A reading only: nothing here decides `isConnected`.
     @Published private(set) var glassesReachability = GlassesReachability()
@@ -3499,10 +3503,18 @@ class AppState: ObservableObject, AppStateProtocol {
     /// Start services that require system permissions (Bluetooth, Location, Mic, HomeKit).
     /// Called after onboarding completes, or at init if onboarding is already done.
     func startPermissionRequiringServices() {
-        // Start glasses observers (requires Wearables.configure() first)
-        glassesService.startObserving()
+        // Plan JE: tell the widget whether this copy offers glasses before anything else it draws.
+        if WidgetGlassesSupport.write(GlassesSupportPolicy.isSupported, to: SharedAppState.defaults) {
+            WidgetCenterReloader().reloadHomeWidget()
+        }
+        // The route-change observer is SDK-free and wanted on every copy; the SDK observers and
+        // the automatic connect are not started on a copy that offers no glasses.
         observeGlassesConnection()
-        autoConnectGlasses()
+        if GlassesSupportPolicy.isSupported {
+            // Start glasses observers (requires Wearables.configure() first)
+            glassesService.startObserving()
+            autoConnectGlasses()
+        }
 
         // Mode-specific auto-start (mic permission). Plan FF P1/PR3: when the wearer has asked
         // for the Blind Assistant to start on launch, that decision is made *first* — its gate

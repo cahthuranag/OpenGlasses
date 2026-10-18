@@ -1,6 +1,6 @@
 # Plan IW — Goals and the Activity Trail ("what are we working on, what did you do, what's next")
 
-**Status:** 📝 Drafted (not scheduled), 2026-10-18 — nothing built.
+**Status:** 🚧 P0 built 2026-10-19 (pure core; P1 stores/feeders/tools and P2 screens unbuilt). Drafted 2026-10-18. See [P0 as built](#p0-as-built).
 **Builds on:** Plan [S](S-plan-then-execute-and-safety-supervisor.md) (`AgentPlan`/`AgentPlanner`/
 `PlanValidator`/`PlanExecutor`/`AgentRunner`), `AgentScheduler` + `manage_schedule`,
 `AgentNotificationQueue`, Plan [BZ](BZ-notification-digest.md) (digest), Plan
@@ -50,6 +50,12 @@ place to be seen afterwards.
 - "What's next?" → open steps across goals, soonest first; My Day shows one goal line when a step is
   due; the digest carries a goal's check-in.
 - Everything readable, editable, deletable; nothing hidden reasoning. Copy never names a plan letter.
+
+**First customer: Field Assist.** The trail is what a technician's day of actions looks like
+when read back: parts recorded under a standing permission, a work record sent to the office, a
+van-stock change, each with how it was authorised. A goal sits beside a job and never shadows it —
+a job's own task list (Plan [FO](FO-guided-job-flow-and-job-tab.md)) stays the job's list, and the trail links to
+the job record rather than copying it.
 
 ## What exists today (verified 2026-10-18)
 
@@ -233,6 +239,70 @@ Device pass (owed): a three-step goal over two days with one check-in heard at t
 Activity screen after a morning of normal use reads as a sensible story; a scheduled task's result
 visible without `speakResult`.
 
+### P0 as built
+
+Built 2026-10-19 as pure value types and policies — no store, no screen, no tool registration, no
+model call, no feeder. Everything takes its clock, calendar or time zone and its permission rule as
+inputs.
+
+- **Goals** (`Services/Goals/`): `Goal`, `GoalStep`, `GoalState`, `GoalStepState`, `GoalSource`,
+  `CheckInCadence` (persisted as `none` / `daily` / `weekly` / `before_due:<days>`; the default
+  for "keep an eye on it" is two days before the due date, none without one) and `StepAction`, the
+  closed set of six offers (`reminder`, `calendar_hold`, `search`, `draft`, `scheduled_check`,
+  `ask`), each mapped to an existing tool or to none. All `Codable` through `RecordJSONCodec`
+  (ISO 8601 with fractional seconds, sorted keys); the plan's length limits (`GoalLimits`) are
+  enforced when a proposal is parsed and again when a stored goal is decoded, and an action kind a
+  newer build wrote loses the offer, not the step.
+- `GoalProposalParser`: the model's `{title, why?, dueAt?, steps:[{title, action?}]}` → a typed
+  `GoalProposalOutcome`. Goal-level problems (length, a due date not in the future, fewer than 3 or
+  more than 7 steps, unreadable input) refuse the proposal, all reported at once; a bad action —
+  unknown kind, a field out of bounds, a time already gone, or one the injected
+  `(StepAction) -> Bool` turns down — is dropped with its reason and the step kept.
+  `StepActionPermission.predicate` is today's rule (tool enabled, integration not read-only,
+  Agent Mode for `scheduled_check`); IX replaces the predicate without touching the parser. A bare
+  date means the end of that day in the wearer's calendar.
+- `GoalAdvancePolicy`: next step (`next` → earliest `dueAt` → first open; none on a paused, done or
+  abandoned goal), the offer, evidence (a linked, finished, non-held, non-refused entry from the
+  step's own tool yields a `GoalEvidenceSuggestion` — a value; nothing applies it), the daily cap of
+  two unprompted goal sentences per calendar day, and check-in cadence (`beforeDue(n)` fires once,
+  in the window opening `n` calendar days before the goal's or next step's due date).
+- `GoalPhraser`: status ("Two of four done. Next: List the bike for sale, due Saturday. Want me to
+  draft the listing?"), next, the proposal read-back ("Okay. I'd break that into: … Want me to keep
+  an eye on it?"), the evidence question and every action offer. `SpokenPhrasing` builds days and
+  times by hand so strings do not move with the system's formatting data.
+- **Trail** (`Services/Activity/`): `ActivityEntry` with `ActivityKind`, `ActivityAuthorisation`,
+  `ActivityOrigin`, `ActivityOutcome`, `ActivityRef`, every one persisted as an explicit string
+  (`planned_step`, `standing_grant:<scope>`, `refused:<reason>`, `remote:<source>`,
+  `operation:<id>` …); over-long text is shortened, not refused, because losing the record would
+  hide the action.
+- `ActivityTitler`: a fixed past-tense, second-person template for every side-effecting registered
+  native tool, sharpened by the action key; read actions of a writing tool and every read return
+  nil; the approval line the wearer saw becomes the detail ("You approved: Send a message to Sam"),
+  cut before any quoted body. Tools with no template (MCP, user-authored) get "Used the … tool".
+- `ActivityPhraser`: today / this morning / since a time, in the wearer's zone; counts by kind,
+  then up to five entries in time order (failures first in the pick), then what is waiting on the
+  wearer — last and always said; inside `MyDaySpeechPolicy`'s 35 s, dropping entries before the
+  waiting line. "What's next" merges goal next steps, scheduled tasks due within 24 h and
+  waiting-on-you entries.
+- `ActivityRetention`: 14 days / 1000 entries, oldest first out, a shorter HIPAA retention honoured.
+- `PlannedStepRecord { tool, actionKey, rationale }` and `AgentStep.record` — a `Codable`
+  projection that never carries the step's arguments; `AgentStep` stays non-`Codable`.
+- The once-daily scheduler defect was fixed by Plan JC (`ScheduleDuePolicy`, with its tests);
+  verified, nothing changed here.
+- Tests: `GoalProposalParserTests`, `GoalAdvancePolicyTests` (tables), `GoalPhraserTests` (exact
+  strings), `GoalCodecTests` and `ActivityEntryCodecTests` (fixture decoding and round trips),
+  `ActivityTitlerTests` (the live registry, as `ToolEffectClassPolicyTests` builds it),
+  `ActivityPhraserTests` (time-zone boundary, the ceiling, waiting last), `ActivityRetentionTests`,
+  `PlannedStepRecordTests`.
+
+Verified 2026-10-19: the 76 new tests (plus `ScheduleDuePolicyTests`); the full unit suite,
+11,296 tests (16 skipped, zero failures); a Release build on the simulator (no phone reachable);
+the privacy-logging gate; gitleaks over the branch.
+
+**Decisions taken (2026-10-19):** (1) goals work without Agent Mode — only check-ins and
+`scheduled_check` need it; (2) evidence completion is suggest-only; (3) trail horizon 14 days /
+1000 entries; (4) reads are not recorded; (5) the Home tile is deferred past P2.
+
 ## Risks
 
 - **A trail that reads like surveillance of the wearer.** It records the *assistant's* actions
@@ -245,7 +315,7 @@ visible without `speakResult`.
   plan does not merge them.
 - **Store sprawl.** Two new stores with the registry's full ceremony; both are small and capped.
 
-## Decisions for Greig
+## Decisions for Greig (all five taken 2026-10-19 — see P0 as built)
 
 1. **Goals without Agent Mode** (recommended: a goal is the wearer's list; only the background
    check-ins are agentic), or gate the whole feature?

@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-/// `play_podcast` (Plan JE): "play the latest episode of The Daily" looks the show up in Apple's
+/// `play_podcast` (Plan JF): "play the latest episode of The Daily" looks the show up in Apple's
 /// public podcast directory, picks the episode, and opens it in the Podcasts app.
 ///
 /// Apple offers no API that plays a podcast inside another app's player, so the tool hands the

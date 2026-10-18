@@ -1,6 +1,6 @@
 import Foundation
 
-/// Where shows and episodes are looked up (Plan JE). The production conformance is
+/// Where shows and episodes are looked up (Plan JF). The production conformance is
 /// `AppleLookupPodcastDirectory`; tests use a fake, so no test ever reaches Apple.
 protocol PodcastDirectorySearching: Sendable {
     func searchShows(matching term: String, limit: Int) async throws -> [PodcastShow]

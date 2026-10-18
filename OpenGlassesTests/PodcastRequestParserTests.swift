@@ -1,7 +1,7 @@
 import XCTest
 @testable import OpenGlasses
 
-/// Plan JE — spoken podcast requests → a show name and an episode hint.
+/// Plan JF — spoken podcast requests → a show name and an episode hint.
 final class PodcastRequestParserTests: XCTestCase {
 
     func testABareShowNameIsTheShowWithNoHint() {

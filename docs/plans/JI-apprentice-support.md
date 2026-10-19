@@ -1,6 +1,9 @@
-# Plan JI — Apprentice Support (an hours logbook a journeyperson signs, a scope-of-practice guard that never blocks, a call to the journeyperson in one phrase, and practice that stays the apprentice's own)
+# Plan JI — Apprentice Support (an hours logbook a journeyman signs, a scope-of-practice guard that never blocks, a call to the journeyman in one phrase, and practice that stays the apprentice's own)
 
-**Status:** 📝 Drafted 2026-10-19 — nothing implemented.
+**Status:** 📝 Drafted 2026-10-19 — nothing implemented. Revised the same day with the owner's
+logbook sign-off design: "journeyman" throughout, the customer sign-off sheet reused, by the day,
+the signer chosen from staff, bound to the entries by a fingerprint, and three levels of
+self-signing protection (§9).
 **Track:** Field Assist (B2B): apprentices in the regulated trades, HVAC/R and electrical first. The
 first organisation is in Winnipeg, Manitoba, so Manitoba's rules are the worked case; nothing in the
 design is Manitoba-only.
@@ -24,7 +27,7 @@ Plan [IM](IM-experience-recordings.md) (experience recordings), Plan
 [FX](FX-desktop-office-and-device-sync.md) (the office transport and Avenkin Office), Plan
 [CP](CP-outbound-frame-privacy.md) (outbound frames), [EU AI Act review](../eu-ai-act-review-2026-10.md).
 **Origin:** The owner, 2026-10-19, after drafting JG: everything else that helps an apprentice,
-nine features, "add those in". On calling a journeyperson: "all of them won't use glasses yet so it
+nine features, "add those in". On calling a journeyman: "all of them won't use glasses yet so it
 would only be voice call, or FaceTime". Glasses are not the primary device. Every feature here works
 on the phone alone (voice, the phone's camera, CarPlay), and glasses are an enhancement where they
 add something.
@@ -43,9 +46,9 @@ that contains a regulated refrigerant (M.R. 103/94 s. 6), and that certificate e
 
 The app already knows most of what a logbook entry needs by the end of a job: time on the job, the
 tasks done, the procedures run, the equipment, the debrief. Today it throws that away as far as the
-apprentice is concerned. It also has no idea who the apprentice's journeyperson is, what certificates
+apprentice is concerned. It also has no idea who the apprentice's journeyman is, what certificates
 the apprentice holds or when they expire, or that a step in a procedure is one an apprentice should
-not do without a journeyperson present. And the one thing an apprentice most often needs on a job,
+not do without a journeyman present. And the one thing an apprentice most often needs on a job,
 someone who knows to look at it, is three taps away in another app.
 
 ## Outcome
@@ -53,15 +56,17 @@ someone who knows to look at it, is three taps away in another app.
 - After job 1007 closes: "I've drafted today's logbook entry: two hours ten on the job, mostly
   servicing the heat pump, and forty minutes commissioning the new thermostat. Check it on your
   phone when you stop." The apprentice opens it, moves ten minutes from one task to another, and
-  confirms it. It goes to the office, where the journeyperson verifies the tasks.
-- An apprentice with no office: the same draft, confirmed on the phone, then handed to the
-  journeyperson, who checks it and signs on the phone's screen. At the end of the month, "Export my
-  logbook" gives a record of hours by task and a summary of hours since the employer last reported
-  them.
+  confirms it. At the end of the day the apprentice hands the phone to Sam: the day's entries, each
+  with its job, hours by task code. Sam strikes one he didn't see, picks his name from the staff
+  list, enters his PIN and signs. Or, when Sam uses the app himself, "Ask Sam to confirm" and the
+  day reads "Waiting for Sam to confirm" until his phone confirms it.
+- An apprentice with no office: the same draft and the same sheet, with the journeyman's name typed
+  and labelled as typed. At the end of the month, "Export my logbook" gives a record of hours by
+  task and a summary of hours since the employer last reported them.
 - At the step "Recover the refrigerant" in a procedure: "This step is for a trained service
   technician. I don't have your certificate on file. Want me to call Sam?" The step stays where it
   is; the apprentice can carry on, add the certificate, or call.
-- "Call my journeyperson." → the phone call is set up to Sam, from the organisation's list; iOS asks
+- "Call my journeyman." → the phone call is set up to Sam, from the organisation's list; iOS asks
   for the tap. "FaceTime Sam so I can show them." → a FaceTime video call, with "Flip to the back
   camera to show the job." When the call ends: "Want to note what you learned?" A sentence or two
   becomes a step on the apprentice's own learning goal. The call is never recorded.
@@ -88,7 +93,7 @@ someone who knows to look at it, is three taps away in another app.
   keep a record of hours and tasks, and the employer records hours and verifies tasks. The format is
   still open, so IQ's question survives as open question 1. **IQ keeps** `call_base`, the help pack,
   the organisation contact list (`organizationEscalationContacts`, IQ decision 6) and the close-out
-  levels. JI's call to the journeyperson (§6) is built on IQ's contact list and `call_base`, not
+  levels. JI's call to the journeyman (§6) is built on IQ's contact list and `call_base`, not
   beside them.
 - **From JG.** JG's out-of-scope list names "exam material of any kind" and "apprentice logbooks
   (IQ, waiting on a partner's answers)". JI's exam preparation (§10) is a **deliberate exception**
@@ -103,7 +108,7 @@ someone who knows to look at it, is three taps away in another app.
   an AI system (JG decision 10). Where JI touches the same ground it points at those sections.
 - **The role.** There is one role model: JG's `PracticeRole { apprentice, qualified }`. JI does not
   add another. Everything here that differs by role reads `PracticeRole`, and the extra facts an
-  apprentice has (trade, level, journeyperson) live in an `ApprenticeProfile` that exists only when
+  apprentice has (trade, level, journeyman) live in an `ApprenticeProfile` that exists only when
   the role is `apprentice` (§2).
 - **Other plans' text.** Apart from JG's two out-of-scope pointers, no other plan's file is edited
   here. FO's apprentice mode (§7) and the apprentice debrief (§8) are carried in this plan as
@@ -157,7 +162,7 @@ that record book in digital form, plus a summary the employer can type in.
 - **s. 1(1.1), final level.** An apprentice at the final level of a program with at least three
   levels is deemed directly supervised if they can reach a journeyperson by telephone or other
   telecommunication at all times while performing a task, the journeyperson gives the guidance
-  needed, and supervision is proportionate to risk. This is the case where "call my journeyperson"
+  needed, and supervision is proportionate to risk. This is the case where "call my journeyman"
   is part of the supervision itself, not a convenience.
 - **s. 10.1.** Apprentices to journeypersons may not exceed 1:1; an employer who is a journeyperson
   counts, and a final-level apprentice in a program of three or more levels may be left out of the
@@ -198,7 +203,7 @@ Regulation*, current to 2026-10-19, last amended by M.R. 178/2005):
 - **s. 8(1) and s. 25(2).** A trained service technician records each service in an approved form
   and puts their certificate number on a recharge label.
 - **No apprentice exemption** appears in the regulation's text. Whether an apprentice working
-  beside a certified journeyperson needs their own certificate to do s. 6 work is therefore unclear
+  beside a certified journeyman needs their own certificate to do s. 6 work is therefore unclear
   from the text and is in Unconfirmed.
 
 **IS does not yet model Manitoba.** IS's 2026-10-19 amendment models Canada federal, Ontario,
@@ -237,8 +242,15 @@ JI only needs the certificate as a record with an expiry, which does not wait on
   `follow_ups`, `for_base`, `parts_or_materials`, `customer_notes`; a spoken "save" writes a
   `JobDebrief` (entries with their source turns) to the job. CarPlay's Jobs list
   (`CarPlayJobsList`) offers Debrief on a past job.
-- **Sign-off on the phone.** `CustomerSignOff` (`Job/CustomerSignOff.swift`) and
-  `CustomerSignOffSheet` capture a name and signature against a frozen summary.
+- **Sign-off on the phone.** `CustomerSignOff` (`Job/CustomerSignOff.swift`) records an acceptance
+  with `Method` `drawn` | `typed` | `declined`, the summary word for word (`summaryLines`) and
+  `summaryDigest` (`sha256:` over those lines), and the signature's picture and PencilKit strokes.
+  `App/Views/Job/CustomerSignOffView.swift` holds `JobSignOffStepView` (hand the phone over, or
+  record a decline), `CustomerSignOffSheet` (full screen, the frozen summary, "a record of what you
+  agreed to, not a legal e-signature", a Guided Access hint) and `SignatureCanvas` (`PKCanvasView`
+  pinned to light style with black ink). No staff roster exists anywhere: `SettingKey` has
+  `technicianDisplayName` only, and HO's enrolments name phones, not people. Each enrolled phone
+  and the office hold an Ed25519 application key (`Contracts/office-reports.md` §2).
 - **Goals and the trail.** IW's `Goal` with `GoalSource` `wearer` | `proposed`, `GoalStep`,
   `StepAction` (six kinds; JG proposes a seventh, `practise`), `GoalDrafter`, `GoalAdvancePolicy`
   (two unprompted goal sentences a day), `ActivityKind` (`action`, `planned_step`, `scheduled_run`,
@@ -267,7 +279,7 @@ JI only needs the certificate as a record with an expiry, which does not wait on
 
 ## Design
 
-### 2 · The apprentice, their trade and their journeyperson
+### 2 · The apprentice, their trade and their journeyman
 
 **`PracticeRole` is the role** (JG §9). JI reads it; it does not redefine it. When it is
 `apprentice`, the phone also keeps an **`ApprenticeProfile`**:
@@ -278,7 +290,7 @@ struct ApprenticeProfile: Codable, Equatable {
     var level: Int?                  // 1…n, from the task list's levels
     var levelStartedOn: Date?        // a day
     var registrationNumber: String?  // the province's apprenticeship number, optional
-    var journeyperson: SupervisorContact?
+    var journeyman: SupervisorContact?
 }
 struct SupervisorContact: Codable, Equatable {
     var name: String
@@ -288,11 +300,11 @@ struct SupervisorContact: Codable, Equatable {
 }
 ```
 
-- **Who the journeyperson is, in order:** the job (when the job file names one; a job-file contract
+- **Who the journeyman is, in order:** the job (when the job file names one; a job-file contract
   addition, office half), the office's assignment for this enrolment (office half), the organisation
-  profile (a per-person link may set it; the key is IQ's `organizationEscalationContacts` with a
-  `role: "journeyperson"` entry, so there is one contact list, not two), and the apprentice's own
-  setting. `SupervisorResolver` (pure) picks the first present and says where it came from. A name
+  profile (a per-person link may name the assigned journeyman by staff id in `organizationStaff`,
+  §9's roster, which IQ's contacts also read, so there is one list of people, not two), and the
+  apprentice's own setting. `SupervisorResolver` (pure) picks the first present and says where it came from. A name
   alone ("Sam") is resolved through Contacts at call time, as `phone_call` does now.
 - **Level matters only where a rule says so**: s. 1(1.1)'s final-level deeming (§5), and the
   progress screen (§11). The phone never moves an apprentice up a level; the apprentice sets it.
@@ -386,11 +398,11 @@ The phone cannot see whether anyone is on site, and does not try.
 **`ScopeGuardPolicy.check(requirements, role, profile, credentials, supervisionToday, rules, today)
 -> [ScopeNotice]`** (pure). A notice is `credentialMissing(kind)`, `credentialExpired(kind, on)`,
 `credentialExpiresSoon(kind, on)` or `supervisionNeeded(.direct | .reachable)`, each with the rule's
-citation and one offer, **call the journeyperson** (§6), when one is known. Two rule-specific cases:
+citation and one offer, **call the journeyman** (§6), when one is known. Two rule-specific cases:
 
 - **Final level.** With `supervision: "direct"` and the apprentice at the final level of a task
   list with three or more levels, `reachable(name)` satisfies the rule (s. 1(1.1)), and the notice
-  becomes a reminder only when the journeyperson is unknown: "If Sam can't be reached, this step
+  becomes a reminder only when the journeyman is unknown: "If Sam can't be reached, this step
   waits for them."
 - **Proportionate to risk** (s. 1(2)(c), s. 1(1.1)(d)) is a judgement for people. The guard does not
   grade risk; it says what the organisation's rule says.
@@ -401,7 +413,7 @@ changes the step's state. The apprentice can say "carry on", "add my certificate
 
 **What it never does.** A notice is **not** written to the work record, the logbook, the activity
 trail's shared report or anything sent to the office. Whether an apprentice did a step without the
-journeyperson is between the apprentice, the journeyperson and the employer, and a phone that
+journeyman is between the apprentice, the journeyman and the employer, and a phone that
 reported it would be a monitoring tool. The trail keeps a `told_you` entry on the phone, title only
 ("Mentioned the certificate for one step"), which the apprentice can see and delete.
 
@@ -414,16 +426,16 @@ strings, in `ScopeNoticePhraser`):
 - "This step is for a trained service technician. I don't have your certificate on file. Want me to
   call Sam?"
 - "Your trained service technician certificate on file expired on June 1. Want me to call Sam?"
-- "This step is one your organisation has a journeyperson on site for. Is Sam with you?"
+- "This step is one your organisation has a journeyman on site for. Is Sam with you?"
 
-### 6 · Ask my journeyperson, live: phone first
+### 6 · Ask my journeyman, live: phone first
 
-**Phrases.** "Call my journeyperson", "call Sam", "FaceTime Sam", "video call my journeyperson so I
+**Phrases.** "Call my journeyman", "call Sam", "FaceTime Sam", "video call my journeyman so I
 can show them", "audio FaceTime Sam".
 
-**One contact list.** The journeyperson is §2's `SupervisorContact`; "call base" and "call the
+**One contact list.** The journeyman is §2's `SupervisorContact`; "call base" and "call the
 office" stay IQ's. JI's call lands on IQ P3's `call_base` when that has shipped (`who:
-journeyperson`, `via: phone | facetime | facetimeAudio`), or ships as the first slice of it when JI
+journeyman`, `via: phone | facetime | facetimeAudio`), or ships as the first slice of it when JI
 P4 comes first: whichever lands first builds `EscalationContact`, the CT key and the call route, and
 the other reuses them. IQ's help pack (readings, chosen photos, cited pages) is offered before the
 call when IQ P3 exists; a call never waits for it.
@@ -457,7 +469,7 @@ the office's FX8), "show Sam through my glasses" uses the existing `EscalationCo
 line. That is a later phase (P4b) and depends on those plans; nothing in P4 needs glasses.
 
 **No call recording, and why.** The call is never recorded, transcribed or summarised by the app.
-The journeyperson did not agree to be recorded, a customer may be in the frame or within earshot,
+The journeyman did not agree to be recorded, a customer may be in the frame or within earshot,
 and an employee's calls to a supervisor are exactly the record an employee-privacy notice (§13) has
 to justify. iOS does not give an app the audio of a phone or FaceTime call in any case, and this
 plan does not look for a way round that.
@@ -527,11 +539,11 @@ struct LogbookEntry: Codable, Equatable, Identifiable {
     var jobReference: String?             // and the session id, when drafted from a job
     var allocations: [TaskAllocation]     // { code, minutes }, codes from the task list
     var unassignedMinutes: Int
-    var supervision: SupervisionNote      // { journeyperson?, kind: onSite | reachable | none | unknown }
+    var supervision: SupervisionNote      // { journeyman?, kind: onSite | reachable | none | unknown }
     var note: String?                     // the apprentice's own words, optional
     var origin: Origin                    // .drafted, .manual
     var state: State                      // see below
-    var supersedes: String?               // a correction replaces, never edits, a verified entry
+    var revision: Int                     // raised by every edit; earlier revisions are kept
 }
 ```
 
@@ -540,7 +552,7 @@ phone already holds:
 
 - **Minutes** from `BillableClock`'s credited time for the session, rounded to five minutes. Drive
   time is not counted unless the organisation's rule says it is (open question 4). Overtime counts
-  (s. 9). The phone does not check s. 7(d)'s working-hours rule; it cannot see the journeyperson's
+  (s. 9). The phone does not check s. 7(d)'s working-hours rule; it cannot see the journeyman's
   day.
 - **Which tasks**, in order: procedures run (`procedureCodes` in the task list); done work tasks and
   the equipment's vault section matched against `hints`; then the debrief's findings matched the
@@ -553,33 +565,169 @@ phone already holds:
 - Drafted when the job closes, read back in the debrief (§8), shown on the Job tab's past-job page
   and on the Apprenticeship screen, and offered once as a notification when nothing else is.
 
-**States.** `LogbookEntryReview` (pure state machine): `draft` → `confirmed` (the apprentice, by tap
-or a spoken yes) → `sent` (to the office) → `verified(by, on, method)` or `returned(reason)` →
-edited → `confirmed` again. A verified entry is frozen; a correction is a new entry that
-`supersedes` it, with a reason, and both stay in the record. An unconfirmed draft older than 14 days
-is kept but flagged ("3 drafts to check").
+**States.** An entry is `draft` → `confirmed` (the apprentice, by tap or a spoken yes) or
+`returned(reason)` (struck by the journeyman, or returned by the office) → edited → `confirmed`
+again. Every edit raises the entry's `revision`, and earlier revisions are kept. An unconfirmed draft
+older than 14 days is kept but flagged ("3 drafts to check"). Signing is not an entry state: it is a
+**sign-off over a day** (or a job), below, and `LogbookDayStatus` (pure) reads it as `unsigned`,
+`waitingForConfirmation(signer)`, `signed(signOff)` or `changedAfterSigning(signOff)`.
 
-**Verification, two routes.**
+**Verification: the journeyman signs on the apprentice's phone, by the day** (owner decision,
+2026-10-19).
 
-- **With an office.** Confirmed entries go to the office when the apprentice sends them (each, or
-  "send confirmed entries automatically", a switch the apprentice sets and an organisation may set as
-  a starting value but not lock on). The journeyperson verifies the tasks in Avenkin Office; the
-  verification comes back to the phone as a receipt. Office half: verifying, returning with a reason,
-  and the employer's AccessManitoba summary are designed in a private FX-series plan, not here.
-- **Without an office.** "Sam, can you check my logbook?" opens `JourneypersonVerificationSheet`,
-  built on `CustomerSignOffSheet`: the entries since the last verification, frozen; the
-  journeyperson's name, optional certificate of qualification number and trade, and a signature.
-  `JourneypersonVerification { name, certificateNumber?, trade?, verifiedOn, entryIDs, method:
-  .onPhone | .office }`. The phone records who signed; it cannot prove the signer is a journeyperson,
-  and the record says "signed on this phone".
+*What the signature is, legally.* M.R. 154/2001 s. 7(b) puts verification of the tasks on the
+**employer**, and the employer reports hours in AccessManitoba (§1). The journeyman's signature on
+the phone is **evidence the employer relies on** when it verifies and reports. It is not the
+submission, and the phone sends nothing to the province. Whether Apprenticeship Manitoba accepts a
+digital record book with this sign-off is still a partner question (open question 1). The sheet's
+copy says so in plain words, as the customer sheet does: "This records that you checked these
+entries, for <organisation>'s records. It isn't a legal e-signature, and nothing is sent to the
+province."
+
+*The sheet.* `JourneymanSignOffSheet` is built from the customer sign-off's parts in
+`App/Views/Job/CustomerSignOffView.swift`: the flow of `JobSignOffStepView` (hand the phone over),
+the full-screen frozen summary of `CustomerSignOffSheet`, its Guided Access hint, and
+`SignatureCanvas` (the `PKCanvasView` pinned to the light style with black ink). The phone is handed
+over and shows exactly what is being agreed:
+
+- the apprentice's name, the day, and each of the day's confirmed entries: hours by task code with
+  the code's short title, the job each came from (job number, or "No job number"), and the
+  supervision note; then the day's total;
+- **strike** and **edit** on each entry before signing. A struck entry leaves this sign-off and goes
+  back to the apprentice as `returned("Struck by Sam")`; an edit (minutes, or the task code from the
+  task list) is made on the sheet, shown as edited, and is what gets signed. The apprentice sees
+  both afterwards ("Sam moved 20 minutes to X-11 (invented)");
+- the signer's name (below), the protection step (below), the drawn signature, and **Sign these
+  entries**.
+
+*By the day, or by the job.* `organizationLogbookSignOffScope` (a profile-owned string, `day` or
+`job`, default `day`) sets the unit. A day not signed on the day stays `unsigned` and is signed in a
+**weekly catch-up**: one sheet listing each unsigned day as its own section, each signed separately
+(its own fingerprint and its own sign-off record; the protection step is taken once per sitting of
+at most ten minutes). A weekly reminder, a `ScheduledTaskKind` task with no model call: "Three days
+to get signed this week."
+
+*Who signs: chosen from the organisation's staff, never typed.* Nothing on the phone lists an
+organisation's people today: `SettingKey` holds `technicianDisplayName` only, IQ's
+`organizationEscalationContacts` (name, role, phone, channel) is drafted and unbuilt, and HO's
+enrolments know phones, not people. JI proposes **one staff roster** that IQ's contacts and JI's
+journeyman both read:
+
+```swift
+struct StaffMember: Codable, Equatable, Identifiable {
+    let id: String
+    var name: String
+    var roles: [StaffRole]            // .journeyman, .apprentice, .office, .other(String)
+    var trades: [String]              // trade ids, matched against the task list's trade
+    var certificate: CertificateOnFile?   // { number?, expiresOn? }
+    var phone: String?
+    var faceTime: String?
+    var signOffPIN: PINVerifier?      // salted hash only, see protection (b)
+    var enrolmentID: String?          // the journeyman's enrolled phone, for protection (c)
+}
+```
+
+carried by a new profile-owned key, `organizationStaff` (a JSON string with a strict decoder, as
+`capturedManualsPolicy` is), and refreshed by the office over HO's delivery route once the office
+half publishes it. IQ's escalation list becomes staff ids plus outside numbers, so there is one list
+of people (open question 19). The sheet's picker shows **only staff with the `journeyman` role for
+the apprentice's trade**, each with their certificate's expiry when it is on file ("certificate on
+file expires 2027-06-01"; an expired one is shown as expired and recorded with the sign-off). The
+apprentice's assigned journeyman (§2) is preselected and can be changed. **An organisation has no
+free-text name.** A solo setup with no roster may type a name; it is recorded as
+`nameSource: .typed` and labelled "Name typed on this phone" wherever the sign-off is shown or
+printed, as the customer sheet labels a typed name.
+
+*Bound to exactly what was shown.* `LogbookDayFingerprint` is SHA-256 over a canonical encoding of
+exactly the entries on the sheet after strikes and edits: entry ids and revisions, the day,
+allocations (code, minutes), job references and supervision notes, in a fixed order with fixed
+number formatting, pinned by a fixture. The sign-off keeps the lines word for word and the digest,
+as `CustomerSignOff` keeps `summaryLines` and `summaryDigest`:
+
+```swift
+struct JourneymanSignOff: Codable, Equatable, Identifiable {
+    let id: String
+    let scope: Scope                  // .day(Date) or .job(String)
+    let entryIDs: [String]
+    let entryLines: [String]          // what was on the screen, verbatim
+    let fingerprint: String           // "sha256:<hex>"
+    let signer: Signer                // { staffID?, name, nameSource: .roster | .typed }
+    let signerCertificateExpiresOn: Date?
+    let signedAt: Date
+    let signatureImageId: String?     // nil when confirmed from the journeyman's own device
+    let strokeDataId: String?
+    let protection: Protection        // { level, pinVerified, coarseLocation? }
+    var deviceConfirmation: DeviceConfirmation?
+}
+```
+
+**Any later change** to a signed entry (an edit, a move between codes, a removal) recomputes the
+day's fingerprint; when it no longer matches, the day reads **"Changed after signing"** and needs
+signing again. The earlier sign-off stays, with its lines, and both are in the export. Nothing is
+silently kept and nothing silently dropped. Editing a signed entry first says so: "Sam signed this
+day. Changing it means it needs signing again."
+
+*Protection against self-signing, three levels.* An organisation setting,
+`organizationLogbookSignOffProtection` (profile-owned string: `audit`, `pin` or `device`); the
+default for an organisation is **`pin`**, and a solo setup has `audit` only.
+
+- **(a) Audit only.** The sign-off records its time and the phone. Coarse location (rounded to about
+  a kilometre) is added only when the organisation turns on `organizationLogbookSignOffLocation`, and
+  the apprentice's notice (§13) says so.
+- **(b) A PIN per staff member** (the organisation default). Entered in a secure field after the name
+  is picked and before the pad appears. The profile carries only a verifier per staff member:
+  `PINVerifier { algorithm: "pbkdf2-sha256", iterations, salt, hash }`, with its own salt, set in the
+  Office (office half) and delivered in the profile or the roster refresh. The phone verifies
+  locally. **Lockout:** five misses lock that staff member on this phone for 15 minutes, doubling on
+  each further lockout up to 24 hours; while locked, the sheet says "Too many tries. Sam can confirm
+  from his own phone or from the office instead." **The PIN is never shown, logged, stored, sent or
+  printed**: the field is cleared after each try, autofill and the clipboard are off, `PrivacyLog`
+  records only that a check passed or failed, and no payload, export or support report has a field
+  for it. Honest limit: the verifier sits on the apprentice's phone inside the profile, and a short
+  PIN behind a hash can be guessed offline by someone who extracts it. The PIN stops casual
+  self-signing; (c) is the strong check.
+- **(c) Confirmation from the journeyman's own device.** Preferred whenever the journeyman uses the
+  app. Instead of handing the phone over, the apprentice taps "Ask Sam to confirm":
+  1. the apprentice's phone sends `LogbookConfirmationRequest { requestID, day or job, fingerprint,
+     entryLines, signerStaffID }` over HO's office transport (`DeliveryRequest.Payload.logbookConfirmationRequest`,
+     `OpKind.logbookConfirmationRequest`);
+  2. the office shows it in the Office app or passes it to the journeyman's enrolled phone (office
+     half), where the same lines are shown and confirmed;
+  3. the journeyman's phone signs `Avenkin.LogbookConfirmation.v1` over the request id, the
+     fingerprint, the staff id and the time with its **phone application key** (the Ed25519 key each
+     enrolled phone already holds, `Contracts/office-reports.md` §2), or the Office signs it with the
+     office application key when confirmed in the Office;
+  4. the office checks that signature against that enrolment's binding and that the enrolment
+     belongs to that staff member, and sends the apprentice's phone a receipt signed with the office
+     application key, carrying the confirmation and its digest;
+  5. the apprentice's phone verifies the receipt under the office key its binding names, checks that
+     its fingerprint equals the one stored for that day, and records "Confirmed by Sam on his phone".
+  Until it arrives the day reads **"Waiting for Sam to confirm"**. A receipt whose fingerprint does
+  not match is refused and the day keeps waiting. Changing an entry while waiting withdraws the
+  request and sends a new one. When Sam does not use the app, the sheet falls back to (b).
+
+*Sending entries to the office* is separate from signing. Confirmed entries, with their sign-offs,
+go to the office when the apprentice sends them (each, or "send confirmed entries automatically", a
+switch the apprentice sets and an organisation may set as a starting value but not lock on). The
+office may return an entry with a reason. Office half: the employer's verification, returning, the
+AccessManitoba summary, the staff roster and PINs, routing confirmation requests and signing
+receipts are designed in a private FX-series plan, not here.
+
+**Wording.** The app says **journeyman** in every string, on every screen and throughout this plan's
+design. **Journeyperson** appears only where Manitoba's regulation is quoted or cited. An organisation
+can set the word in its profile (`organizationSupervisorTerm`, a profile-owned string, default
+"journeyman"; for example "journeyperson" or "senior technician"), and every string takes it as a
+parameter.
 
 **Export.** `LogbookExport` (pure layout over the entries, rendered with the work order's PDF
 machinery) gives:
 
 - **Practical experience record**: by level, then by task code, each day's minutes, the supervision
-  note, the verification (who, when, how), and superseded entries marked;
+  note, and each day's sign-off: who (with "Name typed on this phone" for a typed name), when, the
+  protection level, a device confirmation when there is one, and "Changed after signing" with both
+  sign-offs where it applies;
 - **Hours for the employer to report**: hours since a chosen date (default: the last export, or the
-  start of the level), split verified / confirmed-not-verified, in a form an employer user can type
+  start of the level), split signed / confirmed-not-signed, in a form an employer user can type
   into AccessManitoba;
 - **CSV** of the same rows.
 
@@ -587,17 +735,21 @@ Sent through EM's `DeliveryChannel` (share sheet, email, files), always by the a
 There is no direct submission to the province: an apprentice cannot use AccessManitoba to report
 hours (§1).
 
-**Storage.** `SensitiveStore.apprenticeship` (entries, verifications, credentials, the profile, the
+**Storage.** `SensitiveStore.apprenticeship` (entries and their revisions, sign-offs and their
+signature files, PIN lockout state, credentials, the profile, the
 apprentice debrief): wearer-linked, first-unlock protected, registered in `DataStoreRegistry`,
 walked by the subject erasure, excluded from backups like the other sensitive stores. Because the
 regulation makes the record book the apprentice's to keep, the screen says plainly that the phone
 copy is not a backup: with no office, it offers a monthly export (open question 7).
 
-**The contract.** `Contracts/apprentice-logbook.md` (draft v1, P2): the entries message (phone →
-office; exactly the entry fields above, the apprentice's display name and role, the task list's id
-and edition), the verification receipt (office → phone), refusal reasons, fixtures with invented
-codes, and the requirement on the office half: no model-derived score, rating or "readiness" is
-computed from entries.
+**The contract.** `Contracts/apprentice-logbook.md` (draft v1, P2b): the entries message (phone →
+office; exactly the entry fields above with their sign-offs, the apprentice's display name and role,
+the task list's id and edition), the canonical encoding behind `LogbookDayFingerprint` with fixtures,
+the confirmation request (phone → office), the journeyman's confirmation (`Avenkin.LogbookConfirmation.v1`,
+journeyman's phone → office), the office's confirmation receipt and return-with-reason (office →
+phone), the staff roster's shape and `PINVerifier`, refusal reasons, fixtures with invented codes,
+and the requirements on the office half: the PIN never leaves the Office in clear, no
+model-derived score, rating or "readiness" is computed from entries.
 
 ### 10 · Practice: exam preparation, crew cases, point-and-name
 
@@ -738,7 +890,7 @@ designs it.
   apprentice sends, and the progress shares the apprentice sends. The Apprenticeship screen lists
   all three under **What's shared**.
 - **Logbook entries and verification are human records.** A draft is built by fixed rules from the
-  job's own records; the apprentice confirms or changes it; a journeyperson verifies it. No model
+  job's own records; the apprentice confirms or changes it; a journeyman verifies it. No model
   output decides an allocation, and no model-derived competence score, readiness or rating is
   computed on the phone or ever leaves it. The contract states the same as a requirement on the
   office half (§9).
@@ -752,7 +904,7 @@ designs it.
   match against a human-approved key, so JG decision 10 covers it as it covers JG's own items. The
   drills are the one place a model's output marks a person's answer, which is why they alone are
   EEA-gated. **Owed:** JG P1 adds the review's section on the results feed; JI adds to the same
-  section, in P2, the logbook and the progress share, and in P10 the drills (open question 14).
+  section, in P2b, the logbook and the progress share, and in P10 the drills (open question 14).
 
 ### 13 · An employee-records notice (Canada)
 
@@ -764,11 +916,11 @@ statutory notice duty; a clear notice is still the right thing to give. JG's ope
 the owner's adviser to confirm that reading, and JI waits on the same answer rather than asking it
 again. JI reuses JG's two-part pattern:
 
-- **Suggested wording for the employer** (a P2 deliverable, beside JG's): `ApprenticeRecordsNotice.suggestedWording`,
-  shown to the operator when a profile that names an apprentice's journeyperson or sets the task
+- **Suggested wording for the employer** (a P2b deliverable, beside JG's): `ApprenticeRecordsNotice.suggestedWording`,
+  shown to the operator when a profile that names an apprentice's journeyman or sets the task
   list is applied, and copied into `Contracts/apprentice-logbook.md` so the Office shows it
   identically. Same headings as JG's (why, what is collected, who sees it, how long it is kept,
-  your questions), covering the logbook entries the apprentice sends, the journeyperson's
+  your questions), covering the logbook entries the apprentice sends, the journeyman's
   verification, certificates when the organisation supplies them, and progress shares. It says that
   calls are never recorded and that scope reminders are never sent. Bracketed fields are the
   employer's; the same not-legal-advice note as JG's sits beside it.
@@ -776,7 +928,7 @@ again. JI reuses JG's two-part pattern:
   first progress share, and kept on the Apprenticeship screen: what the phone keeps; what goes to
   the organisation, when and why (the record book the regulation requires, the employer's
   verification); who at the organisation sees it, as the employer's filled-in wording says; how to
-  see, correct (a superseding entry) and delete the phone's copy; and that deleting the phone's copy
+  see, correct (an edit, which keeps the earlier revision) and delete the phone's copy; and that deleting the phone's copy
   does not delete what the office already holds, and who to ask about that.
 - Both texts are plain and specific, take no plan letters, and name no law until the adviser has
   answered.
@@ -784,7 +936,7 @@ again. JI reuses JG's two-part pattern:
 ### 14 · Gates and modes
 
 Field Assist only, inside its tool block and `FieldToolProfile`; IP feature switches
-`apprentice_logbook`, `scope_guard`, `call_journeyperson`, `exam_practice`, `point_and_name`;
+`apprentice_logbook`, `scope_guard`, `call_journeyman`, `exam_practice`, `point_and_name`;
 `closedTools` closes each with no code of its own. The role decides the defaults, not the gates: a
 qualified technician can still use the call and the exam practice. HIPAA-only and Medical setups get
 none of it. HIPAA mode sends nothing to the office from JI. Agent Mode is not required: nothing here
@@ -810,39 +962,79 @@ personal fallback; none); `CredentialStatusTests` (valid, 45 days, the day befor
 expiry; the renewal sentence only when a rule gives a window); a guard test that every task-list
 fixture carries "(invented)"; `DataStoreRegistryTests` / `SubjectErasureTests` green.
 
-### P1 — The logbook on the phone: draft, confirm, verify on the phone, export
+### P1 — The logbook on the phone: draft, confirm, export
 
-`LogbookEntry`, `TaskAllocation`, `SupervisionNote`, `LogbookDrafter`, `LogbookEntryReview`,
-`JourneypersonVerification` and its sheet on `CustomerSignOffSheet`; `LogbookExport` (record, hours
-summary, CSV) through `DeliveryChannel`; the `apprentice_logbook` tool (`draft`, `list`, `confirm`,
-`move`, `export`, `verify`); drafting on job close; the Job tab's past-job row and the Apprenticeship
-screen's list; `ApprenticeRecordsNotice` (on-phone parts).
+`LogbookEntry` (with revisions), `TaskAllocation`, `SupervisionNote`, `LogbookDrafter`,
+`LogbookEntryReview`; `LogbookExport` (record, hours summary, CSV) through `DeliveryChannel`; the
+`apprentice_logbook` tool (`draft`, `list`, `confirm`, `move`, `export`); drafting on job close; the
+Job tab's past-job row and the Apprenticeship screen's list; `ApprenticeRecordsNotice` (on-phone
+parts); `organizationSupervisorTerm` and the strings that take it.
 
 **Exit tests:** `LogbookDrafterTests` — a scripted job with a procedure mapped to two codes, a done
 task matched by a hint and an unmatched finding → the minutes split as specified, the remainder
 unassigned, the total equal to `BillableClock`'s credited time rounded to five minutes; drive time
 not counted; **no model call is made** (a fake `LLMService` asserts zero calls). `LogbookEntryReviewTests`
-— every transition; a verified entry cannot change; a correction supersedes with a reason and both
-export. `JourneypersonVerificationTests` (the frozen entries, the record says "signed on this phone").
-`LogbookExportTests` — the record groups by level and code; the employer summary splits verified and
-confirmed; the CSV round-trips; superseded rows marked. Privacy-log and trail tests: no entry note
-text or job customer field in any log.
+— every transition; an edit raises the revision and keeps the earlier one. `LogbookExportTests` — the
+record groups by level and code; the employer summary splits signed and confirmed; the CSV
+round-trips. `SupervisorTermTests` — every logbook and call string uses the profile's term, and
+"journeyman" when none is set. Privacy-log and trail tests: no entry note text or job customer
+field in any log.
 
-### P2 — The logbook to the office and the verification back (phone half)
+### P2a — The journeyman's sign-off on the phone
+
+`JourneymanSignOffSheet` from `CustomerSignOffView.swift`'s parts (`JobSignOffStepView`'s hand-over,
+`CustomerSignOffSheet`'s frozen summary and copy, `SignatureCanvas`); strike and edit on the sheet;
+`organizationLogbookSignOffScope` (day by default, job as an option) and the weekly catch-up with its
+reminder; `StaffMember`, `organizationStaff` and its strict decoder, and the journeyman picker
+(role and trade filter, certificate expiry, the assigned journeyman preselected); the solo typed
+name; `LogbookDayFingerprint` and its canonical encoding; `JourneymanSignOff`; `LogbookDayStatus`
+with "Changed after signing"; `organizationLogbookSignOffProtection` with (a) audit and the optional
+coarse location, and (b) `PINVerifier`, the secure PIN step and the lockout.
+
+**Exit tests:**
+- `LogbookDayFingerprintTests` — the fixture's digest is reproduced exactly; **an entry edited after
+  signing turns the day to "Changed after signing"** and asks for a new signature, with the earlier
+  sign-off kept and exported; a strike before signing leaves the struck entry out of the fingerprint
+  and returns it to the apprentice.
+- `JourneymanPickerTests` — **only staff with the journeyman role for the apprentice's trade are
+  listed**; certificate expiry shown when on file, an expired one marked; the assigned journeyman
+  preselected and changeable; **an organisation offers no free-text name**.
+- `SoloSignOffTests` — **a typed name is recorded as typed** and labelled "Name typed on this phone"
+  on the sheet's record, the past-day view and the export.
+- `SignOffPINTests` — **a wrong PIN gives no signature** (the pad never appears); the right PIN
+  verifies against the salted PBKDF2 verifier; **five misses lock that staff member** for 15
+  minutes, then doubling, with the fallback sentence; a lockout survives relaunch.
+- `SignOffPINLeakTests` — **the PIN appears in no payload, export, support report, `PrivacyLog`
+  event or trail entry** (each wire form and log asserted against a sentinel PIN), and the field
+  is empty after every try.
+- `SignOffScopeTests` — day by default; job when the profile says so; the weekly catch-up gives
+  each day its own fingerprint and sign-off.
+- `SignOffCopyTests` — the sheet says it is not a legal e-signature and that nothing is sent to the
+  province.
+
+### P2b — Entries to the office, and confirmation from the journeyman's own device (phone half)
 
 `Contracts/apprentice-logbook.md` (draft v1) with fixtures (`apprentice-logbook-entries-v1.json`,
+`apprentice-logbook-fingerprint-v1.json`, `apprentice-logbook-confirmation-v1.json`,
 `apprentice-logbook-receipt-v1.json`, a negative set) and a portable check in `Contracts/tests`;
-`LogbookOutbox` on FP's pattern; `DeliveryRequest.Payload.logbookEntries`, `OpKind.logbookEntries` in
-`OfficeReportSink.handledKinds`; the receipt applied to `verified` / `returned`; the apprentice's
-"send automatically" switch; the apprentice's notice before the first send and
-`ApprenticeRecordsNotice.suggestedWording` for the employer; the logbook's part of the AI Act
-review section.
+`LogbookOutbox` on FP's pattern; `DeliveryRequest.Payload.logbookEntries` and
+`.logbookConfirmationRequest`, the matching `OpKind`s in `OfficeReportSink.handledKinds`; level (c):
+"Ask Sam to confirm", "Waiting for Sam to confirm", the receipt verified under the office key and
+matched to the day's fingerprint, withdrawal when an entry changes; the journeyman's side on a
+qualified technician's phone (the request shown, confirmed and signed with the phone application
+key); returned entries; the apprentice's "send automatically" switch; the apprentice's notice
+before the first send and `ApprenticeRecordsNotice.suggestedWording` for the employer; the logbook's
+part of the AI Act review section.
 
-**Exit tests:** the contract test green; `LogbookOutboxTests` — **nothing leaves before the
-apprentice sends or turns on automatic sending**, and **nothing before the notice is shown**; the
-payload's keys are exactly the allowed set (asserted on the wire form); a receipt for an unknown
-entry is refused; a returned entry goes back to `draft` with its reason; HIPAA mode sends nothing; the
-op rides the office sink only.
+**Exit tests:** the contract test green; `LogbookConfirmationTests` — **a device confirmation whose
+fingerprint matches the day's verifies and records "Confirmed by Sam on his phone"**; a receipt with
+a different fingerprint, a bad office signature or another enrolment's identity is refused and the
+day keeps waiting; changing an entry while waiting withdraws the request; the journeyman's phone
+signs the exact request it showed. `LogbookOutboxTests` — **nothing leaves before the apprentice
+sends or turns on automatic sending**, and **nothing before the notice is shown**; the payload's
+keys are exactly the allowed set and carry no PIN or PIN verifier (asserted on the wire form); a
+receipt for an unknown entry is refused; a returned entry goes back to `draft` with its reason; HIPAA
+mode sends nothing; the ops ride the office sink only.
 
 ### P3 — My apprenticeship, and the apprentice's own share
 
@@ -856,16 +1048,17 @@ sections are in the payload**; **point-and-name counts, model-judged results, de
 scope notices can never be in it** (asserted on the wire form, so a field added later fails);
 a profile can turn sharing off and lock it, not on; the weekly switch is the apprentice's.
 
-### P4 — Ask my journeyperson (phone and FaceTime) and the learned note
+### P4 — Ask my journeyman (phone and FaceTime) and the learned note
 
-`CallRoute`, `CallPlacement`, the `call_journeyperson` tool (or `call_base`'s `who: journeyperson`
+`CallRoute`, `CallPlacement`, the `call_journeyman` tool (or `call_base`'s `who: journeyman`
 when IQ P3 has shipped; whichever lands first builds `EscalationContact` and the CT key);
-`organizationEscalationContacts` with the `journeyperson` role; the CarPlay refusal wording; "Add Sam
+the journeyman resolved from `organizationStaff` (P2a) when it is there, else the personal setting;
+the CarPlay refusal wording; "Add Sam
 to Contacts"; the post-call offer through `CXCallObserver`; the learned note as a proposed IW step;
 the logbook's "Called Sam" line.
 
 **Exit tests:** `CallRouteTests` (tel, FaceTime and FaceTime audio URLs from a number and from an
-email; anything else refused; no handle → offers the voice call); `CallJourneypersonToolTests` —
+email; anything else refused; no handle → offers the voice call); `CallJourneymanToolTests` —
 **FaceTime video refused while CarPlay is connected**; the reply never says "connected"; no contact
 → refuses by name and points to settings; `PostCallOfferTests` (one offer, only after a call this
 tool started inside 30 minutes; none after an unrelated call); `LearnedNoteTests` (held until yes;
@@ -963,22 +1156,51 @@ on-device model → the drill is unavailable and says why.
 
 ### The office half (not a phone phase)
 
-Verifying and returning logbook entries, the employer's hours summary for AccessManitoba, assigning
-an apprentice's journeyperson (and naming a crew in the job file), an apprentice's record and shared
+Verifying and returning logbook entries, the employer's hours summary for AccessManitoba, the staff
+roster and its refresh, setting and resetting journeymen's sign-off PINs (stored as verifiers only),
+routing confirmation requests to a journeyman's phone or the Office and signing the confirmation
+receipts, assigning an apprentice's journeyman (and naming a crew in the job file), an apprentice's record and shared
 progress (with no model-derived score, ranking or rating), and publishing task lists and exam-prep
 banks inside the organisation's vault: an FX-series plan in the private office repository, against
 `Contracts/apprentice-logbook.md` and `Contracts/question-bank.md`. Nothing on the phone waits for it
-except P2's and P3's routes having a reader.
+except P2b's and P3's routes having a reader.
 
-## Decisions proposed (owner to confirm)
+## Decisions
+
+### Decided by the owner (2026-10-19): the journeyman's sign-off
+
+A. **"Journeyman"** in every string, screen and design text; "journeyperson" only where Manitoba's
+   regulation is quoted or cited. An organisation may set its own word (`organizationSupervisorTerm`,
+   default "journeyman").
+B. **The sign-off reuses the customer sign-off sheet**: the phone is handed over, it shows exactly
+   what is agreed, the journeyman draws a signature (PencilKit). It is an acceptance, not a legal
+   e-signature, and the copy says so.
+C. **By the day by default, by the job as an organisation option**; the sheet lists the day's
+   entries with hours by task code and the job each came from; the journeyman may strike or edit
+   before signing; unsigned days are signed in a weekly catch-up.
+D. **The signer is chosen from the organisation's staff**: only journeymen for the apprentice's
+   trade, certificate expiry shown when known, the assigned journeyman preselected; no free-text
+   name in an organisation; a solo setup's typed name is recorded as typed.
+E. **Bound to the content**: a SHA-256 fingerprint of exactly the entries shown; any later change
+   marks the day "Changed after signing" and needs a new signature; nothing silently kept.
+F. **Self-signing protection in three levels**, an organisation setting: (a) audit (time, coarse
+   location if enabled), (b) a PIN per staff member, salted hash only, lockout after repeated
+   misses, never shown or logged (**the organisation default**), (c) confirmation from the
+   journeyman's own device over the office route, preferred whenever the journeyman uses the app.
+G. **Legal framing**: s. 7(b) puts verification on the employer, which reports hours in
+   AccessManitoba; the phone's signature is evidence the employer relies on, not the submission.
+
+### Design decisions (proposed, owner to confirm)
 
 1. **JI takes apprentice logbooks over from IQ**; IQ keeps `call_base`, the help pack and the
    contact list, and JI's call builds on them.
-2. **One role: JG's `PracticeRole`.** An `ApprenticeProfile` (task list, level, journeyperson)
+2. **One role: JG's `PracticeRole`.** An `ApprenticeProfile` (task list, level, journeyman)
    exists only for the apprentice role.
 3. **The logbook is the regulation's record book in digital form**: hours by task-list code,
-   drafted by fixed rules from the job's own records, confirmed by the apprentice, verified by a
-   journeyperson (in the office, or signed on the phone), corrections by supersession.
+   drafted by fixed rules from the job's own records, confirmed by the apprentice, signed by a
+   journeyman as decided above; every edit keeps the earlier revision.
+3a. **One staff roster** (`organizationStaff`, profile-owned, refreshed by the office) that IQ's
+   contact list and JI's journeyman both read, rather than a second list of people.
 4. **No model in logbook drafting.** Every allocation traces to a procedure, a task or an author's
    hint word.
 5. **No submission to the province**: an export (record, employer's hours summary, CSV) the
@@ -1012,14 +1234,15 @@ except P2's and P3's routes having a reader.
 
 ## Open questions for the owner
 
-1. **The record book's format (IQ's pending question, carried over).** Does Apprenticeship Manitoba
-   accept a digital practical experience record book under s. 6, and is there a current official
-   form for it after the paper report of hours ended? Ask the organisation's apprenticeship training
-   coordinator. Until answered, the export is "a record the apprentice keeps", not "the province's
-   form".
-2. **Who signs (IQ's pending question, carried over).** The regulation puts verification on the
-   employer (s. 7(b)). Is the supervising journeyperson's signature what the organisation wants, or
-   a named office person on the employer's behalf, or both?
+1. **The record book's format, a partner question (IQ's, carried over).** Does Apprenticeship
+   Manitoba accept a digital practical experience record book under s. 6 **with this sign-off** (a
+   journeyman's drawn signature bound to the day's entries, with a PIN or a confirmation from their
+   own device), and is there a current official form after the paper report of hours ended? Ask the
+   organisation's apprenticeship training coordinator. Until answered, the export is "a record the
+   apprentice keeps", not "the province's form".
+2. **Who signs (IQ's question) is answered**: the journeyman, chosen from staff (decision D). Does
+   the organisation also want a named office person to countersign on the employer's behalf, in the
+   Office (office half)?
 3. **Whether apprentices must keep a record (IQ's pending question, carried over)** is answered for
    Manitoba (yes, s. 6(a)); is the second organisation, wherever it is, a reason to model a second
    province's rules now?
@@ -1030,8 +1253,8 @@ except P2's and P3's routes having a reader.
 7. **Backups.** The record book is the apprentice's to keep, and sensitive stores are excluded from
    backups. Keep the exclusion and rely on the office copy and exports, or let the apprentice include
    the logbook in their own backup?
-8. **The journeyperson's details on the apprentice's phone** (name, certificate number, signature
-   image). Acceptable to the organisation and to journeypersons?
+8. **The journeyman's details on the apprentice's phone** (name, certificate number, signature
+   image). Acceptable to the organisation and to journeymen?
 9. **Scope rules beyond refrigerants.** Which steps does the organisation want tagged for direct
    supervision (live electrical work, gas)? The vault author tags procedures; the organisation decides
    the rule.
@@ -1046,22 +1269,37 @@ except P2's and P3's routes having a reader.
 14. **EU AI Act.** Agree the position in §12, and owe a review section covering the logbook, drills
     and progress share before any of it is offered on an EEA storefront?
 15. **Canadian privacy.** The same adviser confirmation JG's open question 3 asks for covers JI's
-    records too (logbook, certificates, the journeyperson's details). Agree that JI waits on that one
+    records too (logbook, certificates, the journeyman's details). Agree that JI waits on that one
     answer, and that the apprentice-records wording names no law until then?
 16. **JG's out-of-scope pointers.** This PR adds a pointer to JI on JG's "exam material" and
     "apprentice logbooks" lines and changes nothing else in JG. Agree?
 17. **The apprentice's refrigerant certificate.** Must an apprentice hold their own trained service
-    technician certificate to do s. 6 work beside a certified journeyperson? The answer changes what
+    technician certificate to do s. 6 work beside a certified journeyman? The answer changes what
     the Manitoba starter rules say.
 18. **Exam-prep results in the organisation's feed.** They would meet JG's terms (rule-graded,
     human-approved key). Keep them on the phone, as this plan does, or add them to JG's feed later
     with the disclosure and notice wording extended to task codes?
+19. **One list of people.** IQ's drafted `organizationEscalationContacts` would become staff ids
+    plus outside numbers in `organizationStaff`. Agree, so IQ P3 is built on the roster?
+20. **PIN rules.** Four to eight digits, five misses, 15 minutes doubling to 24 hours: right? Who
+    sets and resets a journeyman's PIN: the office only, or the journeyman on their own phone
+    through the office route?
+21. **Coarse location.** About a kilometre, or only "near the job's site: yes / no" against the
+    job's address?
+22. **An expired journeyman certificate.** Shown as expired and recorded, as proposed; or should the
+    picker leave that journeyman out?
 
 ## Risks
 
 - **A logbook nobody trusts.** A draft that misfiles time teaches apprentices to ignore it. The
   defence is that every allocation is traceable and editable, unassigned time is shown as unassigned,
   and verification is a person's.
+- **Self-signing.** An apprentice signing their own day defeats the record. The defences are the
+  staff picker (no free-text name in an organisation), the PIN by default, the journeyman's own
+  device where they use the app, the fingerprint, and the audit fields. Honest limit: a PIN behind a
+  hash on the apprentice's phone can be guessed offline by someone determined; the device
+  confirmation is the strong check, and the employer's own verification (s. 7(b)) stays the
+  employer's.
 - **The guard becoming a monitor.** If notices reached the office, the guard would record apprentices
   doing steps without supervision. They never leave the phone, and a test pins it.
 - **Nagging.** Offers sit under IW's cap; one apprentice offer per drive; notices once per step per job.
@@ -1129,7 +1367,7 @@ data); languages other than English for spoken answers (EC).
 - The January 2023 end of the paper report of hours (search summary only).
 - Whether AccessManitoba takes hours by task or as a total.
 - Whether an apprentice needs their own trained service technician certificate to do M.R. 103/94 s. 6
-  work under a certified journeyperson (the text has no apprentice exemption).
+  work under a certified journeyman (the text has no apprentice exemption).
 - The issuer and terms of the electrician's licence after the certificate of qualification.
 - The edition of the Construction Electrician Red Seal Occupational Standard.
 - Red Seal's own wording on exam confidentiality (not found on red-seal.ca; the design's rule does

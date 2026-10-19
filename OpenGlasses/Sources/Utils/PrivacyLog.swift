@@ -1576,6 +1576,9 @@ enum PrivacyLog {
         // A turn used every tool round it is allowed and its wrap-up still asked for tools: those
         // calls were answered, not run. Count and provider label only.
         case toolBudgetSpent
+        // A turn made the same call with the same input and got the same answer twice over, so
+        // the loop stopped offering rounds and went to the wrap-up. Count and provider label only.
+        case toolRepeatsStopped
         // After a tool had answered, the model replied with a promise to look it up instead of
         // the answer (`StallReplyPolicy`); it was asked once more with the results still in
         // history. The character count of the stalled reply only.

@@ -10,6 +10,11 @@ import Foundation
 ///
 /// Base's answer is **reported, never acted on**: recording it attaches text to the request and
 /// changes no task and no recommendation.
+///
+/// `send` emails the job's waiting requests to the office as an order of their own — staged, like
+/// the job report, so the composer opens on the phone and the technician taps Send. The requests
+/// are marked sent only once it goes. Without it, a technician who asked for "an email to order a
+/// new one" got the whole job report offered instead, because nothing else could carry an order.
 @MainActor
 final class PartsRequestTool: NativeTool {
     let name = "parts_request"
@@ -23,12 +28,28 @@ final class PartsRequestTool: NativeTool {
     must tell the technician so. A request does not need a task — a stock check can go out before \
     the repair is decided. To record what base replied, pass 'answer' with the text they sent (and \
     'part' or 'request_id' to say which request it answers): that is filed against the request and \
-    read to the technician, and it never changes a task or a recommendation by itself. Requires an \
-    active session.
+    read to the technician, and it never changes a task or a recommendation by itself. To email \
+    the office a parts order, pass action 'send' (optionally 'to' with an address or contact, \
+    'request_id' for one request only, and 'note'); the composer opens on the technician's phone \
+    and they tap Send; the request is marked sent once it goes. This is separate from the job \
+    report — do not use deliver_report or send_message to order a part. Requires an active session.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
         "properties": [
+            "action": [
+                "type": "string",
+                "enum": ["request", "send"],
+                "description": "'request' (the default) asks for a part or, with 'answer', records base's reply. 'send' emails the office an order for this job's parts requests that have not gone yet."
+            ],
+            "to": [
+                "type": "string",
+                "description": "With action 'send': an email address or contact name to send the order to. Omit to use the configured office recipients."
+            ],
+            "note": [
+                "type": "string",
+                "description": "With action 'send': a line from the technician to add to the order."
+            ],
             "part": [
                 "type": "string",
                 "description": "The part number, exactly as the manual or the label prints it (e.g. '14T65')."
@@ -60,7 +81,7 @@ final class PartsRequestTool: NativeTool {
             ],
             "request_id": [
                 "type": "string",
-                "description": "Which request the answer is for. Omit to use the most recent request for that part."
+                "description": "Which request the answer is for, or with action 'send' the one request to order. Omit to use the most recent request for that part, or to order every request still waiting."
             ]
         ],
         "required": [] as [String]
@@ -72,9 +93,21 @@ final class PartsRequestTool: NativeTool {
     /// shared one. Injectable for tests.
     private let injectedVanStock: VanStockService?
 
-    init(sessionService: FieldSessionService? = nil, vanStock: VanStockService? = nil) {
+    /// The delivery rules in force, for where an order goes. Injectable so a test does not depend
+    /// on this device's settings.
+    private let settings: () -> DeliverySettings
+    /// Contact-name → email resolution, injected so a headless test never touches Contacts.
+    private let resolveEmail: (String) -> [ContactLookupHelper.ResolvedEmail]
+
+    init(sessionService: FieldSessionService? = nil, vanStock: VanStockService? = nil,
+         settings: @escaping () -> DeliverySettings = { DeliverySettings.load() },
+         resolveEmail: @escaping (String) -> [ContactLookupHelper.ResolvedEmail] = { name in
+             ContactLookupHelper.resolveEmails(name: name)
+         }) {
         self.injectedSession = sessionService
         self.injectedVanStock = vanStock
+        self.settings = settings
+        self.resolveEmail = resolveEmail
     }
 
     private var session: FieldSessionService { injectedSession ?? .shared }
@@ -89,13 +122,18 @@ final class PartsRequestTool: NativeTool {
         }
 
         let part = (args["part"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestId = (args["request_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let action = (args["action"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if action == "send" || action == "order" || action == "email" {
+            return sendOrder(to: args["to"] as? String,
+                             requestId: (requestId?.isEmpty == true) ? nil : requestId,
+                             note: args["note"] as? String)
+        }
 
         if let answer = (args["answer"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !answer.isEmpty {
-            return record(answer: answer,
-                          requestId: (args["request_id"] as? String)?
-                            .trimmingCharacters(in: .whitespacesAndNewlines),
-                          part: part)
+            return record(answer: answer, requestId: requestId, part: part)
         }
 
         guard let part, !part.isEmpty else {
@@ -134,13 +172,51 @@ final class PartsRequestTool: NativeTool {
         }
         if request.taskId == nil { lines.append("Tagged to the job, not to a task.") }
         if let model = request.modelToken { lines.append("For the \(model).") }
-        lines.append("It goes out with the job record, and on its own as soon as there is a connection.")
+        lines.append("It goes out with the job record, and on its own as soon as there is a connection. "
+                     + "If the technician wants it emailed to the office now, call parts_request with action 'send'.")
         if let vanNote {
             lines.append(vanNote)
         } else if forVanStock {
             lines.append("It is not a line on the van list, so the list does not show it as asked for.")
         }
         return lines.joined(separator: " ")
+    }
+
+    /// Stage the order for the open job's waiting requests. Nothing is sent here: the composer is
+    /// what sends, and only a person taps Send.
+    private func sendOrder(to raw: String?, requestId: String?, note: String?) -> String {
+        guard let order = session.partsOrder(requestId: requestId, note: note) else {
+            if let requestId {
+                return "There is no parts request \(requestId) on this job waiting to be ordered. "
+                    + "A request already sent or answered is not ordered again."
+            }
+            return "Nothing on this job is waiting to be ordered: every parts request has been sent or answered. "
+                + "Ask for the part first, with 'part'."
+        }
+        let wanted = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var spoken: [String] = []
+        if !wanted.isEmpty {
+            if wanted.contains("@") {
+                spoken = [wanted]
+            } else {
+                switch ContactLookupHelper.pickEmail(from: resolveEmail(wanted)) {
+                case .one(let match): spoken = [match.address]
+                case .none:
+                    return "No contact matching '\(wanted)' has an email address I can use. "
+                        + "Say the address, or leave it out to send it to the office."
+                case .ambiguous(let names):
+                    return "'\(wanted)' could be \(names.joined(separator: " or ")). Say which one, or say the address."
+                }
+            }
+        }
+        switch PartsOrder.route(policy: DeliveryPolicy(settings: settings()), spoken: spoken) {
+        case .refused(let reason):
+            return reason
+        case .ready(let channel, let recipients):
+            let request = DeliveryRequest.make(partsOrder: order, channel: channel, recipients: recipients)
+            session.stageDelivery(request)
+            return request.confirmation
+        }
     }
 
     private func record(answer: String, requestId: String?, part: String?) -> String {

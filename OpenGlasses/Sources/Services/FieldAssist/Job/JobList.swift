@@ -303,9 +303,12 @@ enum JobListComposer {
             // One badge per kind: a failed work order and a failed addendum are one "didn't send".
             guard badgesBySession[sessionId]?.contains(where: { $0.kind == kind }) != true else { continue }
             let isRecording = kind == .recording || kind == .recordingAttention
+            // A parts badge says what the requests are waiting for — to be emailed, or for base —
+            // in the words of the to-do it comes from.
             badgesBySession[sessionId, default: []].append(
                 JobList.Badge(kind: kind,
                               label: (isRecording ? recordingBySession[sessionId] : nil)
+                                  ?? (kind == .parts ? todo.title : nil)
                                   ?? JobList.Badge.label(kind, parts: partsBySession[sessionId] ?? 1)))
         }
         func badges(_ sessionId: String) -> [JobList.Badge] {
@@ -542,7 +545,7 @@ enum JobListRequest: Equatable {
         case .openJob: self = .currentJob
         case .upcomingJob(let id): self = .upcoming(id: id)
         case .pastJob(let sessionId): self = .session(id: sessionId)
-        case .send: return nil
+        case .send, .partsOrder: return nil
         }
     }
 }

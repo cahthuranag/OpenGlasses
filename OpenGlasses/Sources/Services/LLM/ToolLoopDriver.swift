@@ -162,6 +162,38 @@ struct ProviderLoopAdapter {
     /// model stalls after a tool has answered (`StallReplyPolicy`). Nil means the loop cannot
     /// re-ask on this provider and speaks the stall as before.
     var appendUserNote: ((String) -> Void)? = nil
+    /// The budget-spent wrap-up: the same history, sent with tools withheld (`tool_choice` none,
+    /// or the provider's equivalent), so the model can only answer in words. Nil means the
+    /// provider cannot withhold them, and the wrap-up is an ordinary `performTurn`.
+    var performWrapUp: (() async throws -> AssistantTurn)? = nil
+}
+
+/// Whether the request being built is the loop's wrap-up, which offers the model no tool.
+///
+/// A flag rather than a second copy of each provider's request builder: the adapter's
+/// `performTurn` reads it while it builds the body, and `ProviderLoopAdapter.withholdingTools(_:)`
+/// raises it for the one request the wrap-up makes. The tools stay declared — a history holding
+/// tool calls needs them on some providers — and only the choice is closed.
+final class ToolWithholding: @unchecked Sendable {
+    private(set) var active = false
+
+    init() {}
+
+    func during<T>(_ body: () async throws -> T) async rethrows -> T {
+        active = true
+        defer { active = false }
+        return try await body()
+    }
+}
+
+extension ProviderLoopAdapter {
+    /// This adapter, with a wrap-up that runs `performTurn` while `flag` is raised.
+    func withholdingTools(_ flag: ToolWithholding) -> ProviderLoopAdapter {
+        var adapter = self
+        let perform = performTurn
+        adapter.performWrapUp = { try await flag.during { try await perform() } }
+        return adapter
+    }
 }
 
 /// The single shared tool-execution loop. Iterates up to `maxIterations`: performs a turn, and if
@@ -184,8 +216,19 @@ func runToolLoop(
     // something up be a stall rather than an honest opener.
     var toolsHaveAnswered = false
     var stallReasked = false
+    // Every completed call this turn, by signature, with what it answered. A model doing its
+    // bookkeeping can call the same thing four or five times and be told the same thing each
+    // time, spending the whole budget on it and leaving nothing to say what was done.
+    var completedResults: [String: String] = [:]
+    // Signatures whose repeat came back with the same answer as the first time: the next one is
+    // not run. A read may legitimately change between two calls, so the first repeat always runs.
+    var settledSignatures: Set<String> = []
+    var identicalRepeats = 0
+    // Everything this turn answered, in order, for the words the turn ends in when the model has
+    // none of its own (`ToolLoopBudget.spoken(from:)`).
+    var turnOutcomes: [ToolDispatchOutcome] = []
 
-    for _ in 0..<maxIterations {
+    rounds: for _ in 0..<maxIterations {
         try Task.checkCancellation()
         let turn = try await adapter.performTurn()
 
@@ -227,8 +270,24 @@ func runToolLoop(
                 continue
             }
 
+            if settledSignatures.contains(signature), let previous = completedResults[signature] {
+                identicalRepeats += 1
+                outcomes.append(ToolDispatchOutcome(
+                    invocation: call,
+                    outcome: .rejected(reason: ToolLoopBudget.alreadyAnswered(call.name, previous: previous)),
+                    yieldReason: nil))
+                continue
+            }
+
             let outcome = await adapter.dispatcher.dispatch(call)
             if outcome.retryDisposition == .unsafeToRetry { unresolvedCalls.insert(signature) }
+            if case .completed(let text) = outcome.outcome {
+                if completedResults[signature] == text {
+                    identicalRepeats += 1
+                    settledSignatures.insert(signature)
+                }
+                completedResults[signature] = text
+            }
             outcomes.append(outcome)
             if let reason = outcome.yieldReason {
                 // The turn ends here, but the assistant message already in history names every
@@ -250,40 +309,133 @@ func runToolLoop(
             }
         }
         adapter.appendToolResults(outcomes)
+        turnOutcomes += outcomes
         toolsHaveAnswered = true
+        // The same call, the same answer, twice over: another round will only repeat it. Every
+        // call of this round has its answer, so the history is whole; go straight to the words.
+        if identicalRepeats >= ToolLoopBudget.repeatsBeforeWrapUp {
+            PrivacyLog.model(.toolRepeatsStopped, count: identicalRepeats,
+                             detail: PrivacyToken(adapter.label))
+            break rounds
+        }
     }
 
-    // The budget is spent, but the tools already ran: a task closed, a part was requested, a
-    // message went out. Throwing here reported the turn as a server failure and threw away the
-    // only words that would have told the technician what had just been done on their behalf. One
-    // more request puts it into words; anything it asks to run is answered, not run.
+    // The budget is spent (or the model was repeating itself), but the tools already ran: a task
+    // closed, a part was requested, a message went out. Throwing here reported the turn as a
+    // server failure and threw away the only words that would have told the technician what had
+    // just been done on their behalf. One more request puts it into words — with tools withheld
+    // where the provider can, so the model cannot spend it on one more call; anything it still
+    // asks to run is answered, not run.
     try Task.checkCancellation()
-    let wrapUp = try await adapter.performTurn()
+    let wrapUp: AssistantTurn
+    if let performWrapUp = adapter.performWrapUp {
+        do {
+            wrapUp = try await performWrapUp()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // A server that will not take a closed tool choice still gets asked the ordinary way:
+            // the wrap-up exists to save the turn's words, not to add a way for it to fail.
+            try Task.checkCancellation()
+            wrapUp = try await adapter.performTurn()
+        }
+    } else {
+        wrapUp = try await adapter.performTurn()
+    }
     setStatus(.idle)
-    if wrapUp.toolCalls.isEmpty {
+    let said = wrapUp.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if wrapUp.toolCalls.isEmpty, !said.isEmpty {
         return try adapter.finalize(wrapUp)
     }
-    PrivacyLog.model(.toolBudgetSpent, count: wrapUp.toolCalls.count,
-                     detail: PrivacyToken(adapter.label))
-    adapter.appendAssistantToolCall(wrapUp)
-    adapter.appendToolResults(wrapUp.toolCalls.map {
-        ToolDispatchOutcome(invocation: $0,
-                            outcome: .failedBeforeExecution(reason: ToolLoopBudget.notRun($0.name)),
-                            yieldReason: nil)
-    })
-    let said = wrapUp.text.trimmingCharacters(in: .whitespacesAndNewlines)
-    return try adapter.finalize(AssistantTurn(text: said.isEmpty ? ToolLoopBudget.spokenFallback : said))
+    if !wrapUp.toolCalls.isEmpty {
+        PrivacyLog.model(.toolBudgetSpent, count: wrapUp.toolCalls.count,
+                         detail: PrivacyToken(adapter.label))
+        adapter.appendAssistantToolCall(wrapUp)
+        adapter.appendToolResults(wrapUp.toolCalls.map {
+            ToolDispatchOutcome(invocation: $0,
+                                outcome: .failedBeforeExecution(reason: ToolLoopBudget.notRun($0.name)),
+                                yieldReason: nil)
+        })
+    }
+    return try adapter.finalize(AssistantTurn(
+        text: said.isEmpty ? ToolLoopBudget.spoken(from: turnOutcomes) : said))
 }
 
-/// What a turn says when it has used every tool round it is allowed.
+/// What a turn says when it has used every tool round, or stopped repeating itself.
 enum ToolLoopBudget {
+    /// How many identical repeats a turn may make before the loop stops offering rounds: one is
+    /// a model checking its work, two is a model stuck in its bookkeeping.
+    static let repeatsBeforeWrapUp = 2
+
     /// The model's answer to a call made after the budget was spent. Nothing ran.
     static func notRun(_ name: String) -> String {
         "'\(name)' was not run: this turn has used all its tool calls. Nothing happened. Tell the "
             + "user what was done so far and ask before doing more."
     }
 
-    /// Spoken when the wrap-up request still produced no words of its own.
+    /// The model's answer to a call it already made this turn and was told the same thing twice.
+    /// Nothing ran; the earlier answer is repeated, so nothing is lost by not running it.
+    static func alreadyAnswered(_ name: String, previous: String) -> String {
+        "'\(name)' already ran this turn with the same input and gave the same answer: \(previous)\n"
+            + "Do not call it again; say what was done."
+    }
+
+    /// Spoken when the wrap-up produced no words of its own and nothing this turn succeeded.
     static let spokenFallback = "I've done several steps on that and stopped there. "
         + "Ask me what was done, or tell me what to do next."
+
+    /// The opening of the words built from the turn's own results.
+    static let doneSoFarPrefix = "Done so far: "
+
+    /// The ceiling on those words, so a wrap-up never reads out a page of tool output.
+    static let summaryCharacterLimit = 240
+
+    /// The words a turn ends in when the wrap-up produced none: the first sentence of each
+    /// distinct successful result, in the order they came, after "Done so far: ". Only when
+    /// nothing succeeded is it the canned sentence — which used to replace everything the tools
+    /// had returned, so a technician who had just closed a task heard only that it had stopped.
+    static func spoken(from outcomes: [ToolDispatchOutcome]) -> String {
+        var seen: Set<String> = []
+        var sentences: [String] = []
+        for outcome in outcomes {
+            guard case .completed(let text) = outcome.outcome,
+                  let sentence = firstSentence(of: text),
+                  seen.insert(sentence).inserted else { continue }
+            sentences.append(sentence)
+        }
+        guard !sentences.isEmpty else { return spokenFallback }
+
+        var summary = doneSoFarPrefix
+        var used = 0
+        for sentence in sentences {
+            let candidate = used == 0 ? summary + sentence : summary + " " + sentence
+            if used > 0, candidate.count > summaryCharacterLimit { break }
+            summary = candidate
+            used += 1
+        }
+        if summary.count > summaryCharacterLimit {
+            // One sentence longer than the whole allowance: cut at a word, and show it was cut.
+            let cut = summary.prefix(summaryCharacterLimit - 1)
+            let atWord = cut.lastIndex(of: " ").map { cut[..<$0] } ?? cut
+            summary = String(atWord) + "…"
+        }
+        return summary
+    }
+
+    /// A result's first sentence, ending in its own stop — or nil for one that is not prose: an
+    /// empty result, a JSON document, or a photo's marker with nothing around it.
+    static func firstSentence(of text: String) -> String? {
+        let prose = ToolResultImage.extract(from: text).text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = prose.first, first != "{", first != "[" else { return nil }
+        let line = prose.split(whereSeparator: \.isNewline).first.map(String.init) ?? prose
+        var sentence = line
+        if let end = line.range(of: #"[.!?](\s|$)"#, options: .regularExpression) {
+            sentence = String(line[..<line.index(after: end.lowerBound)])
+        }
+        sentence = sentence.trimmingCharacters(in: .whitespaces)
+        guard !sentence.isEmpty else { return nil }
+        if let last = sentence.last, !".!?…".contains(last) { sentence += "." }
+        return sentence
+    }
 }

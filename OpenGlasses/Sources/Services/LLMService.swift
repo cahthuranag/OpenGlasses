@@ -296,6 +296,17 @@ class LLMService: ObservableObject {
     /// scratch store so it can count what one turn recorded.
     var usageTrackerOverride: UsageTracker?
 
+    /// The account sign-ins the subscription routes draw their tokens from. nil → the shared
+    /// service; a test injects one over an in-memory store and a stubbed token endpoint, so a
+    /// route's forced refresh on a 401 can be driven headlessly (Plan FG P1a).
+    var claudeAccountOverride: ClaudeOAuthService?
+    var chatGPTAccountOverride: ChatGPTOAuthService?
+    var googleAccountOverride: GoogleOAuthService?
+
+    private var claudeAccount: ClaudeOAuthService { claudeAccountOverride ?? .shared }
+    private var chatGPTAccount: ChatGPTOAuthService { chatGPTAccountOverride ?? .shared }
+    private var googleAccount: GoogleOAuthService { googleAccountOverride ?? .shared }
+
 
     #if canImport(FoundationModels)
     /// The Apple `Tool` adapters for the tool names last offered, rebuilt when the names change
@@ -2022,15 +2033,40 @@ class LLMService: ObservableObject {
 
     /// A prepared Anthropic request: the endpoint, the credential, and a body built by
     /// `AnthropicRequest` — the one place that knows what this model accepts.
+    /// The account token rides back beside it when the credential came from the Claude sign-in,
+    /// so a 401 can force one refresh (Plan FG P1a).
     private func anthropicURLRequest(config: ModelConfig, body: [String: Any],
-                                     timeout: TimeInterval) async throws -> URLRequest {
+                                     timeout: TimeInterval) async throws -> (URLRequest, SubscriptionAuthRetry.Credential?) {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        AnthropicAuth.apply(credential: await AnthropicAuth.resolveCredential(apiKey: config.apiKey), to: &request)
+        let credential = await AnthropicAuth.resolveCredential(apiKey: config.apiKey, account: claudeAccount)
+        AnthropicAuth.apply(credential: credential, to: &request)
         request.timeoutInterval = timeout
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        return request
+        return (request, anthropicAccountCredential(config: config, credential: credential))
+    }
+
+    /// The credential a 401 may refresh: only a token the Claude sign-in supplied, never a key.
+    private func anthropicAccountCredential(config: ModelConfig, credential: String) -> SubscriptionAuthRetry.Credential? {
+        guard AnthropicAuth.usesAccountSignIn(apiKey: config.apiKey), !credential.isEmpty else { return nil }
+        return SubscriptionAuthRetry.Credential(credential)
+    }
+
+    /// A replacement for a Claude account token the endpoint refused, or nil when there is none.
+    private func refreshedClaudeToken(after rejected: String) async -> String? {
+        await claudeAccount.accessToken(afterRejecting: rejected)
+    }
+
+    /// One buffered Anthropic request, with the account route's forced refresh on a 401.
+    private func anthropicData(for request: URLRequest,
+                               account: SubscriptionAuthRetry.Credential?) async throws -> (Data, URLResponse) {
+        try await SubscriptionAuthRetry.send(
+            request, credential: account, provider: "anthropic",
+            refresh: { await self.refreshedClaudeToken(after: $0) },
+            sign: { token, request in AnthropicAuth.apply(credential: token, to: &request) },
+            refused: { SubscriptionAuthRetry.isUnauthorized($0.1) },
+            attempt: { try await self.dataSession.data(for: $0) })
     }
 
     /// One stateless Anthropic call that wants text back: the summariser and the one-shot frame
@@ -2045,8 +2081,8 @@ class LLMService: ObservableObject {
             model: config.model, maxTokens: maxTokens, system: .text(system),
             messages: [["role": "user", "content": userContent]],
             reasoning: config.reasoningResolution(toolsAttached: false))
-        let request = try await anthropicURLRequest(config: config, body: body, timeout: timeout)
-        let (data, response) = try await dataSession.data(for: request)
+        let (request, account) = try await anthropicURLRequest(config: config, body: body, timeout: timeout)
+        let (data, response) = try await anthropicData(for: request, account: account)
         Self.noteAnthropicRejection(response: response, body: data, request: request, detail: detail)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
         return AnthropicReply.oneShotText(from: data)
@@ -2068,11 +2104,11 @@ class LLMService: ObservableObject {
             model: config.model, maxTokens: maxTokens, system: .text(system),
             messages: [["role": "user", "content": userContent]],
             answerTool: tool, reasoning: config.reasoningResolution(toolsAttached: true))
-        let request = try await anthropicURLRequest(config: config, body: body, timeout: timeout)
+        let (request, account) = try await anthropicURLRequest(config: config, body: body, timeout: timeout)
 
         let attempts = contract.allowsForcedToolChoice ? 1 : 2
         for attempt in 1...attempts {
-            let (data, response) = try await dataSession.data(for: request)
+            let (data, response) = try await anthropicData(for: request, account: account)
             Self.noteAnthropicRejection(response: response, body: data, request: request, detail: detail)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
             if let object = StructuredVisionParser.anthropic(data, toolName: tool.name) { return object }
@@ -2089,13 +2125,17 @@ class LLMService: ObservableObject {
     func sendAnthropic(_ text: String, systemPrompt: String, volatileTail: String? = nil, config: ModelConfig, includeTools: Bool, imageData: Data?, smallContext: Bool = false, onToken: ((String) -> Void)? = nil, onStreamReset: (() -> Void)? = nil) async throws -> String {
         try enforceMedicalRemoteBoundary(config)
         // An explicit API key wins; otherwise fall back to a connected Claude account (OAuth).
-        let apiKey = await AnthropicAuth.resolveCredential(apiKey: config.apiKey)
+        let apiKey = await AnthropicAuth.resolveCredential(apiKey: config.apiKey, account: claudeAccount)
         guard !apiKey.isEmpty else {
-            throw LLMError.missingAPIKey(LLMProvider.anthropic.missingCredentialMessage)
+            throw LLMError.missingAPIKey(claudeAccount.isConnected
+                ? (claudeAccount.lastError ?? LLMProvider.anthropic.missingCredentialMessage)
+                : LLMProvider.anthropic.missingCredentialMessage)
         }
         // Which kind of credential this turn is sent with, never the value (Plan IE P0): a failed
         // turn's line in the support report says whether a key or an account sign-in was refused.
         TurnRecorder.noteCredential(AnthropicAuth.kind(of: apiKey))
+        // Plan FG P1a: an account token a 401 refreshes once; every later round sends the new one.
+        let account = anthropicAccountCredential(config: config, credential: apiKey)
 
         // A new user turn: nothing older than it may hold a thinking block (Plan IE P2). Here as
         // well as in `sendMessage`, because the agent tier and the tests enter at this function.
@@ -2146,7 +2186,7 @@ class LLMService: ObservableObject {
                 var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                AnthropicAuth.apply(credential: apiKey, to: &request)  // already resolved above
+                AnthropicAuth.apply(credential: account?.token ?? apiKey, to: &request)  // resolved above
 
                 // Turn hygiene (Plan BF): drop stale images that would otherwise re-upload every turn,
                 // and repair any dangling tool_use so a single interrupted tool call can't 400 the whole
@@ -2225,26 +2265,38 @@ class LLMService: ObservableObject {
                     // intermediate tool turn's text never concatenates with the final reply (BM P9).
                     onStreamReset?()
                     let flag = TokenDeliveryFlag()
-                    (content, stopReason) = try await self.withTransientSSERetries(tokenFlag: flag) {
-                        try await self.streamAnthropicContent(request: request, model: config.model) { token in
-                            flag.mark()
-                            onToken(token)
+                    (content, stopReason) = try await SubscriptionAuthRetry.send(
+                        request, credential: account, provider: "anthropic",
+                        refresh: { await self.refreshedClaudeToken(after: $0) },
+                        sign: { token, request in AnthropicAuth.apply(credential: token, to: &request) }
+                    ) { request in
+                        try await self.withTransientSSERetries(tokenFlag: flag) {
+                            try await self.streamAnthropicContent(request: request, model: config.model) { token in
+                                flag.mark()
+                                onToken(token)
+                            }
                         }
                     }
                 } else {
-                    let (data, response) = try await self.dataSession.data(for: request)
-
-                    guard let httpResponse = response as? HTTPURLResponse,
-                          httpResponse.statusCode == 200 else {
-                        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-                        // Logged whether or not the body parsed: a refusal with no readable
-                        // envelope used to leave no line at all (Plan IE P0).
-                        let rejection = Self.noteAnthropicRejection(response: response, body: data,
-                                                                    request: request)
-                        let errorMsg = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
-                            .flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
-                        throw LLMError.apiError(provider: "Anthropic", statusCode: statusCode,
-                                                message: errorMsg, rejection: rejection)
+                    let data: Data = try await SubscriptionAuthRetry.send(
+                        request, credential: account, provider: "anthropic",
+                        refresh: { await self.refreshedClaudeToken(after: $0) },
+                        sign: { token, request in AnthropicAuth.apply(credential: token, to: &request) }
+                    ) { request in
+                        let (data, response) = try await self.dataSession.data(for: request)
+                        guard let httpResponse = response as? HTTPURLResponse,
+                              httpResponse.statusCode == 200 else {
+                            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                            // Logged whether or not the body parsed: a refusal with no readable
+                            // envelope used to leave no line at all (Plan IE P0).
+                            let rejection = Self.noteAnthropicRejection(response: response, body: data,
+                                                                        request: request)
+                            let errorMsg = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
+                                .flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
+                            throw LLMError.apiError(provider: "Anthropic", statusCode: statusCode,
+                                                    message: errorMsg, rejection: rejection)
+                        }
+                        return data
                     }
 
                     guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -3042,12 +3094,20 @@ class LLMService: ObservableObject {
     /// against the Responses backend. History stays in the chat shape (`ResponsesTranslator`
     /// converts to Responses items at request time), so history hygiene, pruning, and
     /// persistence behave exactly like the OpenAI-compatible path.
-    private func sendChatGPT(_ text: String, systemPrompt: String, config: ModelConfig, includeTools: Bool, imageData: Data?, smallContext: Bool = false, onToken: ((String) -> Void)? = nil, onStreamReset: (() -> Void)? = nil) async throws -> String {
+    ///
+    /// Internal (not private) so the forced-refresh tests can drive it through a stubbed
+    /// `streamingSession` and an injected account (Plan FG P1a).
+    func sendChatGPT(_ text: String, systemPrompt: String, config: ModelConfig, includeTools: Bool, imageData: Data?, smallContext: Bool = false, onToken: ((String) -> Void)? = nil, onStreamReset: (() -> Void)? = nil) async throws -> String {
         try enforceMedicalRemoteBoundary(config)
-        guard let token = await ChatGPTOAuthService.shared.validAccessToken() else {
-            throw LLMError.missingAPIKey("ChatGPT account not connected — sign in with ChatGPT in the model editor")
+        let chatGPTAccount = self.chatGPTAccount
+        guard let token = await chatGPTAccount.validAccessToken() else {
+            throw LLMError.missingAPIKey(chatGPTAccount.isConnected
+                ? (chatGPTAccount.lastError ?? "ChatGPT sign-in expired — please sign in again.")
+                : "ChatGPT account not connected — sign in with ChatGPT in the model editor")
         }
-        let accountID = ChatGPTOAuthService.shared.accountID
+        // Plan FG P1a: the token a 401 refreshes once; every later round sends the new one.
+        let account = SubscriptionAuthRetry.Credential(token)
+        let accountID = chatGPTAccount.accountID
         // The account catalog carries the real window of a model our table does not know. Keep
         // the stored copy fresh in the background; this turn reads what is already stored.
         ChatGPTContextCatalog.refreshIfStale(accountID: accountID)
@@ -3090,19 +3150,21 @@ class LLMService: ObservableObject {
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                ChatGPTAuth.apply(credential: token, accountID: accountID, to: &request)
+                ChatGPTAuth.apply(credential: account.token, accountID: accountID, to: &request)
                 let tools = roundTools()
                 let limit = RequestContextBudget.resolve(
                     model: config.model, endpoint: endpoint,
                     catalogContext: ChatGPTContextCatalog.context(model: config.model, accountID: accountID))
                 let reasoning = config.reasoningResolution(toolsAttached: !(tools ?? []).isEmpty)
                 Self.noteReasoning(reasoning, provider: .chatgpt, model: config.model)
-                let responseJSON = try await self.budgetedResponsesTurn(
-                    request: request, model: config.model, history: self.conversationHistory,
-                    tools: tools, protectedStart: protectedStart, limit: limit, recovery: recovery,
-                    instructions: { self.refreshedFieldInstructions(systemPrompt, turn: text) },
-                    reasoning: reasoning,
-                    onToken: onToken, onStreamReset: onStreamReset)
+                let responseJSON = try await self.chatGPTWithAccountRefresh(request, account: account) { request in
+                    try await self.budgetedResponsesTurn(
+                        request: request, model: config.model, history: self.conversationHistory,
+                        tools: tools, protectedStart: protectedStart, limit: limit, recovery: recovery,
+                        instructions: { self.refreshedFieldInstructions(systemPrompt, turn: text) },
+                        reasoning: reasoning,
+                        onToken: onToken, onStreamReset: onStreamReset)
+                }
 
                 let parsed = ResponsesTranslator.parseOutput(responseJSON)
                 // The parse-vs-sent diagnostic seam — where "tool_call returned but nothing
@@ -3330,7 +3392,7 @@ class LLMService: ObservableObject {
                                           timeout: TimeInterval = 45) async -> [String: Any]? {
         guard !MedicalLLMRoutingPolicy.isEnforced(
             hipaaMode: Config.hipaaMode, localOnly: Config.hipaaLocalOnly) else { return nil }
-        guard let token = await ChatGPTOAuthService.shared.validAccessToken(),
+        guard let token = await chatGPTAccount.validAccessToken(),
               let url = URL(string: ChatGPTOAuth.backendResponsesURL) else { return nil }
         var body = ResponsesTranslator.requestBody(
             model: model, instructions: instructions,
@@ -3342,17 +3404,33 @@ class LLMService: ObservableObject {
             }
         }
         let limit = RequestContextBudget.resolve(model: model, endpoint: url.absoluteString,
-            catalogContext: ChatGPTContextCatalog.context(model: model, accountID: ChatGPTOAuthService.shared.accountID))
+            catalogContext: ChatGPTContextCatalog.context(model: model, accountID: chatGPTAccount.accountID))
         guard RequestContextBudget.estimate(body).total <= limit.inputAllowance else { return nil }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        ChatGPTAuth.apply(credential: token, accountID: ChatGPTOAuthService.shared.accountID, to: &request)
+        ChatGPTAuth.apply(credential: token, accountID: chatGPTAccount.accountID, to: &request)
         request.timeoutInterval = timeout
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         // Streamed like every other backend call (it refuses `stream: false`); no token sink,
         // just the completed payload.
-        return try? await streamResponsesTurn(request: request, onToken: nil)
+        return try? await chatGPTWithAccountRefresh(request, account: SubscriptionAuthRetry.Credential(token)) {
+            try await self.streamResponsesTurn(request: $0, onToken: nil)
+        }
+    }
+
+    /// A ChatGPT backend request with the account route's forced refresh on a 401 (Plan FG P1a):
+    /// re-signed with the refreshed token and the account id it carries.
+    private func chatGPTWithAccountRefresh<T>(_ request: URLRequest, account: SubscriptionAuthRetry.Credential,
+                                              attempt: (URLRequest) async throws -> T) async throws -> T {
+        let chatGPTAccount = self.chatGPTAccount
+        return try await SubscriptionAuthRetry.send(
+            request, credential: account, provider: "chatgpt",
+            refresh: { await chatGPTAccount.accessToken(afterRejecting: $0) },
+            sign: { token, request in
+                ChatGPTAuth.apply(credential: token, accountID: chatGPTAccount.accountID, to: &request)
+            },
+            attempt: attempt)
     }
 
     /// Structured variant (BW P4): forced function call → the tool's arguments object, with the
@@ -3617,19 +3695,31 @@ class LLMService: ObservableObject {
     /// Credential problems throw `missingAPIKey` — per-candidate for the fallback chain, so a
     /// mid-session refresh failure moves to the next model instead of dead-airing the turn.
     func geminiRequest(for config: ModelConfig, timeout: TimeInterval? = nil) async throws -> URLRequest {
+        try await geminiRequestWithAccount(for: config, timeout: timeout).request
+    }
+
+    /// `geminiRequest`, with the Google account token beside it on Vertex so a 401 can force one
+    /// refresh (Plan FG P1a). AI Studio's key has nothing to refresh, so its account is nil.
+    func geminiRequestWithAccount(for config: ModelConfig, timeout: TimeInterval? = nil) async throws
+        -> (request: URLRequest, account: SubscriptionAuthRetry.Credential?) {
         try enforceMedicalRemoteBoundary(config)
         var request: URLRequest
+        var account: SubscriptionAuthRetry.Credential?
         switch config.llmProvider {
         case .geminiVertex:
             guard let endpoint = VertexAI.endpointURL(
                 projectID: Config.vertexProjectID, region: Config.vertexRegion, model: config.model) else {
                 throw LLMError.invalidConfiguration("Vertex AI needs a GCP project ID and region — set them in the model editor.")
             }
-            guard let token = await GoogleOAuthService.shared.validAccessToken() else {
-                throw LLMError.missingAPIKey("Google account not connected — sign in with Google in the model editor.")
+            let googleAccount = self.googleAccount
+            guard let token = await googleAccount.validAccessToken() else {
+                throw LLMError.missingAPIKey(googleAccount.isConnected
+                    ? (googleAccount.lastError ?? "Google sign-in expired — please sign in again.")
+                    : "Google account not connected — sign in with Google in the model editor.")
             }
             request = URLRequest(url: endpoint)
             VertexAI.apply(accessToken: token, to: &request)
+            account = SubscriptionAuthRetry.Credential(token)
         default:
             guard !config.apiKey.isEmpty else {
                 throw LLMError.missingAPIKey(LLMProvider.gemini.missingCredentialMessage)
@@ -3642,7 +3732,7 @@ class LLMService: ObservableObject {
         }
         request.httpMethod = "POST"
         if let timeout { request.timeoutInterval = timeout }
-        return request
+        return (request, account)
     }
 
     /// Per-request timeout for a Gemini `generateContent` turn. Long enough for a thinking turn
@@ -3678,7 +3768,9 @@ class LLMService: ObservableObject {
         }
     }
 
-    private func sendGemini(_ text: String, systemPrompt: String, config: ModelConfig, includeTools: Bool, imageData: Data?, smallContext: Bool = false) async throws -> String {
+    // Internal (not private) so the forced-refresh tests can drive a Vertex turn through a stubbed
+    // `dataSession` and an injected account (Plan FG P1a).
+    func sendGemini(_ text: String, systemPrompt: String, config: ModelConfig, includeTools: Bool, imageData: Data?, smallContext: Bool = false) async throws -> String {
         // Validate credentials up front (fast-fail before touching history); each tool-loop
         // turn re-resolves below so a token refreshed mid-loop is picked up.
         _ = try await geminiRequest(for: config)
@@ -3705,7 +3797,9 @@ class LLMService: ObservableObject {
                 // Re-resolve endpoint + auth per turn — a Vertex token refreshed mid-tool-loop
                 // is picked up; AI Studio resolves to the same keyed URL every time. A deliberate
                 // timeout: the system default is 60 s, which a stalled turn spent in full.
-                var request = try await self.geminiRequest(for: config, timeout: Self.geminiTurnTimeout)
+                let prepared = try await self.geminiRequestWithAccount(for: config, timeout: Self.geminiTurnTimeout)
+                var request = prepared.request
+                let account = prepared.account
 
                 // Gemini format: system instruction + contents array
                 var contents: [[String: Any]] = []
@@ -3762,9 +3856,15 @@ class LLMService: ObservableObject {
 
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-                // One bounded retry when the service says it is busy (503 UNAVAILABLE, 429, 5xx).
-                let data: Data = try await self.withGeminiTransientRetry { () async throws -> Data in
-                    let (payload, response) = try await URLSession.shared.data(for: request)
+                // One bounded retry when the service says it is busy (503 UNAVAILABLE, 429, 5xx),
+                // and on Vertex one forced refresh of the Google token on a 401 (Plan FG P1a).
+                let googleAccount = self.googleAccount
+                let data: Data = try await SubscriptionAuthRetry.send(
+                    request, credential: account, provider: "google",
+                    refresh: { await googleAccount.accessToken(afterRejecting: $0) },
+                    sign: { token, request in VertexAI.apply(accessToken: token, to: &request) }
+                ) { request in try await self.withGeminiTransientRetry { () async throws -> Data in
+                    let (payload, response) = try await self.dataSession.data(for: request)
 
                     guard let httpResponse = response as? HTTPURLResponse,
                           httpResponse.statusCode == 200 else {
@@ -3783,7 +3883,7 @@ class LLMService: ObservableObject {
                                                 message: nil, rejection: rejection)
                     }
                     return payload
-                }
+                } }
 
                 guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let candidates = json["candidates"] as? [[String: Any]],

@@ -4,7 +4,8 @@ import XCTest
 /// Pure-logic coverage for the "Sign in with Claude" OAuth core: PKCE derivation,
 /// authorize-URL construction, pasted-code parsing, token-response decoding, expiry
 /// logic, and the OAuth-vs-API-key header split. The network/persistence edge
-/// (`ClaudeOAuthService`) is deliberately untested — the protocol logic is the bug surface.
+/// (`ClaudeOAuthService`) is covered only for its refresh (Plan FG P1a), through the request
+/// stubs and an in-memory credential store — never the keychain or the network.
 final class ClaudeOAuthTests: XCTestCase {
 
     // MARK: - PKCE
@@ -154,5 +155,160 @@ final class ClaudeOAuthTests: XCTestCase {
         XCTAssertTrue(ClaudeOAuth.isOAuthToken("sk-ant-oat01-abc"))
         XCTAssertFalse(ClaudeOAuth.isOAuthToken("sk-ant-api03-abc"))
         XCTAssertFalse(ClaudeOAuth.isOAuthToken(""))
+    }
+
+    // MARK: - Refresh (Plan FG P1a)
+
+    @MainActor
+    private func connectedAccount(issued: Date, session: URLSession = RecordingQueueProtocol.session())
+        throws -> (ClaudeOAuthService, InMemoryCredentialStore) {
+        let response = try OAuthRefreshFixture.decode(
+            ClaudeOAuth.TokenResponse.self,
+            OAuthRefreshFixture.tokenBody(access: "sk-ant-oat-fixture-old", refresh: "refresh-fixture-old"))
+        let holder = InMemoryCredentialStore(holding: ClaudeOAuth.Credentials(response: response, now: issued))
+        let service = ClaudeOAuthService(store: holder.store, session: session, refresher: SingleFlightRefresher())
+        return (service, holder)
+    }
+
+    @MainActor
+    func testANetworkFailureKeepsTheCredentials() async throws {
+        OfflineURLProtocol.reset()
+        let (service, holder) = try connectedAccount(issued: OAuthRefreshFixture.expiredIssue,
+                                                     session: OfflineURLProtocol.session())
+
+        let token = await service.validAccessToken()
+
+        XCTAssertNil(token)
+        XCTAssertTrue(service.isConnected, "a dropped connection signed the wearer out")
+        XCTAssertEqual(holder.decoded(ClaudeOAuth.Credentials.self)?.refreshToken, "refresh-fixture-old")
+        XCTAssertEqual(service.lastError, "Couldn't reach the Claude sign-in service; I'll try again.")
+        XCTAssertEqual(OfflineURLProtocol.attempts, 1)
+    }
+
+    @MainActor
+    func testAServerErrorKeepsTheCredentials() async throws {
+        RecordingQueueProtocol.reset()
+        defer { RecordingQueueProtocol.reset() }
+        RecordingQueueProtocol.queue = [(503, "")]
+        let (service, holder) = try connectedAccount(issued: OAuthRefreshFixture.expiredIssue)
+
+        _ = await service.validAccessToken()
+
+        XCTAssertTrue(service.isConnected)
+        XCTAssertNotNil(holder.data)
+        XCTAssertEqual(service.lastError, "Couldn't reach the Claude sign-in service; I'll try again.")
+    }
+
+    @MainActor
+    func testARevokedRefreshTokenDiscardsTheCredential() async throws {
+        RecordingQueueProtocol.reset()
+        defer { RecordingQueueProtocol.reset() }
+        RecordingQueueProtocol.queue = [(400, #"{"error":"invalid_grant","error_description":"Refresh token revoked"}"#)]
+        let (service, holder) = try connectedAccount(issued: OAuthRefreshFixture.expiredIssue)
+
+        let token = await service.validAccessToken()
+
+        XCTAssertNil(token)
+        XCTAssertFalse(service.isConnected)
+        XCTAssertNil(holder.data)
+        XCTAssertEqual(service.lastError, "Claude sign-in expired — please sign in again.")
+    }
+
+    @MainActor
+    func testAForcedRefreshIgnoresTheStoredExpiry() async throws {
+        RecordingQueueProtocol.reset()
+        defer { RecordingQueueProtocol.reset() }
+        RecordingQueueProtocol.queue = [(200, OAuthRefreshFixture.tokenBody(access: "sk-ant-oat-fixture-new"))]
+        let (service, _) = try connectedAccount(issued: Date())
+
+        let replacement = await service.accessToken(afterRejecting: "sk-ant-oat-fixture-old")
+
+        XCTAssertEqual(replacement, "sk-ant-oat-fixture-new")
+        XCTAssertEqual(RecordingQueueProtocol.requests.count, 1)
+        // A caller whose rejected token was already replaced takes the replacement as it stands.
+        let again = await service.accessToken(afterRejecting: "sk-ant-oat-fixture-old")
+        XCTAssertEqual(again, "sk-ant-oat-fixture-new")
+        XCTAssertEqual(RecordingQueueProtocol.requests.count, 1, "an already-replaced token was refreshed again")
+    }
+
+    @MainActor
+    private func accountRoute(_ account: ClaudeOAuthService) -> LLMService {
+        let llm = LLMService()
+        let session = RecordingQueueProtocol.session()
+        llm.dataSession = session
+        llm.streamingSession = session
+        llm.claudeAccountOverride = account
+        return llm
+    }
+
+    private func anthropicConfig(apiKey: String) -> ModelConfig {
+        ModelConfig(id: "fg", name: "fg", provider: LLMProvider.anthropic.rawValue,
+                    apiKey: apiKey, model: "claude-sonnet-5-5", baseURL: "")
+    }
+
+    @MainActor
+    func testA401ForcesOneRefreshAndOneRetry() async throws {
+        RecordingQueueProtocol.reset()
+        defer { RecordingQueueProtocol.reset() }
+        RecordingQueueProtocol.queue = [
+            (401, OAuthRefreshFixture.anthropicUnauthorized),
+            (200, OAuthRefreshFixture.tokenBody(access: "sk-ant-oat-fixture-new")),
+            (200, OAuthRefreshFixture.anthropicReply),
+        ]
+        let (account, _) = try connectedAccount(issued: Date())
+        let llm = accountRoute(account)
+
+        let reply = try await llm.sendAnthropic("What's the weather?", systemPrompt: "Be brief.",
+                                                config: anthropicConfig(apiKey: ""), includeTools: false,
+                                                imageData: nil)
+
+        XCTAssertEqual(reply, "It is sunny.")
+        let requests = RecordingQueueProtocol.requests
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requests.first?.headers["Authorization"], "Bearer sk-ant-oat-fixture-old")
+        XCTAssertTrue(requests.dropFirst().first?.bodyText.contains("refresh_token") ?? false)
+        XCTAssertEqual(requests.last?.headers["Authorization"], "Bearer sk-ant-oat-fixture-new")
+    }
+
+    @MainActor
+    func testASecond401SurfacesWithoutAnotherRefresh() async throws {
+        RecordingQueueProtocol.reset()
+        defer { RecordingQueueProtocol.reset() }
+        RecordingQueueProtocol.queue = [
+            (401, OAuthRefreshFixture.anthropicUnauthorized),
+            (200, OAuthRefreshFixture.tokenBody(access: "sk-ant-oat-fixture-new")),
+            (401, OAuthRefreshFixture.anthropicUnauthorized),
+        ]
+        let (account, _) = try connectedAccount(issued: Date())
+        let llm = accountRoute(account)
+
+        do {
+            _ = try await llm.sendAnthropic("What's the weather?", systemPrompt: "Be brief.",
+                                            config: anthropicConfig(apiKey: ""), includeTools: false,
+                                            imageData: nil)
+            XCTFail("a second 401 should surface")
+        } catch {
+            XCTAssertTrue(SubscriptionAuthRetry.isUnauthorized(error), "\(error)")
+        }
+        XCTAssertEqual(RecordingQueueProtocol.requests.count, 3, "one refresh and one retry, no more")
+    }
+
+    @MainActor
+    func testAPastedKeyIsNeverRefreshed() async throws {
+        RecordingQueueProtocol.reset()
+        defer { RecordingQueueProtocol.reset() }
+        RecordingQueueProtocol.queue = [(401, OAuthRefreshFixture.anthropicUnauthorized)]
+        let (account, _) = try connectedAccount(issued: Date())
+        let llm = accountRoute(account)
+
+        do {
+            _ = try await llm.sendAnthropic("What's the weather?", systemPrompt: "Be brief.",
+                                            config: anthropicConfig(apiKey: "sk-ant-api-fixture"),
+                                            includeTools: false, imageData: nil)
+            XCTFail("a refused key should surface")
+        } catch {
+            XCTAssertTrue(SubscriptionAuthRetry.isUnauthorized(error), "\(error)")
+        }
+        XCTAssertEqual(RecordingQueueProtocol.requests.count, 1, "a pasted key's 401 reached the token endpoint")
     }
 }

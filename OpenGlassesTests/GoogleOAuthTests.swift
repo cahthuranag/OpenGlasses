@@ -2,8 +2,9 @@ import XCTest
 @testable import OpenGlasses
 
 /// Tests for the pure Google OAuth + Vertex endpoint logic (Plan AI). Mirrors
-/// `ClaudeOAuthTests`: the network/persistence edge (`GoogleOAuthService`) is deliberately
-/// untested — the protocol logic is the bug surface.
+/// `ClaudeOAuthTests`: the network/persistence edge (`GoogleOAuthService`) is covered only for
+/// its refresh (Plan FG P1a), through the request stubs and an in-memory credential store —
+/// never the keychain, the browser session or the network.
 final class GoogleOAuthTests: XCTestCase {
 
     private let clientID = "123456-abcdef.apps.googleusercontent.com"
@@ -159,5 +160,131 @@ final class GoogleOAuthTests: XCTestCase {
         XCTAssertFalse(LLMProvider.geminiVertex.supportsModelListing)
         XCTAssertFalse(LLMProvider.geminiVertex.isOpenAICompatible)
         XCTAssertTrue(ModelConfig.inferredSupportsVision(provider: .geminiVertex, model: "gemini-2.0-flash", baseURL: ""))
+    }
+
+    // MARK: - Refresh (Plan FG P1a)
+
+    @MainActor
+    private func connectedAccount(issued: Date, session: URLSession = RecordingQueueProtocol.session())
+        throws -> (GoogleOAuthService, InMemoryCredentialStore) {
+        let response = try OAuthRefreshFixture.decode(
+            GoogleOAuth.TokenResponse.self,
+            OAuthRefreshFixture.tokenBody(access: "google-access-fixture-old", refresh: "refresh-fixture-old"))
+        let holder = InMemoryCredentialStore(holding: GoogleOAuth.Credentials(response: response, now: issued))
+        let service = GoogleOAuthService(store: holder.store, session: session, refresher: SingleFlightRefresher())
+        return (service, holder)
+    }
+
+    @MainActor
+    func testANetworkFailureKeepsTheCredentials() async throws {
+        OfflineURLProtocol.reset()
+        let (service, holder) = try connectedAccount(issued: OAuthRefreshFixture.expiredIssue,
+                                                     session: OfflineURLProtocol.session())
+
+        let token = await service.validAccessToken()
+
+        XCTAssertNil(token)
+        XCTAssertTrue(service.isConnected, "a dropped connection signed the wearer out")
+        XCTAssertEqual(holder.decoded(GoogleOAuth.Credentials.self)?.refreshToken, "refresh-fixture-old")
+        XCTAssertEqual(service.lastError, "Couldn't reach the Google sign-in service; I'll try again.")
+    }
+
+    @MainActor
+    func testExpiredOrRevokedDiscardsTheCredential() async throws {
+        RecordingQueueProtocol.reset()
+        defer { RecordingQueueProtocol.reset() }
+        RecordingQueueProtocol.queue = [(400, #"{"error":"invalid_grant","error_description":"Token has been expired or revoked."}"#)]
+        let (service, holder) = try connectedAccount(issued: OAuthRefreshFixture.expiredIssue)
+
+        _ = await service.validAccessToken()
+
+        XCTAssertFalse(service.isConnected)
+        XCTAssertNil(holder.data)
+        XCTAssertEqual(service.lastError, "Google sign-in expired — please sign in again.")
+    }
+
+    @MainActor
+    func testARefreshKeepsGooglesUnrotatedRefreshToken() async throws {
+        RecordingQueueProtocol.reset()
+        defer { RecordingQueueProtocol.reset() }
+        RecordingQueueProtocol.queue = [(200, OAuthRefreshFixture.tokenBody(access: "google-access-fixture-new", refresh: nil))]
+        let (service, holder) = try connectedAccount(issued: OAuthRefreshFixture.expiredIssue)
+
+        let token = await service.validAccessToken()
+
+        XCTAssertEqual(token, "google-access-fixture-new")
+        XCTAssertEqual(holder.decoded(GoogleOAuth.Credentials.self)?.refreshToken, "refresh-fixture-old")
+        XCTAssertNil(service.lastError)
+    }
+
+    /// The Vertex turn reads its project from settings; the test sets one and puts the old back.
+    @MainActor
+    private func withVertexProject(_ body: () async throws -> Void) async rethrows {
+        let previous = UserDefaults.standard.string(forKey: "vertexProjectID")
+        Config.setVertexProjectID("fixture-project")
+        defer {
+            if let previous { UserDefaults.standard.set(previous, forKey: "vertexProjectID") }
+            else { UserDefaults.standard.removeObject(forKey: "vertexProjectID") }
+        }
+        try await body()
+    }
+
+    @MainActor
+    private func vertexRoute(_ account: GoogleOAuthService) -> LLMService {
+        let llm = LLMService()
+        llm.dataSession = RecordingQueueProtocol.session()
+        llm.googleAccountOverride = account
+        return llm
+    }
+
+    private let vertexConfig = ModelConfig(id: "fg", name: "fg", provider: LLMProvider.geminiVertex.rawValue,
+                                           apiKey: "", model: "gemini-2.5-flash", baseURL: "")
+
+    @MainActor
+    func testA401ForcesOneRefreshAndOneRetry() async throws {
+        RecordingQueueProtocol.reset()
+        defer { RecordingQueueProtocol.reset() }
+        RecordingQueueProtocol.queue = [
+            (401, OAuthRefreshFixture.vertexUnauthorized),
+            (200, OAuthRefreshFixture.tokenBody(access: "google-access-fixture-new", refresh: nil)),
+            (200, OAuthRefreshFixture.geminiReply),
+        ]
+        let (account, _) = try connectedAccount(issued: Date())
+        let llm = vertexRoute(account)
+
+        try await withVertexProject {
+            let reply = try await llm.sendGemini("What's the weather?", systemPrompt: "Be brief.",
+                                                 config: vertexConfig, includeTools: false, imageData: nil)
+            XCTAssertEqual(reply, "It is sunny.")
+        }
+        let requests = RecordingQueueProtocol.requests
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requests.first?.headers["Authorization"], "Bearer google-access-fixture-old")
+        XCTAssertTrue(requests.dropFirst().first?.bodyText.contains("grant_type=refresh_token") ?? false)
+        XCTAssertEqual(requests.last?.headers["Authorization"], "Bearer google-access-fixture-new")
+    }
+
+    @MainActor
+    func testASecond401SurfacesWithoutAnotherRefresh() async throws {
+        RecordingQueueProtocol.reset()
+        defer { RecordingQueueProtocol.reset() }
+        RecordingQueueProtocol.queue = [
+            (401, OAuthRefreshFixture.vertexUnauthorized),
+            (200, OAuthRefreshFixture.tokenBody(access: "google-access-fixture-new", refresh: nil)),
+            (401, OAuthRefreshFixture.vertexUnauthorized),
+        ]
+        let (account, _) = try connectedAccount(issued: Date())
+        let llm = vertexRoute(account)
+
+        await withVertexProject {
+            do {
+                _ = try await llm.sendGemini("What's the weather?", systemPrompt: "Be brief.",
+                                             config: vertexConfig, includeTools: false, imageData: nil)
+                XCTFail("a second 401 should surface")
+            } catch {
+                XCTAssertTrue(SubscriptionAuthRetry.isUnauthorized(error), "\(error)")
+            }
+        }
+        XCTAssertEqual(RecordingQueueProtocol.requests.count, 3, "one refresh and one retry, no more")
     }
 }

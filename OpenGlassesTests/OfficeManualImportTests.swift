@@ -200,6 +200,27 @@ final class OfficeManualImportTests: XCTestCase {
         let archive = try signedArchive(files: files)
         XCTAssertThrowsError(try prepare(archive, assignment: assignment(archive: archive))) { XCTAssertEqual($0 as? OfficeManualImport.Refusal, .unsafeManifest) }
     }
+    func testListedSiteDocumentsMustBeSafeAndPresent() throws {
+        func archive(sites: [String], extra: [String: Data] = [:]) throws -> Data {
+            var files = VaultArchiveFixture.vaultFiles(vaultId: "fixture-vault")
+            let base = try JSONDecoder().decode(VaultManifest.self, from: XCTUnwrap(files["manifest.json"]))
+            let manifest = VaultManifest(id: base.id, name: base.name, version: base.version, files: base.files,
+                                         proceduresDir: base.proceduresDir, documentsDir: base.documentsDir,
+                                         documents: base.documents, gating: base.gating, promptRules: base.promptRules,
+                                         sourceAttributionFormat: base.sourceAttributionFormat,
+                                         sourceAttributionRequired: base.sourceAttributionRequired, sites: sites)
+            files["manifest.json"] = try JSONEncoder().encode(manifest)
+            for (path, data) in extra { files[path] = data }
+            return try signedArchive(files: files)
+        }
+        for unsafe in [try archive(sites: ["../site.json"]), try archive(sites: ["sites/missing.json"])] {
+            XCTAssertThrowsError(try prepare(unsafe, assignment: assignment(archive: unsafe))) {
+                XCTAssertEqual($0 as? OfficeManualImport.Refusal, .unsafeManifest)
+            }
+        }
+        let present = try archive(sites: ["sites/one.json"], extra: ["sites/one.json": Data("{}".utf8)])
+        XCTAssertNoThrow(try prepare(present, assignment: assignment(archive: present)))
+    }
     func testMissingDeclaredManualAndInflationLimitAreRefused() throws {
         var files = VaultArchiveFixture.vaultFiles(vaultId: "fixture-vault")
         files.removeValue(forKey: "documents/manual.txt")

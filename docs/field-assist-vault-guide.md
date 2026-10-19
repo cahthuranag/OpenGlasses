@@ -20,8 +20,10 @@ rtu-service-vault/
 │   ├── RTU-500-service-manual.pdf
 │   ├── RTU-500-wiring.pdf
 │   └── RTU-700-install-guide.pdf
-└── procedures/                 optional: step-by-step flows
-    └── low_pressure_diagnostic.json
+├── procedures/                 optional: step-by-step flows
+│   └── low_pressure_diagnostic.json
+└── sites/                      optional: how the units at one site work together
+    └── hillside-house.json
 ```
 
 The two kinds of content behave differently, and getting the split right is most of the work.
@@ -207,6 +209,7 @@ This is the whole file for the folder above.
 | `gating` | Always `{ "iap": "enterprise" }` for a custom vault. |
 | `prompt_rules` | The rules the assistant follows while this vault is active. |
 | `source_attribution_*` | Forces a source line on every factual claim drawn from the core files. |
+| `sites` | Optional. The site documents, one JSON file per site under `sites/` — see **Describing a site system** below. Omit it if you have none; a vault without it imports exactly as before. |
 | `trades` | Optional. The trades this vault is for: `refrigeration_hvac`, `electrical`. Each trade adds its own tiles to the Field Assist grid on phones whose default vault is this one — `refrigeration_hvac` adds **Read Gauges** and **P-T Lookup**; `electrical` adds none yet. The technician's own choice in Settings › Field Assist › Trade, then the organisation's, comes first; the vault's is used when neither has chosen. A value the app does not know is ignored, not refused, so you can list a trade a newer version will understand. Omit it to leave the choice to the technician. |
 
 > **The importer refuses a manifest whose rules do not mention fabrication and citation.** Your `prompt_rules` must include a rule containing the word *fabricate* and one containing *cite*. The rules above satisfy that; reword them freely as long as those two words survive.
@@ -270,6 +273,97 @@ Each procedure is one JSON file in `procedures/`. The importer checks the graph 
   ]
 }
 ```
+
+## Describing a site system (optional)
+
+A manual describes one unit on its own. Nobody writes down how the units at one site work together, and that is where the hard faults live: the heat pump shows a communication fault because the furnace board dropped off the bus, and a technician who reads only the heat pump's manual replaces the wrong board. A **site document** is the overlay that joins them: which units are at the site, how they are connected, which controller commands which, the systems outside the site they talk to, the settings someone set on site, and the faults your crew has seen come from the link between two of them.
+
+It is for any trade. The same shape describes a furnace, heat pump and communicating thermostat; a plant line with its PLC, drives and fieldbus; a comms room with its switches, UPS and management network; a building with its chiller, air handlers and building management system; a dairy shed or a solar installation. The kinds of relationship are a small shared vocabulary, and your trade's own words go in the free text beside them.
+
+**When to write one.** When units share controls, a bus, a line set, a pipe run, a network or an outside system, and a fault on one can come from another. Write one for a customer's own site, with its serials, or for a reusable system type ("our standard dual-fuel install", "the standard three-rack comms room") with no serials at all.
+
+**How it is used.** A site document is never loaded into every question, and never searched like a manual. When a job is at a documented site, the phone gives the assistant that one site's connections and controls, tells it to consider the link when a fault crosses units, and has it cite the site document as your vault's, never as a manual page. The brief says "Part of the Hillside house system, with 2 other units", and recognising one of its units says so once. A job is matched to a site by:
+
+- **a serial** on the job, or one the technician reads out on site — this confirms the site;
+- **the other system's identifier** for a unit or for the location, when the job file came from your job-management system — this confirms it too;
+- **the models alone**, when exactly one site lists every model the job names — this is said as unconfirmed, "matched by model only; the serial will confirm it". When several sites fit, nothing is assumed and the brief says how many.
+
+Each unit stays itself. The site document refers to units by the model their own section already uses; their specifications stay in that section and in their manuals, and the job's record keeps each unit apart as always.
+
+### Write it
+
+One file per site, in `sites/`, named for the site's `id`, and listed in the manifest:
+
+```json
+"sites": ["sites/hillside-house.json"]
+```
+
+This is the whole of `sites/hillside-house.json` for a three-unit dual-fuel system. Every model, serial, place and identifier in it is invented.
+
+```json
+{
+  "format": "avenkin.site-system",
+  "version": 1,
+  "id": "hillside-house",
+  "name": "Hillside house, whole-home system",
+  "location_label": "Hillside house",
+  "external_location_ids": [ { "system": "example-fsm", "id": "loc-88412" } ],
+  "units": [
+    { "id": "furnace", "model": "NV80F060", "serial": "AF80-2201", "label": "basement furnace" },
+    { "id": "heatpump", "model": "NV36HP2", "serial": "AH36-7713", "label": "side-yard heat pump",
+      "external_ids": [ { "system": "example-fsm", "id": "asset-5521" } ] },
+    { "id": "tstat", "model": "NT9C", "label": "hall thermostat", "covered": false }
+  ],
+  "connections": [
+    { "from": "furnace", "to": "heatpump", "kind": "fluid", "medium": "refrigerant",
+      "detail": "3/8 and 3/4 line set, 9 m" },
+    { "from": "tstat", "to": "furnace", "kind": "communication", "protocol": "4-wire serial bus",
+      "detail": "terminals 1-2-R-C" },
+    { "from": "furnace", "to": "heatpump", "kind": "communication", "protocol": "4-wire serial bus",
+      "detail": "daisy-chained from the furnace board" }
+  ],
+  "controls": [
+    { "controller": "tstat", "commands": ["furnace", "heatpump"], "mode": "communicating",
+      "detail": "Dual fuel; balance point at the thermostat" }
+  ],
+  "integrations": [
+    { "id": "portal", "name": "Remote-monitoring portal", "kind": "cloud_portal",
+      "units": ["tstat"], "direction": "outbound", "protocol": "Wi-Fi",
+      "detail": "Alerts reach the dealer account; no control from it." }
+  ],
+  "settings": [
+    { "unit": "furnace", "name": "Blower profile", "value": "B", "note": "Set at install" }
+  ],
+  "interaction_faults": [
+    { "seen_on": "heatpump", "code": "E77", "link": "communication",
+      "text": "E77 on the heat pump when the furnace board drops off the bus; check the bus at the furnace first." }
+  ],
+  "notes": "Installed 2024; disconnect behind the side gate."
+}
+```
+
+| Key | What it says |
+|---|---|
+| `format`, `version` | Always `"avenkin.site-system"` and `1`. |
+| `id` | Letters, digits, `.`, `-` or `_`; unique in the vault; the file is `sites/<id>.json`. |
+| `name` | What the assistant cites: *"Source: Hillside house, whole-home system"*. |
+| `location_label` | Optional. What the technician hears the site called: *"Part of the Hillside house system"*. |
+| `external_location_ids` | Optional. The location's id in another system, each as `{ "system": …, "id": … }`. A job file from that system with the same `location_id` confirms the site. |
+| `units` | One to twelve. `id` is a short lowercase handle used only inside this file. `model` is the spelling the unit's own vault section uses. `serial` and `label` (where it is at the site) are optional. A unit your vault has no section for — a thermostat, a third-party controller — says `"covered": false`, so the importer can tell it from a typo. `external_ids` is optional: the unit's id in another system, as `{ "system": …, "id": … }`, one per system. |
+| `connections` | Optional, up to thirty. `from` and `to` name units or integrations; `kind` is one of `power`, `control`, `communication`, `data`, `fluid`, `air`, `mechanical`, `other`; `medium`, `protocol` and `detail` are your trade's words; `direction` is `one_way` (from → to) or `two_way` (the default). |
+| `controls` | Optional. Which unit (`controller`) commands which (`commands`), with `mode` `communicating`, `conventional` or `other`. |
+| `integrations` | Optional, up to eight. The systems outside the site the units talk to: `kind` is `bms`, `scada`, `cloud_portal`, `network_management`, `business_application`, `metering` or `other`; `units` it touches; `direction` `inbound`, `outbound` or `both`; and in `detail`, what it reads, what it may command, and who holds the login (a role, never the credentials). |
+| `settings` | Optional, up to thirty. A value someone set on site, per unit. |
+| `interaction_faults` | Optional, up to twenty. A fault `seen_on` one unit that comes from somewhere else: `link` names the unit, the integration or the kind of connection it crosses, and `text` says it in plain words. |
+| `notes` | Optional. Anything else a technician arriving should know. |
+
+**What to write:** the units by the model spelling their section already uses; serials when the vault is for one customer's sites, none for a reusable system type; the connections a technician would trace, typed generically with the trade's words in the detail; the controller; the outside systems and who holds their logins; the settings someone set on site; and the faults the crew has actually seen come from the link.
+
+**What not to write:** specifications (they belong to the model's section), customer contact details, passwords, links, or a diagnosis nobody has seen.
+
+**The importer checks it.** Every text is plain — no markup, no line breaks, no links — and within its length. It refuses a unit whose model the vault has no section for (unless it says `"covered": false`), a unit that names another vault (a site document names only units in its own vault or on the job), repeated unit ids, a serial given to two units in the vault, a location or a unit identifier given to two sites, a connection, control, setting or fault that names a unit nobody declared, an unknown kind or mode, a member it does not know, a file over 8 KB or more than a hundred sites. A site whose description is longer than the assistant's site block (1,600 characters) still imports, with a warning naming what the block will leave out; the assistant can still ask for the whole document.
+
+**Packs and exports.** A pack describes products, not customers' sites, so a pack that carries `sites` is refused. A vault you export from the phone carries its site documents, which can identify a customer's premises — keep that in mind before you send one on. Office-built vaults carry site documents only once the office's vault check accepts them.
 
 ## Step 5 · Import on the iPhone
 
@@ -387,6 +481,12 @@ Removing a manual is only offered for vaults you imported yourself. A signed pac
 | `… → unknown step` | A procedure branch points at a step id that does not exist. |
 | `no terminal step is reachable` | Give the procedure at least one step with `"terminal": true` that the entry step can reach. |
 | `core files total … characters (budget 32768)` | Warning only. Move the long material into a document. |
+| `sites/…: unit '…' model '…' is not a model this vault has a section for` | Spell the model as its section's heading does, or mark a unit the vault does not cover `"covered": false`. |
+| `sites/…: … names '…', which is not a declared unit` | A connection, control, setting or fault names a unit id the file does not declare. |
+| `sites/…: serial '…' is also listed in sites/…` | One serial is one unit in one place; a reusable system type has no serials. |
+| `sites/…: a site document's file must be named for its id` | Name the file `sites/<id>.json`, one file per site. |
+| `sites/…: … contains a link` | Site documents are plain text; say who holds a login, not where it is. |
+| `sites/…: the session's site block is held to 1600 characters …` | Warning only. Shorten the details, or accept that the assistant asks for the rest when it needs it. |
 
 ## Receiving a vault from a link or a QR code
 
@@ -513,10 +613,12 @@ Delivery is by hand, or by link. By hand: you install the finished folder on the
 The parts you authored, the core files and the procedures, can be published as a **pack** that other Field Assist users install from the app's Packs list, and that a team licence can include for a whole organisation. What you are publishing is your fault-code tables, nameplate decoding, safety rules and diagnostics, which is where your field knowledge lives.
 
 > **A pack must never contain manufacturer manuals.** It goes into a catalog anyone can install from, so everything inside it is copied to people you have never met. Keep the manuals out. A customer who installs your pack pairs it with manuals from their own vault, or from a vault you built for them as in situation 2.
+>
+> **Nor site documents.** A site document describes a customer's site, not a product, and the importer refuses a pack that carries `sites`.
 
 To prepare one:
 
-1. Copy the vault folder and delete `documents/`. Remove `documents` and `documents_dir` from the manifest, and set `gating` to `{ "iap": "com.openglasses.vault.<id>" }`, where `<id>` is the vault's `id`.
+1. Copy the vault folder and delete `documents/` and `sites/`. Remove `documents`, `documents_dir` and `sites` from the manifest, and set `gating` to `{ "iap": "com.openglasses.vault.<id>" }`, where `<id>` is the vault's `id`.
 2. Add a `pack.json` beside the manifest:
 
 ```json
@@ -543,6 +645,7 @@ Updating a published pack is the same folder with a higher `version`. Technician
 - [ ] Fault codes sit under a heading per model, one code per row.
 - [ ] `safety.md` says what you want spoken, in your words.
 - [ ] Core files total well under 32 KB.
+- [ ] Any site document has no contact details, passwords or links, and its serials are the customer's.
 - [ ] Import shows a section count for every manual.
 - [ ] A known fault code answers with a page citation.
 - [ ] An out-of-scope question answers with "the manuals do not cover this".

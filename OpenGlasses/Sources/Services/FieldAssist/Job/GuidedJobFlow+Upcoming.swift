@@ -31,8 +31,12 @@ extension GuidedJobFlow {
     func assembleBrief(jobId: String, vaultId: String = Config.fieldAssistDefaultVaultId,
                        now: Date = Date()) -> JobBrief? {
         guard let job = upcoming?.job(id: jobId) else { return nil }
-        let brief = JobBriefAssembler.assemble(briefInputs(for: job, vaultId: vaultId, now: now))
+        let inputs = briefInputs(for: job, vaultId: vaultId, now: now)
+        let brief = JobBriefAssembler.assemble(inputs)
         upcoming?.saveBrief(brief, jobId: jobId)
+        // The site system the brief matched (Plan HV §3), kept on the job ahead so the visit
+        // starts from it.
+        upcoming?.saveSiteSystem(inputs.siteSystem, jobId: jobId)
         return brief
     }
 
@@ -70,13 +74,17 @@ extension GuidedJobFlow {
         let documentStore = sessions.documentStore
         let retriever: VaultRetriever? = (manifest.hasDocuments && documentStore != nil)
             ? sessions.manualRetriever(store: store) : nil
-        return JobBriefAssembler.Inputs(
+        var inputs = JobBriefAssembler.Inputs(
             job: job, history: history, vaultName: manifest.name, coreFiles: files,
             procedures: ProcedureLibrary(store: store).all,
             manualPassages: { text in
                 retriever?.retrieve(.init(turn: text, limit: JobBriefAssembler.passageLimit)).passages ?? []
             },
             now: now)
+        inputs.siteSystem = SiteSystemMatcher.match(
+            evidence: SiteSystemEvidence(job: job), documents: store.siteDocuments(), vaultId: manifest.id,
+            modelKey: SiteSystemMatcher.modelKey(index: inputs.modelIndex))
+        return inputs
     }
 
     // MARK: - Starting one on site

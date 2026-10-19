@@ -1,0 +1,39 @@
+{
+  "format": "avenkin.site-system",
+  "version": 1,
+  "id": "hillside-house",
+  "name": "Hillside house, whole-home system",
+  "location_label": "Hillside house",
+  "external_location_ids": [ { "system": "example-fsm", "id": "loc-88412" } ],
+  "units": [
+    { "id": "furnace", "model": "NV80F060", "serial": "AF80-2201", "label": "basement furnace" },
+    { "id": "heatpump", "model": "NV36HP2", "serial": "AH36-7713", "label": "side-yard heat pump",
+      "external_ids": [ { "system": "example-fsm", "id": "asset-5521" } ] },
+    { "id": "tstat", "model": "NT9C", "label": "hall thermostat", "covered": false }
+  ],
+  "connections": [
+    { "from": "furnace", "to": "heatpump", "kind": "fluid", "medium": "refrigerant",
+      "detail": "3/8 and 3/4 line set, 9 m" },
+    { "from": "tstat", "to": "furnace", "kind": "communication", "protocol": "4-wire serial bus",
+      "detail": "terminals 1-2-R-C" },
+    { "from": "furnace", "to": "heatpump", "kind": "communication", "protocol": "4-wire serial bus",
+      "detail": "daisy-chained from the furnace board" }
+  ],
+  "controls": [
+    { "controller": "tstat", "commands": ["furnace", "heatpump"], "mode": "communicating",
+      "detail": "Dual fuel; balance point at the thermostat" }
+  ],
+  "integrations": [
+    { "id": "portal", "name": "Remote-monitoring portal", "kind": "cloud_portal",
+      "units": ["tstat"], "direction": "outbound", "protocol": "Wi-Fi",
+      "detail": "Alerts reach the dealer account; no control from it." }
+  ],
+  "settings": [
+    { "unit": "furnace", "name": "Blower profile", "value": "B", "note": "Set at install" }
+  ],
+  "interaction_faults": [
+    { "seen_on": "heatpump", "code": "E77", "link": "communication",
+      "text": "E77 on the heat pump when the furnace board drops off the bus; check the bus at the furnace first." }
+  ],
+  "notes": "Installed 2024; disconnect behind the side gate."
+}

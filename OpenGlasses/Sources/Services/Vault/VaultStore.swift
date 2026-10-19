@@ -97,6 +97,42 @@ final class VaultStore {
         manifest.files.contains { (read($0)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) }
     }
 
+    // MARK: - Site documents (Plan HV)
+
+    /// The vault's site documents, in `sites` order. Read from the baseline only: site documents
+    /// have no overlay and no phone editor. A file that no longer passes the validator's rules is
+    /// left out rather than half-read — install validated every one, so this is a damaged baseline.
+    /// Read once per store; empty for every vault without `sites`.
+    func siteDocuments() -> [SiteSystemDocument] {
+        if let cached = siteDocumentCache { return cached }
+        let documents = Self.readSiteDocuments(manifest: manifest, root: bundleRoot)
+        siteDocumentCache = documents
+        return documents
+    }
+
+    /// The site document with this id, or nil.
+    func siteDocument(id: String) -> SiteSystemDocument? {
+        siteDocuments().first { $0.id == id }
+    }
+
+    private var siteDocumentCache: [SiteSystemDocument]?
+
+    static func readSiteDocuments(manifest: VaultManifest, root: URL?) -> [SiteSystemDocument] {
+        guard let root, !manifest.siteFiles.isEmpty else { return [] }
+        let core = manifest.files.compactMap { file -> (filename: String, contents: String)? in
+            (try? String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)).map { (file, $0) }
+        }
+        let covered = SiteSystemValidator.modelCovered(by: VaultModelIndex(vaultName: manifest.name, files: core))
+        return manifest.siteFiles.prefix(SiteSystemValidator.maximumSiteDocuments).compactMap { path in
+            guard SiteSystemValidator.isSitePath(path) else { return nil }
+            let url = root.appendingPathComponent(path)
+            guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+                  size <= SiteSystemValidator.maximumFileBytes,
+                  let data = try? Data(contentsOf: url) else { return nil }
+            return SiteSystemValidator.check(data, path: path, modelCovered: covered).document
+        }
+    }
+
     // MARK: - Helpers
 
     private func ensureOverlayExists() {

@@ -405,7 +405,7 @@ enum VaultManualRemoval {
                       gating: manifest.gating, promptRules: manifest.promptRules,
                       sourceAttributionFormat: manifest.sourceAttributionFormat,
                       sourceAttributionRequired: manifest.sourceAttributionRequired,
-                      trades: manifest.trades)
+                      trades: manifest.trades, sites: manifest.sites)
     }
 
     private static func saveInstalledManifest(_ manifest: VaultManifest) throws {

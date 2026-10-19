@@ -307,6 +307,11 @@ struct VaultManagerView: View {
             Text(manifest.name)
             Text("\(manifest.id) · v\(manifest.version) · \(manifest.files.count) files")
                 .font(.caption).foregroundStyle(.secondary)
+            if !manifest.siteFiles.isEmpty {
+                // Site documents (Plan HV §7): a count, never their contents.
+                Text(manifest.siteFiles.count == 1 ? "1 site system" : "\(manifest.siteFiles.count) site systems")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             if let pack {
                 Text("Pack v\(pack.version)\(pack.author.map { " · by \($0)" } ?? "")")
                     .font(.caption2).foregroundStyle(.secondary)

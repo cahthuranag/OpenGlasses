@@ -239,6 +239,10 @@ struct UpcomingJob: Codable, Equatable, Identifiable {
     var officeHistory: OfficeServiceHistory?
     /// What the site asks of the person arriving, from a format-3 file (Plan HU). As the history.
     var siteRequirements: OfficeSiteRequirements?
+    /// Which of the vault's documented site systems the job is at (Plan HV), worked out when the
+    /// brief is assembled and copied onto the visit when it starts. Nil, and absent from the JSON,
+    /// for every job whose vault has no site documents.
+    var siteSystem: SiteSystemMatch?
     let createdAt: Date
     var updatedAt: Date
 
@@ -288,6 +292,7 @@ struct UpcomingJob: Codable, Equatable, Identifiable {
         case officeReference = "office_reference"
         case officeHistory = "office_history"
         case siteRequirements = "site_requirements"
+        case siteSystem = "site_system"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -311,6 +316,7 @@ struct UpcomingJob: Codable, Equatable, Identifiable {
         officeReference = try c.decodeIfPresent(String.self, forKey: .officeReference)
         officeHistory = try c.decodeIfPresent(OfficeServiceHistory.self, forKey: .officeHistory)
         siteRequirements = try c.decodeIfPresent(OfficeSiteRequirements.self, forKey: .siteRequirements)
+        siteSystem = try? c.decodeIfPresent(SiteSystemMatch.self, forKey: .siteSystem)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
     }

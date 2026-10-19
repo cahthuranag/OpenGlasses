@@ -152,6 +152,10 @@ final class EquipmentLookupTool: NativeTool {
             return await lookupViaCamera(store: store, restrictTo: restrictTo)
         }
 
+        // "Site system" (Plan HV §4): the matched site's whole document, which a live session's
+        // one line points at and Direct mode's block may have clipped.
+        if SiteSystemContract.isLookupQuery(query!) { return siteSystemAnswer() }
+
         let recognised = recogniseEquipment(in: query!, source: .spoken)
         if let ambiguous = recognised.ambiguity { return ambiguous }
         let prefix = recognised.announcement.map { $0 + "\n\n" } ?? ""
@@ -219,10 +223,29 @@ final class EquipmentLookupTool: NativeTool {
                         + "the session stays on \(current) until they answer. Do not ask or answer "
                         + "that question yourself.", nil)
             }
-            return (Self.announcement(for: identity), nil)
+            return (withSiteSystem(Self.announcement(for: identity)), nil)
         }
         session.setEquipment(identity)
-        return (Self.announcement(for: identity), nil)
+        return (withSiteSystem(Self.announcement(for: identity)), nil)
+    }
+
+    /// A recorded unit's announcement, with "Part of the Hillside house system with 2 other units."
+    /// when the job's matched site lists it — once per unit per job (Plan HV §5).
+    private func withSiteSystem(_ announcement: String) -> String {
+        guard let site = session.siteSystemAnnouncement() else { return announcement }
+        return announcement + " " + site
+    }
+
+    /// The matched site system, rendered whole, or why there is none.
+    private func siteSystemAnswer() -> String {
+        let lines = session.siteSystemLines(limit: SiteSystemContract.lookupCharacterLimit)
+        guard !lines.isEmpty else {
+            if let line = SiteSystemContract.briefLine(session.activeSession?.siteSystem) {
+                return "No site system is matched to this job yet. \(line)"
+            }
+            return "No site system in the \(session.activeVault?.manifest.name ?? "active") vault is matched to this job. Answer for the unit in front of the technician."
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// The identity to record for a model the text named (Plan GB P2). A spoken model keeps what
@@ -272,7 +295,7 @@ final class EquipmentLookupTool: NativeTool {
         if resolution.isCovered {
             let identity = EquipmentRecognition.identity(stated: fragment, resolution: resolution, source: .spoken)
             let recorded = session.correctEquipment(identity)
-            return Self.announcement(for: recorded)
+            return withSiteSystem(Self.announcement(for: recorded))
                 + "\n\n=== \(recorded.file) ===\n\(recorded.heading)"
         }
         let matches = index.match(fragment: fragment)
@@ -282,7 +305,7 @@ final class EquipmentLookupTool: NativeTool {
                 statedModel: wholeModel ? fragment : model.name,
                 vaultMatch: .init(heading: model.heading, section: model.name, kind: .partial))
             let recorded = session.correctEquipment(identity)
-            return recorded.announcement + "\n\n=== \(model.file) ===\n\(model.heading)"
+            return withSiteSystem(recorded.announcement) + "\n\n=== \(model.file) ===\n\(model.heading)"
         }
         if matches.count > 1 {
             return "'\(fragment)' matches \(matches.map(\.name).joined(separator: ", ")). Which one is it?"

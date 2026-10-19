@@ -169,6 +169,13 @@ final class SessionLogger {
             case officeFlagsSpoken = "office_flags_spoken"
             /// …and its `warning` site requirements, said in full before the flags. Counts only.
             case officeSiteRequirementsSpoken = "office_site_requirements_spoken"
+            /// The job was matched to one of the vault's documented site systems, or the match
+            /// changed (Plan HV §3): the site's id, the strength, what it rested on and how many
+            /// units it named. Never the site's name or any of its text.
+            case siteSystemMatched = "site_system_matched"
+            /// A recognised unit was said to be part of the matched site system (Plan HV §5), once
+            /// per unit per job: the site's id and the unit's id.
+            case siteSystemAnnounced = "site_system_announced"
             /// The job report left by a channel the technician chose (Plan EM P2).
             case reportSent = "report_sent"
             /// …or the composer was dismissed, and the record is still in the queue.

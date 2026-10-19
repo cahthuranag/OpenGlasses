@@ -60,6 +60,11 @@ enum LiveJobContract {
         // snapshot uses. One renderer, so a provider switch mid-job cannot change what the model
         // was told about the same state.
         optional.append(contentsOf: FieldSessionContextSnapshot.jobFlowLines(session: session))
+        // The matched site system, as one line and a lookup (Plan HV §4, decided 2026-10-20): the
+        // block itself cannot fit beside the rest, and the line is the first thing a clip drops.
+        if let site = SiteSystemContract.liveLine(session.siteSystem, vaultId: session.vaultId) {
+            optional.append(site)
+        }
 
         var lines = protected
         var remaining = characterLimit - protected.reduce(0) { $0 + $1.count + 1 }
@@ -81,6 +86,7 @@ enum LiveJobContract {
         if line.hasPrefix("PENDING APP QUESTION:") { return 1 }
         if line.hasPrefix("EQUIPMENT:") { return 2 }
         if line.hasPrefix("UNITS ON THIS JOB:") { return 3 }
+        if line.hasPrefix(SiteSystemContract.heading) { return 5 }
         return 4
     }
 

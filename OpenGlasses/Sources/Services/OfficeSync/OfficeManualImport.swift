@@ -73,10 +73,11 @@ enum OfficeManualImport {
         let verification = VaultArchiveVerifier.verify(extracted, publishers: publishers)
         guard verification.isSigned else { throw Refusal.publisherNotVerified }
         // Signed authors still cannot cause an importer to follow a manifest path outside the
-        // validated file map. Config/procedure files and document originals are all included.
+        // validated file map. Config/procedure files, document originals and site documents are all
+        // included.
         let requiredFiles = manifest.files + manifest.documents.flatMap { document in
                 [manifest.documentRelativePath(document), manifest.documentSourceRelativePath(document)].compactMap { $0 }
-            }
+            } + (manifest.sites ?? [])
         let paths = requiredFiles + [manifest.proceduresDir, manifest.documentsDir].compactMap { $0 }
         guard paths.allSatisfy(VaultArchiveReader.isSafeRelativePath),
               requiredFiles.allSatisfy({ extracted.files[$0] != nil }), manifest.documentsIncluded else {

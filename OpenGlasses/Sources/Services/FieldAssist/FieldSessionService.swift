@@ -313,6 +313,7 @@ final class FieldSessionService: ObservableObject {
         if let nameplate = identity.nameplateText { payload["nameplate_text"] = AnyCodable(nameplate) }
         logger?.append(.init(timestamp: Date(), kind: .equipmentRecognised,
                              text: identity.heading, payload: payload))
+        refreshSiteSystem()
     }
 
     /// The technician restated the model of the unit they are on (Plan GB P2) — "no, the model is
@@ -344,6 +345,7 @@ final class FieldSessionService: ObservableObject {
                                        "to": AnyCodable(corrected.stated),
                                        "heading": AnyCodable(corrected.heading),
                                        "vault_match": AnyCodable(corrected.vaultMatch?.kind.rawValue ?? "none")]))
+        refreshSiteSystem()
         return corrected
     }
 
@@ -368,6 +370,7 @@ final class FieldSessionService: ObservableObject {
                              payload: ["scope": AnyCodable(session.continuityScope),
                                        "stated_model": AnyCodable(identity?.stated ?? ""),
                                        "vault_match": AnyCodable(identity?.vaultMatch?.kind.rawValue ?? "none")]))
+        if identity != nil { refreshSiteSystem() }
     }
 
     /// Whether the job's first identification landed on work already recorded (Plan GD2) — what
@@ -550,6 +553,7 @@ final class FieldSessionService: ObservableObject {
             session.officeHistory = job.officeHistory
             session.officeSiteRequirements = job.siteRequirements
             session.officeEquipment = job.officeHistory != nil && !job.equipment.isEmpty ? job.equipment : nil
+            session.siteSystem = job.siteSystem
         }
         var payload: [String: AnyCodable] = [
             "origin": AnyCodable(job.origin.rawValue),
@@ -578,6 +582,89 @@ final class FieldSessionService: ObservableObject {
         }
         logger?.append(.init(timestamp: Date(), kind: .jobAheadStarted,
                              text: job.provenance?.recordLine ?? job.title, payload: payload))
+        // The site system the brief matched, then weighed again with what the job ahead says
+        // against this vault — a job started without a brief is matched here (Plan HV §3).
+        if let match = job.siteSystem { logSiteSystem(match, previous: nil) }
+        refreshSiteSystem(adding: SiteSystemEvidence(job: job))
+    }
+
+    // MARK: - Site systems (Plan HV)
+
+    /// The open job's matched site document, when the match is about this session's vault.
+    var siteSystemDocument: SiteSystemDocument? {
+        guard let session = activeSession, let match = session.siteSystem,
+              match.applies(toVault: session.vaultId), let siteId = match.siteId else { return nil }
+        return activeVault?.siteDocument(id: siteId)
+    }
+
+    /// The matched site's unit that is the one in front of the technician, when it can be told.
+    var siteSystemActiveUnit: SiteSystemDocument.Unit? {
+        guard let session = activeSession, let document = siteSystemDocument else { return nil }
+        return SiteSystemMatcher.unit(in: document, model: session.equipment?.modelToken,
+                                      serial: activeSerial, modelKey: SiteSystemMatcher.modelKey(index: modelIndex))
+    }
+
+    /// The model's block for the matched site, or nothing.
+    func siteSystemLines(limit: Int = SiteSystemContract.characterLimit) -> [String] {
+        guard let session = activeSession else { return [] }
+        return SiteSystemContract.lines(match: session.siteSystem, document: siteSystemDocument,
+                                        vaultId: session.vaultId, activeUnitID: siteSystemActiveUnit?.id,
+                                        sourceFormat: activeVault?.manifest.sourceAttributionFormat, limit: limit)
+    }
+
+    /// Work the match out again from everything the job knows: what was kept with the last match,
+    /// anything handed in, and what this visit has learned on site — a unit recognised, a serial
+    /// written down. A change is logged; the same answer is not. A vault without site documents
+    /// does nothing at all.
+    func refreshSiteSystem(adding extra: SiteSystemEvidence? = nil) {
+        guard let session = activeSession, let store = activeVault else { return }
+        let documents = store.siteDocuments()
+        guard !documents.isEmpty else { return }
+        var evidence = SiteSystemEvidence(session: session)
+        if let kept = session.siteSystem, kept.vaultId == session.vaultId { evidence = kept.evidence.merged(with: evidence) }
+        if let extra { evidence = evidence.merged(with: extra) }
+        let match = SiteSystemMatcher.match(evidence: evidence, documents: documents, vaultId: session.vaultId,
+                                            modelKey: SiteSystemMatcher.modelKey(index: modelIndex))
+        guard match != session.siteSystem else { return }
+        let previous = session.siteSystem
+        mutateSession { $0.siteSystem = match }
+        // Only a change in what is known is an event; more evidence for the same answer is not.
+        if let match, match.strength != previous?.strength || match.siteId != previous?.siteId
+            || match.matchedUnitIDs != previous?.matchedUnitIDs {
+            logSiteSystem(match, previous: previous)
+        }
+    }
+
+    /// Identifiers, strength and counts only: never the site's name or any of its text.
+    private func logSiteSystem(_ match: SiteSystemMatch, previous: SiteSystemMatch?) {
+        var payload: [String: AnyCodable] = [
+            "strength": AnyCodable(match.strength.rawValue),
+            "candidates": AnyCodable(match.candidateCount),
+            "matched_units": AnyCodable(match.matchedUnitIDs.count),
+        ]
+        if let site = match.siteId { payload["site_id"] = AnyCodable(site) }
+        if let basis = match.basis { payload["basis"] = AnyCodable(basis.rawValue) }
+        if let previous { payload["previous_strength"] = AnyCodable(previous.strength.rawValue) }
+        if let site = previous?.siteId { payload["previous_site_id"] = AnyCodable(site) }
+        logger?.append(.init(timestamp: Date(), kind: .siteSystemMatched,
+                             text: "site system \(match.strength.rawValue)", payload: payload))
+    }
+
+    /// What `equipment_lookup` adds when it records a unit the matched site lists, the first time
+    /// that unit is recorded on this job; nil every other time (Plan HV §5).
+    func siteSystemAnnouncement() -> String? {
+        guard let session = activeSession, let match = session.siteSystem,
+              match.applies(toVault: session.vaultId), let siteId = match.siteId,
+              let unit = siteSystemActiveUnit,
+              let line = SiteSystemContract.announcement(match) else { return nil }
+        let already = (logger?.readEvents() ?? []).contains {
+            $0.kind == .siteSystemAnnounced && $0.payload?["site_id"]?.value as? String == siteId
+                && $0.payload?["unit_id"]?.value as? String == unit.id
+        }
+        guard !already else { return nil }
+        logger?.append(.init(timestamp: Date(), kind: .siteSystemAnnounced, text: "site system announced",
+                             payload: ["site_id": AnyCodable(siteId), "unit_id": AnyCodable(unit.id)]))
+        return line
     }
 
     /// The phone has left the organisation: what its office said about the open job's units and
@@ -677,6 +764,7 @@ final class FieldSessionService: ObservableObject {
             }), session.visitedUnits[idx].serial != serial else { return }
             session.visitedUnits[idx] = session.visitedUnits[idx].withSerial(serial)
         }
+        refreshSiteSystem()
     }
 
     /// The serial the session has written down for the machine it is on, if any. `recordIdentityField`
@@ -708,6 +796,7 @@ final class FieldSessionService: ObservableObject {
         logger?.append(.init(timestamp: Date(), kind: .identityFieldRecorded, text: field.summary,
                              payload: ["field": AnyCodable(name), "value": AnyCodable(value),
                                        "source": AnyCodable(source.rawValue)]))
+        if name.lowercased().contains("serial") { refreshSiteSystem() }
         return field
     }
 
@@ -2579,7 +2668,8 @@ final class FieldSessionService: ObservableObject {
 
     func continuityContext(turn: String? = nil) -> String? {
         guard let session = activeSession else { return nil }
-        return FieldSessionContextSnapshot.render(session: session, events: logger?.readEvents() ?? [])
+        return FieldSessionContextSnapshot.render(session: session, events: logger?.readEvents() ?? [],
+                                                  siteSystem: siteSystemLines())
     }
 
     func recallContinuity(query: String?, offset: Int = 0) -> String {

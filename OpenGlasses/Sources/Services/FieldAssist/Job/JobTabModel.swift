@@ -159,6 +159,9 @@ struct JobTabModel {
         var appClosedNote: String? = nil
         /// "Model usage: $0.42 · 12 requests" (Plan GD1) — nil until the job has made a request.
         var usageLine: String? = nil
+        /// The vault's documented site system the job is at (Plan HV §5): its name, then its units
+        /// one to a line. Nil when the job is at no documented site.
+        var siteSystem: SiteSystemContract.Page? = nil
 
         var pauseButtonTitle: String { isPaused ? "Resume job" : "Pause job" }
 
@@ -420,7 +423,8 @@ struct JobTabModel {
             appClosedNote: session.appClosedPause.map {
                 BillableClock.note(pausedAt: $0.pausedAt, uncountedSeconds: $0.uncountedSeconds)
             },
-            usageLine: record?.usageLine)
+            usageLine: record?.usageLine,
+            siteSystem: SiteSystemContract.pageLines(session.siteSystem, vaultId: session.vaultId))
     }
 
     /// The Job tab's model-usage line (Plan GD1), from the job's usage summary. Pure.

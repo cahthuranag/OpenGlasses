@@ -125,7 +125,50 @@ enum VaultValidator {
             }
         }
 
+        // Site documents (Plan HV). Only a manifest that lists them reaches this, so every vault
+        // without them validates exactly as it did.
+        if let sites = manifest.sites {
+            let site = siteIssues(sites, manifest: manifest, directory: directory)
+            issues.append(contentsOf: site.issues)
+            warnings.append(contentsOf: site.warnings)
+        }
+
         return Result(manifest: manifest, issues: issues, warnings: warnings)
+    }
+
+    /// The `sites` list, each file on its own against the vault's own model index, then across the
+    /// files (Plan HV §2).
+    static func siteIssues(_ sites: [String], manifest: VaultManifest,
+                           directory: URL) -> (issues: [String], warnings: [String]) {
+        var issues = SiteSystemValidator.pathIssues(sites)
+        var warnings: [String] = []
+        let core = manifest.files.compactMap { file -> (filename: String, contents: String)? in
+            (try? String(contentsOf: directory.appendingPathComponent(file), encoding: .utf8)).map { (file, $0) }
+        }
+        let covered = SiteSystemValidator.modelCovered(by: VaultModelIndex(vaultName: manifest.name, files: core))
+        var passed: [(path: String, document: SiteSystemDocument)] = []
+        for path in Array(NSOrderedSet(array: sites)) as? [String] ?? sites
+        where SiteSystemValidator.isSitePath(path) {
+            let url = directory.appendingPathComponent(path)
+            // A plain file: never a link out of the folder, never a directory.
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard values?.isRegularFile == true, values?.isSymbolicLink != true else {
+                issues.append("listed site document missing: \(path)"); continue
+            }
+            // Refused unread when it is over the bound.
+            if let size = values?.fileSize, size > SiteSystemValidator.maximumFileBytes {
+                issues.append("\(path): is \(size) bytes; a site document may be at most \(SiteSystemValidator.maximumFileBytes)"); continue
+            }
+            guard let data = try? Data(contentsOf: url) else {
+                issues.append("listed site document missing: \(path)"); continue
+            }
+            let result = SiteSystemValidator.check(data, path: path, modelCovered: covered)
+            issues.append(contentsOf: result.issues)
+            warnings.append(contentsOf: result.warnings)
+            if let document = result.document { passed.append((path, document)) }
+        }
+        issues.append(contentsOf: SiteSystemValidator.crossDocumentIssues(passed))
+        return (issues, warnings)
     }
 
     /// What a folder that came off a phone is missing. A vault exported from the app carries the

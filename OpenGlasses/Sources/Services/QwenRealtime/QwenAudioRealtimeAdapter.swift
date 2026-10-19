@@ -26,6 +26,11 @@ final class QwenAudioRealtimeAdapter: OpenAIRealtimeAdapter {
             return [["type": "session.update", "session": session]]
         case .image: throw RealtimeAdapterError.unsupportedOperation(String(localized: "images"))
         case .interrupt: return [["type": "response.cancel"]]
+        case .text(let text, let complete, _):
+            // Plan HY P3's `tool_choice: none` is OpenAI's per-response field. This contract has
+            // not been checked for it, and an unknown field on the generation trigger could cost
+            // the announcement itself, so it keeps the bare `response.create`.
+            return try super.encode(.text(text, completeTurn: complete))
         default: return try super.encode(command)
         }
     }

@@ -94,7 +94,15 @@ final class RealtimeProviderSession {
     func cancelResponse() { json?.cancelResponse() }
     func sendVideoFrame(image: UIImage) { gemini?.sendVideoFrame(image: image); json?.sendImage(image: image) }
     func sendHighResImage(jpegData: Data) { gemini?.sendHighResImage(jpegData: jpegData); json?.sendHighResImage(jpegData: jpegData) }
-    func sendText(_ text: String, completeTurn: Bool) { gemini?.sendText(text, completeTurn: completeTurn); json?.sendText(text, completeTurn: completeTurn) }
+    /// - Parameter toolsAllowed: `false` for an announcement (Plan HY P3). The JSON protocols carry
+    ///   it as `tool_choice: none` on that one response. **Gemini Live ignores it**: its wire has no
+    ///   per-turn tool switch — `clientContent` is turns and `turnComplete`, nothing else — and the
+    ///   only tool control is the setup message's, which would need a reconnect to change. So a
+    ///   Gemini announcement goes out exactly as before (`LiveInjectionTests` pins the envelope).
+    func sendText(_ text: String, completeTurn: Bool, toolsAllowed: Bool = true) {
+        gemini?.sendText(text, completeTurn: completeTurn)
+        json?.sendText(text, completeTurn: completeTurn, toolsAllowed: toolsAllowed)
+    }
     func updateContext(_ text: String, key: String) {
         gemini?.sendText(text, completeTurn: false)
         json?.updateContext(text, key: key)

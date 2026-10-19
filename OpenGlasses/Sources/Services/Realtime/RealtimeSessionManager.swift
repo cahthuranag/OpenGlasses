@@ -719,7 +719,9 @@ class RealtimeSessionManager: ObservableObject {
         if canInject, supportsSuppliedSpeech {
             providerSession.speakText(line)
         } else if canInject, supportsTextInjection {
-            providerSession.sendText(LiveIdlePolicy.warningInstruction, completeTurn: true)
+            // Plan HY P3: an announcement — the warning must not start a tool call.
+            providerSession.sendText(LiveIdlePolicy.warningInstruction, completeTurn: true,
+                                     toolsAllowed: false)
         } else {
             speakLocalCue(line)
         }
@@ -1015,6 +1017,11 @@ extension RealtimeSessionManager: LiveSessionInjecting {
         if !completeTurn { updateAppContext(text, key: "background"); return }
         guard supportsTextInjection else { errorMessage = String(localized: "This realtime model does not support text injection."); return }
         providerSession?.sendText(text, completeTurn: completeTurn)
+    }
+    /// Plan HY P3 — an announcement: answered now, with tools off for that response.
+    func injectAnnouncement(_ text: String) {
+        guard supportsTextInjection else { errorMessage = String(localized: "This realtime model does not support text injection."); return }
+        providerSession?.sendText(text, completeTurn: true, toolsAllowed: false)
     }
     func updateAppContext(_ text: String, key: String) {
         guard canInject, supportsContextUpdates else { return }

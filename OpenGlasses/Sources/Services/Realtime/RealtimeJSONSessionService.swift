@@ -264,7 +264,9 @@ class RealtimeJSONSessionService: ObservableObject {
         }
     }
     func sendHighResImage(jpegData: Data, prompt: String? = nil) { send(.image(jpegData, prompt: prompt)) }
-    func sendText(_ text: String, completeTurn: Bool) { send(.text(text, completeTurn: completeTurn)) }
+    func sendText(_ text: String, completeTurn: Bool, toolsAllowed: Bool = true) {
+        send(.text(text, completeTurn: completeTurn, toolsAllowed: toolsAllowed))
+    }
     func sendToolResult(id: String, output: String) { send(.toolResult(id: id, output: output)) }
     func sendToolMessage(_ json: [String: Any]) {
         guard connectionState == .ready, let transport else { return }

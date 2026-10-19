@@ -616,6 +616,10 @@ class GeminiLiveService: ObservableObject {
     /// Put text in front of the model as a user turn. `completeTurn: true` makes the model respond
     /// now; `false` only appends to context and generates NOTHING — a silent failure that presents
     /// as a delivery bug, so pass `false` only for background notes (see `LiveInjectionEnvelope`).
+    ///
+    /// Plan HY P3: there is no tools-off variant here. The OpenAI wire takes `tool_choice: none` on
+    /// an announcement's `response.create`; Gemini Live's `clientContent` has no per-turn tool
+    /// field, so an announcement is sent exactly as any completed turn is.
     func sendText(_ text: String, completeTurn: Bool) {
         guard connectionState == .ready, let task = webSocketTask else {
             PrivacyLog.realtimeSendSkipped(.gemini, kind: .text, reason: .notReady,

@@ -174,8 +174,11 @@ final class RefrigerantGaugeTool: NativeTool {
 
     private func takeCapture() async -> Result<Capture, Problem> {
         // Fails closed: an unavailable filter returns `.unavailable`, never the source pixels.
-        guard let jpeg = await cameraService.filteredStill(for: .visionAssessment, source: .cachedFrameThenPhoto)
-            .jpegData(compressionQuality: 0.8) else {
+        // `.photoOnly`, as `SharpStillCapture` does: on glasses the cached frame is the throttled
+        // stream frame, too soft for a needle or a small digit, so a reading takes a fresh full
+        // still. On the phone there is no cached frame, so nothing changes there.
+        guard let jpeg = await cameraService.filteredStill(for: .visionAssessment, source: .photoOnly)
+            .jpegData(compressionQuality: SharpStillCapture.jpegQuality) else {
             return .failure(Problem(text: "I couldn't get a picture from the camera. Point it at the gauges and try again."))
         }
         let card: AssessmentCard

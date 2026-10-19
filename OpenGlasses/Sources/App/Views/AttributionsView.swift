@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Third-party model and library attributions, linked from Settings › About. Each entry
+/// Third-party model, library and data attributions, linked from Settings › About. Each entry
 /// names the component, its role in the app, and its licence; adding a row here is part
 /// of shipping any new bundled or downloaded model (the CK plan's About-attribution
 /// requirement established the pattern).
@@ -48,6 +48,15 @@ struct AttributionsView: View {
             license: "MIT"),
     ]
 
+    /// Data generated offline from an open library and bundled — not linked code. The version
+    /// matches every bundled table's `libraryVersion` (SaturationTableNoticeTests).
+    private let referenceData: [Attribution] = [
+        Attribution(
+            name: "CoolProp 8.0.0",
+            role: "Refrigerant saturation (pressure–temperature) tables, generated offline. Copyright (c) 2012-2018 Ian H. Bell and other CoolProp developers.",
+            license: "MIT"),
+    ]
+
     var body: some View {
         OGScrollPage {
             OGSection(
@@ -59,6 +68,10 @@ struct AttributionsView: View {
 
             OGSection(header: "Libraries") {
                 rows(libraries)
+            }
+
+            OGSection(header: "Reference data") {
+                rows(referenceData)
             }
         }
         .navigationTitle("Attributions")

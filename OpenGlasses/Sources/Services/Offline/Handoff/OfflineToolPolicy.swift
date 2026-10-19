@@ -87,6 +87,7 @@ enum OfflineToolPolicy {
         "scan_badge": .local,
         "scan_code": .local,
         "scan_document": .local,
+        "service_history": .local,         // reads the office history the job file carried
         "session_search": .local,
         "set_alarm": .local,
         "set_timer": .local,

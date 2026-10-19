@@ -114,7 +114,7 @@ struct JobDayHomeCard: View {
                     cardLine(symbol: JobDayRowStyle.symbol(job.status), title: job.title,
                              detail: [job.timeText, job.site, job.status.label]
                                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
-                             warn: job.status == .overdue)
+                             warn: job.status == .overdue, mark: job.officeFlag)
                 }
             }
 
@@ -166,16 +166,20 @@ struct JobDayHomeCard: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    private func cardLine(symbol: String, title: String, detail: String?, warn: Bool = false) -> some View {
+    private func cardLine(symbol: String, title: String, detail: String?, warn: Bool = false,
+                          mark: OfficeFlagMark? = nil) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: symbol)
                 .foregroundStyle(warn ? OGTheme.warnLabel : OGTheme.tintedAccentLabel(accent))
                 .frame(width: 20)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.footnote.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(title)
+                        .font(.footnote.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let mark { OfficeFlagMarkView(mark: mark) }
+                }
                 if let detail, !detail.isEmpty {
                     Text(detail)
                         .font(.caption)
@@ -230,7 +234,7 @@ struct JobDayView: View {
                                 detail: [job.timeText, job.site].compactMap { $0 }.filter { !$0.isEmpty }
                                     .joined(separator: " · "),
                                 status: job.status.label, warn: job.status == .overdue,
-                                destination: job.destination)
+                                mark: job.officeFlag, destination: job.destination)
                         }
                     }
                 }
@@ -288,15 +292,19 @@ struct JobDayView: View {
     }
 
     private func row(symbol: String, title: String, detail: String?, status: String? = nil,
-                     warn: Bool = false, destination: JobDayDestination) -> some View {
+                     warn: Bool = false, mark: OfficeFlagMark? = nil,
+                     destination: JobDayDestination) -> some View {
         Button { go(destination) } label: {
             HStack(alignment: .top, spacing: 12) {
                 OGIconTile(systemName: symbol)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(Color(.label))
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(title)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(Color(.label))
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let mark { OfficeFlagMarkView(mark: mark) }
+                    }
                     if let detail, !detail.isEmpty {
                         Text(detail)
                             .font(.footnote)
@@ -320,9 +328,22 @@ struct JobDayView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([title, detail, status].compactMap { $0 }.filter { !$0.isEmpty }
+        .accessibilityLabel([title, detail, status, mark?.label].compactMap { $0 }.filter { !$0.isEmpty }
             .joined(separator: ", "))
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// The small mark on a job ahead the office flagged as a warning (Plan HU), before it is opened.
+/// VoiceOver reads its label — "1 warning flag from the office" — with the row.
+struct OfficeFlagMarkView: View {
+    let mark: OfficeFlagMark
+
+    var body: some View {
+        Image(systemName: OfficeFlagMark.symbol)
+            .font(.caption2)
+            .foregroundStyle(OGTheme.warnLabel)
+            .accessibilityLabel(mark.label)
     }
 }
 

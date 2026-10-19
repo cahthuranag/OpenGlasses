@@ -34,7 +34,7 @@ struct JobBrief: Codable, Equatable {
         /// than skipped silently, so a technician can tell "nothing on file" from "not read out".
         var emptyLine: String {
             switch self {
-            case .siteAndHistory: return "Nothing on file about the site, and no earlier visit on this phone."
+            case .siteAndHistory: return "Nothing on file about the site, no earlier visit on this phone, and no history from the office."
             case .knownEquipment: return "No equipment on file for this job."
             case .faultCandidates: return "No fault report on file."
             case .crewLearnings: return "Nothing recorded about this site or these machines."
@@ -45,8 +45,9 @@ struct JobBrief: Codable, Equatable {
         /// The words a technician uses to ask for more of it: "say more about the fault".
         var spokenNames: [String] {
             switch self {
-            case .siteAndHistory: return ["site", "history", "last visit", "previous visit", "customer"]
-            case .knownEquipment: return ["equipment", "machine", "model", "unit"]
+            case .siteAndHistory: return ["site", "history", "last visit", "previous visit", "customer", "flag",
+                                          "requirement"]
+            case .knownEquipment: return ["equipment", "machine", "model", "unit", "warranty"]
             case .faultCandidates: return ["fault", "faults", "error", "code", "candidates", "causes"]
             case .crewLearnings: return ["crew", "learned", "learnings", "follow-up", "follow up", "follow-ups"]
             case .partsAndPrerequisites: return ["parts", "part", "prerequisites", "safety"]
@@ -58,6 +59,29 @@ struct JobBrief: Codable, Equatable {
     struct Item: Codable, Equatable {
         let text: String
         let citation: String
+        /// Set only on a line the office sent (Plan HU): its service history, a warranty status,
+        /// a maintenance flag or a site requirement. Nil, and absent from the JSON, on every other
+        /// line — so a brief written before decodes and encodes exactly as it did. What marks a
+        /// line as the organisation's, to be dropped from the visit when it closes.
+        var officeOrigin: OfficeOrigin?
+        /// How loudly the office wants a flag or a site requirement said. Nil on every other line.
+        var severity: OfficeNoticeSeverity?
+
+        enum CodingKeys: String, CodingKey {
+            case text, citation
+            case officeOrigin = "office_origin"
+            case severity
+        }
+
+        var isOfficeWarning: Bool { officeOrigin != nil && severity == .warning }
+    }
+
+    /// Which part of what the office sent a line came from.
+    enum OfficeOrigin: String, Codable, Equatable {
+        case history
+        case warranty
+        case flag
+        case siteRequirement = "site_requirement"
     }
 
     struct Section: Codable, Equatable {
@@ -73,15 +97,22 @@ struct JobBrief: Codable, Equatable {
     let sections: [Section]
     /// A fault report was on file and nothing in the vault or its manuals matched it.
     let faultUnmatched: Bool
+    /// The office's maintenance flags (Plan HU), warnings first, each with its kind in words and
+    /// cited with the office's evidence. **Not a sixth section:** the brief keeps exactly five,
+    /// and a flag is the office's, said as the office's. Nil — and absent from the JSON — when
+    /// the office raised none, which is every brief written before.
+    let flags: [Item]?
 
     enum CodingKeys: String, CodingKey {
         case jobReference = "job_reference"
         case assembledAt = "assembled_at"
         case sections
         case faultUnmatched = "fault_unmatched"
+        case flags
     }
 
-    init(jobReference: String?, assembledAt: Date, sections: [Section], faultUnmatched: Bool) {
+    init(jobReference: String?, assembledAt: Date, sections: [Section], faultUnmatched: Bool,
+         flags: [Item]? = nil) {
         self.jobReference = jobReference
         self.assembledAt = Date(timeIntervalSince1970: assembledAt.timeIntervalSince1970.rounded(.down))
         // Exactly the five, in order, whatever the caller handed in: a brief with a section
@@ -90,14 +121,31 @@ struct JobBrief: Codable, Equatable {
             sections.first { $0.kind == kind } ?? Section(kind: kind, items: [])
         }
         self.faultUnmatched = faultUnmatched
+        self.flags = (flags?.isEmpty ?? true) ? nil : flags
     }
 
     func section(_ kind: SectionKind) -> Section {
         sections.first { $0.kind == kind } ?? Section(kind: kind, items: [])
     }
 
-    /// Every item, in reading order.
+    /// Every item, in reading order. The office's flags are not in a section, and not in here.
     var allItems: [Item] { sections.flatMap(\.items) }
+
+    /// The flags the office marked as a warning, in order.
+    var warningFlags: [Item] { (flags ?? []).filter { $0.severity == .warning } }
+
+    /// Whether anything in it came from the office's history, flags or site requirements.
+    var hasOfficeContent: Bool { flags != nil || allItems.contains { $0.officeOrigin != nil } }
+
+    /// The brief with every line the office sent taken out: what a visit keeps of it once it
+    /// closes, or once the phone leaves the organisation (Plan HU, decided 2026-10-20). Every other
+    /// line, and the brief's date, stay as they were.
+    func withoutOfficeContent() -> JobBrief {
+        guard hasOfficeContent else { return self }
+        return JobBrief(jobReference: jobReference, assembledAt: assembledAt,
+                        sections: sections.map { Section(kind: $0.kind, items: $0.items.filter { $0.officeOrigin == nil }) },
+                        faultUnmatched: faultUnmatched, flags: nil)
+    }
 }
 
 // MARK: - Assembly
@@ -121,6 +169,11 @@ enum JobBriefAssembler {
         /// What the crew has learned, when FP exists. Empty until then; the section reads from
         /// this phone's own earlier debriefs and follow-ups meanwhile.
         var learnings: [JobBrief.Item]
+        /// What the office knows about the job's units (Plan HU), from the job file. A second
+        /// source beside this phone's `history`, never merged into it.
+        var officeHistory: OfficeServiceHistory?
+        /// What the site asks of the person arriving (Plan HU), from the job file.
+        var siteRequirements: OfficeSiteRequirements?
         var now: Date
 
         init(job: UpcomingJob, history: JobHistoryIndex, vaultName: String,
@@ -138,6 +191,8 @@ enum JobBriefAssembler {
             self.procedures = procedures
             self.manualPassages = manualPassages
             self.learnings = learnings
+            self.officeHistory = job.officeHistory
+            self.siteRequirements = job.siteRequirements
             self.now = now
         }
     }
@@ -149,6 +204,9 @@ enum JobBriefAssembler {
     static let passageLimit = 3
     static let passageCharacters = 180
     static let learningLimit = 6
+    /// How many of the office's earlier visits the history section names, newest first across
+    /// the job's units (Plan HU §3). The rest are one `service_history` question away.
+    static let officeVisitLimit = 3
 
     static func assemble(_ inputs: Inputs) -> JobBrief {
         let matches = inputs.history.matches(for: inputs.job)
@@ -164,7 +222,8 @@ enum JobBriefAssembler {
                 JobBrief.Section(kind: .partsAndPrerequisites,
                                  items: partsItems(inputs, candidates: faults.candidateTexts)),
             ],
-            faultUnmatched: faults.unmatched)
+            faultUnmatched: faults.unmatched,
+            flags: OfficeBriefText.flagItems(inputs.officeHistory, equipment: inputs.job.equipment))
     }
 
     // MARK: 1. Site and history
@@ -186,7 +245,9 @@ enum JobBriefAssembler {
     private static func siteItems(_ inputs: Inputs, matches: [JobHistoryIndex.Match]) -> [JobBrief.Item] {
         let job = inputs.job
         let source = jobSourceCitation(job)
-        var items: [JobBrief.Item] = []
+        // What the site asks of the person arriving opens the section: it is needed before the
+        // technician is out of the van (Plan HU amendment). The office's warnings first.
+        var items = OfficeBriefText.requirementItems(inputs.siteRequirements)
         if let customer = job.site.customer { items.append(.init(text: "Customer: \(customer).", citation: source)) }
         if let address = job.site.address { items.append(.init(text: "Address: \(address).", citation: source)) }
         if let contact = job.site.contact { items.append(.init(text: "Contact: \(contact).", citation: source)) }
@@ -195,15 +256,78 @@ enum JobBriefAssembler {
                                citation: source))
         }
         if let notes = job.notes { items.append(.init(text: "Notes: \(notes)", citation: source)) }
-        for (index, match) in matches.prefix(visitLimit).enumerated() {
+        let shown = Array(matches.prefix(visitLimit))
+        let shared = sharedVisits(phone: shown.map(\.visit), office: inputs.officeHistory)
+        for (index, match) in shown.enumerated() {
             let visit = match.visit
             let lead = index == 0 ? "Last visit" : "Earlier visit"
             let work = visit.workDone.isEmpty
                 ? "no work recorded as done"
                 : visit.workDone.prefix(3).joined(separator: "; ")
+            // One visit, once: the phone's line, saying the office has it too.
+            let also = shared.phone.contains(visit.id) ? " (also in the office's history)" : ""
             items.append(.init(
-                text: "\(lead) (\(match.reason.phrase)): \(visit.label), \(visit.outcomeLabel.lowercased()) — \(work).",
+                text: "\(lead) (\(match.reason.phrase)): \(visit.label), \(visit.outcomeLabel.lowercased()) — \(work)\(also).",
                 citation: visit.citation))
+        }
+        items += officeVisitItems(inputs, excluding: shared.office)
+        return items
+    }
+
+    /// One of the office's visits: which unit's history entry, and which visit in it.
+    struct OfficeVisitRef: Hashable {
+        let unit: Int
+        let visit: Int
+    }
+
+    /// The visits this phone and the office both hold: the same job number on the same serial.
+    /// Only the phone's lines being shown are compared, so a visit is always shown once.
+    static func sharedVisits(phone: [JobHistoryIndex.Visit],
+                             office: OfficeServiceHistory?) -> (phone: Set<String>, office: Set<OfficeVisitRef>) {
+        guard let office else { return ([], []) }
+        var phoneIDs = Set<String>()
+        var officeRefs = Set<OfficeVisitRef>()
+        for visit in phone {
+            guard let number = JobHistoryIndex.normalised(visit.jobReference) else { continue }
+            let serials = Set(visit.serials.compactMap(JobHistoryIndex.normalised))
+            for (unitIndex, unit) in office.units.enumerated() {
+                guard let serial = JobHistoryIndex.normalised(unit.serial), serials.contains(serial) else { continue }
+                for (visitIndex, officeVisit) in unit.visits.enumerated()
+                where JobHistoryIndex.normalised(officeVisit.jobNumber) == number {
+                    phoneIDs.insert(visit.id)
+                    officeRefs.insert(OfficeVisitRef(unit: unitIndex, visit: visitIndex))
+                }
+            }
+        }
+        return (phoneIDs, officeRefs)
+    }
+
+    /// The office's earlier visits, newest first across the job's units, after this phone's own,
+    /// each cited with the date the office compiled them and the system it took them from.
+    private static func officeVisitItems(_ inputs: Inputs, excluding shared: Set<OfficeVisitRef>) -> [JobBrief.Item] {
+        guard let history = inputs.officeHistory else { return [] }
+        let citation = OfficeBriefText.historyCitation(history, systemName: inputs.job.provenance?.external?.systemName)
+        var visits: [(ref: OfficeVisitRef, visit: OfficeServiceHistory.Visit, unit: String)] = []
+        for (unitIndex, unit) in history.units.enumerated() {
+            let name = OfficeBriefText.unitName(unit, equipment: inputs.job.equipment)
+            for (visitIndex, visit) in unit.visits.enumerated() {
+                let ref = OfficeVisitRef(unit: unitIndex, visit: visitIndex)
+                guard !shared.contains(ref) else { continue }
+                visits.append((ref, visit, name))
+            }
+        }
+        // ISO dates sort as text; a tie keeps the office's order.
+        visits.sort { lhs, rhs in
+            lhs.visit.date != rhs.visit.date ? lhs.visit.date > rhs.visit.date
+                : (lhs.ref.unit, lhs.ref.visit) < (rhs.ref.unit, rhs.ref.visit)
+        }
+        var items = visits.prefix(officeVisitLimit).map {
+            JobBrief.Item(text: OfficeBriefText.visitLine($0.visit, unitName: $0.unit), citation: citation,
+                          officeOrigin: .history)
+        }
+        if visits.count > officeVisitLimit {
+            items.append(.init(text: OfficeBriefText.moreVisitsLine(visits.count - officeVisitLimit),
+                               citation: citation, officeOrigin: .history))
         }
         return items
     }
@@ -217,10 +341,12 @@ enum JobBriefAssembler {
         for unit in inputs.job.equipment {
             guard let model = unit.model else {
                 items.append(.init(text: "\(unit.summary): the model was not given.", citation: source))
+                if let warranty = warrantyItem(for: unit, inputs: inputs) { items.append(warranty) }
                 continue
             }
             described.formUnion(JobHistoryIndex.modelTokens(model))
             items.append(vaultLine(for: model, label: unit.summary, inputs: inputs, fallbackCitation: source))
+            if let warranty = warrantyItem(for: unit, inputs: inputs) { items.append(warranty) }
         }
         // Machines earlier visits recorded here that the job itself does not name.
         for match in matches where match.reason != .model {
@@ -231,6 +357,19 @@ enum JobBriefAssembler {
             }
         }
         return items
+    }
+
+    /// The office's warranty status for a machine, as its own line straight after the machine's,
+    /// so it can be dropped with the rest of what the office sent when the visit closes.
+    private static func warrantyItem(for machine: KnownEquipment, inputs: Inputs) -> JobBrief.Item? {
+        guard let history = inputs.officeHistory,
+              let unit = OfficeBriefText.unit(for: machine, in: history),
+              let warranty = unit.warranty,
+              let line = OfficeBriefText.warrantyLine(warranty, unitName: OfficeBriefText.unitName(unit, equipment: inputs.job.equipment),
+                                                      history: history) else { return nil }
+        return .init(text: line,
+                     citation: OfficeBriefText.historyCitation(history, systemName: inputs.job.provenance?.external?.systemName),
+                     officeOrigin: .warranty)
     }
 
     private static func vaultLine(for model: String, label: String, inputs: Inputs,
@@ -459,12 +598,18 @@ enum JobBriefSpeech {
     static let itemsPerSection = 2
 
     /// The whole brief, sections in order, each empty one said as empty.
+    ///
+    /// The office's warnings come first, straight after "Brief for Job 1007." (Plan HU §4): every
+    /// `warning` site requirement in full, then at most two `warning` flags. They are never cut
+    /// for the cap, and are not said again in the section they sit in. `info` flags are on the
+    /// page and in "say more about history".
     static func spoken(_ brief: JobBrief, title: String, characterCap: Int = characterCap) -> String {
         var parts = ["Brief for \(title)."]
-        var used = parts[0].count
+        parts += officeWarningLines(brief)
+        var used = parts.reduce(-1) { $0 + $1.count + 1 }
         var truncated = false
         for section in brief.sections {
-            let line = sectionLine(section, limit: itemsPerSection)
+            let line = sectionLine(section, limit: itemsPerSection, skippingOfficeWarnings: true)
             if used + line.count + 1 > characterCap {
                 truncated = true
                 // The heading still goes, so a technician knows the section exists.
@@ -482,9 +627,22 @@ enum JobBriefSpeech {
         return parts.joined(separator: " ")
     }
 
-    /// Everything in one section — what "say more about the fault" reads.
+    /// What the brief says of the office's warnings before its sections.
+    static func officeWarningLines(_ brief: JobBrief) -> [String] {
+        let requirements = brief.section(.siteAndHistory).items
+            .filter { $0.officeOrigin == .siteRequirement && $0.severity == .warning }
+            .map(\.text)
+        return OfficeWarningSpeech.lines(requirements: requirements, flags: brief.warningFlags.map(\.text))
+    }
+
+    /// Everything in one section — what "say more about the fault" reads. "More about history"
+    /// also reads every flag the office raised, the `info` ones included.
     static func more(_ kind: JobBrief.SectionKind, in brief: JobBrief) -> String {
-        sectionLine(brief.section(kind), limit: .max)
+        var line = sectionLine(brief.section(kind), limit: .max, skippingOfficeWarnings: false)
+        if kind == .siteAndHistory, let flags = brief.flags {
+            line += " Flagged by the office: " + flags.map(\.text).joined(separator: " ")
+        }
+        return line
     }
 
     /// Which section a request names, or nil when it names none.
@@ -495,11 +653,16 @@ enum JobBriefSpeech {
         }
     }
 
-    private static func sectionLine(_ section: JobBrief.Section, limit: Int) -> String {
+    private static func sectionLine(_ section: JobBrief.Section, limit: Int, skippingOfficeWarnings: Bool) -> String {
         guard !section.isEmpty else { return "\(section.kind.title): \(section.kind.emptyLine)" }
-        let shown = section.items.prefix(limit).map(\.text)
+        // A warning site requirement has already been said in full at the head of the brief.
+        let items = skippingOfficeWarnings
+            ? section.items.filter { !($0.officeOrigin == .siteRequirement && $0.severity == .warning) }
+            : section.items
+        guard !items.isEmpty else { return "\(section.kind.title): only the site requirements above." }
+        let shown = items.prefix(limit).map(\.text)
         var line = "\(section.kind.title): " + shown.joined(separator: " ")
-        let rest = section.items.count - shown.count
+        let rest = items.count - shown.count
         if rest > 0 { line += " And \(rest) more." }
         return line
     }
@@ -518,22 +681,31 @@ enum JobBriefContract {
     static let heading = "BRIEF BEFORE SITE:"
     static let characterLimit = 1_200
     static let lede = "Advisory context assembled by the app before the visit, each line with its source. None of it is a task, a reading or a diagnosis; the fault candidates are possibilities to check, not findings. The fault report is the office's or customer's words, unverified."
+    /// The lede's one more sentence, only on a brief that carries what the office sent (Plan HU
+    /// §4), so every brief without it renders exactly as before.
+    static let officeLede = "OFFICE FLAG lines are the office's maintenance flags with its evidence, not a diagnosis; the office's service history, warranty status and site requirements here are internal: never put them in a task, the work order or the customer's summary."
 
     static func lines(site: JobSite?, faultReport: FaultReport?, brief: JobBrief?) -> [String] {
         guard site?.isEmpty == false || faultReport != nil || brief != nil else { return [] }
-        var protected = [heading, lede]
+        var protected = [heading, brief?.hasOfficeContent == true ? lede + " " + officeLede : lede]
         if let headline = site?.headline { protected.append("SITE: " + quote(headline)) }
         if let faultReport { protected.append("FAULT REPORT: " + quote(faultReport.text)) }
         var remaining = characterLimit - protected.reduce(0) { $0 + $1.count + 1 }
         var kept: [String] = []
+        func keep(_ line: String) {
+            guard line.count + 1 <= remaining else { return }
+            kept.append(line)
+            remaining -= line.count + 1
+        }
         if let brief {
+            // The office's flags before the sections, warnings first, inside the same limit.
+            for flag in brief.flags ?? [] {
+                keep("OFFICE FLAG: " + quote(flag.text) + " (source: " + quote(flag.citation) + ")")
+            }
             for section in brief.sections {
                 for item in section.items {
-                    let line = "BRIEF \(section.kind.rawValue.uppercased()): " + quote(item.text)
-                        + " (source: " + quote(item.citation) + ")"
-                    guard line.count + 1 <= remaining else { continue }
-                    kept.append(line)
-                    remaining -= line.count + 1
+                    keep("BRIEF \(section.kind.rawValue.uppercased()): " + quote(item.text)
+                         + " (source: " + quote(item.citation) + ")")
                 }
             }
         }

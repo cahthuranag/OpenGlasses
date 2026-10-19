@@ -35,6 +35,9 @@ final class JobFileService: ObservableObject {
         /// The job files of jobs already started on this phone, so a file for one of them is not
         /// offered as a new job.
         var startedJobFiles: () -> [JobFileProvenance] = { [] }
+        /// Say something to the technician: a revision that changed one of the office's warnings
+        /// is read as it is accepted (Plan HU). The app's speech in production.
+        var speak: (String) -> Void = { _ in }
     }
 
     static let fieldAssistOffMessage = "Field Assist is off on this phone, so a job file has nowhere to go. Turn it on under Settings → Field Assist, then open the file again."
@@ -189,6 +192,11 @@ final class JobFileService: ObservableObject {
             // there, including the brief, which described the job as it used to be.
             written = review.proposed.replacingIdentity(with: existing)
             store.update(written, at: seams.now())
+            // A warning the revision changed is read now, once: the next revision compares with
+            // this one, so the same warning is not said again (Plan HU, decided 2026-10-20).
+            if let changed = OfficeWarningChanges.spoken(from: existing, to: written) {
+                seams.speak(changed)
+            }
         case .add, .keepBoth:
             written = review.proposed
             store.add(written)

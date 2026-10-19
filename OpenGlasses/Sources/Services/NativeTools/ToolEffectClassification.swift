@@ -56,6 +56,8 @@ extension ConversationSummaryTool { var executionSemantics: ToolExecutionSemanti
 extension HealthSafetyTool { var executionSemantics: ToolExecutionSemantics { .read() } }
 extension NetworkCalcTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 extension DomainCalcTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
+/// Reads the office history the open job (or the next job ahead) carried; writes and sends nothing.
+extension ServiceHistoryTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 extension FoodAnalysisTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 extension ShazamTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 extension DiscoverCapabilitiesTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }

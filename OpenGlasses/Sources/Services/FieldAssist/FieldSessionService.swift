@@ -549,6 +549,7 @@ final class FieldSessionService: ObservableObject {
             session.jobNeeds = job.needs
             session.officeHistory = job.officeHistory
             session.officeSiteRequirements = job.siteRequirements
+            session.officeEquipment = job.officeHistory != nil && !job.equipment.isEmpty ? job.equipment : nil
         }
         var payload: [String: AnyCodable] = [
             "origin": AnyCodable(job.origin.rawValue),
@@ -584,8 +585,36 @@ final class FieldSessionService: ObservableObject {
     /// rest of it, are erased with the organisation's content.
     func eraseOfficeSuppliedContext() {
         guard let session = activeSession,
-              session.officeHistory != nil || session.officeSiteRequirements != nil else { return }
+              session.officeHistory != nil || session.officeSiteRequirements != nil
+                || session.brief?.hasOfficeContent == true else { return }
         mutateSession { $0.dropOfficeSuppliedContext() }
+    }
+
+    /// Record that the office's warnings were said as the job started (Plan HU P3), so they are
+    /// said once: `officeSiteRequirementsSpoken` and `officeFlagsSpoken`, counts only, never the
+    /// text. Returns false — and records nothing — when there is no open job, nothing to say, or
+    /// they were already said on this job; resuming it, on this launch or the next, says nothing
+    /// more.
+    @discardableResult
+    func recordOfficeWarningsSpoken(_ warnings: JobStartWarnings) -> Bool {
+        guard activeSession != nil, !warnings.isEmpty, !officeWarningsAlreadySpoken else { return false }
+        if !warnings.requirements.isEmpty {
+            logger?.append(.init(timestamp: Date(), kind: .officeSiteRequirementsSpoken,
+                                 text: "\(warnings.requirements.count) office site requirements said at the start",
+                                 payload: ["count": AnyCodable(warnings.requirements.count)]))
+        }
+        if !warnings.flags.isEmpty {
+            logger?.append(.init(timestamp: Date(), kind: .officeFlagsSpoken,
+                                 text: "\(warnings.flags.count) office flags said at the start",
+                                 payload: ["count": AnyCodable(warnings.flags.count),
+                                           "read": AnyCodable(min(warnings.flags.count, OfficeWarningSpeech.flagsRead))]))
+        }
+        return true
+    }
+
+    /// Whether the open job's log already says the office's warnings were said.
+    var officeWarningsAlreadySpoken: Bool {
+        (logger?.readEvents() ?? []).contains { $0.kind == .officeFlagsSpoken || $0.kind == .officeSiteRequirementsSpoken }
     }
 
     /// Bind the job to a saved conversation, or let go of one.

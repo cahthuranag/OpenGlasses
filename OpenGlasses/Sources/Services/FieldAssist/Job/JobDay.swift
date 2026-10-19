@@ -139,9 +139,11 @@ struct JobDay: Equatable {
         let shortName: String
         let status: Status
         let destination: JobDayDestination
+        /// The office flagged one of the job's units as a warning (Plan HU): a job ahead only.
+        var officeFlag: OfficeFlagMark? = nil
 
         var spoken: String {
-            [timeText.isEmpty ? nil : timeText, title, site, status.label]
+            [timeText.isEmpty ? nil : timeText, title, site, status.label, officeFlag?.label]
                 .compactMap { $0 }.joined(separator: ", ")
         }
     }
@@ -285,7 +287,8 @@ enum JobDayComposer {
                 site: site,
                 shortName: job.site.customer ?? job.title,
                 status: overdue ? .overdue : .scheduled,
-                destination: .upcomingJob(id: job.id))
+                destination: .upcomingJob(id: job.id),
+                officeFlag: OfficeFlagMark.mark(for: job))
         }
     }
 

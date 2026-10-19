@@ -18,7 +18,7 @@ enum FieldToolProfile {
     static let names: Set<String> = [
         "field_session", "manual_lookup", "manual_figure", "show_source", "equipment_lookup", "procedure_runner",
         "reading", "evidence", "parts_request", "van_stock", "deliver_report", "escalate_to_expert",
-        "team_learning",
+        "team_learning", "service_history",
         "capture_photo", "record_clip", "photo_log", "pin_frame", "smart_capture", "vision_assess",
         "look_closely", "scan_document", "scan_code", "scan_badge", "qr_context", "domain_calc",
         "refrigerant_gauges",

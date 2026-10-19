@@ -105,6 +105,23 @@ extension GuidedJobFlow {
         let site = job.site.headline.map { " at \($0)" } ?? ""
         return "Starting job \(reference)\(site)."
     }
+
+    /// Everything said as a job ahead starts (Plan HU P3): the started line, then the office's
+    /// warnings — every `warning` site requirement in full, then each `warning` flag in one
+    /// sentence, two at most and how many more. Pure; `startLines(for:)` is what says them once.
+    static func startedLines(for job: UpcomingJob) -> [String] {
+        [startedLine(for: job)] + JobStartWarnings(job: job).spoken
+    }
+
+    /// What to say now the job ahead has started, **once**: the office's warnings are said the
+    /// first time and recorded on the job's log (`officeFlagsSpoken`,
+    /// `officeSiteRequirementsSpoken`, counts only), and a job that has already said them says
+    /// only its started line. Nothing resumes a job through here — a resumed job says no flags.
+    func startLines(for job: UpcomingJob) -> [String] {
+        let warnings = JobStartWarnings(job: job)
+        guard sessions.recordOfficeWarningsSpoken(warnings) else { return [Self.startedLine(for: job)] }
+        return Self.startedLines(for: job)
+    }
 }
 
 enum UpcomingJobError: LocalizedError, Equatable {

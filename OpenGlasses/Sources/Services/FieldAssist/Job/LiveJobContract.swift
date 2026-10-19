@@ -115,7 +115,11 @@ enum LiveJobContract {
     /// `field_session`'s actions, declared inside that tool's `action` enum. The surface is
     /// therefore the two tools, and the diff test checks that `field_session`'s schema still
     /// carries the `set_job_reference` action on both providers.
-    static let jobToolNames: Set<String> = ["field_session", "equipment_lookup"]
+    ///
+    /// **Plus `service_history`** (Plan HU P2, decided 2026-10-20): "has the inducer been replaced
+    /// before?" is asked mid-job in a live session as much as in Direct mode, so the live surface
+    /// carries the tool rather than folding it into a `field_session` action.
+    static let jobToolNames: Set<String> = ["field_session", "equipment_lookup", "service_history"]
 
     /// The action a job number is recorded through, whichever provider is asking.
     static let jobReferenceAction = "set_job_reference"

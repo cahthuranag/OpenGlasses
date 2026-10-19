@@ -232,6 +232,9 @@ final class NativeToolRegistry {
             register(ReadingTool())
             register(EvidenceTool())
             register(PartsRequestTool())
+            // What the office's records say was done on a unit before (Plan HU P2): read from
+            // the job file the office sent, offline, never fetched.
+            register(ServiceHistoryTool(flow: guidedJobFlow))
             // The technician's own van stock (Plan IH): loaded at the shop with no job open, so
             // it needs Field Assist and nothing else.
             register(VanStockTool())

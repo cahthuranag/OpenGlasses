@@ -152,6 +152,7 @@ enum OfflineToolPolicy {
         "navigate": .needsNetwork,
         "navigation_assist": .needsNetwork,
         "openclaw_skills": .needsNetwork,
+        "refrigerant_gauges": .needsNetwork, // reads the gauges with a cloud model
         "safety_assessment": .needsNetwork,
         "send_via": .needsNetwork,
         "vehicle_status": .needsNetwork,

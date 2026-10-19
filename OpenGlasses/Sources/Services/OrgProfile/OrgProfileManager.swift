@@ -919,6 +919,9 @@ extension SettingKey {
         case (.fieldAssistDefaultVaultId, .string(let id)): return "Field Assist opens with the \(id) vault"
         case (.supportReportEmail, .string(let address)): return "Support reports are emailed to \(address)"
         case (.accentColorName, .string): return "The app starts in your organisation's accent colour"
+        case (.refrigerationUnits, .string(let raw)):
+            return RefrigerationUnits(encoded: raw).map { "Refrigeration answers start in \($0.spokenList)" }
+                ?? rawValue
         case (.fieldAssistDefaultMode, .string(let mode)):
             return mode == FieldSession.Mode.humanAssisted.rawValue
                 ? "Field Assist starts in human-assisted mode" : "Field Assist starts in AI-only mode"

@@ -170,7 +170,7 @@ final class DomainCalcTool: NativeTool {
     private enum LineCalculation {
         case superheat, subcool
 
-        var curve: SaturationCurve { self == .superheat ? .dew : .bubble }
+        var kind: RefrigerantLineCalculation.Kind { self == .superheat ? .superheat : .subcool }
         var title: String { self == .superheat ? "Superheat" : "Subcooling" }
         var point: String { self == .superheat ? "dew point" : "bubble point" }
         var side: String { self == .superheat ? "suction" : "liquid" }
@@ -182,14 +182,19 @@ final class DomainCalcTool: NativeTool {
         let atmosphere = site.atmosphere
         let scale = reading.unit.answerScale
         let pressureKPa = reading.absoluteKPa(atmosphere: atmosphere, absolute: absolute)
-        let saturation: Double
-        switch table.temperature(atAbsoluteKPa: pressureKPa, scale: scale, curve: calculation.curve) {
-        case .success(let value): saturation = value
+        // The same lookup the gauge chain uses (Plan IS P1), so a spoken and a photographed
+        // reading give the same number.
+        let output: RefrigerantLineCalculation.Output
+        switch RefrigerantLineCalculation.compute(calculation.kind, table: table, absoluteKPa: pressureKPa,
+                                                  lineTemperature: line.value, lineScale: line.scale,
+                                                  scale: scale) {
+        case .success(let value): output = value
         case .failure(let error):
             return refusal(error, table: table, reading: reading, atmosphere: atmosphere, absolute: absolute)
         }
-        let lineTemp = scale.convert(line.value, from: line.scale)
-        let result = calculation == .superheat ? lineTemp - saturation : saturation - lineTemp
+        let saturation = output.saturation
+        let lineTemp = output.line
+        let result = output.difference
         let deg = scale.symbol
         let diff = scale.differenceSymbol
         var answer = "\(calculation.title) ≈ \(fmt(result))\(diff) for \(table.designation): " +

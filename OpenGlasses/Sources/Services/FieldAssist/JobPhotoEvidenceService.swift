@@ -135,3 +135,18 @@ protocol JobEvidenceFiling: AnyObject {
 }
 
 extension FieldSessionService: JobEvidenceFiling {}
+
+/// Where `refrigerant_gauges` files what it read (Plan IS P1): the job photo, through
+/// `JobEvidenceFiling`, and each reading beside it, shaped like a spoken one. A seam for the same
+/// reason as its parent — a headless test of the chain must not stand up the shared service.
+@MainActor
+protocol RefrigerantReadingFiling: JobEvidenceFiling {
+    /// The refrigerant written down for the unit the job is on, with where it came from.
+    var activeRefrigerant: DeviceIdentityField? { get }
+    @discardableResult
+    func recordInstrumentReading(quantity: String, value: String, unit: String?, method: String?,
+                                 photoId: String?, refrigerant: String?, refrigerantSource: String?,
+                                 at: Date) -> SpokenReading?
+}
+
+extension FieldSessionService: RefrigerantReadingFiling {}

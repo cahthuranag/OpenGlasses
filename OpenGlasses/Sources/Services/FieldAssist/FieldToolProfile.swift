@@ -21,6 +21,7 @@ enum FieldToolProfile {
         "team_learning",
         "capture_photo", "record_clip", "photo_log", "pin_frame", "smart_capture", "vision_assess",
         "look_closely", "scan_document", "scan_code", "scan_badge", "qr_context", "domain_calc",
+        "refrigerant_gauges",
         "convert_units", "calculate", "capture_flow", "safety_assessment", "first_aid",
         "emergency_info", "task", "propose_task", "reminder", "set_timer", "save_note", "list_notes",
         "session_search", "summarize_conversation", "new_topic", "yield_to_human",

@@ -246,6 +246,11 @@ extension BrightnessTool {
 extension MusicControlTool { var executionSemantics: ToolExecutionSemantics { .actuation(timeout: .seconds(45)) } }
 extension AudioRecordingTool { var executionSemantics: ToolExecutionSemantics { .actuation() } }
 extension PhotoLogTool { var executionSemantics: ToolExecutionSemantics { .actuation() } }
+// Takes a photo, files it on the job and records the readings, after a model round trip on the
+// still — so the photo_log row, with structured vision's longer budget.
+extension RefrigerantGaugeTool {
+    var executionSemantics: ToolExecutionSemantics { .actuation(timeout: .seconds(60)) }
+}
 extension SafetyAssessmentTool { var executionSemantics: ToolExecutionSemantics { .actuation() } }
 extension StudyTool { var executionSemantics: ToolExecutionSemantics { .actuation() } }
 extension TeleprompterTool { var executionSemantics: ToolExecutionSemantics { .actuation() } }

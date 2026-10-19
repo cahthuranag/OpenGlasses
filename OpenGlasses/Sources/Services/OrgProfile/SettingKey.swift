@@ -74,6 +74,10 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     case supportReportEmail
     /// The accent colour the phone starts with; the technician may pick another afterwards.
     case accentColorName
+    /// The units refrigeration answers start in (Plan IS P1), written `pressure,temperature,mass`
+    /// (`"kPa,C,kg"`). Without one the phone follows its App Store region; the technician may
+    /// change it either way.
+    case refrigerationUnits
 
     enum ValueType: Equatable, Sendable {
         case bool
@@ -112,7 +116,8 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
             return .ceiling(pinnedTo: false)
         case .fieldAssistEnabled:
             return .startingValue(.bool)
-        case .fieldAssistDefaultVaultId, .fieldAssistDefaultMode, .supportReportEmail, .accentColorName:
+        case .fieldAssistDefaultVaultId, .fieldAssistDefaultMode, .supportReportEmail, .accentColorName,
+             .refrigerationUnits:
             return .startingValue(.string)
         }
     }
@@ -173,6 +178,10 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
             // A profile names a colour, never one of this build's presets: preset ids are an
             // app detail that may change, and a hex code means the same thing on every build.
             return AppAccent.hexValue(colour) == nil ? "not a colour written as #RRGGBB" : nil
+        case (.refrigerationUnits, .string(let raw)):
+            // Deny by default: units this build cannot read are a named drop, never a guess.
+            return RefrigerationUnits(encoded: raw) == nil
+                ? "not units written as pressure,temperature,mass (for example kPa,C,kg)" : nil
         default:
             return nil
         }

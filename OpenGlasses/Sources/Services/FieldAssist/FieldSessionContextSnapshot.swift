@@ -51,7 +51,10 @@ enum FieldSessionContextSnapshot {
         return result
     }
 
-    static func render(session: FieldSession, events: [SessionLogger.Event]) -> String {
+    /// - Parameter siteSystem: the matched site's block (`SiteSystemContract.lines`), rendered by
+    ///   the caller because the site's text is the vault's, not the session's. Empty for every job
+    ///   at no documented site, which then renders exactly as before.
+    static func render(session: FieldSession, events: [SessionLogger.Event], siteSystem: [String] = []) -> String {
         let records = entries(session: session, events: events)
         var selected: [String] = []
         var remaining = workingCharacterLimit
@@ -80,6 +83,9 @@ enum FieldSessionContextSnapshot {
         lines.append(contentsOf: JobBriefContract.lines(site: session.site,
                                                         faultReport: session.faultReport,
                                                         brief: session.brief))
+        // How the units at this site work together (Plan HV §4), beside the brief and bounded on
+        // its own (`SiteSystemContract.characterLimit`).
+        lines.append(contentsOf: siteSystem)
         // These are protected state, not optional historical detail. If too large, the outer
         // request budget must refuse the request rather than silently deleting a safety check.
         for field in session.identityFields

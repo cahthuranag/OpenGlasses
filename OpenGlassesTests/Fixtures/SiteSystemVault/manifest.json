@@ -1,0 +1,15 @@
+{
+  "id": "site_system_example",
+  "name": "Fictional Dual-Fuel Example",
+  "version": "1.0.0",
+  "files": ["safety.md", "models.md"],
+  "sites": ["sites/hillside-house.json"],
+  "gating": { "iap": "enterprise" },
+  "prompt_rules": [
+    "Never fabricate equipment data, fault codes or procedures.",
+    "Cite the source file on every factual claim.",
+    "If the vault does not cover the question, say so and recommend escalation rather than guessing."
+  ],
+  "source_attribution_format": "Source: {files}",
+  "source_attribution_required": true
+}

@@ -50,6 +50,12 @@ struct VaultManifest: Codable, Equatable {
     /// value this build does not know; `FieldTrade.known(_:)` reads it and ignores what it does not
     /// recognise rather than refusing the manifest.
     let trades: [String]?
+    /// Site documents (Plan HV): JSON files under `sites/`, one per site, each describing how the
+    /// units at one site are connected and controlled. Not core and not reference: never loaded
+    /// into every turn and never retrieved by similarity — the job picks the one site it is at.
+    /// Nil, and absent from the JSON, on every vault without them, so such a manifest encodes
+    /// exactly as it did; an older build ignores the key and installs the rest unchanged.
+    let sites: [String]?
 
     struct Gating: Codable, Equatable {
         /// IAP product identifier required to unlock this vault. Nil = free.
@@ -78,7 +84,8 @@ struct VaultManifest: Codable, Equatable {
                       documents: documents, documentsIncluded: documentsIncluded,
                       gating: gating, promptRules: promptRules,
                       sourceAttributionFormat: sourceAttributionFormat,
-                      sourceAttributionRequired: sourceAttributionRequired, trades: trades)
+                      sourceAttributionRequired: sourceAttributionRequired, trades: trades,
+                      sites: sites)
     }
 
     /// Location of a document relative to the vault root.
@@ -104,6 +111,7 @@ struct VaultManifest: Codable, Equatable {
         case sourceAttributionFormat = "source_attribution_format"
         case sourceAttributionRequired = "source_attribution_required"
         case trades
+        case sites
     }
 
     init(
@@ -119,7 +127,8 @@ struct VaultManifest: Codable, Equatable {
         promptRules: [String] = [],
         sourceAttributionFormat: String? = "Source: {files}",
         sourceAttributionRequired: Bool = true,
-        trades: [String]? = nil
+        trades: [String]? = nil,
+        sites: [String]? = nil
     ) {
         self.id = id
         self.name = name
@@ -134,6 +143,7 @@ struct VaultManifest: Codable, Equatable {
         self.sourceAttributionFormat = sourceAttributionFormat
         self.sourceAttributionRequired = sourceAttributionRequired
         self.trades = trades
+        self.sites = sites
     }
 
     /// Hand-written so every manifest authored before the reference tier existed — and every
@@ -155,7 +165,12 @@ struct VaultManifest: Codable, Equatable {
         // A malformed `trades` (not a list of strings) is ignored like an unknown value, never a
         // refused manifest: it only chooses tiles.
         trades = (try? c.decodeIfPresent([String].self, forKey: .trades)) ?? nil
+        // Unlike `trades`, a malformed `sites` refuses the manifest: it names files to install.
+        sites = try c.decodeIfPresent([String].self, forKey: .sites)
     }
+
+    /// The site documents this vault lists; empty for every vault without them.
+    var siteFiles: [String] { sites ?? [] }
 }
 
 /// One reference-tier document declared by a vault manifest.

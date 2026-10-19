@@ -247,6 +247,17 @@ struct ActiveJobView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            // The documented site system the job is at (Plan HV §5), under the machine.
+            if let site = job.siteSystem {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Site system: \(site.title)")
+                        .font(.subheadline)
+                    Text(site.units)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+            }
         } header: {
             Text(job.visitedUnits.count > 1 ? "Units on this job" : "Unit")
         } footer: {

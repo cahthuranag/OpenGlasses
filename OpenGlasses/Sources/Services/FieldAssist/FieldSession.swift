@@ -94,6 +94,11 @@ struct FieldSession: Codable, Identifiable, Equatable {
     /// equipment in front of the technician, which is recognised on site as always. Dropped with
     /// the history; nil on every older session.
     var officeEquipment: [KnownEquipment]?
+    /// Which of the vault's documented site systems this job is at, and how strongly that is known
+    /// (Plan HV): copied from the job ahead and recomputed when a unit is recognised or a serial
+    /// written down. Identifiers and the site's name only; the site's text stays in the vault. Nil,
+    /// and absent from the JSON, on every job whose vault has no site documents.
+    var siteSystem: SiteSystemMatch?
     /// A new scope on equipment change prevents carrying work onto another machine (FM).
     var continuityScope: String = "initial"
     var taskEquipmentScopes: [String: String] = [:]
@@ -248,6 +253,7 @@ struct FieldSession: Codable, Identifiable, Equatable {
         case media, evidenceSelection, signOff, debriefs
         case site, faultReport, brief, jobFile, jobNeeds
         case officeHistory, officeSiteRequirements, officeContext, officeEquipment
+        case siteSystem
         case continuityScope, taskEquipmentScopes, identityEquipmentScopes, procedureEquipmentScope
         case conversationThreadId, conversationThreadDetached, jobIntake, pendingUnitChange
         case visitedUnits
@@ -304,6 +310,7 @@ extension FieldSession {
         officeSiteRequirements = try c.decodeIfPresent(OfficeSiteRequirements.self, forKey: .officeSiteRequirements)
         officeContext = try c.decodeIfPresent(OfficeContextSummary.self, forKey: .officeContext)
         officeEquipment = try c.decodeIfPresent([KnownEquipment].self, forKey: .officeEquipment)
+        siteSystem = try? c.decodeIfPresent(SiteSystemMatch.self, forKey: .siteSystem)
         continuityScope = try c.decodeIfPresent(String.self, forKey: .continuityScope) ?? "initial"
         taskEquipmentScopes = try c.decodeIfPresent([String: String].self, forKey: .taskEquipmentScopes) ?? [:]
         identityEquipmentScopes = try c.decodeIfPresent([String: String].self, forKey: .identityEquipmentScopes) ?? [:]

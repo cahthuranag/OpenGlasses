@@ -1,6 +1,17 @@
 # Plan HV — Site and System Vaults (how the units at one site work together)
 
-**Status:** 📝 Drafted 2026-10-08 — nothing implemented. Mostly a vault-authoring feature: a new,
+**Status:** 🚧 P0–P2 built 2026-10-20 — the FX14 gate (office-built vaults) and the device check
+are owed. P0: `SiteSystemDocument` and `SiteSystemValidator` (closed, typed, bounded, plain text,
+no links), the manifest's `sites` key, install and export copying, `VaultStore.siteDocuments()`,
+a pack carrying `sites` refused, the office import preflight checking the paths, the fictional
+fixture vault (`OpenGlassesTests/Fixtures/SiteSystemVault`, since FR has not landed) and the
+vault-guide section. P1: `SiteSystemMatcher` (serial, a unit's `{system, id}` reached by its serial
+or `unit_key`, the location's `{system, id}`, else model-only), `SiteSystemMatch` on the job ahead
+and the visit, recomputed and logged as units and serials arrive; `SiteSystemContract` in the
+snapshot, the live line and `equipment_lookup`'s "site system" query. P2: the brief's
+`knownEquipment` line, the once-per-unit announcement, and the site on the job's page. Two id
+changes from the office's connector survey and the four owner decisions of 2026-10-20 are
+recorded below. · Drafted 2026-10-08. Mostly a vault-authoring feature: a new,
 validated kind of vault content that describes how the units at one site are connected and
 controlled, and a small phone side that recognises when a job is at that site and tells the model
 how the units relate. Office-built vaults need office plan FX14 (vault archive conformance,
@@ -131,10 +142,12 @@ same model is at many sites.
 {
   "format": "avenkin.site-system", "version": 1,
   "id": "hillside-house", "name": "Hillside house, whole-home system",
-  "location_label": "Hillside house", "external_location_ids": ["loc-88412"],
+  "location_label": "Hillside house",
+  "external_location_ids": [ { "system": "example-fsm", "id": "loc-88412" } ],
   "units": [
     { "id": "furnace", "model": "AF-80", "serial": "AF80-2201", "label": "basement furnace" },
-    { "id": "heatpump", "model": "AH-36", "serial": "AH36-7713", "label": "side-yard heat pump" },
+    { "id": "heatpump", "model": "AH-36", "serial": "AH36-7713", "label": "side-yard heat pump",
+      "external_ids": [ { "system": "example-fsm", "id": "asset-5521" } ] },
     { "id": "tstat", "model": "AT-9", "label": "hall thermostat", "covered": false } ],
   "connections": [
     { "from": "furnace", "to": "heatpump", "kind": "fluid", "medium": "refrigerant",
@@ -153,7 +166,7 @@ same model is at many sites.
   "settings": [
     { "unit": "furnace", "name": "Blower profile", "value": "B", "note": "Set at install for the coil" } ],
   "interaction_faults": [
-    { "seen_on": "heatpump", "code": "E77", "link": "communication_bus",
+    { "seen_on": "heatpump", "code": "E77", "link": "communication",
       "text": "Heat pump shows E77 when the furnace board drops off the bus; check the bus at the furnace before the heat pump board." } ],
   "notes": "Install 2024. Outdoor disconnect behind the side gate."
 }
@@ -176,9 +189,17 @@ same model is at many sites.
   characters, length limits per field).
 - **A unit is a reference, not a unit record.** Its `model` names a model the vault indexes; its
   specifications stay in that model's own section and manual. `label` is where it is at the site.
-- `external_location_ids` and per-unit serials are what lets a job from an FSM (HT) find the site.
-  A vault may describe a system type with no serials and no location ids; it then matches only by
-  model (§3).
+- `external_location_ids`, per-unit serials and per-unit `external_ids` are what lets a job from
+  an FSM (HT) find the site. A vault may describe a system type with no serials and no ids; it then
+  matches only by model (§3).
+- **Identifiers say whose they are** (from the office's connector survey, decided 2026-10-20):
+  every `external_location_ids` entry is `{ "system": …, "id": … }`, and a unit may carry
+  `external_ids: [{ "system": …, "id": … }]`, one per system. `system` is the job file's
+  `external.system` token (`[a-z0-9_-]{1,32}`); `id` follows the job file's identifier rule (1–128
+  printable ASCII, no spaces, never `://`). Each is unique per system across the vault.
+- **A fault's `link`** names what the fault crosses: a declared unit, a declared integration, or a
+  connection kind (`communication` above). Built that way; the draft's `communication_bus` named
+  none of the three.
 
 ### 2 · Validation (`VaultValidator`, issues unless marked)
 
@@ -204,9 +225,14 @@ same model is at many sites.
 `SiteSystemMatcher`, pure over the vault's site documents and what the job knows:
 
 - **Confirmed:** a serial on the job (the job ahead's `equipment`, `identityFields` named serial,
-  `visitedUnits`) equals a unit's serial, or HT's `external.location_id` is in a document's
-  `external_location_ids`. One document can be confirmed; two confirmed documents is an authoring
-  error the validator's serial rule already prevents, and the location id must be unique too.
+  `visitedUnits`) equals a unit's serial (compared as letters and digits only); or a machine's id in
+  `external.equipment_ids` — keyed by its `unit_key` when it has one, else its serial — equals a
+  unit's `external_ids` entry of the same `system`; or `external.system` and `external.location_id`
+  both equal a document's `external_location_ids` entry. A unit therefore matches by serial, by
+  `unit_key` (through its id) or by `{system, id}`. One document can be confirmed; the validator's
+  uniqueness rules keep one vault from naming a serial or an id twice, and evidence that names two
+  documents (a job's serial at one site, a serial read on site at another) is `ambiguous` and
+  injects nothing.
 - **Probable:** no confirmed match, and exactly one document lists every modelled unit the job names.
   Shown and injected with "matched by model only; the serial will confirm it".
 - **None:** otherwise, including several probable documents. The brief says "N site systems in
@@ -214,7 +240,11 @@ same model is at many sites.
 - The match is computed when the brief is assembled, kept on the job ahead as `SiteSystemMatch`
   (site id, vault id, strength, matched unit ids), copied to the session by `applyJobAhead`, and
   recomputed when `setEquipment` or a serial identity field changes it. Every match and change is a
-  session log event.
+  session log event. *Built:* the match also keeps the job's evidence (serials, models, ids — no
+  site text) so a serial heard mid-job is weighed with what the job ahead said, the site's name and
+  label and its units' names for the brief, the live line and the page, and two more strengths:
+  `ambiguous` (several candidates, which the brief counts) and `unmatched` (kept only for its
+  evidence). Log events carry the site id, strength, basis and counts, never the site's text.
 - **No serial from the nameplate text.** `nameplateText` stays audit-only. Matching from a read
   serial waits on EL P3's nameplate fields.
 
@@ -235,7 +265,10 @@ same model is at many sites.
   `coreBudgetCharacters` or `referenceByteLimit`, and only the matched site's block is ever sent.
 - **Live sessions** get one line in `LiveJobContract.block` ("Site system: Hillside house, 3
   units; ask equipment_lookup for 'site system'"), since its 1,600 characters cannot hold the block,
-  and `equipment_lookup` gains a `site system` query that returns the rendered block.
+  and `equipment_lookup` gains a `site system` query that returns the rendered block. *Built:* the
+  query returns the whole document rendered (up to 12,000 characters, so nothing the session block
+  clipped is lost); the tool's schema and description are unchanged — the live line and the block
+  name the query.
 - **Each unit stays itself.** `setEquipment`, `EquipmentIdentity`, `UnitLedger` and the work record
   are unchanged. `EquipmentScopeCheck` still answers for the active unit; the site block is context,
   not a scope.
@@ -266,12 +299,14 @@ A new section in `docs/field-assist-vault-guide.md`, "Describing a site system":
   or anything that is a diagnosis without having been seen.
 - **The worked example** above, with invented models, goes into the example vault. FR is not built,
   so P0 adds it to FR's invented product line if FR has landed and otherwise as a test fixture
-  vault under `OpenGlassesTests/Fixtures`, never into the real-product example folder.
+  vault under `OpenGlassesTests/Fixtures`, never into the real-product example folder. *Built* as
+  `OpenGlassesTests/Fixtures/SiteSystemVault` (invented models NV80F060, NV36HP2 and NV48HP2); the
+  guide's worked example is that file, and a test keeps the two the same.
 - **The office.** An office-built archive carries `sites/` like any listed file; FX14's checker
   must accept the `sites` key, apply §2's rules, and list the files in `vault-archive.json`. Until
   it does, office-built vaults do not carry site documents. That is the gate for the office route.
 - **Packs.** A sellable pack describes products, not customers' sites; `installPack` refuses a pack
-  with `sites` in this plan (open question 2).
+  with `sites` (decided 2026-10-20), even an empty list.
 
 ### 7 · Install and export
 
@@ -329,11 +364,20 @@ count. Site documents are baseline content only: no phone editor, no overlay.
   a site document from the FSM, through FX14, rather than an author writing it.
 - Editing site documents on the phone.
 
+## Decisions (owner, 2026-10-20)
+
+1. **One file per site.** A file holding a list is refused, and a file is named for its site:
+   `sites/<id>.json`.
+2. **Packs refuse `sites`.** Site types without serials may come later; a pack carries none now.
+3. **No unit references across vaults in v1.** A site document names only units in its own vault
+   or on the job: a unit whose model the vault has no section for must say `"covered": false`, and
+   a unit that names another vault (`vault`, `vault_id`) is refused.
+4. **The live route is one line plus a lookup.**
+
+And from the office's connector survey (its effects on HT, HU and HV): `external_location_ids`
+entries are `{system, id}`, and units gain optional `external_ids: [{system, id}]`, matched against
+the job's `external.equipment_ids` (§1, §3).
+
 ## Open questions
 
-1. **One file per site, or a single `sites.json`?** The plan takes one per site for clean diffs
-   and per-site bounds.
-2. **Packs.** Refuse `sites` in a pack, or allow site *types* without serials or location ids?
-3. **A site seen across vaults.** A furnace in a heating vault and a heat pump in another: should a
-   site document be allowed to name a unit from another installed vault?
-4. **The live route.** One line and a lookup, or a smaller live block when a match is confirmed?
+None. The four above are resolved by the decisions.

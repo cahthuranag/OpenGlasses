@@ -134,6 +134,14 @@ enum VaultImporter {
                     try fm.copyItem(at: sourceDir.appendingPathComponent(relative), to: dest)
                 }
             }
+            // Site documents (Plan HV), validated above with the rest. Baseline content only: no
+            // phone editor and no overlay.
+            for path in manifest.siteFiles {
+                let dest = staging.appendingPathComponent(path)
+                guard !fm.fileExists(atPath: dest.path) else { continue }
+                try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fm.copyItem(at: sourceDir.appendingPathComponent(path), to: dest)
+            }
             // Receipts are app-written trust records, never author-supplied payload files. Even
             // a folder that lists this reserved path cannot forge a signed Office review handoff.
             let suppliedReceipt = staging.appendingPathComponent(VaultReceipt.filename)

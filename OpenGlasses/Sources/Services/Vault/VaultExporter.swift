@@ -105,6 +105,17 @@ enum VaultExporter {
                 try bundle.encoded().write(to: dir.appendingPathComponent(learningsFile), options: .atomic)
             }
 
+            // sites/ — the site documents (Plan HV), from the baseline: they have no overlay. They
+            // can identify a customer's premises, which is why a pack refuses them and the guide
+            // says what not to write; an export of a vault that has them carries them.
+            for path in manifest.siteFiles {
+                guard let source = store.bundleRoot?.appendingPathComponent(path),
+                      fm.fileExists(atPath: source.path) else { continue }
+                let dest = root.appendingPathComponent(path)
+                try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fm.copyItem(at: source, to: dest)
+            }
+
             // procedures/ — copy whatever is present (overlay wins, else bundle).
             if let dir = manifest.proceduresDir {
                 let dest = root.appendingPathComponent(dir, isDirectory: true)

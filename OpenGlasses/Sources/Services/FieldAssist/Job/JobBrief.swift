@@ -174,6 +174,9 @@ enum JobBriefAssembler {
         var officeHistory: OfficeServiceHistory?
         /// What the site asks of the person arriving (Plan HU), from the job file.
         var siteRequirements: OfficeSiteRequirements?
+        /// The vault's documented site system the job is at (Plan HV), already matched by
+        /// `SiteSystemMatcher`. Nil when the vault has no site documents.
+        var siteSystem: SiteSystemMatch?
         var now: Date
 
         init(job: UpcomingJob, history: JobHistoryIndex, vaultName: String,
@@ -347,6 +350,11 @@ enum JobBriefAssembler {
             described.formUnion(JobHistoryIndex.modelTokens(model))
             items.append(vaultLine(for: model, label: unit.summary, inputs: inputs, fallbackCitation: source))
             if let warranty = warrantyItem(for: unit, inputs: inputs) { items.append(warranty) }
+        }
+        // The site system the job's machines belong to (Plan HV §5), after the machines it joins.
+        if let match = inputs.siteSystem, let line = SiteSystemContract.briefLine(match) {
+            items.append(.init(text: line,
+                               citation: SiteSystemContract.briefCitation(vaultName: inputs.vaultName, match: match)))
         }
         // Machines earlier visits recorded here that the job itself does not name.
         for match in matches where match.reason != .model {

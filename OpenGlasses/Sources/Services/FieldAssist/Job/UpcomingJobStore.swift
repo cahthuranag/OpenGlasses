@@ -83,6 +83,13 @@ final class UpcomingJobStore: ObservableObject {
         update(job)
     }
 
+    /// Keep the site system the brief matched the job to (Plan HV), or forget a stale one.
+    func saveSiteSystem(_ match: SiteSystemMatch?, jobId: String) {
+        guard var job = job(id: jobId), job.siteSystem != match else { return }
+        job.siteSystem = match
+        update(job)
+    }
+
     /// Take a job off the list — started on site, or no longer wanted.
     @discardableResult
     func remove(id: String) -> UpcomingJob? {

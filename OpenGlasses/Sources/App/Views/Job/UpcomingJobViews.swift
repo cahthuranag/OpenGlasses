@@ -78,6 +78,10 @@ struct UpcomingJobView: View {
             if !job.equipment.isEmpty {
                 row("Equipment", job.equipment.map(\.summary).joined(separator: "\n"))
             }
+            // The documented site system the brief matched the job to (Plan HV §5).
+            if let site = SiteSystemContract.pageLines(job.siteSystem) {
+                row("Site system: \(site.title)", site.units)
+            }
             if let notes = job.notes { row("Notes", notes) }
             // Only the ones the file merely named. One it named by digest has its own row below.
             if !job.attachments.isEmpty {

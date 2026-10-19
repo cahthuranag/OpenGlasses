@@ -275,7 +275,9 @@ Fresh delivery passes these independent checks:
    ZIP entry/CRC checks and vault archive limits.
 4. Matching header and vault manifest identity/version, exact declared file bytes, and a valid
    signature from an active publisher supplied by the existing trusted publisher directory.
-5. Safe manifest paths and all required configuration, manual text and original files present.
+5. Safe manifest paths and all required configuration, manual text and original files present —
+   including any site documents the manifest's `sites` lists (Plan HV), which the phone's vault
+   validator then checks in full.
 
 Only then can `OfficeManualImport.Prepared.vaultImportRequest` hand the immutable files and
 publisher provenance to the existing `VaultLinkInstaller`. There is no unsigned fallback. The

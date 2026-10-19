@@ -152,6 +152,8 @@ final class VaultPackCatalogService: ObservableObject {
         guard manifest.id == pack.vaultId else { return .failure(InstallFailure("pack.json vaultId does not match manifest.json id")) }
         guard manifest.gating.iap == pack.id else { return .failure(InstallFailure("vault gating must name the pack id")) }
         guard manifest.documents.isEmpty else { return .failure(InstallFailure("a pack must not ship documents; customers load their own manuals")) }
+        // A sellable pack describes products, not customers' sites (Plan HV, decided 2026-10-20).
+        guard manifest.sites == nil else { return .failure(InstallFailure("a pack must not carry site documents; sites belong in a customer's own vault")) }
 
         // Lay the files out as a folder and hand it to the same importer a customer folder uses.
         let staging = FileManager.default.temporaryDirectory

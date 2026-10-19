@@ -26,7 +26,8 @@ final class DeliverReportTool: NativeTool {
     channel is not allowed for this job, the tool says so and names the ones that are. Works on \
     the open job, or — when none is open — on the job just closed in this conversation, as long as \
     its report has not gone yet, so "close the job and send the report" works in either order. It \
-    never reopens a closed job.
+    never reopens a closed job. A parts order is not the job report: to email the office an order \
+    for a part, call parts_request with action 'send' instead.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",

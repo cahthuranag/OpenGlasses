@@ -228,7 +228,7 @@ final class DeliveryTests: XCTestCase {
     /// Plan FP P0: the request carries a payload, and the unattended route queues whatever the
     /// payload says. For a job report that has to be exactly the op it always queued — the record's
     /// own JSON, under its session — or an office endpoint would start receiving something else.
-    func testAJobReportPayloadQueuesTheRecordExactlyAsBefore() {
+    func testAJobReportPayloadQueuesTheRecordExactlyAsBefore() throws {
         let record = record()
         let request = DeliveryRequest.make(record: record, channel: .endpoint,
                                            recipients: [], attachments: [])
@@ -236,7 +236,7 @@ final class DeliveryTests: XCTestCase {
         XCTAssertEqual(request.record, record)
         XCTAssertEqual(request.sessionId, record.sessionId)
 
-        let queued = request.payload.queuedOp()
+        let queued = try XCTUnwrap(request.payload.queuedOp())
         let before = QueuedOp.make(workRecord: record)
         XCTAssertEqual(queued.kind, before.kind)
         XCTAssertEqual(queued.sessionId, before.sessionId)

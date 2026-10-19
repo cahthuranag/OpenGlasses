@@ -130,7 +130,7 @@ final class LearningBundleDeliveryTests: XCTestCase {
         _ = filed()
         let bundle = try outbox.composeCandidates().get()
         let request = try outbox.deliveryRequest(for: bundle, channel: .endpoint, recipients: []).get()
-        let queued = request.payload.queuedOp()
+        let queued = try XCTUnwrap(request.payload.queuedOp())
         let made = QueuedOp.make(learningBundle: bundle)
         XCTAssertEqual(queued.kind, .teamLearning)
         XCTAssertEqual(queued.kind, made.kind)

@@ -116,6 +116,7 @@ final class JobDayFeed: ObservableObject {
             cancelled: session.outcome == .cancelled,
             reportSent: reportSent,
             signedOff: session.signOff != nil,
-            openPartsRequests: session.partsRequests.filter { $0.status != .answered }.count)
+            openPartsRequests: session.partsRequests.filter { $0.status != .answered }.count,
+            unsentPartsRequests: PartsOrder.waiting(session.partsRequests).count)
     }
 }

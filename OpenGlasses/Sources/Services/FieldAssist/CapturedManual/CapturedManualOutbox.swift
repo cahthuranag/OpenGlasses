@@ -59,7 +59,7 @@ final class CapturedManualOutbox: ObservableObject {
         guard officeConfigured(),policyAllows(m),let queue,let evidence else {return}
         guard let source = source() else {throw CapturedManualStore.Failure.unavailable}
         let request = DeliveryRequest.make(capturedManual:m,pdf:try source.file(m,name:"pages.pdf"),text:try source.file(m,name:"text.md"))
-        let op = request.payload.queuedOp()
+        guard let op = request.payload.queuedOp() else {throw CapturedManualStore.Failure.invalidRequest}
         guard !op.payload.isEmpty else {throw CapturedManualStore.Failure.invalidRequest}
         if queue.all(limit:Int.max).contains(where:{$0.kind == .capturedManual && $0.payload == op.payload}) {return}
         // Freeze evidence before making the operation visible to a flush. A crash here may leave

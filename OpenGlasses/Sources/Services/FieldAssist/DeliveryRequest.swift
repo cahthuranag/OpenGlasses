@@ -24,6 +24,9 @@ struct DeliveryRequest: Identifiable, Equatable {
         /// reviewer's decisions on their way back. Unsigned — see `LearningBundle`.
         case learningBundle(LearningBundle, direction: LearningBundle.Direction)
         case capturedManual(CapturedManualContract.Manifest)
+        /// A job's parts requests on their own, as an order to the office. The requests it carries
+        /// become `sent` when it is sent, exactly as a report's do, and stay `requested` when not.
+        case partsOrder(PartsOrder)
 
         /// The job session the delivery is audited against. A bundle belongs to no job, so it is
         /// filed under `LearningBundle.queueSessionID`, which no job's counts include.
@@ -32,6 +35,7 @@ struct DeliveryRequest: Identifiable, Equatable {
             case .workRecord(let record, _): return record.sessionId
             case .learningBundle: return LearningBundle.queueSessionID
             case .capturedManual(let m): return m.sessionID
+            case .partsOrder(let order): return order.sessionId
             }
         }
 
@@ -40,17 +44,25 @@ struct DeliveryRequest: Identifiable, Equatable {
             case .workRecord(let record, _): return record.jobReference
             case .learningBundle: return nil
             case .capturedManual(let m): return m.jobReference.isEmpty ? nil : m.jobReference
+            case .partsOrder(let order): return order.jobReference
             }
         }
 
         /// The stock checks a confirmed send moves to `sent`. Empty for anything that is not a
-        /// job report.
+        /// job report or a parts order.
         var partsRequestIds: [String] {
             switch self {
             case .workRecord(_, let ids): return ids
             case .learningBundle: return []
             case .capturedManual: return []
+            case .partsOrder(let order): return order.partsRequestIds
             }
+        }
+
+        /// The parts order, when this is one.
+        var partsOrder: PartsOrder? {
+            if case .partsOrder(let order) = self { return order }
+            return nil
         }
 
         /// The bundle, when this is one.
@@ -60,12 +72,16 @@ struct DeliveryRequest: Identifiable, Equatable {
         }
 
         /// What the durable queue holds when this goes by the unattended route: for a job report,
-        /// the same bytes `WorkRecord.json` produces; for a bundle, the bundle's own bytes.
-        func queuedOp() -> QueuedOp {
+        /// the same bytes `WorkRecord.json` produces; for a bundle, the bundle's own bytes. Nil for
+        /// a parts order: each request was queued on its own when it was asked for
+        /// (`FieldSessionService.requestPart`), so the endpoint already has them coming and a
+        /// second copy would be a second order.
+        func queuedOp() -> QueuedOp? {
             switch self {
             case .workRecord(let record, _): return QueuedOp.make(workRecord: record)
             case .learningBundle(let bundle, _): return QueuedOp.make(learningBundle: bundle)
             case .capturedManual(let m): return QueuedOp.make(capturedManual:m)
+            case .partsOrder: return nil
             }
         }
     }
@@ -198,7 +214,7 @@ struct DeliveryRequest: Identifiable, Equatable {
     var record: WorkRecord? {
         switch payload {
         case .workRecord(let record, _): return record
-        case .learningBundle, .capturedManual: return nil
+        case .learningBundle, .capturedManual, .partsOrder: return nil
         }
     }
 
@@ -267,8 +283,17 @@ struct DeliveryRequest: Identifiable, Equatable {
                 .init(url:text,kind:.capturedManualText,filename:"text.md")],payload:.capturedManual(m))
     }
 
+    /// Build the request for a parts order. Text only on every channel: no PDF, no record, no
+    /// customer — what the counter needs to pull the part.
+    static func make(partsOrder order: PartsOrder, channel: DeliveryChannel,
+                     recipients: [String]) -> DeliveryRequest {
+        DeliveryRequest(channel: channel, recipients: recipients, subject: order.subject,
+                        body: order.body, shortBody: order.shortBody, payload: .partsOrder(order))
+    }
+
     /// What the technician is told is about to happen, before anybody taps anything.
     var confirmation: String {
+        if case .partsOrder(let order) = payload { return partsOrderConfirmation(order) }
         if case .capturedManual(let m) = payload {
             return "Photographed manual queued for the configured office: \(m.pageCount) pages. It stays pending until a compatible office accepts the manifest, PDF and recognised text. This does not submit it for pool review."
         }
@@ -310,6 +335,25 @@ struct DeliveryRequest: Identifiable, Equatable {
 }
 
 extension DeliveryRequest {
+
+    /// The confirmation for a parts order: what it carries, how it leaves, and when it counts.
+    fileprivate func partsOrderConfirmation(_ order: PartsOrder) -> String {
+        var line = "Parts order ready to go by \(channel.spokenName)"
+        if !recipients.isEmpty { line += " to \(recipients.joined(separator: ", "))" }
+        line += ": \(order.spokenList)."
+        if order.requests.contains(where: { !$0.part.verified }) {
+            line += " It says which numbers were not found in the manuals."
+        }
+        switch channel {
+        case .endpoint:
+            line += " It goes to the office endpoint as soon as there is a connection, and is marked sent once the office has it."
+        case .whatsapp, .telegram:
+            line += " Check it and send it there. \(channel.label) can't tell this phone it was sent, so the request stays marked as waiting."
+        case .email, .messages, .shareSheet:
+            line += " Check it on the phone and tap Send; the request is marked sent once it goes."
+        }
+        return line + " This is separate from the job report."
+    }
 
     /// The confirmation for a bundle: what it carries, by count, and how it leaves.
     fileprivate func bundleConfirmation(_ bundle: LearningBundle) -> String {

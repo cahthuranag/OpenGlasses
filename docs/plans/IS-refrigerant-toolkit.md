@@ -1,12 +1,32 @@
 # Plan IS — Refrigerant Toolkit (gauges to an answer, full P-T tables, refrigerant-rule flags, a door-sticker diagram)
 
-**Status:** 🚧 **P0 built 2026-10-19** — saturation tables generated with CoolProp 8.0.0 (pinned in
+**Status:** 🚧 **P0 and P1 built 2026-10-19** — saturation tables generated with CoolProp 8.0.0 (pinned in
 `Scripts/generate-pt-tables.py`, run by hand): 13 bundled tables (the planned twelve plus R-454B, which
 CoolProp defines as a predefined mixture), dew and bubble series on the −40…150 °F (1 °F) and −40…65 °C
 (0.5 °C) grids, absolute kPa; pure `SaturationTable`, `Atmosphere` (ISA altitude correction) and
 `RefrigerantPressure`; `domain_calc` reads them (superheat on dew, subcool on bubble, glide, the source
 line and the sea-level line; psig/°F or kPa/bar with °C); `pt_charts.md` reduced to a pointer; CoolProp in
-Settings › About › Attributions. P1–P6 not started. Drafted 2026-10-17, P4–P6 added the same day. The EPA 608 reference was corrected
+Settings › About › Attributions. **P1 built 2026-10-19:** `refrigerant_gauges` takes one still of the manifold or
+digital gauge set through `CameraService.filteredStill(for: .visionAssessment, …)` (roster entry
+`refrigerantGaugeReading`), reads it with `instrument_reading` (which now reports each display's printed `label` and
+bezel or hose `color`; safety corpus bumped to 1.1.0 with a labelled-manifold case), and files the same filtered
+bytes on the open job as its photo. The pure `GaugeRoleResolver` assigns suction, liquid and discharge from a printed
+role word, then LOW/HIGH (HIGH is the high side, taken as the liquid line and said as "high side"), then blue/red; the
+technician's answer outranks them, and a role it cannot tell, or cues that disagree, are asked ("Is the left gauge
+(118 psig) suction?"), never guessed. The line temperature is a probe in the frame or what the technician says. The
+pure `RefrigerantGaugeChain` runs the `domain_calc` lookup (now shared as `RefrigerantLineCalculation`) in SI and
+renders in the technician's units ("Superheat 10.2 °F: suction 118 psig is 39.8 °F dew for R-410A, line 50 °F" /
+"Superheat 5.4 K: suction 820 kPa is 4.6 °C dew for R-410A, line 10 °C"). The refrigerant comes from the technician or
+the job's recorded nameplate field; without one the answer is pressures only and asks. `InstrumentPlausibility` gains
+per-refrigerant bands: a saturation-temperature window per line and application (cooling, heating, refrigeration,
+unspecified) converted through the P0 table on that line's curve, held in kelvin and kPa absolute, so a 30 psig
+"suction" on R-410A in cooling asks for a re-look. Each reading is recorded as a `SpokenReading` with method
+`instrument_reading`, the job photo id, and the refrigerant and its source, once per photo. `refrigerationUnits`
+(pressure kPa/bar/psi, temperature °C/°F, mass kg/lb) is in Settings › Field Assist, defaulting by storefront (AU and
+NZ kPa, °C, kg; CA psig, °F, kg; elsewhere psig, °F, lb), and is an organisation-profile starting value
+(`refrigerationUnits`, `"kPa,C,kg"`). `organizationJurisdiction` is deferred to P2, where it first decides something.
+`domain_calc` keeps its own unit rule (psig answers in °F, kPa/bar in °C). Owed: a device pass reading a real manifold
+and digital set; a catalog sync for the new strings. P2–P6 not started. Drafted 2026-10-17, P4–P6 added the same day. The EPA 608 reference was corrected
 separately, in [#753](https://github.com/straff2002/OpenGlasses/pull/753). **Amended 2026-10-19
 ([below](#amendment-2026-10-19-canada-australia-and-new-zealand-first)):** Canada, Australia and New Zealand rules come
 first and the US EPA 608 flags become a deferred phase (P2-US); metric units are first-class throughout.

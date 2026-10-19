@@ -44,6 +44,9 @@ struct SafeErrorSummary: Equatable, CustomStringConvertible {
         case outputTruncated
         /// The request would not fit the model's context window, checked before it was sent.
         case contextTooLarge
+        /// The model's own window filled while it worked on the turn (instructions, tools and
+        /// their results together), reported by the model rather than predicted.
+        case contextOverflow
         case unknown
     }
 
@@ -163,6 +166,9 @@ struct SafeErrorSummary: Equatable, CustomStringConvertible {
             return SafeErrorSummary(category: .modelDeclined, detail: PrivacyToken("refusal"))
         case .outputTruncated:
             return SafeErrorSummary(category: .outputTruncated, detail: PrivacyToken("max_tokens"))
+        case .contextOverflow(_, let toolsRan):
+            return SafeErrorSummary(category: .contextOverflow,
+                                    detail: PrivacyToken(toolsRan ? "afterTools" : "beforeTools"))
         case .missingAPIKey:
             return SafeErrorSummary(category: .unknown, detail: PrivacyToken("missingAPIKey"))
         case .invalidConfiguration:

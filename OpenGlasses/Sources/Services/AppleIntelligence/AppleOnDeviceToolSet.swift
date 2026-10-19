@@ -16,8 +16,13 @@ enum AppleOnDeviceToolSet {
     /// The Field Assist tools a job is run from by voice, in priority order. `field_session` leads
     /// because "open a new job" is the first thing a technician says, and it is the one tool the
     /// Field Assist screen's own prompts depend on.
+    ///
+    /// `manual_lookup` is not offered: one lookup returns about three thousand characters, which
+    /// this window cannot hold beside its instructions and tools. A job turn goes to another model
+    /// when one is configured (`OnDeviceJobRoutePolicy`); when none is, the instructions say that
+    /// manual answers need a cloud model (`AppleOnDeviceInstructions`).
     static let fieldAssistPriority: [String] = [
-        "field_session", "reading", "evidence", "manual_lookup", "deliver_report",
+        "field_session", "reading", "evidence", "deliver_report",
         "parts_request", "van_stock",
     ]
 

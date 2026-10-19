@@ -141,9 +141,12 @@ final class AppleToolBridgeTests: XCTestCase {
         let mapped = LLMService.appleGenerationFailure(.refusal(refusal, context))
         guard case .modelDeclined(let provider) = mapped else { return XCTFail("\(mapped)") }
         XCTAssertEqual(provider, "Apple Intelligence")
-        guard case .outputTruncated = LLMService.appleGenerationFailure(.exceededContextWindowSize(context)) else {
+        // A full window is named as one — not as a max-tokens stop, which it is not.
+        guard case .contextOverflow(let overflowProvider, _) = LLMService.appleGenerationFailure(
+            .exceededContextWindowSize(context)) else {
             return XCTFail()
         }
+        XCTAssertEqual(overflowProvider, "Apple Intelligence")
     }
     #endif
 }

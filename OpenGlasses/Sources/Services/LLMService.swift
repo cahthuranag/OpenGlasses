@@ -308,6 +308,18 @@ class LLMService: ObservableObject {
     private var googleAccount: GoogleOAuthService { googleAccountOverride ?? .shared }
 
 
+    /// The on-device turn's tool results, replayed when a full window rebuilds the session
+    /// (`AppleToolResultCache`). Cleared at the start and end of every on-device turn.
+    let appleToolResults = AppleToolResultCache()
+
+    /// Said once per process: the first Field Assist job turn handed off the on-device model.
+    private static var onDeviceJobRouteAnnounced = false
+    /// The cascade already routed this turn's job (`sendMessageCascading`): a later hop back to
+    /// the on-device model stays there, with the compact job summary.
+    private var onDeviceJobRouteSettled = false
+    /// The sentence the cascade's routing owes the turn, for the configuration it routed to.
+    private var pendingJobRouteNotice: (configId: String, notice: String)?
+
     #if canImport(FoundationModels)
     /// The Apple `Tool` adapters for the tool names last offered, rebuilt when the names change
     /// (Plan JD P0). The session itself is never cached — see `sendAppleOnDeviceImpl`.
@@ -369,6 +381,34 @@ class LLMService: ObservableObject {
         // "OpenGlasses" instead of the wearer. Pin the speaker identity explicitly.
         let speaker = device == .glasses ? "the user wearing the glasses" : "the user"
         return prompt + "\n\nThe person speaking to you is \(speaker). Address them directly as \"you\". Never address \(Config.assistantName) — that is your own name."
+    }
+
+    /// The instructions for Apple's on-device model, built to fit its 4,096-token window
+    /// (`AppleOnDeviceInstructions`): the persona, the short app guide and safety policy, a compact
+    /// summary of an open job instead of its manuals, memory, the date and time and the location.
+    /// Records its own blocks for the support report, so "sent:" names what this model was sent.
+    static func appleOnDevicePrompt(locationContext: String?, memoryContext: String?,
+                                    weatherContext: String? = nil,
+                                    device: AssistantIdentity.Device = .phone) -> String {
+        let speaker = device == .glasses ? "the user wearing the glasses" : "the user"
+        let built = AppleOnDeviceInstructions.build(.init(
+            persona: Config.systemPrompt(device: device),
+            appGuide: SystemPromptBuilder.onDeviceAppGuide(appName: RegistrationFlow.appName),
+            safetyPolicy: PromptInjectionPolicy.onDeviceSystemPromptPolicy,
+            dateTime: currentDateTimeLine(),
+            location: locationContext,
+            memory: memoryContext,
+            weather: weatherContext,
+            job: FieldSessionService.shared.activeSession.map(AppleOnDeviceInstructions.JobSummary.init(session:)),
+            fieldAssistActive: Config.fieldAssistActive,
+            modelSettingsPath: "Settings > \(SettingsCatalog.category(.intelligence).title)",
+            speakerLine: "The person speaking to you is \(speaker). Address them directly as \"you\". Never address \(Config.assistantName) — that is your own name."))
+        if built.memoryDroppedCharacters > 0, let memory = memoryContext {
+            MemoryContextRecorder.noteClip(renderedCharacters: max(memory.count - built.memoryDroppedCharacters, 0),
+                                           droppedCharacters: built.memoryDroppedCharacters)
+        }
+        TurnRecorder.notePromptBlocks(built.blocks)
+        return built.text
     }
 
     static func leanCloudPrompt(hasImage: Bool, memoryContext: String? = nil, device: AssistantIdentity.Device = .phone) -> String {
@@ -916,6 +956,31 @@ class LLMService: ObservableObject {
             throw LLMError.invalidConfiguration("Local-only privacy settings prevent sending this photo to the selected model. Select an available on-device vision model and try again.")
         }
 
+        // A Field Assist job turn on Apple's on-device model goes to a model that can hold the job
+        // (`OnDeviceJobRoutePolicy`), unless the cascade has already routed it.
+        var jobRouteNotice: String?
+        if let pending = pendingJobRouteNotice, pending.configId == modelConfig.id {
+            jobRouteNotice = pending.notice
+        }
+        // The turn's model is the active one while it runs, as in a cascade: what reads the setting
+        // mid-turn (the vault's size bound, the support trace) then reads the model answering.
+        var restoreActiveModelId: String?
+        defer {
+            if let restoreActiveModelId {
+                Config.setActiveModelId(restoreActiveModelId)
+                refreshActiveModel()
+            }
+        }
+        if !onDeviceJobRouteSettled,
+           let routed = routeOnDeviceJobTurn(modelConfig, turn: text, requiresVision: imageData != nil) {
+            modelConfig = routed.config
+            jobRouteNotice = routed.notice
+            if Config.savedModels.contains(where: { $0.id == routed.config.id }) {
+                restoreActiveModelId = Config.activeModelId
+                Config.setActiveModelId(routed.config.id)
+            }
+        }
+
         // Plan GB P5: spend caps — warn at 80%, ask at 100%, fall back only when opted in.
         var spendCapNotice: String?
         switch spendCapOutcome(utterance: text, config: modelConfig) {
@@ -1006,7 +1071,10 @@ class LLMService: ObservableObject {
         // Plan IU: how much of the tool set this turn declares in full, decided once here — a turn
         // in flight keeps the mode it started with. Only where machine-readable schemas ride along.
         var exposureTurn: ToolExposureTurn?
-        if isOnDevice {
+        if provider == .appleOnDevice {
+            fullPrompt = Self.appleOnDevicePrompt(locationContext: locationContext,
+                                                  memoryContext: memoryContext, device: device)
+        } else if isOnDevice {
             fullPrompt = await Self.leanOnDevicePrompt(
                 locationContext: locationContext, memoryContext: memoryContext,
                 hasImage: imageData != nil, turn: text, device: device)
@@ -1131,7 +1199,7 @@ class LLMService: ObservableObject {
             // An answer resting on a team learning alone opens with the fixed lead-in (Plan FP P2).
             let disclosed = FieldSessionService.shared.applyTeamLearningDisclosure(to: rawResponse)
             recordFieldAssistantReply(disclosed)
-            return disclosed
+            return withJobRouteNotice(jobRouteNotice, disclosed)
         }
 
         let (stripped, reasoning) = Self.stripThinkTags(rawResponse)
@@ -1147,7 +1215,86 @@ class LLMService: ObservableObject {
         }
         // The job's log keeps the model's reply, not the app's spend notice in front of it.
         recordFieldAssistantReply(spoken)
-        return spendCapNotice.map { $0 + " " + spoken } ?? spoken
+        return withJobRouteNotice(jobRouteNotice, spendCapNotice.map { $0 + " " + spoken } ?? spoken)
+    }
+
+    // MARK: - Field Assist jobs off the on-device model
+
+    /// The configuration a job turn on Apple's on-device model is handed to, with the sentence to
+    /// say first (once per process), or nil when the turn stays where it is. Logs the decision.
+    private func routeOnDeviceJobTurn(_ config: ModelConfig, turn: String,
+                                      requiresVision: Bool) -> (config: ModelConfig, notice: String?)? {
+        let route = onDeviceJobRoute(for: config, turn: turn, requiresVision: requiresVision)
+        logOnDeviceJobRoute(route)
+        guard case .handOff(let to, let announce) = route,
+              let target = Config.savedModels.first(where: { $0.id == to.id }),
+              let resolved = try? medicalInferenceModel(requested: target),
+              resolved.llmProvider != .appleOnDevice else { return nil }
+        return (resolved, announce ? OnDeviceJobRoutePolicy.notice(modelName: to.name) : nil)
+    }
+
+    /// The policy's decision for `config` and this turn.
+    private func onDeviceJobRoute(for config: ModelConfig, turn: String,
+                                  requiresVision: Bool) -> OnDeviceJobRoutePolicy.Route {
+        guard config.llmProvider == .appleOnDevice else { return .unchanged }
+        let localOnly = MedicalLLMRoutingPolicy.isEnforced(
+            hipaaMode: Config.hipaaMode, localOnly: Config.hipaaLocalOnly)
+        let alternatives = OnDeviceJobRoutePolicy.orderedAlternatives(
+            activeId: config.id, saved: Config.savedModels, fallbackOrder: Config.modelFallbackOrder,
+            isUsable: { candidate in
+                canServeJobTurn(candidate, localOnly: localOnly)
+                    && (!requiresVision || ModelFallbackChain.candidate(from: candidate).supportsVision)
+            })
+        return OnDeviceJobRoutePolicy.decide(.init(
+            jobOpen: FieldToolProfile.fieldJobActive,
+            jobTurn: Config.fieldAssistActive && ManualTurnScope.isJobManagement(turn),
+            activeProvider: config.llmProvider,
+            alternatives: alternatives,
+            offlineHandoff: offlineHandoffTurn,
+            announcedThisProcess: Self.onDeviceJobRouteAnnounced))
+    }
+
+    /// Whether a saved configuration can take a job turn now: a downloaded local model, or a cloud
+    /// model with its key (or its account route) while the medical local-only rule is off.
+    private func canServeJobTurn(_ config: ModelConfig, localOnly: Bool) -> Bool {
+        switch config.llmProvider {
+        case .appleOnDevice:
+            return false
+        case .local:
+            return localLLMService?.isModelDownloaded(config.model) ?? false
+        case .chatgpt, .geminiVertex:
+            // Account sign-in; a route that is signed out fails its first request and the cascade
+            // moves on, as it would for the active model.
+            return !localOnly
+        case .anthropic:
+            return !localOnly && (!config.apiKey.isEmpty || claudeAccount.isConnected)
+        case .custom:
+            return !localOnly && !config.baseURL.isEmpty
+        default:
+            return !localOnly && !config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    private func logOnDeviceJobRoute(_ route: OnDeviceJobRoutePolicy.Route) {
+        switch route {
+        case .unchanged:
+            break
+        case .handOff(let to, let announce):
+            PrivacyLog.model(.onDeviceJobRouted, provider: PrivacyToken(to.provider.rawValue),
+                             model: PrivacyToken(to.model), configuration: PrivateIdentifier(to.name),
+                             success: announce, detail: PrivacyToken("handOff"))
+        case .stayOnDevice(let reason):
+            PrivacyLog.model(.onDeviceJobRouted, provider: PrivacyToken(LLMProvider.appleOnDevice.rawValue),
+                             detail: PrivacyToken("stayOnDevice"), reason: PrivacyToken(reason.rawValue))
+        }
+    }
+
+    /// The reply with the hand-off sentence in front, the first time it is owed in a process.
+    private func withJobRouteNotice(_ notice: String?, _ reply: String) -> String {
+        guard let notice else { return reply }
+        Self.onDeviceJobRouteAnnounced = true
+        pendingJobRouteNotice = nil
+        return notice + " " + reply
     }
 
     // MARK: - Spend caps (Plan GB P5)
@@ -1257,12 +1404,35 @@ class LLMService: ObservableObject {
             return try await send()
         }
 
+        // A job turn on Apple's on-device model starts the cascade on the model it is handed to,
+        // so a failure there moves on through the chain instead of being routed again.
+        var leadId = Config.activeModelId
+        var routedNotice: (configId: String, notice: String)?
+        var routeEvaluated = false
+        if Config.modelCascadeEnabled || imageData != nil, let active = Config.activeModel,
+           active.llmProvider == .appleOnDevice {
+            routeEvaluated = true
+            if let routed = routeOnDeviceJobTurn(active, turn: text, requiresVision: imageData != nil),
+               Config.savedModels.contains(where: { $0.id == routed.config.id }) {
+                leadId = routed.config.id
+                routedNotice = routed.notice.map { (routed.config.id, $0) }
+            }
+        }
+
         let candidates = ModelFallbackChain.candidates(
-            activeId: Config.activeModelId, saved: Config.savedModels,
+            activeId: leadId, saved: Config.savedModels,
             fallbackOrder: Config.modelFallbackOrder, requiresVision: imageData != nil)
         // A photo needs a capable model even when the text-request fallback switch is off.
         guard (Config.modelCascadeEnabled || imageData != nil), !candidates.isEmpty else {
             return try await send()
+        }
+        if routeEvaluated {
+            onDeviceJobRouteSettled = true
+            pendingJobRouteNotice = routedNotice
+        }
+        defer {
+            onDeviceJobRouteSettled = false
+            pendingJobRouteNotice = nil
         }
 
         let startId = Config.activeModelId
@@ -4043,13 +4213,25 @@ class LLMService: ObservableObject {
         let tools = includeTools ? appleTools() : []
         let history = carryHistory
             ? recentTupleHistory(AppleSessionPolicy.carriedEntryLimit, stripToolMarkup: false)
+                .filter { !$0.content.isEmpty }
             : []
+        // A tool runs once per turn however many sessions the turn takes (`AppleToolResultCache`).
+        appleToolResults.clear()
+        defer {
+            if appleToolResults.replays > 0 {
+                PrivacyLog.model(.toolResultReplayed, provider: PrivacyToken("appleOnDevice"),
+                                 count: appleToolResults.replays)
+            }
+            appleToolResults.clear()
+        }
 
         // Respond, shrinking the carried history when the window is full. The retry rebuilds the
-        // session — a session that has thrown for size holds the oversize transcript.
+        // session — a session that has thrown for size holds the oversize transcript. The carry
+        // starts at what the history actually holds, so a new conversation never "retries".
         let (session, firstAnswer) = try await appleRespond(
             to: text, instructions: systemPrompt, tools: tools, history: history,
-            carry: carryHistory ? AppleSessionPolicy.carriedEntryLimit : 0)
+            carry: AppleSessionPolicy.initialCarry(
+                requested: carryHistory ? AppleSessionPolicy.carriedEntryLimit : 0, available: history.count))
         var answer = firstAnswer
 
         // Uncertainty gate (Plan BI): with `web_search` now a real tool on this path, the re-ask is
@@ -4087,7 +4269,10 @@ class LLMService: ObservableObject {
     }
 
     /// One `respond(to:)`, with the session built for it. A window the model reports as full is
-    /// retried with the next shorter carry until there is nothing left to drop.
+    /// retried with the next shorter carry until there is nothing left to drop; with nothing
+    /// carried it fails at once, as `LLMError.contextOverflow` — the instructions and tools alone
+    /// did not fit, which no retry can fix. A rebuilt session's tool calls replay the first run's
+    /// results (`appleToolResults`) rather than running again.
     @available(iOS 26.0, *)
     private func appleRespond(to text: String, instructions: String, tools: [any Tool],
                               history: [(role: String, content: String)],
@@ -4102,8 +4287,11 @@ class LLMService: ObservableObject {
                 let answer = try await session.respond(to: text).content
                 return (session, answer)
             } catch LanguageModelSession.GenerationError.exceededContextWindowSize {
-                guard let shorter = AppleSessionPolicy.carryAfterOverflow(carry) else {
-                    throw LLMError.outputTruncated(provider: "Apple Intelligence")
+                guard let shorter = AppleSessionPolicy.carryAfterOverflow(carry, available: history.count) else {
+                    PrivacyLog.model(.contextRecovery, provider: PrivacyToken("appleOnDevice"),
+                                     count: 0, total: carry, success: false)
+                    throw LLMError.contextOverflow(provider: "Apple Intelligence",
+                                                   toolsRan: !appleToolResults.isEmpty)
                 }
                 PrivacyLog.model(.contextRecovery, provider: PrivacyToken("appleOnDevice"),
                                  count: shorter, total: carry)
@@ -4165,17 +4353,21 @@ class LLMService: ObservableObject {
     /// Returns text in every case: the result, or the reason there is none, for the model to relay.
     private func runAppleTool(name: String, argumentsJSON: String) async -> String {
         guard let router = nativeToolRouter else { return "Error: tools are not available" }
-        let args = AppleToolArguments.dictionary(fromJSON: argumentsJSON)
-        PrivacyLog.localModel(.toolCall, model: PrivacyToken("appleOnDevice"), tool: PrivacyToken(name))
-        toolCallStatus = .executing(name)
-        let startedAt = Date()
-        let outcome = await router.executeRoot(name: name, args: args)
-        TurnRecorder.addToolTime(since: startedAt)
-        toolCallStatus = .idle
-        switch outcome {
-        case .completed(let text): return text
-        case .outcomeUnknown(_, let message): return message
-        case .rejected(let reason), .failedBeforeExecution(let reason): return "Error: \(reason)"
+        // A session rebuilt after a full window asks again for what this turn already ran; the
+        // first result answers it (`AppleToolResultCache`).
+        return await appleToolResults.resolve(name: name, argumentsJSON: argumentsJSON) { [weak self] in
+            let args = AppleToolArguments.dictionary(fromJSON: argumentsJSON)
+            PrivacyLog.localModel(.toolCall, model: PrivacyToken("appleOnDevice"), tool: PrivacyToken(name))
+            self?.toolCallStatus = .executing(name)
+            let startedAt = Date()
+            let outcome = await router.executeRoot(name: name, args: args)
+            TurnRecorder.addToolTime(since: startedAt)
+            self?.toolCallStatus = .idle
+            switch outcome {
+            case .completed(let text): return text
+            case .outcomeUnknown(_, let message): return message
+            case .rejected(let reason), .failedBeforeExecution(let reason): return "Error: \(reason)"
+            }
         }
     }
 
@@ -4187,7 +4379,7 @@ class LLMService: ObservableObject {
         case .guardrailViolation, .refusal:
             return .modelDeclined(provider: "Apple Intelligence")
         case .exceededContextWindowSize:
-            return .outputTruncated(provider: "Apple Intelligence")
+            return .contextOverflow(provider: "Apple Intelligence", toolsRan: false)
         case .assetsUnavailable:
             return .missingAPIKey("Apple Intelligence isn't available right now — try again in a moment, or add an API key in Settings → AI Models")
         case .unsupportedLanguageOrLocale:
@@ -4741,9 +4933,12 @@ class LLMService: ObservableObject {
                                provider: LLMProvider.local.rawValue, apiKey: "",
                                model: agentModelId, baseURL: "")
             let localConfig = try medicalInferenceModel(requested: requested)
-            let leanPrompt = await Self.leanOnDevicePrompt(
-                locationContext: locationContext, memoryContext: memoryContext,
-                hasImage: false, turn: text, weatherContext: weatherContext, device: device)
+            let leanPrompt = localConfig.llmProvider == .appleOnDevice
+                ? Self.appleOnDevicePrompt(locationContext: locationContext, memoryContext: memoryContext,
+                                           weatherContext: weatherContext, device: device)
+                : await Self.leanOnDevicePrompt(
+                    locationContext: locationContext, memoryContext: memoryContext,
+                    hasImage: false, turn: text, weatherContext: weatherContext, device: device)
             PrivacyLog.model(.agentSelected, model: PrivacyToken(localConfig.model),
                              detail: PrivacyToken("medicalLocalOnly"))
             switch localConfig.llmProvider {
@@ -5201,6 +5396,11 @@ enum LLMError: LocalizedError {
     /// The reply stopped at its output ceiling before any text or tool call (Plan IE P3): the
     /// allowance went on thinking. Nothing was said, so this is not a short answer.
     case outputTruncated(provider: String)
+    /// The model's own context window filled while it worked on the turn — instructions, tool
+    /// definitions and the tools' results together — and nothing was left to drop. Not a
+    /// max-tokens stop: the answer never had room to start. `toolsRan` says whether a tool had
+    /// already run, which decides whether another model may take the turn from the start.
+    case contextOverflow(provider: String, toolsRan: Bool)
 
     var errorDescription: String? {
         switch self {
@@ -5216,6 +5416,8 @@ enum LLMError: LocalizedError {
             return "\(provider) declined to answer"
         case .outputTruncated(let provider):
             return "\(provider) ran out of room before it answered"
+        case .contextOverflow(let provider, _):
+            return "\(provider) couldn't fit this request in its window — choose a cloud model in Settings → AI Models for requests like this"
         }
     }
 }

@@ -189,7 +189,9 @@ extension AppState {
             // Which market the app was distributed in — what a region-dependent capability will turn on.
             MarketAvailabilityPolicy.supportReportLine(storefront: storefront),
             "Mode: \(currentMode.rawValue)",
-            "AI model: \(Config.activeModel?.name ?? "none set")",
+            // The setting when the report was made, not a description of the turns above it: each
+            // turn names the model that answered it, and the setting may have changed since.
+            Self.activeModelReportLine(Config.activeModel),
             "Transcription preference: \(Config.asrEnginePreference.rawValue)",
         ]
         if isConnected {
@@ -227,6 +229,14 @@ extension AppState {
                      secrets: Config.knownSecretValues)
     }
 
+    /// The phone section's model line: what the AI model is set to as the report is made. A field
+    /// report read the old "AI model:" line as the model behind the turns above it, which had been
+    /// answered by another configuration before the setting changed.
+    static func activeModelReportLine(_ model: ModelConfig?) -> String {
+        guard let model else { return "AI model set now: none" }
+        return "AI model set now: \(model.name) (\(model.llmProvider.displayName)); each turn above names the model that answered it"
+    }
+
     /// "Rate-limited by the AI service" rather than `rateLimited#429`, for the banner. The exact
     /// category still travels in the report.
     ///
@@ -258,6 +268,7 @@ extension AppState {
         case .modelDeclined: return "the AI declined to answer that — rephrase it, or try another model"
         case .outputTruncated: return "the AI ran out of room before it answered — try again, or lower the model's reasoning setting"
         case .contextTooLarge: return "the request was too large for this model — choose a model with a larger context window"
+        case .contextOverflow: return "the on-device model's window was too small for this turn: it cannot hold the instructions and tools together — use a cloud model for this"
         case .refused: return "the app refused the request"
         default: return "the AI didn't answer"
         }

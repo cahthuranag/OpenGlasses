@@ -1,6 +1,6 @@
 # Plan FG — Workflow Vaults, Enterprise Authentication and Connected Tasks
 
-**Status: 📝 Drafted 2026-09-13 — generic vault content prepared; connected functionality in P1–P12 remains pending.**
+**Status: 🚧 P1a built 2026-10-19 — the shared `SingleFlightRefresher`, the `OAuthRefreshFailure` classes and one forced refresh on a 401, adopted by the ChatGPT, Claude and Google sign-ins (see the 2026-10-10 amendment at the end); a live sign-in pass on a device is owed. 📝 Drafted 2026-09-13 — generic vault content prepared; connected functionality in P1–P12 remains pending.**
 
 Enable organisations to adapt selectable vault workflows and connect their own authorised tools
 using Microsoft Entra ID or a compatible OAuth/OpenID Connect provider. Retain OpenGlasses identity
@@ -346,7 +346,7 @@ Coordinate provider authentication with [AI](provider-auth-and-fallbacks.md) and
 with [ED](ED-vault-manual-retrieval.md). This plan owns organisational MCP sign-in and reusable
 workflow packaging and MCP gateway interoperability; it does not replace those existing workstreams.
 
-## Amendment 2026-10-10: the single-flight refresher ships first, for the subscription sign-ins
+## Amendment 2026-10-10: the single-flight refresher ships first, for the subscription sign-ins (built 2026-10-19)
 
 P1 above specifies "single-flight refresh" for the enterprise OAuth/OIDC connection model. The
 [October 2026 ecosystem review](../ecosystem-review-2026-10.md) (section 3 row "OAuth refresh race,
@@ -382,3 +382,36 @@ lost to sign-out does not commit; a failed refresh releases the slot), `OAuthRef
 through the existing request stubs (a network failure keeps credentials; a 401 retries once).
 Plan [ID](ID-ecosystem-review-hardening-bundle.md) item 7 points here and is ticked when P1a
 merges. FG's Status line is unchanged until then.
+
+**Built 2026-10-19.** What shipped, against the four points above:
+
+1. `SingleFlightRefresher` (`Services/Auth/`) keys by a `Key` of provider plus optional issuer,
+   account, client and resource, so P1 can key its connections without changing the actor. The
+   first caller's task runs the token request; later callers await it. Ownership is a per-key
+   epoch behind a lock, so `invalidate(_:)` is synchronous: sign-out and every completed sign-in
+   call it on the main actor before touching the credential, and the epoch check and the commit
+   run in one main-actor turn. A failure is committed too (only while the slot is owned), so a
+   stale refresh's `invalid_grant` cannot discard a newer sign-in. The slot is released after the
+   commit and before any caller sees the result. Each service re-checks on the slot's turn whether
+   the refresh is still needed, so a caller that arrives just after a refresh lands sends nothing.
+2. `OAuthRefreshFailure.classify` has a third class beside the two named here: `rejected`, for a
+   refusal that does not prove the credential dead (another 4xx, an unreadable reply, a local
+   policy refusal). It keeps the credential and keeps today's "sign in again" sentence. A dead
+   credential (`invalid_grant`, or `token_revoked` / `refresh_token_expired` / `refresh_token_reused`
+   / `refresh_token_invalidated`, flat or nested) is now discarded, so the sign-in row shows it.
+   Unreachable (transport, timeout, 5xx, 429, 408, `temporarily_unavailable`) keeps it, says
+   "Couldn't reach the … sign-in service; I'll try again", and an access token that has not yet
+   actually expired keeps serving. The token endpoint's error carries the status and a closed-
+   vocabulary code only, never the body.
+3. `SubscriptionAuthRetry` wraps the account routes in `LLMService`: the Claude turn (buffered and
+   streamed) and its one-shot text and structured calls, the ChatGPT turn and its stateless
+   backend call, and the Vertex Gemini turn. A pasted Anthropic key is never refreshed. The token
+   a refresh produces is the one every later round of the same tool loop sends. When an account is
+   connected but no token is usable, the turn now says the sign-in's own message rather than
+   "not connected".
+4. The three services take an injectable credential store, session and refresher (tests use
+   memory and `RecordingQueueProtocol`; the app the keychain, `.shared` and the shared refresher).
+
+**Not covered yet:** the four Vertex one-shot calls (the history summary, frame analysis and the two structured calls)
+and `ModelFetcher`'s catalog requests still surface a 401 without a forced refresh; a live
+sign-in and expiry pass on a device for all three providers is owed.

@@ -1,6 +1,7 @@
 # Plan ID: Hardening Bundle from the October 2026 Ecosystem Review
 
-**Status:** 🚧 Item 1 shipped 2026-10-10 (PR #704); items 2 to 8 unbuilt. A checklist plan: each item is its own small,
+**Status:** 🚧 Item 1 shipped 2026-10-10 (PR #704); item 7 built 2026-10-19 as Plan FG's P1a (PR #788); items
+2 to 6 and 8 unbuilt. A checklist plan: each item is its own small,
 direct PR with a test, in any order, and is ticked here (with its PR number) when it merges. Item 7
 is tracked in Plan [FG](FG-workflow-vaults-and-enterprise-auth.md) and only referenced here.
 **Origin:** The [October 2026 ecosystem review](../ecosystem-review-2026-10.md), sections 3 and 4
@@ -27,8 +28,8 @@ string a user sees; this file's checklist and the index row updated in the same 
 - [ ] **4. Gateway hosts typed without a scheme** (S).
 - [ ] **5. A second cloud voice from the OpenAI key** (S-M).
 - [ ] **6. `framegate-probe` replay script** (S).
-- [ ] **7. OAuth single-flight refresh, failure classes and a forced refresh on 401** (S): tracked
-  as Plan FG's 2026-10-10 amendment.
+- [x] **7. OAuth single-flight refresh, failure classes and a forced refresh on 401** (S): tracked
+  as Plan FG's 2026-10-10 amendment; built 2026-10-19 as FG P1a ([#788](https://github.com/straff2002/OpenGlasses/pull/788); device sign-in pass owed).
 - [ ] **8. Face recognition accuracy measurement and comment fix** (S, measurement only).
 
 ---

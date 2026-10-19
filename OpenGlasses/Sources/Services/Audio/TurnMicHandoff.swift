@@ -23,6 +23,21 @@ enum TurnMicHandoff {
     /// How many consecutive buffers above the floor count as "live" — one could be a click.
     static let liveFramesRequired = 2
 
+    /// The least time between two engine rebuilds while the hand-off waits for frames.
+    ///
+    /// The wait loop runs every 40 ms and used to rebuild the engine on every pass that found it
+    /// stopped. On a session iOS had let go (a locked phone after the glasses' link flapped) the
+    /// engine starts and stops at once, so a 2.9 s hand-off logged thirty-five `engineStarted`
+    /// lines and did thirty-five full tap installs for nothing. A rebuild every 300 ms gives a
+    /// half-up link the same chances within the deadline and is quiet when there are none.
+    static let rebuildInterval: TimeInterval = 0.3
+
+    /// Whether a stopped engine may be rebuilt now, `rebuildInterval` after the last attempt.
+    static func shouldRebuild(lastAttempt: Date?, now: Date) -> Bool {
+        guard let lastAttempt else { return true }
+        return now.timeIntervalSince(lastAttempt) >= rebuildInterval
+    }
+
     /// Which mic this turn should be heard on.
     ///
     /// - The conversation mic is the phone → phone.

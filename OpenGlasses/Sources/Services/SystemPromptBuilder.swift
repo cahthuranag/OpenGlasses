@@ -59,7 +59,13 @@ enum SystemPromptBuilder {
         and with the glasses as the microphone the request and the reply go through the glasses there too. \
         Settings > \(title(.devices)) > Glasses > Listen for the wake word on picks the mic that waits for the wake phrase: \
         On iPhone, the default, the phone's own mic listens; Same as Microphone holds the glasses' mic open instead, and \
-        glasses taken off for \(Int(GlassesSleepPolicy.doffGraceSeconds)) seconds then stop listening until they are put back on.
+        glasses taken off for \(Int(GlassesSleepPolicy.doffGraceSeconds)) seconds then stop listening until they are put back on. \
+        If the wake phrase stops answering while the phone is locked, no iPhone setting fixes it: the app is not listed \
+        under Background App Refresh and does not use it, and there is no button on the glasses for it. Unlocking the \
+        phone and opening the app restarts listening; the Listen button in the app and the watch app start a request \
+        by hand. Never send the user to iOS Settings for this.
+        Tool results: when a tool has returned, answer with what it returned in that same reply — the app ends your turn \
+        at the first reply without a tool call, so "one moment" or "I'll look that up" is heard as your whole answer.
         """
     }
 

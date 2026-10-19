@@ -158,6 +158,10 @@ struct ProviderLoopAdapter {
     let appendToolResults: ([ToolDispatchOutcome]) -> Void
     /// Append the final assistant text to history and return it; throw if empty.
     let finalize: (AssistantTurn) throws -> String
+    /// Append a note from the app as a user message, for the one re-ask the loop makes when the
+    /// model stalls after a tool has answered (`StallReplyPolicy`). Nil means the loop cannot
+    /// re-ask on this provider and speaks the stall as before.
+    var appendUserNote: ((String) -> Void)? = nil
 }
 
 /// The single shared tool-execution loop. Iterates up to `maxIterations`: performs a turn, and if
@@ -176,12 +180,28 @@ func runToolLoop(
     // retry, but "don't retry" is exactly the instruction a model reasons its way around ("I'll
     // just check by doing it again"), so the loop enforces it rather than asking.
     var unresolvedCalls: Set<String> = []
+    // Whether any tool has answered in this turn: only then can a reply that promises to look
+    // something up be a stall rather than an honest opener.
+    var toolsHaveAnswered = false
+    var stallReasked = false
 
     for _ in 0..<maxIterations {
         try Task.checkCancellation()
         let turn = try await adapter.performTurn()
 
         if turn.toolCalls.isEmpty {
+            // The results are in history and the model narrated an intention instead of reading
+            // them ("Vou pesquisar… um momento"). Once, ask again with them still there; the
+            // stalled reply itself is not kept, so nothing speaks it. A second stall is the
+            // answer, as before.
+            if toolsHaveAnswered, !stallReasked, let appendUserNote = adapter.appendUserNote,
+               StallReplyPolicy.isStall(turn.text) {
+                stallReasked = true
+                PrivacyLog.model(.stallReplyReasked, characters: turn.text.count,
+                                 detail: PrivacyToken(adapter.label))
+                appendUserNote(StallReplyPolicy.nudge)
+                continue
+            }
             let text = try adapter.finalize(turn)
             setStatus(.idle)
             return text
@@ -230,6 +250,7 @@ func runToolLoop(
             }
         }
         adapter.appendToolResults(outcomes)
+        toolsHaveAnswered = true
     }
 
     // The budget is spent, but the tools already ran: a task closed, a part was requested, a

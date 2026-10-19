@@ -1138,11 +1138,18 @@ class AppState: ObservableObject, AppStateProtocol {
     /// progress ("Approve in Meta AI…", "Waiting for device…") instead of the session.
     @Published private(set) var isConnectingGlasses = false
 
-    /// Stop everything that needs the glasses' audio or camera: the wake word, live sessions, the
-    /// camera stream, speech. Run when the link drops, and when the Bluetooth audio route is lost
-    /// while the link is still up (the reply must not carry on out of the phone's speaker).
+    /// Stop everything that needs the glasses' audio or camera: live sessions, the camera stream,
+    /// speech. Run when the link drops, and when the Bluetooth audio route is lost while the link
+    /// is still up (the reply must not carry on out of the phone's speaker).
+    ///
+    /// The idle wake-word listener is **not** stopped here. It used to be, and on a locked phone
+    /// that was the whole fault: with nothing recording, iOS suspended the app and let its audio
+    /// session go, and when the glasses came back the session could not be re-activated from the
+    /// background — the wake word was dead until the app was opened (a tester's reports,
+    /// 2026-10-18). The listener carries on with the phone's own mic instead
+    /// (`GlassesLinkListenerPolicy`), which keeps the session live and the app awake.
     private func releaseGlassesHardware() {
-        wakeWordService.stopListening()
+        wakeWordService.continueWithoutGlasses()
         isListening = false
         inConversation = false
         glassesIdle = false

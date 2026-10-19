@@ -421,6 +421,25 @@ Deviations and decisions made while building:
    app is in the background (`ReplyRoutePolicy`'s `backgrounded` exclusion): its release is a re-tune too.
    Either backgrounded path leaves other audio playing (mixable). **Device-pending:** a locked-phone turn
    with the default iPhone idle mic, and a follow-up after unlocking.
+11. **The idle listener across a link flap, locked (2026-10-19, from a tester's build 520 reports):** the turn
+   fix above left the *idle listener* exposed. With Same as Microphone and the phone locked, the glasses' data
+   link dropped in a pocket; the app's "glasses out of use" release stopped the listener for it; with nothing
+   recording iOS suspended the app and let its session go (`routeChanged route=none`); the link returned a
+   minute or two later and the reconnect hook re-tuned the session, which iOS refused from the background
+   (`cannotInterruptOthers`), after which every listen attempt failed on a dead session (`'what'` 2003329396,
+   or a 0 Hz two-channel input) until the app was opened — five times in one afternoon, and a watch-started
+   turn in that state went to the phone mic and loudspeaker. `GlassesLinkListenerPolicy` now rules both
+   ends: a link or route loss **keeps a wanted listener** on whatever input remains (`continueWithoutGlasses`,
+   `listenerKeptThroughLinkLoss`), so the session stays active and the app awake; and a link or route
+   return **in the background keeps a live session** — only its preferred input moves back to the plan's
+   port, which the idle hands-free shape already allows, and the engine rebuilds itself on the new format
+   (`rejoinGlassesMic`, `sessionKeptInBackground`); the foreground re-tunes as before, and a session with no
+   route at all is re-tuned as before too. Alongside: the hand-off's wait loop rebuilds a stopped engine at
+   most every 300 ms (`TurnMicHandoff.rebuildInterval`; it logged thirty-five `engineStarted` in one 2.9 s
+   hand-off on the dead session), route-change reasons are logged by name (`RouteChangeReasonName`; every
+   one read `unnamed`), and the app guide tells the model that no iOS setting fixes a listener that stopped
+   while locked. **Device-pending:** lock the phone with the glasses as the idle mic, take the glasses out of
+   range for two minutes, bring them back, and say the wake phrase without touching the phone.
 
 ## Risks
 

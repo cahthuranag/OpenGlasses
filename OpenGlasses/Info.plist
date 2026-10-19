@@ -295,6 +295,8 @@
 	<string>Avenkin creates and manages reminders so you can set them hands-free.</string>
 	<key>NSRemindersUsageDescription</key>
 	<string>Avenkin creates and manages reminders so you can set them hands-free.</string>
+	<key>NSAlarmKitUsageDescription</key>
+	<string>Avenkin rings the alarms you set by voice, even when the phone is on silent.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Avenkin uses speech recognition to detect the wake word and transcribe your voice questions for the AI assistant.</string>
 	<key>NSSupportsLiveActivities</key>

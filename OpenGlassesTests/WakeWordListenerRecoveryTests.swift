@@ -389,6 +389,39 @@ final class WakeWordListenerRecoveryTests: XCTestCase {
         XCTAssertEqual(harness.count(.startRecognition), 1)
     }
 
+    /// The glasses' link went down. This used to be a `stopListening()`, which withdrew intent
+    /// and, on a locked phone, left nothing recording — iOS suspended the app and the reconnect
+    /// could not bring the session back. Now the listener carries on: a healthy one is left as
+    /// it is, a torn-down one is rebuilt, and no session shape is touched for it.
+    func testALinkDropKeepsIntentAndTheListenerComesBackWithoutASessionReconfigure() async throws {
+        try await startHealthyListener()
+
+        service.continueWithoutGlasses()
+        XCTAssertTrue(service.isListening, "a working listener is not torn down for a link drop")
+
+        // The route change took the engine with it (the hands-free input vanished).
+        service.pauseForAudioDisruption()
+        harness.graph = ListenerGraphSnapshot()
+        let cameBack = await poll(until: { self.service.isListening })
+        XCTAssertTrue(cameBack, "the link-drop continuation restarts the listener on what remains")
+        XCTAssertEqual(harness.count(.startRecognition), 1)
+        // The session itself is not re-tuned on the way back: the start goes through the ordinary
+        // path, whose configure is a no-op while `audioSessionConfigured` holds. The harness seam
+        // replaces that configure wholesale, so it cannot be observed here; the background rule
+        // lives in `GlassesLinkListenerPolicy` and is tested there.
+    }
+
+    func testALinkDropAfterAnExplicitStopOpensNoMicrophone() async throws {
+        try await startHealthyListener()
+        service.stopListening()
+
+        service.continueWithoutGlasses()
+        try? await Task.sleep(nanoseconds: 700_000_000)
+
+        XCTAssertFalse(service.isListening)
+        XCTAssertEqual(harness.count(.startRecognition), 0)
+    }
+
     // MARK: - Refusals
 
     func testSilentModeRefusesToStartAndAsksForNothing() async throws {

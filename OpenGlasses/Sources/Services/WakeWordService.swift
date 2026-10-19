@@ -795,7 +795,7 @@ class WakeWordService: NSObject, ObservableObject {
         let route = AVAudioSession.sharedInstance().currentRoute
         PrivacyLog.audio(.wakeWord, .routeChanged,
                          route: PrivacyToken(route.inputs.first?.portType.rawValue ?? "none"),
-                         detail: PrivacyToken(String(describing: reason)))
+                         detail: PrivacyToken(RouteChangeReasonName.token(reason)))
 
         // Plan GU §3: our own switches (idle → conversation, the hand-back, the re-arm) are
         // expected, not disruptions. A switch nobody in the app asked for — another app, "Hey
@@ -804,7 +804,7 @@ class WakeWordService: NSObject, ObservableObject {
         if SelfRouteChangeFilter.verdict(reason: reason,
                                          ownSwitchInFlight: routeSwitch.isOwnSwitch(at: Date()),
                                          bluetoothLost: lostBluetooth) == .ignore {
-            PrivacyLog.audio(.wakeWord, .ownRouteChangeIgnored, detail: PrivacyToken(String(describing: reason)))
+            PrivacyLog.audio(.wakeWord, .ownRouteChangeIgnored, detail: PrivacyToken(RouteChangeReasonName.token(reason)))
             return
         }
 
@@ -824,6 +824,10 @@ class WakeWordService: NSObject, ObservableObject {
             if lostBluetooth {
                 onBluetoothDisconnected?()
             }
+            // The link's audio went, not the wearer's wish to be heard: carry on with the input
+            // that remains (`GlassesLinkListenerPolicy`), so the session stays active and the
+            // app stays awake for the reconnect. The restart touches no session shape.
+            if !phoneInputIntact { continueOnRemainingInput(detail: "routeLost") }
         case .newDeviceAvailable:
             // New device connected — only restart if it's Bluetooth (glasses back on)
             let newRoute = AVAudioSession.sharedInstance().currentRoute
@@ -839,8 +843,11 @@ class WakeWordService: NSObject, ObservableObject {
                 }
                 Task {
                     try? await Task.sleep(nanoseconds: 500_000_000)
-                    audioSessionConfigured = false
-                    await configureAudioSession()
+                    // In the foreground the session is re-tuned onto the glasses as before; in
+                    // the background a live session is kept and only its input moved — a
+                    // re-tune from there is refused and left the listener dead until the app
+                    // was opened (`GlassesLinkListenerPolicy`).
+                    await rejoinGlassesMic(source: "routeReturned")
                     try? await autoStartListening()
                 }
             } else {
@@ -975,7 +982,8 @@ class WakeWordService: NSObject, ObservableObject {
                 PrivacyLog.wakeWord(.listenAttemptFailed, attempt: attempt,
                                     error: SafeErrorSummary(error))
                 cleanupAudioGraph()
-                // CoreAudio '!pla' (2003329396): the AVAudioSession lost activation — usually a
+                // CoreAudio 'what' (2003329396, kAudioHardwareUnspecifiedError; '!pla' is
+                // 561015905): the AVAudioSession lost activation — usually a
                 // Bluetooth route flap mid-start (device-traced: Action-button intent in the
                 // background burned all 3 attempts inside the same broken window, then went
                 // silent). Re-activating the session before the retry is what actually
@@ -1182,6 +1190,10 @@ class WakeWordService: NSObject, ObservableObject {
         let began = turnSwitchStartedAt ?? Date()
         let deadline = Date().addingTimeInterval(TurnMicHandoff.deadline)
         var machine = TurnMicHandoff.Machine(target: target)
+        // A stopped engine is rebuilt at most every `TurnMicHandoff.rebuildInterval`: on a dead
+        // session it starts and stops at once, and the 40 ms loop used to rebuild it thirty-five
+        // times before the deadline.
+        var lastRebuildAt: Date?
 
         // Already there: an engine running on a valid format on the target mic.
         if resolvedInput(session) == target, let engine = audioEngine, engine.isRunning,
@@ -1197,7 +1209,11 @@ class WakeWordService: NSObject, ObservableObject {
             case .waitingForRoute:
                 action = machine.handle(.routeObserved(resolvedInput(session)))
             case .waitingForFrames:
-                if audioEngine?.isRunning != true { rebuildHandOffEngine() }
+                if audioEngine?.isRunning != true,
+                   TurnMicHandoff.shouldRebuild(lastAttempt: lastRebuildAt, now: Date()) {
+                    lastRebuildAt = Date()
+                    rebuildHandOffEngine()
+                }
                 if liveFrames.consecutive >= TurnMicHandoff.liveFramesRequired {
                     action = machine.handle(.framesNonSilent)
                 }
@@ -1205,6 +1221,7 @@ class WakeWordService: NSObject, ObservableObject {
                 break
             }
             if action == .buildEngine {
+                lastRebuildAt = Date()
                 rebuildHandOffEngine()
                 action = .none
             }
@@ -2016,9 +2033,65 @@ class WakeWordService: NSObject, ObservableObject {
                          route: PrivacyToken(hasBluetooth ? "bluetooth" : "builtIn"),
                          detail: PrivacyToken("reconfigure"))
 
-        // Force reconfigure to pick up new route
-        audioSessionConfigured = false
-        await configureAudioSession()
+        await rejoinGlassesMic(source: "linkReturned")
+    }
+
+    /// Take the glasses' mic back for the idle listener after their link or audio route returned.
+    ///
+    /// `GlassesLinkListenerPolicy.onLinkReturn`: in the foreground the session is re-tuned onto
+    /// the plan's mic as it always was. In the background a session that still has a route is
+    /// **kept** — iOS refuses `setActive` from there (`cannotInterruptOthers`), and the refused
+    /// re-tune is exactly what left a tester's wake word dead in a pocket — and only its
+    /// preferred input is moved back to the plan's port, which the idle hands-free shape already
+    /// allows; the engine rebuilds itself on the new format. A session with no route at all has
+    /// nothing to keep and is re-tuned as before. The switch is marked as the app's own so its
+    /// route-change notifications are not read as a disruption.
+    private func rejoinGlassesMic(source: String) async {
+        let session = AVAudioSession.sharedInstance()
+        let route = session.currentRoute
+        let sessionHasRoute = !route.inputs.isEmpty || !route.outputs.isEmpty
+        switch GlassesLinkListenerPolicy.onLinkReturn(appInForeground: appInForeground(),
+                                                      sessionHasRoute: sessionHasRoute) {
+        case .reconfigure:
+            audioSessionConfigured = false
+            await configureAudioSession()
+        case .keepSession:
+            let plan = appliedIdlePlan ?? currentIdlePlan()
+            let generation = routeSwitch.begin()
+            defer { routeSwitch.end(generation, at: Date()) }
+            if case .bluetooth(let micRoute) = plan.listen {
+                preferConfiguredMicIfAvailable(session, route: micRoute)
+            }
+            PrivacyLog.audio(.wakeWord, .sessionKeptInBackground,
+                             route: PrivacyToken(Self.token(for: plan.listen)), detail: PrivacyToken(source))
+        }
+    }
+
+    /// The glasses' link went down (`AppState`, "glasses out of use"): keep listening on what
+    /// remains. This used to be a `stopListening()`, and on a locked phone that was the fault
+    /// behind "the wake word stops after a few minutes": with nothing recording, iOS suspended
+    /// the app and let its session go, and the reconnect could not bring it back from the
+    /// background. Intent is untouched — only the wearer withdraws it.
+    func continueWithoutGlasses() {
+        continueOnRemainingInput(detail: "linkLost")
+    }
+
+    /// `GlassesLinkListenerPolicy.onLinkLoss`: with a listener wanted, bring it back on whatever
+    /// input the session now has. The start goes through the ordinary coalesced path, which
+    /// leaves a configured session alone (`audioSessionConfigured` stays true), so no session
+    /// shape is touched from the background. A listener that was already fine is found healthy
+    /// and left as it is.
+    private func continueOnRemainingInput(detail: String) {
+        let wanted = startGeneration.wantsListening && mayAutoRestart()
+        guard GlassesLinkListenerPolicy.onLinkLoss(listenerWanted: wanted) == .continueOnRemainingInput else {
+            return
+        }
+        PrivacyLog.audio(.wakeWord, .listenerKeptThroughLinkLoss, detail: PrivacyToken(detail))
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self else { return }
+            try? await self.autoStartListening()
+        }
     }
 
     private func restartRecognition() {

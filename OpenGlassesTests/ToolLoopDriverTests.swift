@@ -119,6 +119,75 @@ final class ToolLoopDriverTests: XCTestCase {
         XCTAssertEqual(history.value, ["assistant:toolcall", "results:calc", "final:done"])
     }
 
+    // MARK: - A stall after a tool has answered
+
+    /// A search returned and the model's next reply promised to search ("Vou pesquisar… um
+    /// momento"); the loop spoke it and the wearer waited ten minutes. Now it asks once more,
+    /// with the results still in history and the stall itself kept out of it.
+    func testAStallAfterAToolResultIsReaskedOnceAndNotSpoken() async throws {
+        let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
+        var adapter = makeScriptedAdapter(
+            turns: [
+                AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "1", name: "web_search", arguments: [:])]),
+                AssistantTurn(text: "Vou pesquisar a programação. Um momento, por favor."),
+                AssistantTurn(text: "Às quinze e trinta dá Eliminators.")
+            ],
+            history: history, statuses: statuses
+        )
+        adapter.appendUserNote = { _ in history.value.append("note") }
+        let result = try await runToolLoop(maxIterations: 5, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+        XCTAssertEqual(result, "Às quinze e trinta dá Eliminators.")
+        XCTAssertEqual(history.value, ["assistant:toolcall", "results:web_search", "note",
+                                       "final:Às quinze e trinta dá Eliminators."],
+                       "the stalled reply is never finalised; the note goes in; the answer follows")
+    }
+
+    /// Twice is the answer: one re-ask, then whatever comes back is spoken, as before.
+    func testASecondStallIsSpokenAsTheAnswer() async throws {
+        let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
+        var adapter = makeScriptedAdapter(
+            turns: [
+                AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "1", name: "web_search", arguments: [:])]),
+                AssistantTurn(text: "One moment, let me check."),
+                AssistantTurn(text: "Hold on, I'll look that up.")
+            ],
+            history: history, statuses: statuses
+        )
+        adapter.appendUserNote = { _ in history.value.append("note") }
+        let result = try await runToolLoop(maxIterations: 5, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+        XCTAssertEqual(result, "Hold on, I'll look that up.")
+        XCTAssertEqual(history.value.filter { $0 == "note" }.count, 1)
+    }
+
+    /// Before any tool has run, "one moment" is an honest opener and is not re-asked.
+    func testAStallWithNoToolResultIsNotReasked() async throws {
+        let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
+        var adapter = makeScriptedAdapter(turns: [AssistantTurn(text: "One moment, let me check.")],
+                                          history: history, statuses: statuses)
+        adapter.appendUserNote = { _ in history.value.append("note") }
+        let result = try await runToolLoop(maxIterations: 5, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+        XCTAssertEqual(result, "One moment, let me check.")
+        XCTAssertEqual(history.value, ["final:One moment, let me check."])
+    }
+
+    /// A provider with no way to append a note speaks the stall, as before.
+    func testAProviderWithoutANoteHookSpeaksTheStall() async throws {
+        let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
+        let adapter = makeScriptedAdapter(
+            turns: [
+                AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "1", name: "web_search", arguments: [:])]),
+                AssistantTurn(text: "One moment, let me check.")
+            ],
+            history: history, statuses: statuses
+        )
+        let result = try await runToolLoop(maxIterations: 5, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+        XCTAssertEqual(result, "One moment, let me check.")
+    }
+
     func testLoopShortCircuitsOnYield() async throws {
         let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
         let adapter = makeScriptedAdapter(

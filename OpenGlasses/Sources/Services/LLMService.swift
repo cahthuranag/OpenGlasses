@@ -2335,7 +2335,7 @@ class LLMService: ObservableObject {
             }
         )
 
-        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: adapter,
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter),
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -2857,7 +2857,7 @@ class LLMService: ObservableObject {
             }
         )
 
-        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: adapter,
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter),
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -3032,7 +3032,7 @@ class LLMService: ObservableObject {
                 return turn.text
             }
         )
-        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: adapter,
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter),
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -3156,7 +3156,7 @@ class LLMService: ObservableObject {
                 return turn.text
             }
         )
-        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: adapter,
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter),
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -3870,8 +3870,20 @@ class LLMService: ObservableObject {
             }
         )
 
-        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: adapter,
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter),
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
+    }
+
+    /// The adapter with the loop's one re-ask wired in: a note from the app goes into history as a
+    /// user turn. Every cloud path here keeps a plain user turn as `["role": "user", "content":
+    /// text]` — the Gemini and Responses senders translate that shape on the wire — so one
+    /// closure serves all five.
+    private func notingStalls(_ adapter: ProviderLoopAdapter) -> ProviderLoopAdapter {
+        var noting = adapter
+        noting.appendUserNote = { [weak self] text in
+            self?.conversationHistory.append(["role": "user", "content": text])
+        }
+        return noting
     }
 
     // MARK: - Local (On-Device MLX)

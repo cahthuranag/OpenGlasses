@@ -31,6 +31,23 @@ final class TurnMicHandoffTests: XCTestCase {
                                              routePortAvailable: false), .phone)
     }
 
+    // MARK: - Rebuild backoff
+
+    /// A dead session (a locked phone after the glasses' link flapped) starts and stops the
+    /// engine at once; the 40 ms wait loop rebuilt it thirty-five times in one hand-off.
+    func testAStoppedEngineIsRebuiltAtMostEveryRebuildInterval() {
+        let now = Date()
+        XCTAssertTrue(TurnMicHandoff.shouldRebuild(lastAttempt: nil, now: now), "the first attempt is free")
+        XCTAssertFalse(TurnMicHandoff.shouldRebuild(lastAttempt: now.addingTimeInterval(-0.04), now: now),
+                       "the next loop pass does not rebuild again")
+        XCTAssertFalse(TurnMicHandoff.shouldRebuild(
+            lastAttempt: now.addingTimeInterval(-TurnMicHandoff.rebuildInterval + 0.01), now: now))
+        XCTAssertTrue(TurnMicHandoff.shouldRebuild(
+            lastAttempt: now.addingTimeInterval(-TurnMicHandoff.rebuildInterval - 0.01), now: now))
+        XCTAssertLessThan(TurnMicHandoff.rebuildInterval * 3, TurnMicHandoff.deadline,
+                          "a half-up link still gets several chances inside the deadline")
+    }
+
     // MARK: - Why the phone
 
     func testPhoneReasonNamesWhyABluetoothTurnWentToThePhone() {

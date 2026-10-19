@@ -123,4 +123,26 @@ final class SystemPromptBuilderTests: XCTestCase {
         XCTAssertTrue(guide.contains("\(Int(GlassesSleepPolicy.doffGraceSeconds)) seconds"))
         XCTAssertFalse(guide.lowercased().contains("keep the app open"))
     }
+
+    /// A tester whose wake word had died in a pocket was sent by the model to Background App
+    /// Refresh (the app is not listed there), then to "the physical button on the glasses"
+    /// (there is none). The guide now says what is true: no iOS setting applies, unlocking and
+    /// opening the app restarts listening, and the in-app Listen button and the watch start a
+    /// request by hand.
+    func testTheGuideSaysWhatToDoWhenListeningStopsWhileLocked() {
+        let guide = SystemPromptBuilder.appGuide(appName: "Avenkin")
+        XCTAssertTrue(guide.contains("no iPhone setting fixes it"))
+        XCTAssertTrue(guide.contains("not listed under Background App Refresh"))
+        XCTAssertTrue(guide.contains("no button on the glasses"))
+        XCTAssertTrue(guide.contains("Unlocking the phone and opening the app restarts listening"))
+        XCTAssertTrue(guide.contains("Never send the user to iOS Settings for this"))
+    }
+
+    /// After a search had returned, the model's reply was "Vou pesquisar… um momento" and the
+    /// app spoke it as the answer. The guide tells the model how the app ends a turn.
+    func testTheGuideSaysAToolResultIsAnsweredInTheSameReply() {
+        let guide = SystemPromptBuilder.appGuide(appName: "Avenkin")
+        XCTAssertTrue(guide.contains("answer with what it returned in that same reply"))
+        XCTAssertTrue(guide.contains("the app ends your turn at the first reply without a tool call"))
+    }
 }

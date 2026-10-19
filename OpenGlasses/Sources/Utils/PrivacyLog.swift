@@ -1498,6 +1498,13 @@ enum PrivacyLog {
         // A follow-up took the conversation's Bluetooth mic back from the phone; the configured
         // route token and the route the follow-up landed on.
         case turnMicRetaken
+        // The glasses' link or audio route went away and the idle listener carried on with the
+        // input that remained, keeping the session (and the app) alive for the reconnect.
+        case listenerKeptThroughLinkLoss
+        // The glasses came back while the app was in the background: the live session was left
+        // as it was (a re-tune is refused from there) and only its preferred input moved; the
+        // route token and where the request came from (`linkReturned`, `routeReturned`).
+        case sessionKeptInBackground
     }
 
     @discardableResult
@@ -1563,6 +1570,10 @@ enum PrivacyLog {
         // A turn used every tool round it is allowed and its wrap-up still asked for tools: those
         // calls were answered, not run. Count and provider label only.
         case toolBudgetSpent
+        // After a tool had answered, the model replied with a promise to look it up instead of
+        // the answer (`StallReplyPolicy`); it was asked once more with the results still in
+        // history. The character count of the stalled reply only.
+        case stallReplyReasked
     }
 
     /// How an utterance was classified. The utterance itself, and the classifier's free-form

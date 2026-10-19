@@ -1574,6 +1574,9 @@ enum PrivacyLog {
         // the answer (`StallReplyPolicy`); it was asked once more with the results still in
         // history. The character count of the stalled reply only.
         case stallReplyReasked
+        // Plan FG P1a — an account route's request was refused with a 401 and a refresh was
+        // forced; `success` says whether a new token came back for the one retry. Provider only.
+        case authRefreshRetry
     }
 
     /// How an utterance was classified. The utterance itself, and the classifier's free-form

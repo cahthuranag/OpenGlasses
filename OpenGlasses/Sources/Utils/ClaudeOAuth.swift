@@ -175,10 +175,17 @@ enum AnthropicAuth {
 
     /// Resolve the credential for an Anthropic request: an explicit API key on the model config
     /// wins; otherwise a connected Claude account's (refreshed) OAuth access token.
+    /// `account` is the sign-in to fall back to; nil means the shared one.
     @MainActor
-    static func resolveCredential(apiKey: String) async -> String {
+    static func resolveCredential(apiKey: String, account: ClaudeOAuthService? = nil) async -> String {
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }
-        return await ClaudeOAuthService.shared.validAccessToken() ?? ""
+        return await (account ?? .shared).validAccessToken() ?? ""
+    }
+
+    /// Whether `apiKey` leaves the request to the account sign-in — the only credential a 401
+    /// may refresh (Plan FG P1a). A pasted key, even one shaped like an account token, is not.
+    static func usesAccountSignIn(apiKey: String) -> Bool {
+        apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

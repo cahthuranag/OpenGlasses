@@ -4,7 +4,9 @@ enum RealtimeCommand {
     case configure(instructions: String, tools: [[String: Any]])
     case audio(Data)
     case image(Data, prompt: String?)
-    case text(String, completeTurn: Bool)
+    /// `toolsAllowed: false` marks an announcement (Plan HY P3): the response it starts may not
+    /// call a tool. Protocols with no per-response tool switch ignore it.
+    case text(String, completeTurn: Bool, toolsAllowed: Bool = true)
     /// Replace the complete system instruction without changing audio/VAD configuration.
     case updateContext(instructions: String)
     /// Speak exact app text; this does not ask the model to compose a response.

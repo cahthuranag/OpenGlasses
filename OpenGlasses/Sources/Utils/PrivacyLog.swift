@@ -345,6 +345,9 @@ enum PrivacyLog {
         case audioModeSelected, audioModeUnchanged, audioModeSwitched, audioModeSwitchFailed
         case audioRestartFailed, toolExecutionPaused, toolExecutionResumed
         case postConnectState
+        /// Plan HY P1: the idle warning was given; the session ended for want of the wearer.
+        /// `count` on `idleEnded` is the configured limit in minutes.
+        case idleWarned, idleEnded
     }
 
     enum UtteranceDirection: String { case input, output }
@@ -761,6 +764,9 @@ enum PrivacyLog {
         // Navigation assist: a hazard callout dropped because its frame was older than the limit
         // when the reply came back. Carries the frame's age and the session's drop count only.
         case adviceExpired
+        // Plan HY P2: Live Coach spent its rolling hour's call budget and is checking in less
+        // often. `count` is the budget, never anything the coach said.
+        case budgetSpent
     }
 
     /// `posture` is the power policy's own enum, `percent` is how much of the frame a detected
@@ -2135,6 +2141,9 @@ enum PrivacyLog {
         case voiceCommandHandled, voiceCommandDemoted, intentIgnored
         case turnClassified, directToolAnswered, directToolFellBack, turnCompleted
         case modeSwitchRedialed, modeSwitchRedialFailed
+        /// Plan HY P0: a mode switch left the conversation's handover block on the target session.
+        /// `characters` is the block's length; the turns themselves never appear.
+        case modeSwitchSeeded
         case fieldSessionStarted, fieldSessionEnded
         case operationSettledLate, chatReadbackUnconfigured, powerPosture
         case quickDisconnect

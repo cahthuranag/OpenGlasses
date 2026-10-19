@@ -84,8 +84,17 @@ enum LiveInjectionEnvelope {
 
     /// The generation trigger the Realtime wire requires after `conversation.item.create`.
     /// Omitting this is the Realtime spelling of the append-only trap.
-    static func realtimeResponseCreate() -> [String: Any] {
-        ["type": "response.create"]
+    ///
+    /// Plan HY P3 — `toolsAllowed: false` is for **announcements**: a deferred result, an agent
+    /// completion, a notification read aloud, the idle warning. Each is the app putting words in
+    /// the model's mouth, and with tools allowed the model could answer one by calling another
+    /// tool, whose result is announced in turn — a chain nobody asked for. `tool_choice: none`
+    /// scopes the ban to this one response; the session's own `tool_choice: auto` is untouched.
+    /// A wearer turn never comes through here: spoken turns are answered by the server's own VAD
+    /// (`create_response: true`), and a tool result's follow-up is the model's chain to continue.
+    static func realtimeResponseCreate(toolsAllowed: Bool = true) -> [String: Any] {
+        guard !toolsAllowed else { return ["type": "response.create"] }
+        return ["type": "response.create", "response": ["tool_choice": "none"]]
     }
 }
 
@@ -125,6 +134,9 @@ protocol LiveSessionInjecting: AnyObject {
     /// Put text in front of the model. `completeTurn: true` = the model responds now, in its own
     /// voice, inside the session — the whole point of the lane.
     func injectText(_ text: String, completeTurn: Bool)
+    /// Put an announcement in front of the model: a turn it answers now, with tools off for that
+    /// one response (Plan HY P3), so an announcement can never start a tool call.
+    func injectAnnouncement(_ text: String)
     func updateAppContext(_ text: String, key: String)
     func speakSuppliedText(_ text: String)
 }
@@ -136,6 +148,9 @@ extension LiveSessionInjecting {
     var supportsVision: Bool { true }
     func validateSharpImage(_ jpegData: Data) throws {}
     func updateAppContext(_ text: String, key: String) { injectText(text, completeTurn: false) }
+    /// A conformer with no per-response tool switch delivers an announcement as an ordinary
+    /// completed turn.
+    func injectAnnouncement(_ text: String) { injectText(text, completeTurn: true) }
     func speakSuppliedText(_ text: String) {}
 }
 
@@ -152,7 +167,8 @@ enum LiveAnnouncementDelivery {
             return true
         }
         if injector.supportsTextInjection {
-            injector.injectText(AsyncDeliveryPhrasing.resultInstruction(question: nil, answer: message), completeTurn: true)
+            // Plan HY P3: an announcement, so tools are off for the response it starts.
+            injector.injectAnnouncement(AsyncDeliveryPhrasing.resultInstruction(question: nil, answer: message))
             return true
         }
         return false

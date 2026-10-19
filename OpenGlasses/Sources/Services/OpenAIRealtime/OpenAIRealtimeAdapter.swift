@@ -15,8 +15,9 @@ class OpenAIRealtimeAdapter: RealtimeProtocolAdapter {
         case .speakText: throw RealtimeAdapterError.unsupportedOperation(String(localized: "speaking supplied text"))
         case .audio(let data): return [["type": "input_audio_buffer.append", "audio": data.base64EncodedString()]]
         case .image(let data, let prompt): return [LiveInjectionEnvelope.realtimeImage(base64JPEG: data.base64EncodedString(), prompt: prompt)]
-        case .text(let text, let complete):
-            return [LiveInjectionEnvelope.realtimeText(text)] + (complete ? [LiveInjectionEnvelope.realtimeResponseCreate()] : [])
+        case .text(let text, let complete, let toolsAllowed):
+            return [LiveInjectionEnvelope.realtimeText(text)]
+                + (complete ? [LiveInjectionEnvelope.realtimeResponseCreate(toolsAllowed: toolsAllowed)] : [])
         case .toolResult(let id, let output): return OpenAIRealtimeToolRouter.outputMessages(callId: id, output: output)
         case .interrupt(let id, let index, let milliseconds):
             var messages: [[String: Any]] = [["type": "response.cancel"]]

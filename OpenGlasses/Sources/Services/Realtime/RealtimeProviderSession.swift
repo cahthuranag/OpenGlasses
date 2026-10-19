@@ -13,6 +13,10 @@ final class RealtimeProviderSession {
     var onInterrupted: (() -> Void)?
     var onDisconnected: ((String?) -> Void)?
     var onInputTranscription: ((String) -> Void)?
+    /// The wearer started speaking, as the server's voice activity detection heard it (Plan HY P1:
+    /// idle activity). JSON protocols report a speech-start; Gemini Live reports the barge-in it
+    /// causes (`interrupted`), which is the only speech-start that wire carries.
+    var onUserSpeechStarted: (() -> Void)?
     var onOutputTranscription: ((String) -> Void)?
     var onReconnected: (() -> Void)?
     var onReconnectExhausted: (() -> Void)?
@@ -40,7 +44,7 @@ final class RealtimeProviderSession {
         gemini?.configureConnection(model)
         gemini?.onAudioReceived = { [weak self] in self?.onAudioReceived?($0) }
         gemini?.onTurnComplete = { [weak self] in self?.onTurnComplete?() }
-        gemini?.onInterrupted = { [weak self] in self?.onInterrupted?() }
+        gemini?.onInterrupted = { [weak self] in self?.onUserSpeechStarted?(); self?.onInterrupted?() }
         gemini?.onDisconnected = { [weak self] in self?.onDisconnected?($0) }
         gemini?.onInputTranscription = { [weak self] in self?.onInputTranscription?($0) }
         gemini?.onOutputTranscription = { [weak self] in self?.onOutputTranscription?($0) }
@@ -53,6 +57,7 @@ final class RealtimeProviderSession {
         json?.onInterrupted = { [weak self] in self?.onInterrupted?() }
         json?.onDisconnected = { [weak self] in self?.onDisconnected?($0) }
         json?.onInputTranscription = { [weak self] in self?.onInputTranscription?($0) }
+        json?.onUserSpeechStarted = { [weak self] in self?.onUserSpeechStarted?() }
         json?.onOutputTranscription = { [weak self] in self?.onOutputTranscription?($0) }
         json?.onReconnected = { [weak self] in self?.onReconnected?() }
         json?.onReconnectExhausted = { [weak self] in self?.onReconnectExhausted?() }
@@ -89,7 +94,15 @@ final class RealtimeProviderSession {
     func cancelResponse() { json?.cancelResponse() }
     func sendVideoFrame(image: UIImage) { gemini?.sendVideoFrame(image: image); json?.sendImage(image: image) }
     func sendHighResImage(jpegData: Data) { gemini?.sendHighResImage(jpegData: jpegData); json?.sendHighResImage(jpegData: jpegData) }
-    func sendText(_ text: String, completeTurn: Bool) { gemini?.sendText(text, completeTurn: completeTurn); json?.sendText(text, completeTurn: completeTurn) }
+    /// - Parameter toolsAllowed: `false` for an announcement (Plan HY P3). The JSON protocols carry
+    ///   it as `tool_choice: none` on that one response. **Gemini Live ignores it**: its wire has no
+    ///   per-turn tool switch — `clientContent` is turns and `turnComplete`, nothing else — and the
+    ///   only tool control is the setup message's, which would need a reconnect to change. So a
+    ///   Gemini announcement goes out exactly as before (`LiveInjectionTests` pins the envelope).
+    func sendText(_ text: String, completeTurn: Bool, toolsAllowed: Bool = true) {
+        gemini?.sendText(text, completeTurn: completeTurn)
+        json?.sendText(text, completeTurn: completeTurn, toolsAllowed: toolsAllowed)
+    }
     func updateContext(_ text: String, key: String) {
         gemini?.sendText(text, completeTurn: false)
         json?.updateContext(text, key: key)

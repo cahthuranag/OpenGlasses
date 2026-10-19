@@ -303,6 +303,8 @@ struct AIPersonalitySettingsScreen: View {
     @State private var brainEnrichmentEnabled = Config.brainEnrichmentEnabled
     @State private var conversationPersistenceEnabled = Config.conversationPersistenceEnabled
     @State private var autoModelRoutingEnabled = Config.autoModelRoutingEnabled
+    /// Plan HY P1 — the same key `Config.liveIdleMinutes` reads; `0` is Off.
+    @AppStorage(Config.liveIdleMinutesKey) private var liveIdleMinutes = Config.liveIdleMinutesDefault
 
     var body: some View {
         Form {
@@ -351,8 +353,21 @@ struct AIPersonalitySettingsScreen: View {
                 } label: {
                     Label("Realtime Models", systemImage: "waveform")
                 }
+                // Plan HY P1: how long a live session may go without you before it ends.
+                Stepper(value: $liveIdleMinutes, in: 0...Config.liveIdleMinutesRange.upperBound,
+                        step: 5) {
+                    HStack {
+                        Text("End a quiet session")
+                        Spacer()
+                        Text(LiveIdlePolicy.settingValue(minutes: liveIdleMinutes))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityValue(LiveIdlePolicy.spokenSettingValue(minutes: liveIdleMinutes))
             } header: {
                 Text("Live conversation")
+            } footer: {
+                Text("When nobody has spoken, typed, touched the controls or used a tool for this long, the live session says it is about to end, waits 30 seconds, then ends. The assistant's own speech doesn't count.")
             }
 
             // MARK: Personality

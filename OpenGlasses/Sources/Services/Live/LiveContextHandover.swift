@@ -85,13 +85,17 @@ enum LiveContextHandover {
     ///     the connection dropped and whose outcome nobody can vouch for. Names only — no
     ///     arguments, no results, and never a call.
     ///   - limit: how many turns to carry.
+    ///   - cause: why the new session does not have the conversation — the preamble says so
+    ///     honestly, since a model told "the connection dropped" after a deliberate switch would
+    ///     apologise for a failure that never happened.
     static func build(turns: [LiveTurnRecord],
                       interruptedOperations: [String] = [],
-                      limit: Int = maxTurns) -> String? {
+                      limit: Int = maxTurns,
+                      cause: Cause = .connectionLost) -> String? {
         let kept = carriedTurns(turns, limit: limit)
         guard !kept.isEmpty || !interruptedOperations.isEmpty else { return nil }
 
-        var block = blockHeading + "\n" + preamble
+        var block = blockHeading + "\n" + preamble(for: cause)
         for turn in kept {
             block += "\n" + line(for: turn)
         }
@@ -121,13 +125,34 @@ enum LiveContextHandover {
         carriedTurns(turns, limit: limit).count
     }
 
+    /// Why a session is opening without the conversation that came before it.
+    enum Cause: Equatable {
+        /// The socket dropped and the server would not, or could not, resume (Plan FF P1/PR5).
+        case connectionLost
+        /// The wearer switched to a different assistant mid-conversation (Plan HY P0). Nothing
+        /// failed; the old brain's conversation simply does not travel with the call.
+        case modeSwitch
+    }
+
     // MARK: - The words
 
-    private static let preamble = """
-        The live connection dropped and the previous session could not be restored, so you do not \
-        have the earlier conversation. What follows is this device's own short record of the last \
-        few turns, rebuilt locally so the wearer does not have to start again. Use it only to \
-        understand what was being talked about.
+    private static func preamble(for cause: Cause) -> String {
+        let why: String
+        switch cause {
+        case .connectionLost:
+            why = "The live connection dropped and the previous session could not be restored, so "
+                + "you do not have the earlier conversation."
+        case .modeSwitch:
+            why = "The wearer has just switched assistants, so you do not have the earlier "
+                + "conversation."
+        }
+        return why + " " + recordDescription
+    }
+
+    private static let recordDescription = """
+        What follows is this device's own short record of the last few turns, rebuilt locally so \
+        the wearer does not have to start again. Use it only to understand what was being talked \
+        about.
         """
 
     private static let closingRule = """

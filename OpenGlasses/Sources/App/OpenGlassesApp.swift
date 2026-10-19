@@ -1175,6 +1175,8 @@ class AppState: ObservableObject, AppStateProtocol {
     var nowPlayingAtStart: NowPlayingSnapshot? = nil
     @Published var micMuted: Bool = false {
         didSet {
+            // Plan HY P1: the capsule's mute is a touch on the live controls too.
+            noteLiveSessionActivity()
             if micMuted {
                 wakeWordService.stopListening()
                 isListening = false
@@ -1975,6 +1977,19 @@ class AppState: ObservableObject, AppStateProtocol {
     lazy var remoteInvoke: RemoteInvokeService = makeRemoteInvokeService()
     let geminiLiveSession = GeminiLiveSessionManager()
     let openAIRealtimeSession = OpenAIRealtimeSessionManager()
+
+    /// Plan HY P1 — the wearer typed, or touched a live control: activity the live session's own
+    /// events cannot see. A no-op on a manager with no session running.
+    func noteLiveSessionActivity() {
+        geminiLiveSession.noteWearerActivity()
+        openAIRealtimeSession.noteWearerActivity()
+    }
+
+    /// Plan HY P0 — the handover block the last mode switch left on a manager, and which manager.
+    /// Kept so the *next* switch can tell its own unconsumed seed from the offline handoff's (which
+    /// writes the same slot just before asking for the live mode back) and drop only the former.
+    /// In memory only.
+    var modeSwitchSeed: (mode: AppMode, block: String)?
 
     /// The live session that can put content in front of its model right now, or nil outside live
     /// modes (Plan CB). Resolved per call — never cache the session managers' conformances, they
@@ -3455,6 +3470,16 @@ class AppState: ObservableObject, AppStateProtocol {
             releaseFramePin(trigger: .modeSwitch)
         }
 
+        // Plan HY P0: the words travel too. Read BEFORE the teardown below — `stopSession()`
+        // resets the recorder — and drop any seed an earlier switch left unconsumed first, so a
+        // stale block cannot ride into an unrelated session.
+        clearUnconsumedModeSwitchSeed()
+        let oldTurns = realtimeManager(for: oldMode)?.handoverTurns ?? []
+        let directTurns = oldMode == .direct && mode.isRealtime ? directHandoverTurns() : []
+        var seed = ModeSwitchHandover.seed(from: oldMode, to: mode, actions: actions,
+                                           oldRecorderTurns: oldTurns, directTurns: directTurns,
+                                           now: Date())
+
         for action in actions {
             switch action {
             case .teardown(let target):
@@ -3501,6 +3526,10 @@ class AppState: ObservableObject, AppStateProtocol {
                 // The redial. Errors surface exactly as a manual failed connect would —
                 // the managers publish `connectionState`/`errorMessage` themselves, and the
                 // automatic path must not swallow them.
+                if let block = seed {
+                    applyModeSwitchSeed(block, to: target)
+                    seed = nil
+                }
                 switch target {
                 case .geminiLive: await geminiLiveSession.startSession()
                 case .openaiRealtime, .openaiCompatibleRealtime: await openAIRealtimeSession.startSession()
@@ -3522,6 +3551,51 @@ class AppState: ObservableObject, AppStateProtocol {
                 }
             }
         }
+
+        // Direct → live has no redial (the policy never starts a session from Direct): the seed
+        // waits on the target manager for whatever start comes next.
+        if let block = seed {
+            applyModeSwitchSeed(block, to: mode)
+        }
+    }
+
+    // MARK: - Mode-switch handover (Plan HY P0)
+
+    /// The realtime manager that serves a mode, or nil for Direct.
+    private func realtimeManager(for mode: AppMode) -> RealtimeSessionManager? {
+        switch mode {
+        case .geminiLive: return geminiLiveSession
+        case .openaiRealtime, .openaiCompatibleRealtime: return openAIRealtimeSession
+        case .direct: return nil
+        }
+    }
+
+    /// The Direct thread, as the handover reads it: the active conversation's turns. Empty when
+    /// conversation history is off, since then there is no thread on the phone to carry.
+    private func directHandoverTurns() -> [ModeSwitchHandover.DirectTurn] {
+        guard let id = conversationStore.activeThreadId,
+              let thread = conversationStore.threads.first(where: { $0.id == id }) else { return [] }
+        return ModeSwitchHandover.directTurns(from: thread.messages)
+    }
+
+    private func applyModeSwitchSeed(_ block: String, to mode: AppMode) {
+        guard let manager = realtimeManager(for: mode) else { return }
+        // A block already waiting there is the offline handoff's, set for this very switch — the
+        // phone's own answers are the better record of what was just said, so it is left alone.
+        guard manager.pendingResumeContext == nil else { return }
+        manager.pendingResumeContext = block
+        modeSwitchSeed = (mode, block)
+        PrivacyLog.app(.modeSwitchSeeded, detail: PrivacyToken(mode.rawValue), characters: block.count)
+    }
+
+    /// Drop the block an earlier switch left unconsumed. Only that block: the offline handoff's is
+    /// meant for the switch it precedes (`ModeSwitchHandover.clearsPendingSeed`).
+    private func clearUnconsumedModeSwitchSeed() {
+        defer { modeSwitchSeed = nil }
+        guard let previous = modeSwitchSeed, let manager = realtimeManager(for: previous.mode),
+              ModeSwitchHandover.clearsPendingSeed(pending: manager.pendingResumeContext,
+                                                   seededBySwitch: previous.block) else { return }
+        manager.pendingResumeContext = nil
     }
 
     /// Start services that require system permissions (Bluetooth, Location, Mic, HomeKit).
@@ -7283,6 +7357,8 @@ class AppState: ObservableObject, AppStateProtocol {
         turnUtterance = query
         isListening = false
         errorMessage = nil
+        // Plan HY P1: a typed message is the wearer being there, whichever brain answers it.
+        noteLiveSessionActivity()
 
         // A typed turn belongs to the job's conversation exactly as a spoken one does (Plan FO P1).
         guidedJobFlow.prepareThreadForTurn(.typed)

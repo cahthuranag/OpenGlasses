@@ -11,7 +11,11 @@ class RealtimeSessionManager: ObservableObject {
     /// The wearer muted the mic without ending the session (a temple tap, Plan GJ P3). Capture
     /// keeps running; nothing is sent while this is set. Cleared when a session starts or stops,
     /// so a mute never outlives the session it was made in.
-    @Published var micMuted: Bool = false
+    @Published var micMuted: Bool = false {
+        // Plan HY P1: muting or unmuting is the wearer touching the session — a temple tap or the
+        // control — and so is activity, whichever way it went.
+        didSet { if micMuted != oldValue { idleClock.noteActivity() } }
+    }
     /// Plan FF P1/PR4 — which session this is. Bumped on every start, so work begun for one
     /// session (a sharp capture in flight) can tell that it came back to a different one.
     private(set) var sessionIdentity: Int = 0
@@ -23,6 +27,16 @@ class RealtimeSessionManager: ObservableObject {
     @Published var openClawConnectionState: OpenClawConnectionState = .notConfigured
     @Published var reconnecting: Bool = false
     @Published var errorMessage: String?
+    /// Plan HY P1 — why the last session ended, kept after the stop so the status card can say it
+    /// ("Session ended after 10 minutes without activity"). Cleared when the next session starts.
+    @Published private(set) var endReason: LiveSessionEndReason?
+
+    /// Plan HY P1 — ends a session nobody is using. Fed by the wearer's activity only; see
+    /// ``LiveIdlePolicy`` for what counts and why model speech does not.
+    let idleClock = LiveIdleClock()
+    /// Test seam for the idle warning. `nil` in the app, where the line goes through the session's
+    /// own voice (``speakIdleWarning(_:)``).
+    var idleWarningSpeaker: ((String) -> Void)?
 
     // Shared OpenClaw bridge (injected from AppState)
     var openClawBridge: OpenClawBridge?
@@ -88,6 +102,13 @@ class RealtimeSessionManager: ObservableObject {
     /// start opens with this handover block (``LiveContextHandover``) so the session picks up where
     /// the phone left off. Consumed by that start.
     var pendingResumeContext: String?
+
+    /// Plan HY P0 — the turns a mode switch carries into the next session, read while this one is
+    /// still up: `stopSession()` resets the record, so the switch reads it before its teardown.
+    /// The same bounded window a reconnect handover uses, in-flight turns included.
+    var handoverTurns: [LiveTurnRecord] {
+        conversationRecorder.recentTurns(LiveContextHandover.maxTurns)
+    }
 
     // Camera frame source — set by AppState to the existing CameraService's periodic captures
     var onRequestVideoFrame: (() async -> UIImage?)?
@@ -198,6 +219,10 @@ class RealtimeSessionManager: ObservableObject {
         // FF P1/PR5: a session's record belongs to that session and to nothing else.
         conversationRecorder.reset()
         sessionStartedAt = Date()
+        // Plan HY P1: the quiet spell starts with the session. Started this early so a start that
+        // hangs (a cue that never finishes, a connect that never answers) is still bounded.
+        endReason = nil
+        startIdleClock(identity: identity)
 
         await onWillConnect?()
         // Stopped while the cue played.
@@ -265,6 +290,8 @@ class RealtimeSessionManager: ObservableObject {
         audioManager.onVoiceInterrupt = { [weak self] in
             Task { @MainActor in
                 guard let self, self.isActive, self.sessionIdentity == identity else { return }
+                // Plan HY P1: the local VAD heard the wearer start speaking over the model.
+                self.idleClock.noteActivity()
                 self.providerSession.cancelResponse()
             }
         }
@@ -273,6 +300,12 @@ class RealtimeSessionManager: ObservableObject {
                 guard let self, self.isActive, self.sessionIdentity == identity else { return }
                 self.providerSession.cancelResponse()
             }
+        }
+        // Plan HY P1: the server's voice-activity speech-start — the wearer began talking, before
+        // any transcript of it exists.
+        providerSession.onUserSpeechStarted = { [weak self] in
+            guard let self, self.isActive, self.sessionIdentity == identity else { return }
+            self.idleClock.noteActivity()
         }
         // Wire provider audio → playback
         providerSession.onAudioReceived = { [weak self] data in
@@ -315,6 +348,8 @@ class RealtimeSessionManager: ObservableObject {
             guard let self, self.isActive, self.sessionIdentity == identity else { return }
             Task { @MainActor in
                 guard self.isActive, self.sessionIdentity == identity else { return }
+                // Plan HY P1: the wearer speaking is the activity that matters most.
+                self.idleClock.noteActivity()
                 self.userTranscript = self.providerSession.inputTranscriptionIsDelta
                     ? ScriptAwareJoiner.join(self.userTranscript, text) : text
                 if !self.providerSession.inputTranscriptionIsDelta {
@@ -424,12 +459,16 @@ class RealtimeSessionManager: ObservableObject {
                 guard let self, self.isActive, self.sessionIdentity == identity else { return }
                 Task { @MainActor in
                 guard self.isActive, self.sessionIdentity == identity else { return }
+                    // Plan HY P1: a tool call is the session doing the wearer's work, and so is its
+                    // result coming back below.
+                    self.idleClock.noteActivity()
                     for call in toolCall.functionCalls {
                         // `self` is already strongly held by the enclosing handler (guard let self
                         // above) for the duration of this response, so a redundant inner [weak self]
                         // only tripped the ownership-mismatch warning.
                         self.toolCallRouter?.handleToolCall(call) { response in
                             guard self.isActive, self.sessionIdentity == identity else { return }
+                            self.idleClock.noteActivity()
                             self.providerSession.sendToolResponse(response)
                         }
                     }
@@ -589,7 +628,12 @@ class RealtimeSessionManager: ObservableObject {
                                            microphoneListening: true)))
     }
 
-    func stopSession() {
+    /// End the session and give back everything it holds.
+    ///
+    /// - Parameter reason: why. Kept as ``endReason`` after the stop, for the status card; every
+    ///   ordinary stop is `.stopped`, and the idle end (Plan HY P1) is the one that says more.
+    func stopSession(reason: LiveSessionEndReason = .stopped) {
+        idleClock.stop()
         PrivacyLog.realtimeSession(logProvider, .sessionStopped, count: submittedFrameCount)
         PrivacyLog.realtimeSession(logProvider, .frameDropped, detail: PrivacyToken("notActive"),
                                    count: droppedNotActive)
@@ -627,6 +671,7 @@ class RealtimeSessionManager: ObservableObject {
         submittedFrameCount = 0
         droppedNotActive = 0
         droppedNotReady = 0
+        endReason = reason
 
         // Plan EW: give the camera claim back last, after `isActive` is false. The release asks
         // whether anything else is still consuming the stream, and an active live session is one
@@ -634,6 +679,51 @@ class RealtimeSessionManager: ObservableObject {
         // release. A claim it never started, or one the wearer started first, is left running.
         if hadCameraClaim, let stopCamera = onRequestStopCamera {
             Task { await stopCamera() }
+        }
+    }
+
+    // MARK: - Idle end (Plan HY P1)
+
+    /// The wearer did something the session's own events cannot see — typed a message, touched a
+    /// live control. Resets the quiet spell; a no-op outside a session.
+    func noteWearerActivity() {
+        guard isActive else { return }
+        idleClock.noteActivity()
+    }
+
+    private func startIdleClock(identity: Int) {
+        idleClock.onWarn = { [weak self] in
+            guard let self, self.isActive, self.sessionIdentity == identity else { return }
+            PrivacyLog.realtimeSession(self.logProvider, .idleWarned)
+            self.speakIdleWarning(LiveIdlePolicy.warningLine)
+        }
+        idleClock.onEnd = { [weak self] in
+            guard let self, self.isActive, self.sessionIdentity == identity else { return }
+            let minutes = self.idleClock.policy?.idleMinutes ?? Config.liveIdleMinutes
+            self.endForIdle(minutes: minutes)
+        }
+        idleClock.start(policy: LiveIdlePolicy.configured())
+    }
+
+    private func endForIdle(minutes: Int) {
+        PrivacyLog.realtimeSession(logProvider, .idleEnded, count: minutes)
+        stopSession(reason: .idleEnded(minutes: minutes))
+    }
+
+    /// Say the warning through the session's own voice: the provider's exact-speech lane when it
+    /// has one, a model turn asked to say the line when it can take text, and the local cue voice
+    /// only when the session can do neither (not ready, or a protocol with no text lane). Never
+    /// ElevenLabs — this is the session talking, not the app.
+    private func speakIdleWarning(_ line: String) {
+        if let idleWarningSpeaker { idleWarningSpeaker(line); return }
+        if canInject, supportsSuppliedSpeech {
+            providerSession.speakText(line)
+        } else if canInject, supportsTextInjection {
+            // Plan HY P3: an announcement — the warning must not start a tool call.
+            providerSession.sendText(LiveIdlePolicy.warningInstruction, completeTurn: true,
+                                     toolsAllowed: false)
+        } else {
+            speakLocalCue(line)
         }
     }
 
@@ -927,6 +1017,11 @@ extension RealtimeSessionManager: LiveSessionInjecting {
         if !completeTurn { updateAppContext(text, key: "background"); return }
         guard supportsTextInjection else { errorMessage = String(localized: "This realtime model does not support text injection."); return }
         providerSession?.sendText(text, completeTurn: completeTurn)
+    }
+    /// Plan HY P3 — an announcement: answered now, with tools off for that response.
+    func injectAnnouncement(_ text: String) {
+        guard supportsTextInjection else { errorMessage = String(localized: "This realtime model does not support text injection."); return }
+        providerSession?.sendText(text, completeTurn: true, toolsAllowed: false)
     }
     func updateAppContext(_ text: String, key: String) {
         guard canInject, supportsContextUpdates else { return }

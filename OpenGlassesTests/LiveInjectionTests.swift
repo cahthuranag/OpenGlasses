@@ -273,3 +273,107 @@ final class LiveInjectionTests: XCTestCase {
         XCTAssertEqual(PhoneZoomPolicy.readoutLabel(factor: 2.34), "2.3×")
     }
 }
+
+/// Plan HY P3 — announcements start a response with tools off; nothing else changes.
+final class LiveInjectionToolsOffTests: XCTestCase {
+
+    func testTheDefaultTriggerIsUnchanged() {
+        let env = LiveInjectionEnvelope.realtimeResponseCreate()
+        XCTAssertEqual(env.count, 1)
+        XCTAssertEqual(env["type"] as? String, "response.create")
+        XCTAssertNil(env["response"], "a wearer-facing trigger carries no tool restriction")
+        XCTAssertEqual(LiveInjectionEnvelope.realtimeResponseCreate(toolsAllowed: true).count, 1)
+    }
+
+    func testToolsOffCarriesToolChoiceNone() throws {
+        let env = LiveInjectionEnvelope.realtimeResponseCreate(toolsAllowed: false)
+        XCTAssertEqual(env["type"] as? String, "response.create")
+        let response = try XCTUnwrap(env["response"] as? [String: String])
+        XCTAssertEqual(response, ["tool_choice": "none"])
+        // And it serialises to exactly the shape the plan names.
+        let data = try JSONSerialization.data(withJSONObject: env, options: [.sortedKeys])
+        XCTAssertEqual(String(data: data, encoding: .utf8),
+                       #"{"response":{"tool_choice":"none"},"type":"response.create"}"#)
+    }
+
+    func testTheOpenAIAdapterPassesTheFlagToTheTrigger() throws {
+        let adapter = OpenAIRealtimeAdapter()
+        let announcement = try adapter.encode(.text("Your report is ready", completeTurn: true, toolsAllowed: false))
+        XCTAssertEqual(announcement.map { $0["type"] as? String }, ["conversation.item.create", "response.create"])
+        XCTAssertEqual((announcement[1]["response"] as? [String: String])?["tool_choice"], "none")
+
+        let ordinary = try adapter.encode(.text("Your report is ready", completeTurn: true))
+        XCTAssertNil(ordinary[1]["response"], "the default is a bare trigger")
+        XCTAssertEqual(try adapter.encode(.text("context", completeTurn: false, toolsAllowed: false)).count, 1,
+                       "an append-only item starts no response, so there is nothing to restrict")
+    }
+
+    /// A tool result's follow-up is the model's own chain and keeps its tools.
+    func testAToolResultsTriggerKeepsTools() {
+        let messages = OpenAIRealtimeToolRouter.outputMessages(callId: "call-1", output: "{}")
+        XCTAssertEqual(messages.last?["type"] as? String, "response.create")
+        XCTAssertNil(messages.last?["response"])
+    }
+
+    func testQwenAudioKeepsTheBareTrigger() throws {
+        let adapter = QwenAudioRealtimeAdapter(voice: "")
+        let turn = try adapter.encode(.text("Your report is ready", completeTurn: true, toolsAllowed: false))
+        XCTAssertEqual(turn.map { $0["type"] as? String }, ["conversation.item.create", "response.create"])
+        XCTAssertNil(turn[1]["response"])
+    }
+
+    /// Gemini Live has no per-turn tool switch, so its envelope is exactly what it was.
+    func testTheGeminiEnvelopeIsUntouched() throws {
+        let env = LiveInjectionEnvelope.geminiText("Your report is ready", completeTurn: true)
+        XCTAssertEqual(Set(env.keys), ["clientContent"])
+        let content = try XCTUnwrap(env["clientContent"] as? [String: Any])
+        XCTAssertEqual(Set(content.keys), ["turns", "turnComplete"])
+        XCTAssertEqual(content["turnComplete"] as? Bool, true)
+        let data = try JSONSerialization.data(withJSONObject: env, options: [.sortedKeys])
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertFalse(json.contains("tool"), "no tool field rides a Gemini text turn")
+    }
+
+    @MainActor
+    func testAnnouncementDeliveryUsesTheToolsOffLane() {
+        let injector = AnnouncementInjector()
+        XCTAssertTrue(LiveAnnouncementDelivery.deliver("Your report is ready", using: injector))
+        XCTAssertEqual(injector.announcements.count, 1)
+        XCTAssertTrue(injector.announcements[0].contains("Your report is ready"))
+        XCTAssertTrue(injector.textTurns.isEmpty, "never an ordinary turn, which would allow tools")
+    }
+
+    private func source(_ relative: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("OpenGlasses/Sources")
+            .appendingPathComponent(relative)
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// Every announcement path ends in the tools-off lane: agent completions and notifications
+    /// through `LiveAnnouncementDelivery`, the idle warning through the manager's own send.
+    func testEveryAnnouncementPathPassesToolsOff() throws {
+        let manager = try source("Services/Realtime/RealtimeSessionManager.swift")
+        XCTAssertTrue(manager.contains("providerSession?.sendText(text, completeTurn: true, toolsAllowed: false)"))
+        XCTAssertTrue(manager.contains("providerSession.sendText(LiveIdlePolicy.warningInstruction, completeTurn: true,\n                                     toolsAllowed: false)"))
+        let delivery = try source("Services/Live/LiveInjection.swift")
+        XCTAssertTrue(delivery.contains("injector.injectAnnouncement("))
+        XCTAssertFalse(delivery.contains("injectText(AsyncDeliveryPhrasing.resultInstruction"))
+        let queue = try source("Services/AgentNotificationQueue.swift")
+        XCTAssertTrue(queue.contains("LiveAnnouncementDelivery.deliver("))
+        XCTAssertFalse(queue.contains("completeTurn: true"), "no announcement bypasses the lane")
+    }
+}
+
+@MainActor
+private final class AnnouncementInjector: LiveSessionInjecting {
+    var canInject = true
+    var isBusyForInjection = false
+    var liveSessionIdentity = 1
+    var announcements: [String] = []
+    var textTurns: [(String, Bool)] = []
+    func injectSharpImage(jpegData: Data) {}
+    func injectText(_ text: String, completeTurn: Bool) { textTurns.append((text, completeTurn)) }
+    func injectAnnouncement(_ text: String) { announcements.append(text) }
+}

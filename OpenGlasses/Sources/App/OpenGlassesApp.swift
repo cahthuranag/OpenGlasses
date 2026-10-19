@@ -1789,7 +1789,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 guard let self else { return .handedOff }
                 // The existing store-and-forward route, unchanged: the record goes into the
                 // durable queue and the endpoint sink delivers it. "Sent" is what the queue says.
-                self.offlineQueue.enqueue(request.payload.queuedOp())
+                if let op = request.payload.queuedOp() { self.offlineQueue.enqueue(op) }
                 await self.syncEngine.flush()
                 let stillQueued = QueuedRecordRows.outstandingCount(
                     in: self.offlineQueue.all(limit: 200), sessionId: request.sessionId) > 0
@@ -4915,18 +4915,50 @@ class AppState: ObservableObject, AppStateProtocol {
         case .endpoint:
             // Nobody taps anything: the record goes into the durable queue and the endpoint sink
             // delivers it. "Sent" is what the queue says, not what this method hopes.
+            // A parts order adds nothing to the queue: each of its requests was queued on its own
+            // when it was asked for, so "sent" is those requests having left.
             let op = request.payload.queuedOp()
-            offlineQueue.enqueue(op)
+            if let op { offlineQueue.enqueue(op) }
             Task { [weak self] in
                 guard let self else { return }
                 await self.syncEngine.flush()
                 let ops = self.offlineQueue.all(limit: 200)
-                // A bundle belongs to no job, so it is followed by its own op, not a job's count.
-                let stillQueued = request.payload.learningBundle != nil
-                    ? ops.contains { $0.id == op.id && QueuedRecordRows.outstandingStates.contains($0.state) }
-                    : QueuedRecordRows.outstandingCount(in: ops, sessionId: request.sessionId) > 0
+                let stillQueued: Bool
+                if let order = request.payload.partsOrder {
+                    let ids = Set(order.partsRequestIds)
+                    stillQueued = ops.contains { queued in
+                        queued.kind == .partsRequest && queued.sessionId == order.sessionId
+                            && QueuedRecordRows.outstandingStates.contains(queued.state)
+                            && (queued.payloadJSON["id"] as? String).map(ids.contains) ?? false
+                    }
+                } else if request.payload.learningBundle != nil, let op {
+                    // A bundle belongs to no job, so it is followed by its own op, not a job's count.
+                    stillQueued = ops.contains { $0.id == op.id && QueuedRecordRows.outstandingStates.contains($0.state) }
+                } else {
+                    stillQueued = QueuedRecordRows.outstandingCount(in: ops, sessionId: request.sessionId) > 0
+                }
                 self.finishDelivery(request, outcome: stillQueued ? .handedOff : .sent)
             }
+        }
+    }
+
+    // MARK: - Parts orders
+
+    /// "Email parts request" from the Jobs tab: the same order `parts_request` action `send`
+    /// stages, for a job's requests still waiting to go, opened in the composer. Returns why it
+    /// cannot go, or nil once it is in front of the technician.
+    @discardableResult
+    func emailPartsOrder(sessionId: String) -> String? {
+        let sessions = FieldSessionService.shared
+        guard let order = sessions.partsOrder(sessionId: sessionId) else {
+            return "Nothing on that job is waiting to be ordered."
+        }
+        switch PartsOrder.route(policy: DeliveryPolicy(settings: Config.deliverySettings)) {
+        case .refused(let reason):
+            return reason
+        case .ready(let channel, let recipients):
+            presentDelivery(DeliveryRequest.make(partsOrder: order, channel: channel, recipients: recipients))
+            return nil
         }
     }
 
@@ -4989,6 +5021,20 @@ class AppState: ObservableObject, AppStateProtocol {
             return
         }
         FieldSessionService.shared.completeDelivery(request, outcome: outcome)
+        // A parts order is not the job report: no send-queue entry follows it, and what is said
+        // about it names the order, never the report.
+        if let order = request.payload.partsOrder {
+            switch outcome {
+            case .sent:
+                addDebugEvent("Parts order sent by \(request.channel.label): \(order.spokenList).")
+            case .failed(let reason):
+                addDebugEvent("Parts order failed: \(reason)")
+                Task { await speechService.speak("The parts order could not be sent. The request is still waiting on the job.") }
+            case .cancelled, .saved, .handedOff:
+                addDebugEvent("Parts order not confirmed sent — the request stays waiting on the job.")
+            }
+            return
+        }
         // A staged send from the car ends here too, and its entry follows the same rule the record
         // does: only a confirmed send moves it, and a cancelled one stays queued (Plan FO P3b).
         if jobSends.owns(request) { jobSends.completePresented(outcome: outcome) }

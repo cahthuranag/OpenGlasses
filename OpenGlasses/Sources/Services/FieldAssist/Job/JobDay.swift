@@ -17,6 +17,8 @@ enum JobDayDestination: Hashable {
     case pastJob(sessionId: String)
     /// A report in the send queue: its composer (for a failed one, a retry).
     case send(queuedId: String)
+    /// A job's parts requests that have not gone yet: the composer with the parts order filled in.
+    case partsOrder(sessionId: String)
 }
 
 /// One field session, as the day needs it. Gathered from `FieldSessionService`; `reportSent` comes
@@ -35,6 +37,8 @@ struct JobDaySession: Equatable {
     var signedOff = false
     /// Parts requests base has not answered yet.
     var openPartsRequests = 0
+    /// …of which not yet sent at all: asked for on the job, and waiting to be emailed.
+    var unsentPartsRequests = 0
 
     var isOpen: Bool { endedAt == nil && !cancelled }
 
@@ -240,6 +244,7 @@ struct JobDay: Equatable {
 enum JobDayComposer {
 
     static let noJobs = "No jobs"
+    static let partsWaitingToBeEmailed = "Parts request waiting to be emailed"
     /// How far back a failed send is still owed. A failure from last month is history, not a to-do.
     static let failedSendWindow: TimeInterval = 7 * 24 * 3600
 
@@ -391,8 +396,18 @@ enum JobDayComposer {
         }
 
         todos += sessions
-            .filter { $0.openPartsRequests > 0 }
+            .filter { $0.openPartsRequests > 0 || $0.unsentPartsRequests > 0 }
             .map { session in
+                // Requests nobody has sent are waiting on the technician, and the row says so and
+                // opens the order; ones already sent are waiting on base, and the row opens the job.
+                let unsent = session.unsentPartsRequests
+                if unsent > 0 {
+                    return .init(id: "parts-\(session.id)", kind: .parts,
+                                 title: unsent == 1 ? partsWaitingToBeEmailed
+                                     : "\(unsent) parts requests waiting to be emailed",
+                                 detail: session.label, destination: .partsOrder(sessionId: session.id),
+                                 sessionId: session.id)
+                }
                 let count = session.openPartsRequests
                 return .init(id: "parts-\(session.id)", kind: .parts,
                              title: count == 1 ? "Parts request waiting" : "\(count) parts requests waiting",

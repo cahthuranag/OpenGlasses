@@ -1127,6 +1127,26 @@ final class FieldSessionService: ObservableObject {
         return request
     }
 
+    /// The order for a job's parts requests still waiting to go — the open job's by default, or a
+    /// finished one's by id. Nil when nothing on it is waiting (every request sent or answered),
+    /// or when this phone does not hold the job.
+    func partsOrder(sessionId: String? = nil, requestId: String? = nil, note: String? = nil) -> PartsOrder? {
+        let session: FieldSession
+        let vaultName: String
+        if let active = activeSession, sessionId == nil || sessionId == active.id {
+            session = active
+            vaultName = activeVault?.manifest.name ?? active.vaultId
+        } else if let sessionId, let stored = history.first(where: { $0.id == sessionId }) {
+            session = stored
+            vaultName = VaultRegistry.shared.manifest(id: stored.vaultId)?.name ?? stored.vaultId
+        } else {
+            return nil
+        }
+        return PartsOrder(sessionId: session.id, jobReference: session.jobReference,
+                          vaultName: vaultName, equipmentModel: session.equipment?.modelToken,
+                          partsRequests: session.partsRequests, requestId: requestId, note: note)
+    }
+
     // MARK: Van stock (Plan IH P4)
 
     /// Whether the technician keeps van stock at all. The close only asks about parts with no
@@ -1417,7 +1437,8 @@ final class FieldSessionService: ObservableObject {
     /// Put a report in front of the operator. Publishing it is what opens the composer; nothing
     /// has been sent when this returns.
     func stageDelivery(_ request: DeliveryRequest) {
-        lastDeliveryCancelled = false
+        // A parts order is not the report: staging one says nothing about whether the report went.
+        if request.payload.partsOrder == nil { lastDeliveryCancelled = false }
         stagedDelivery = request
     }
 
@@ -1432,7 +1453,8 @@ final class FieldSessionService: ObservableObject {
     /// makes "nothing is silently lost" true rather than aspirational.
     func completeDelivery(_ request: DeliveryRequest, outcome: DeliveryOutcome) {
         if stagedDelivery?.id == request.id { stagedDelivery = nil }
-        lastDeliveryCancelled = !outcome.isSent
+        let order = request.payload.partsOrder
+        if order == nil { lastDeliveryCancelled = !outcome.isSent }
 
         // A report sent after its job closed belongs to a finished session (Plan GB P0): its log is
         // opened on its own directory — the route `recordSignOff` takes — so the send is recorded
@@ -1472,11 +1494,16 @@ final class FieldSessionService: ObservableObject {
             }
         }
 
+        // A parts order is logged as one, under kinds of its own: `reportWasSent` reads
+        // `reportSent`, and an order that went must never make the job's report look sent.
         let kind: SessionLogger.Event.Kind
-        switch outcome {
-        case .sent: kind = .reportSent
-        case .saved, .handedOff, .cancelled: kind = .reportCancelled
-        case .failed: kind = .reportFailed
+        switch (outcome, order != nil) {
+        case (.sent, false): kind = .reportSent
+        case (.saved, false), (.handedOff, false), (.cancelled, false): kind = .reportCancelled
+        case (.failed, false): kind = .reportFailed
+        case (.sent, true): kind = .partsOrderSent
+        case (.saved, true), (.handedOff, true), (.cancelled, true): kind = .partsOrderNotSent
+        case (.failed, true): kind = .partsOrderFailed
         }
         var payload: [String: AnyCodable] = [
             "channel": AnyCodable(request.channel.rawValue),
@@ -1498,7 +1525,17 @@ final class FieldSessionService: ObservableObject {
         // just ended when a composer outlived it. Never somebody else's log.
         let target = activeSession?.id == request.sessionId ? logger
             : (deliveryLogger?.session.id == request.sessionId ? deliveryLogger : finishedLogger)
-        target?.append(.init(timestamp: Date(), kind: kind, text: request.subject, payload: payload))
+        // The order's line reads as what happened to it: "Parts order sent — 1 × 70W16".
+        let text = order.map { order in
+            let what: String
+            switch outcome {
+            case .sent: what = "Parts order sent"
+            case .failed: what = "Parts order failed"
+            case .saved, .handedOff, .cancelled: what = "Parts order not sent"
+            }
+            return "\(what) — \(order.spokenList)"
+        } ?? request.subject
+        target?.append(.init(timestamp: Date(), kind: kind, text: text, payload: payload))
     }
 
     /// Flash a task on the lens. Set by the task mutators; cleared by whoever showed it.

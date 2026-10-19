@@ -262,6 +262,14 @@ struct VoiceTab: View {
         } else if case .send(let id) = destination,
                   let entry = appState.jobSends.queue.queue.entry(id: id) {
             appState.jobSends.present(entry)
+        } else if case .partsOrder(let sessionId) = destination {
+            // The parts order's composer, like a staged report's. When it cannot open — no
+            // channel allowed, nobody to send it to — the job's page is where the reason and the
+            // requests are, so that is where the row lands.
+            if let reason = appState.emailPartsOrder(sessionId: sessionId) {
+                NoticeCenter.shared.post(reason, severity: .warning, source: .app)
+                appState.openJobs(.session(id: sessionId))
+            }
         }
     }
 

@@ -182,6 +182,14 @@ final class SessionLogger {
             case reportCancelled = "report_cancelled"
             /// …or the channel refused it.
             case reportFailed = "report_failed"
+            /// The job's waiting parts requests left as an order of their own, and were marked
+            /// sent. Separate from `reportSent`: an order is not the job report.
+            case partsOrderSent = "parts_order_sent"
+            /// …or the composer was dismissed, saved as a draft or handed to an app that cannot
+            /// confirm it, and the requests stay waiting.
+            case partsOrderNotSent = "parts_order_not_sent"
+            /// …or the channel refused it.
+            case partsOrderFailed = "parts_order_failed"
             /// The person recording read what recording a job means and said so (Plan HE). The
             /// payload names the wording's revision and nothing else.
             case recordingConsent = "recording_consent"

@@ -190,6 +190,9 @@ struct PastJobView: View {
             // pictures were chosen, the customer signed, and only then does anything get sent.
             signOffSection
 
+            // Parts asked for on this job and never sent: the order can still go on its own.
+            JobPartsOrderSection(sessionId: sessionId)
+
             // What was said about the job afterwards (Plan FO P3b). After the acceptance, because
             // that is the order it happened in, and read-only: a debrief is added by talking, and
             // saving one is the only thing that writes.

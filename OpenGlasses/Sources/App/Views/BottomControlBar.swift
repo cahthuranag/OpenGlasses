@@ -91,6 +91,8 @@ struct BottomControlBar: View {
     /// Not read for its value — `Config.quickActions` owns that. This is the republish, so an
     /// action made on the edit page appears on the grid the moment the sheet closes.
     @AppStorage("quickActions") private var quickActionsBeacon = Data()
+    /// The same republish for the technician's trades, whose tiles `Config.quickActions` injects.
+    @AppStorage(FieldTradeSetting.key) private var tradesBeacon: String?
     /// Plan CT 3b: the Field Assist edition hides the model picker — the organisation chose it.
     @ObservedObject private var adminGate = AdminGate.shared
     @ObservedObject private var orgProfile = OrgProfileManager.shared

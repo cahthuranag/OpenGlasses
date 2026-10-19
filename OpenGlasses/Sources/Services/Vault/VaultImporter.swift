@@ -451,6 +451,17 @@ enum VaultImporter {
         try? fm.removeItem(at: registryDirectory.appendingPathComponent("\(id).json"))
     }
 
+    /// One user-installed manifest by id, or nil. Reads the one registry file rather than all of
+    /// them; an id that is not a plain file name is never turned into a path.
+    static func installedManifest(id: String) -> VaultManifest? {
+        guard !id.isEmpty, id.count <= 128, !id.hasPrefix("."),
+              id.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || "_-.".unicodeScalars.contains($0) })
+        else { return nil }
+        let url = registryDirectory.appendingPathComponent("\(id).json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(VaultManifest.self, from: data)
+    }
+
     /// Load all user-installed manifests from the registry directory.
     static func installedManifests() -> [VaultManifest] {
         let fm = FileManager.default

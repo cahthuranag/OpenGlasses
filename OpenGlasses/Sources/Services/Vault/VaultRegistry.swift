@@ -13,7 +13,11 @@ final class VaultRegistry {
     static let shared = VaultRegistry()
 
     /// Manifests bundled with the app. Edit this list to add new vault packs.
-    private static let builtInManifests: [VaultManifest] = [
+    ///
+    /// None declares `trades` yet: the refrigeration vault is every Field Assist install's default,
+    /// so declaring a trade here would put that trade's tiles on nearly every technician's grid.
+    /// The technician, the organisation or an authored vault turns a trade on.
+    nonisolated private static let builtInManifests: [VaultManifest] = [
         VaultManifest(
             id: "refrigeration",
             name: "Refrigeration Service",
@@ -126,6 +130,12 @@ final class VaultRegistry {
     private var storeCache: [String: VaultStore] = [:]
 
     private init() {}
+
+    /// A bundled manifest by id, readable off the main actor — the quick-action grid reads the
+    /// default vault's declared trades from wherever it is built.
+    nonisolated static func builtInManifest(id: String) -> VaultManifest? {
+        builtInManifests.first { $0.id == id }
+    }
 
     /// Look up a manifest by id.
     func manifest(id: String) -> VaultManifest? {

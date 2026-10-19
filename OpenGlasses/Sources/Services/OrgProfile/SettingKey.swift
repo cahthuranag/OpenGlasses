@@ -78,6 +78,10 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     /// (`"kPa,C,kg"`). Without one the phone follows its App Store region; the technician may
     /// change it either way.
     case refrigerationUnits
+    /// The trades Field Assist starts with (`refrigeration_hvac`, `electrical`), each bringing its
+    /// tiles to the grid. Its own key: the technician's choice (`fieldAssistTrades`) outranks it
+    /// rather than overwriting it, and without either the default vault's manifest decides.
+    case fieldAssistDefaultTrades
 
     enum ValueType: Equatable, Sendable {
         case bool
@@ -119,6 +123,8 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
         case .fieldAssistDefaultVaultId, .fieldAssistDefaultMode, .supportReportEmail, .accentColorName,
              .refrigerationUnits:
             return .startingValue(.string)
+        case .fieldAssistDefaultTrades:
+            return .startingValue(.strings)
         }
     }
 
@@ -182,6 +188,16 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
             // Deny by default: units this build cannot read are a named drop, never a guess.
             return RefrigerationUnits(encoded: raw) == nil
                 ? "not units written as pressure,temperature,mass (for example kPa,C,kg)" : nil
+        case (.fieldAssistDefaultTrades, .strings(let trades)):
+            // An empty list is a choice: no trade tiles. A list this build reads none of is a
+            // named drop; a list naming some trades it knows keeps them and ignores the rest, so a
+            // profile written for a newer build still gives this one what it understands.
+            if trades.count > 20 { return "more than 20 trades" }
+            if !trades.isEmpty && FieldTrade.known(trades).isEmpty {
+                return "names no trade this version knows ("
+                    + FieldTrade.allCases.map(\.rawValue).joined(separator: ", ") + ")"
+            }
+            return nil
         default:
             return nil
         }

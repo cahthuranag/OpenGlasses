@@ -2017,18 +2017,21 @@ struct Config {
         } else {
             base = QuickAction.defaults
         }
-        return withFieldAssistAction(base)
+        let active = fieldAssistActive
+        return withFieldAssistActions(base, active: active,
+                                      trades: active ? FieldTradeSetting.current.trades : [])
     }
 
     /// Surface the built-in Field Assist quick actions — the job starter first, then its job
-    /// tiles — when the feature is active. Recomputed each read so they track the
-    /// entitlement/toggle: any stale/persisted copy is stripped, then re-added only when active —
-    /// so none of them lingers after a lapsed license.
-    private static func withFieldAssistAction(_ actions: [QuickAction]) -> [QuickAction] {
-        let injected = QuickAction.fieldAssistActions
-        let injectedIds = Set(injected.map(\.id))
-        let base = actions.filter { !injectedIds.contains($0.id) }
-        return fieldAssistActive ? injected + base : base
+    /// tiles, then the active trades' tiles — when the feature is active. Recomputed each read so
+    /// they track the entitlement, the toggle and the trades: every stale or persisted copy of any
+    /// of them is stripped, then re-added only when active, so none lingers after a lapsed licence
+    /// or a trade switched off. Pure, so the rule is tested headless.
+    static func withFieldAssistActions(_ actions: [QuickAction], active: Bool,
+                                       trades: [FieldTrade]) -> [QuickAction] {
+        let managedIds = Set(QuickAction.fieldAssistManagedActions.map(\.id))
+        let base = actions.filter { !managedIds.contains($0.id) }
+        return active ? QuickAction.fieldAssistActions(trades: trades) + base : base
     }
 
     static func setQuickActions(_ actions: [QuickAction]) {

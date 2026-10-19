@@ -21,8 +21,16 @@ enum SystemPromptBuilder {
     /// Mandatory-routing rules for tools whose domain must never be answered from the model's
     /// own weights (Plan BM P4). Returns an empty string when none of the gated tools are
     /// enabled, so the block only appears alongside the tool it mandates.
-    static func routingRules(toolNames: [String]) -> String {
+    ///
+    /// `hiddenTrades` are the trades whose tools the trade gate took out of `toolNames`: the model
+    /// is told to answer their requests with the redirect, not from its own knowledge.
+    static func routingRules(toolNames: [String], hiddenTrades: [FieldTrade] = []) -> String {
         var rules: [String] = []
+        for trade in hiddenTrades {
+            guard let phrases = FieldTradeGate.requestPhrases(trade) else { continue }
+            rules.append("- Asked for \(phrases): the tool for it is off on this phone because its trade is not "
+                + "turned on. Do not answer from your own knowledge; say exactly: \"\(FieldTradeGate.redirectMessage(trade))\"")
+        }
         if toolNames.contains("health_check") {
             rules.append("""
             - Health safety is NOT answerable from your own knowledge: for ANY question about whether a \

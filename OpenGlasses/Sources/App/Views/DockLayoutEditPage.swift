@@ -24,6 +24,8 @@ struct DockLayoutEditPage: View {
     /// so without observing the key a tile created on this page would not appear until something
     /// else redrew the panel.
     @AppStorage("quickActions") private var quickActionsBeacon = Data()
+    /// The same republish for the technician's trades, whose tiles `Config.quickActions` injects.
+    @AppStorage(FieldTradeSetting.key) private var tradesBeacon: String?
 
     @Environment(\.appAccent) private var accent
 

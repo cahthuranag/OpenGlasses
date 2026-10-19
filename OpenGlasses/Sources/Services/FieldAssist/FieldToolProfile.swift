@@ -30,11 +30,14 @@ enum FieldToolProfile {
         "web_search", "flashlight", "device_info", "teleprompter", "playbook",
     ]
 
-    /// The names to declare and list. `all` unchanged unless a job is open **and** the profile is
-    /// on; then the sorted intersection with `names`. Pure.
-    static func declaredNames(all: [String], fieldJobActive: Bool, enabled: Bool) -> [String] {
-        guard fieldJobActive && enabled else { return all }
-        return all.filter(names.contains).sorted()
+    /// The names to declare and list. First the trade gate (`FieldTradeGate`): with a trade active,
+    /// another trade's tools go, job or no job. Then, unless a job is open **and** the profile is
+    /// on, the rest unchanged; otherwise the sorted intersection with `names`. Pure.
+    static func declaredNames(all: [String], fieldJobActive: Bool, enabled: Bool,
+                              activeTrades: [FieldTrade] = []) -> [String] {
+        let offered = FieldTradeGate.allowedToolNames(all, activeTrades: activeTrades)
+        guard fieldJobActive && enabled else { return offered }
+        return offered.filter(names.contains).sorted()
     }
 
     /// Whether a Field Assist job is open right now — a paused one included, since it is still the
@@ -46,7 +49,8 @@ enum FieldToolProfile {
     @MainActor
     static func current(_ all: [String]) -> [String] {
         let enabled = Config.fieldToolProfileEnabled
-        return declaredNames(all: all, fieldJobActive: enabled && fieldJobActive, enabled: enabled)
+        return declaredNames(all: all, fieldJobActive: enabled && fieldJobActive, enabled: enabled,
+                             activeTrades: FieldTradeGate.currentActiveTrades)
     }
 
     /// A short, stable digest of a declared list — what the log records instead of the names.

@@ -530,7 +530,8 @@ class LLMService: ObservableObject {
                     toolSection += "\n\n" + onDemandToolGuide
                 }
                 // Plan BM P4: domains the model must route through a tool, never self-answer.
-                let routingRules = SystemPromptBuilder.routingRules(toolNames: nativeToolNames)
+                let routingRules = SystemPromptBuilder.routingRules(
+                    toolNames: nativeToolNames, hiddenTrades: FieldTradeGate.promptHiddenTrades)
                 if !routingRules.isEmpty {
                     toolSection += "\n\nMANDATORY ROUTING:\n" + routingRules
                 }

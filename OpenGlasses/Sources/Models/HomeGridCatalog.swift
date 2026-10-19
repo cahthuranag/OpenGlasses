@@ -474,7 +474,7 @@ enum DockSlot: Identifiable, Equatable {
     /// it like any other slot.
     var leadsWhenUnplaced: Bool {
         guard case .action(.quickAction(let action)) = self else { return false }
-        return QuickAction.fieldAssistActions.contains { $0.id == action.id }
+        return QuickAction.fieldAssistManagedActions.contains { $0.id == action.id }
     }
 
     var editorLabel: String {

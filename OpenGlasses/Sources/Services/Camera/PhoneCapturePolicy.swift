@@ -122,6 +122,9 @@ enum PhoneCapturePolicy {
         "fa-fault-code": "equipment_lookup",
         "fa-safety-check": "safety_assessment",
         "fa-log-photo": "photo_log",
+        // The refrigeration trade's gauge tile (Plan IS): opens on the gauges' framing hint, and
+        // `refrigerant_gauges` takes the staged photo.
+        "fa-read-gauges": "refrigerant_gauges",
     ]
 
     /// The framing hint for a tile that should open the phone camera first, or nil when it should

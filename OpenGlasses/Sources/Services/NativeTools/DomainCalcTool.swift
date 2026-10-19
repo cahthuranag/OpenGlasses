@@ -12,6 +12,12 @@ import Foundation
 /// against sea-level atmosphere unless an altitude is given, and the answer says which. A pressure or
 /// temperature outside the table is refused by name, never extrapolated, and the refrigerant is never
 /// assumed (decision 3).
+///
+/// A spoken superheat or subcool gets the same treatment as one read off the gauges (Plan IS, the
+/// trade presets' voice fallback): the pressure is checked against the refrigerant's band
+/// (`InstrumentPlausibility.refrigerantBand`), so an out-of-band value is asked again rather than
+/// answered, and with a job open the pressure and line temperature are recorded as spoken readings
+/// with the refrigerant and its source, once per call.
 @MainActor
 final class DomainCalcTool: NativeTool {
     let name = "domain_calc"
@@ -22,7 +28,9 @@ final class DomainCalcTool: NativeTool {
     temperature at suction pressure; 'subcool' is the bubble-point temperature at liquid pressure minus \
     liquid line temperature. Pressures in psig (answer in °F) or kPa/bar gauge (answer in °C and K). \
     Gauge pressure assumes sea level unless altitude_ft or altitude_m is given. Never assume the \
-    refrigerant: take it from the nameplate or ask.
+    refrigerant: take it from the nameplate or ask. Use superheat/subcool for values the technician \
+    says when refrigerant_gauges has no usable picture: a pressure implausible for the refrigerant is \
+    asked again, and with a job open the spoken pressure and line temperature are recorded.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
@@ -107,15 +115,32 @@ final class DomainCalcTool: NativeTool {
             "altitude_m": [
                 "type": "number",
                 "description": "Optional site altitude (metres) to correct gauge pressure for local atmosphere."
+            ],
+            "refrigerant_source": [
+                "type": "string",
+                "enum": ["nameplate", "technician", "display"],
+                "description": "Where 'refrigerant' came from: the nameplate, the technician, or the unit's display. Default 'technician'."
+            ],
+            "application": [
+                "type": "string",
+                "enum": ["cooling", "heating", "refrigeration"],
+                "description": "For 'superheat'/'subcool', what the system is doing if the technician said: comfort cooling, heat pump heating, or refrigeration. Narrows the plausibility check."
             ]
         ],
         "required": ["operation", "refrigerant"]
     ]
 
     private let bundle: Bundle
+    /// Where a spoken superheat or subcool is filed. Nil records nothing (the tool outside a job,
+    /// and tests that only check the arithmetic); the app passes the shared session service.
+    private let recorder: (any RefrigerantReadingFiling)?
+    private let now: () -> Date
 
-    init(bundle: Bundle = .main) {
+    init(bundle: Bundle = .main, recorder: (any RefrigerantReadingFiling)? = nil,
+         now: @escaping () -> Date = { Date() }) {
         self.bundle = bundle
+        self.recorder = recorder
+        self.now = now
     }
 
     func execute(args: [String: Any]) async throws -> String {
@@ -149,7 +174,7 @@ final class DomainCalcTool: NativeTool {
                     "line temperature ('suction_line_temp_f' or '_c') for superheat."
             }
             return lineCalculation(.superheat, table: table, reading: reading, line: line,
-                                   site: site, absolute: absolute)
+                                   site: site, absolute: absolute, spoken: Self.spokenContext(args))
 
         case "subcool", "subcooling":
             guard let reading = Self.pressure(args, prefix: "liquid_pressure"),
@@ -158,7 +183,7 @@ final class DomainCalcTool: NativeTool {
                     "line temperature ('liquid_line_temp_f' or '_c') for subcool."
             }
             return lineCalculation(.subcool, table: table, reading: reading, line: line,
-                                   site: site, absolute: absolute)
+                                   site: site, absolute: absolute, spoken: Self.spokenContext(args))
 
         default:
             return "Unknown operation '\(operation)'. Use 'pt_lookup', 'superheat', or 'subcool'."
@@ -174,11 +199,32 @@ final class DomainCalcTool: NativeTool {
         var title: String { self == .superheat ? "Superheat" : "Subcooling" }
         var point: String { self == .superheat ? "dew point" : "bubble point" }
         var side: String { self == .superheat ? "suction" : "liquid" }
+        var role: GaugeRole { self == .superheat ? .suction : .liquid }
+    }
+
+    /// What the technician said about the system and the refrigerant, for the plausibility band
+    /// and the record.
+    private struct SpokenContext {
+        var application: InstrumentPlausibility.RefrigerantApplication = .unspecified
+        var refrigerantSource: RefrigerantSource = .technician
+    }
+
+    private static func spokenContext(_ args: [String: Any]) -> SpokenContext {
+        var context = SpokenContext()
+        if let raw = (args["application"] as? String)?.lowercased(),
+           let application = InstrumentPlausibility.RefrigerantApplication(rawValue: raw) {
+            context.application = application
+        }
+        if let raw = (args["refrigerant_source"] as? String)?.lowercased(),
+           let source = RefrigerantSource(rawValue: raw) {
+            context.refrigerantSource = source
+        }
+        return context
     }
 
     private func lineCalculation(_ calculation: LineCalculation, table: SaturationTable,
                                  reading: PressureReading, line: TemperatureReading,
-                                 site: Site, absolute: Bool) -> String {
+                                 site: Site, absolute: Bool, spoken: SpokenContext) -> String {
         let atmosphere = site.atmosphere
         let scale = reading.unit.answerScale
         let pressureKPa = reading.absoluteKPa(atmosphere: atmosphere, absolute: absolute)
@@ -193,6 +239,15 @@ final class DomainCalcTool: NativeTool {
             return refusal(error, table: table, reading: reading, atmosphere: atmosphere, absolute: absolute)
         }
         let saturation = output.saturation
+        // The band the gauge chain applies to a photographed gauge: a saturation temperature no
+        // working system of this kind shows is a misheard number, a swapped hose or real trouble,
+        // and in every case it is asked again, not answered.
+        if let band = InstrumentPlausibility.refrigerantBand(table: table, role: calculation.role,
+                                                             application: spoken.application),
+           !band.contains(absoluteKPa: pressureKPa) {
+            return askAgain(calculation, band: band, saturation: saturation, scale: scale,
+                            table: table, reading: reading, absolute: absolute, application: spoken.application)
+        }
         let lineTemp = output.line
         let result = output.difference
         let deg = scale.symbol
@@ -210,7 +265,51 @@ final class DomainCalcTool: NativeTool {
         }
         answer += atmosphereSentence(site, absolute: absolute)
         answer += "Saturation data: \(table.sourceName), \(calculation.point). (Source: superheat_subcool.md)"
+        if let note = recordSpoken(calculation, reading: reading, line: line, absolute: absolute,
+                                   table: table, source: spoken.refrigerantSource) {
+            answer += " " + note
+        }
         return answer
+    }
+
+    /// "That's a -16°F dew point for R-410A, outside the 14 to 68°F range for a suction line in
+    /// cooling. Did you say 30 psig? Check the reading before I work it out."
+    private func askAgain(_ calculation: LineCalculation, band: InstrumentPlausibility.RefrigerantPressureBand,
+                          saturation: Double, scale: TemperatureScale, table: SaturationTable,
+                          reading: PressureReading, absolute: Bool,
+                          application: InstrumentPlausibility.RefrigerantApplication) -> String {
+        let deg = scale.symbol
+        let low = fmt(scale.fromKelvin(band.windowKelvin.lowerBound))
+        let window = band.highKPa == nil
+            ? "below the \(low)\(deg) minimum"
+            : "outside the \(low) to \(fmt(scale.fromKelvin(band.windowKelvin.upperBound)))\(deg) range"
+        return "That's a \(fmt(saturation))\(deg) \(calculation.point) for \(table.designation), \(window) for a "
+            + "\(calculation.side) line\(application.phrase). Did you say \(reading.text(absolute: absolute))? "
+            + "Check the reading before I work it out."
+    }
+
+    /// Files the spoken pressure and line temperature on the open job — each once, with the
+    /// refrigerant and where it came from — and says so. Nil with no job open, or no recorder.
+    private func recordSpoken(_ calculation: LineCalculation, reading: PressureReading, line: TemperatureReading,
+                              absolute: Bool, table: SaturationTable, source: RefrigerantSource) -> String? {
+        guard let recorder, recorder.isOpenForEvidence else { return nil }
+        let at = now()
+        let entries: [(quantity: String, value: String, unit: String)] = [
+            ("\(calculation.side) pressure", fmt(reading.value),
+             absolute ? reading.unit.absoluteSymbol : reading.unit.gaugeSymbol),
+            ("\(calculation.side) line temperature", fmt(line.value), line.scale.symbol),
+        ]
+        var recorded = 0
+        for entry in entries {
+            // No method: said aloud is how `SpokenReading` has always recorded a reading.
+            if recorder.recordInstrumentReading(quantity: entry.quantity, value: entry.value, unit: entry.unit,
+                                                method: nil, photoId: nil, refrigerant: table.designation,
+                                                refrigerantSource: source.rawValue, at: at) != nil {
+                recorded += 1
+            }
+        }
+        guard recorded > 0 else { return nil }
+        return recorded == 1 ? "Recorded 1 reading on the job." : "Recorded \(recorded) readings on the job."
     }
 
     private func ptLookup(table: SaturationTable, args: [String: Any], site: Site,

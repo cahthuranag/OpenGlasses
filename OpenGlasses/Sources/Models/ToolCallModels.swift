@@ -162,7 +162,8 @@ enum ToolDeclarations {
                                              hipaaMode: Config.hipaaMode,
                                              hipaaDisabled: Config.hipaaDisabledTools,
                                              fieldJobActive: fieldJobActive,
-                                             fieldProfileEnabled: fieldProfileEnabled))
+                                             fieldProfileEnabled: fieldProfileEnabled,
+                                             activeTrades: FieldTradeGate.currentActiveTrades))
         return registry.allTools
             .filter { declarable.contains($0.name) }
             .sorted { $0.name < $1.name }
@@ -177,11 +178,13 @@ enum ToolDeclarations {
 
     /// The tool names that may be declared to a model, sorted: enabled, not disabled by HIPAA
     /// mode, and — during a Field Assist job with the profile on — in the field-mode profile
-    /// (Plan GD3). Pure — the headless test drives it without a registry.
+    /// (Plan GD3) — and not a tool of a trade the technician has not turned on (`FieldTradeGate`).
+    /// Pure — the headless test drives it without a registry.
     static func declarableNames(_ names: [String], isEnabled: (String) -> Bool,
                                 hipaaMode: Bool, hipaaDisabled: Set<String>,
                                 fieldJobActive: Bool = false,
-                                fieldProfileEnabled: Bool = false) -> [String] {
+                                fieldProfileEnabled: Bool = false,
+                                activeTrades: [FieldTrade] = []) -> [String] {
         let allowed = names.filter { name in
             // Plan IU: the lookup tool is declared by the on-demand exposure alone
             // (`exposedDeclarations`), never as part of the full list, so a full-exposure request
@@ -191,7 +194,7 @@ enum ToolDeclarations {
             return !(hipaaMode && hipaaDisabled.contains(name))
         }.sorted()
         return FieldToolProfile.declaredNames(all: allowed, fieldJobActive: fieldJobActive,
-                                              enabled: fieldProfileEnabled)
+                                              enabled: fieldProfileEnabled, activeTrades: activeTrades)
     }
 
     /// Declarations for tools discovered on connected MCP servers, so the model can call them

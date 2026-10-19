@@ -238,7 +238,11 @@ let allowList: [String: String] = [
     "organizationToolDefinitionsMode": "owned:string",
     "accentColorName": "default:string",
     "refrigerationUnits": "default:string",
+    "fieldAssistDefaultTrades": "default:strings",
 ]
+
+/// The trades `fieldAssistDefaultTrades` may name — `FieldTrade`'s raw values.
+let knownTrades: Set<String> = ["refrigeration_hvac", "electrical"]
 
 func typeName(_ value: ProfileValue) -> String {
     switch value {
@@ -332,6 +336,11 @@ func check(_ input: Input) {
         default:
             guard setting.disposition == "default" else { fail("error: \(key) may only be a default") }
             if typeName(setting.value) != parts[1] { fail("error: \(key) takes a \(parts[1])") }
+        }
+    }
+    if case .strings(let trades)? = input.settings?["fieldAssistDefaultTrades"]?.value {
+        for trade in trades where !knownTrades.contains(trade) {
+            fail("error: fieldAssistDefaultTrades names \(trade), which is not a trade (\(knownTrades.sorted().joined(separator: ", ")))")
         }
     }
     if case .string(let key)? = input.settings?["organizationJobSigningKey"]?.value {

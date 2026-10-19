@@ -189,7 +189,8 @@ This is the whole file for the folder above.
     "Remind the technician of the relevant safety steps before any action that opens an electrical panel, the gas train, or the refrigerant circuit."
   ],
   "source_attribution_format": "Source: {files}",
-  "source_attribution_required": true
+  "source_attribution_required": true,
+  "trades": ["refrigeration_hvac"]
 }
 ```
 
@@ -206,6 +207,7 @@ This is the whole file for the folder above.
 | `gating` | Always `{ "iap": "enterprise" }` for a custom vault. |
 | `prompt_rules` | The rules the assistant follows while this vault is active. |
 | `source_attribution_*` | Forces a source line on every factual claim drawn from the core files. |
+| `trades` | Optional. The trades this vault is for: `refrigeration_hvac`, `electrical`. Each trade adds its own tiles to the Field Assist grid on phones whose default vault is this one — `refrigeration_hvac` adds **Read Gauges** and **P-T Lookup**; `electrical` adds none yet. The technician's own choice in Settings › Field Assist › Trade, then the organisation's, comes first; the vault's is used when neither has chosen. A value the app does not know is ignored, not refused, so you can list a trade a newer version will understand. Omit it to leave the choice to the technician. |
 
 > **The importer refuses a manifest whose rules do not mention fabrication and citation.** Your `prompt_rules` must include a rule containing the word *fabricate* and one containing *cite*. The rules above satisfy that; reword them freely as long as those two words survive.
 >

@@ -13,10 +13,13 @@ final class RefrigerantGaugeToolTests: XCTestCase {
 
     private final class StillProvider: FilteredStillProviding {
         var result: FilteredStillResult
+        /// How a phone photo request ended, written to the call's ledger as `CameraService` does.
+        var phoneOutcome: PhonePhotoOutcome?
         private(set) var scopes: [PrivacyFilterScope] = []
         init(_ result: FilteredStillResult) { self.result = result }
         func filteredStill(for scope: PrivacyFilterScope, source: FilteredStillSource) async -> FilteredStillResult {
             scopes.append(scope)
+            if let phoneOutcome { PhoneCaptureScope.ledger?.record(phoneOutcome) }
             return result
         }
     }
@@ -214,6 +217,70 @@ final class RefrigerantGaugeToolTests: XCTestCase {
         XCTAssertTrue(reply.hasPrefix("I couldn't get a picture from the camera."), reply)
         XCTAssertEqual(analyzed, 0, "no model call with an unfiltered frame")
         XCTAssertTrue(recorder.photos.isEmpty)
+    }
+
+    // MARK: - The voice fallback (trade presets)
+
+    private static let bothOffer = "Or tell me the suction and liquid pressures and line temperatures and I'll work it out."
+
+    func testNoPictureKeepsItsLineAndOffersVoice() async throws {
+        provider.result = .unavailable(.noStill)
+        let reply = try await makeTool().execute(args: ["refrigerant": "R-410A"])
+        XCTAssertEqual(reply, "I couldn't get a picture from the camera. Point it at the gauges and try again. " + Self.bothOffer)
+    }
+
+    func testTheOfferNamesWhatTheCalculationNeeds() async throws {
+        provider.result = .unavailable(.filterUnavailable)
+        let superheat = try await makeTool().execute(args: ["calculation": "superheat"])
+        XCTAssertTrue(superheat.hasSuffix("Or tell me the suction pressure and suction line temperature and I'll work it out."), superheat)
+        let subcool = try await makeTool().execute(args: ["calculation": "subcool"])
+        XCTAssertTrue(subcool.hasSuffix("Or tell me the liquid pressure and liquid line temperature and I'll work it out."), subcool)
+    }
+
+    /// The phone camera's 90-second wait ran out: the router's sentence says no photo was taken,
+    /// and the tool's own line and the voice offer follow it.
+    func testAPhonePhotoThatTimedOutOffersVoice() async throws {
+        provider.result = .unavailable(.noStill)
+        provider.phoneOutcome = .timedOut
+        let tool = makeTool()
+        let reply = try await PhoneCaptureScope.run { try await tool.execute(args: ["refrigerant": "R-410A"]) }
+        XCTAssertTrue(reply.hasPrefix(try XCTUnwrap(PhonePhotoOutcome.timedOut.toolResultSentence)), reply)
+        XCTAssertTrue(reply.hasSuffix(Self.bothOffer), reply)
+        XCTAssertEqual(analyzed, 0)
+    }
+
+    func testADeclinedPhonePhotoOffersVoice() async throws {
+        provider.result = .unavailable(.noStill)
+        provider.phoneOutcome = .cancelled
+        let tool = makeTool()
+        let reply = try await PhoneCaptureScope.run { try await tool.execute(args: [:]) }
+        XCTAssertTrue(reply.hasPrefix("The user cancelled the phone camera"), reply)
+        XCTAssertTrue(reply.hasSuffix(Self.bothOffer), reply)
+    }
+
+    func testAnUnusableReadingOffersVoice() async throws {
+        let blank: [String: Any] = ["readings": [] as [Any], "summary": "Nothing legible."]
+        let reply = try await makeTool(response: blank).execute(args: ["refrigerant": "R-410A"])
+        XCTAssertTrue(reply.hasSuffix(Self.bothOffer), reply)
+        XCTAssertFalse(reply.contains("Superheat"), reply)
+
+        let failing = RefrigerantGaugeTool(cameraService: provider, recorder: recorder,
+                                           assess: { _ in throw URLError(.badServerResponse) },
+                                           units: { .imperial }, fieldAssistActive: { true })
+        let failed = try await failing.execute(args: ["refrigerant": "R-410A"])
+        XCTAssertTrue(failed.hasPrefix("The gauge reading didn't come back usable."), failed)
+        XCTAssertTrue(failed.hasSuffix(Self.bothOffer), failed)
+    }
+
+    func testAnAnsweredReadingDoesNotOfferVoice() async throws {
+        let reply = try await makeTool().execute(args: ["calculation": "superheat", "refrigerant": "R-410A"])
+        XCTAssertFalse(reply.contains("Or tell me"), reply)
+    }
+
+    func testTheDescriptionSendsSpokenValuesToDomainCalc() {
+        let description = makeTool().description
+        XCTAssertTrue(description.contains("domain_calc"), description)
+        XCTAssertTrue(description.contains("'superheat' / 'subcool'"), description)
     }
 
     func testFieldAssistOffRefuses() async throws {

@@ -854,7 +854,8 @@ class RealtimeSessionManager: ObservableObject {
                     toolSection += "\n\n" + SystemPromptBuilder.toolLines(descriptions)
                 }
                 // Plan BM P4: domains the model must route through a tool, never self-answer.
-                let routingRules = SystemPromptBuilder.routingRules(toolNames: names)
+                let routingRules = SystemPromptBuilder.routingRules(
+                    toolNames: names, hiddenTrades: FieldTradeGate.promptHiddenTrades)
                 if !routingRules.isEmpty {
                     toolSection += "\n\nMANDATORY ROUTING:\n" + routingRules
                 }

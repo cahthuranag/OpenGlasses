@@ -105,6 +105,9 @@ final class NativeToolRouter: ToolExecutionAuthority {
         return names
     }
 
+    /// The Field Assist trades in force, for the trade gate. A seam so a test states them.
+    var activeTrades: @MainActor () -> [FieldTrade] = { FieldTradeGate.currentActiveTrades }
+
     init(registry: NativeToolRegistry, openClawBridge: OpenClawBridge? = nil) {
         self.registry = registry
         self.openClawBridge = openClawBridge
@@ -467,6 +470,13 @@ final class NativeToolRouter: ToolExecutionAuthority {
     /// exactly what the tool's own inline check returns, so the model hears one sentence whichever
     /// gate caught the call. Recorded as a content-free security event like every other refusal.
     private func featureGateRefusal(_ call: ResolvedToolCall) -> ToolExecutionOutcome? {
+        // A tool of a trade the technician has not turned on is not declared (`FieldTradeGate`);
+        // a call that reaches it anyway — a remembered name, a skill pack — gets the redirect,
+        // never silence and never a guess.
+        if let redirect = FieldTradeGate.redirect(forTool: call.name, activeTrades: activeTrades()) {
+            authorizationEvents.record(call: call, verdict: ToolRefusalReason.featureDisabled.rawValue)
+            return .rejected(reason: redirect)
+        }
         guard let feature = AIFeatureGate.disabledFeature(forTool: call.name) else { return nil }
         authorizationEvents.record(call: call, verdict: ToolRefusalReason.featureDisabled.rawValue)
         return .rejected(reason: AIFeatureGate.disabledMessage(feature))

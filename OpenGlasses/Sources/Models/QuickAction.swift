@@ -112,8 +112,55 @@ struct QuickAction: Codable, Identifiable, Equatable {
             promptText: "Send this job's report to base, and tell me where it went."),
     ]
 
-    /// Everything Field Assist injects, in grid order.
+    /// The general Field Assist tiles — the starter and the job tiles — in grid order. A trade's
+    /// tiles follow them (`fieldAssistActions(trades:)`).
     static var fieldAssistActions: [QuickAction] { [fieldAssist] + fieldAssistJobActions }
+
+    /// What Field Assist injects for these trades: the general tiles, then each trade's, in trade
+    /// order. With no trade it is exactly `fieldAssistActions`.
+    static func fieldAssistActions(trades: [FieldTrade]) -> [QuickAction] {
+        fieldAssistActions + trades.flatMap(tradeActions(for:))
+    }
+
+    /// Every tile Field Assist may inject, whatever the trades. Stripped from any list before
+    /// injection, never saved, and never offered for editing — each one is the app's, not the
+    /// wearer's.
+    static var fieldAssistManagedActions: [QuickAction] {
+        fieldAssistActions + FieldTrade.allCases.flatMap(tradeActions(for:))
+    }
+
+    // MARK: - Trade presets
+
+    /// The tiles a trade adds after the general job tiles. Injected and stripped exactly like
+    /// them, and never persisted.
+    static func tradeActions(for trade: FieldTrade) -> [QuickAction] {
+        switch trade {
+        case .refrigerationHVAC:
+            return refrigerationTradeActions
+        case .electrical:
+            // None yet. Planned: a clause lookup in the loaded codes and standards (Plan IN) and a
+            // test sheet read from a photo of handwritten results (Plan IR). Choosing the trade is
+            // stored now, so those tiles arrive for the technicians who already chose it.
+            return []
+        }
+    }
+
+    /// Refrigeration and HVAC (Plan IS). Read Gauges is a `.prompt`, not a `.photoThenPrompt`:
+    /// the picture belongs to `refrigerant_gauges`, which reads it with `instrument_reading`, files
+    /// it on the job and keeps it for a follow-up answer — a photo sent with the prompt would be
+    /// seen by the model and by nothing that computes. Without glasses the tile opens the phone
+    /// camera first with the gauges' framing hint (`PhoneCapturePolicy.preCaptureTiles`) and the
+    /// tool takes that staged photo; with glasses the tool takes a fresh still itself.
+    ///
+    /// The refrigerant log tile comes with Plan IS P2, which builds the log.
+    static let refrigerationTradeActions: [QuickAction] = [
+        QuickAction(
+            id: "fa-read-gauges", label: "Read Gauges", icon: "gauge.with.dots.needle.67percent", type: .prompt,
+            promptText: "Read the manifold or digital gauge set in front of me with refrigerant_gauges and give me superheat and subcooling. Use the refrigerant from the nameplate or this job's record; if you don't have it, or anything else is missing, ask me. If no picture can be taken, ask me to say the pressures and line temperatures, and work it out with domain_calc."),
+        QuickAction(
+            id: "fa-pt-lookup", label: "P-T Lookup", icon: "thermometer.medium", type: .prompt,
+            promptText: "I need a pressure-temperature lookup. Ask me the refrigerant and either a gauge pressure or a temperature, then answer with domain_calc's pt_lookup. Never assume the refrigerant."),
+    ]
 
     /// Built-in record toggle — merged into existing users' persisted lists like the travel
     /// templates, so the meeting recorder is reachable without reconfiguring the speed dial.

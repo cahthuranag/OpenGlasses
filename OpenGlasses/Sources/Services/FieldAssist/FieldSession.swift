@@ -89,6 +89,11 @@ struct FieldSession: Codable, Identifiable, Equatable {
     var officeSiteRequirements: OfficeSiteRequirements?
     /// What a closed job keeps of what the office sent: counts and dates, never the text.
     var officeContext: OfficeContextSummary?
+    /// The machines the job ahead named, kept only beside the office's history so
+    /// `service_history` can tell "the roof unit" or a model from a serial (Plan HU P2). Not the
+    /// equipment in front of the technician, which is recognised on site as always. Dropped with
+    /// the history; nil on every older session.
+    var officeEquipment: [KnownEquipment]?
     /// A new scope on equipment change prevents carrying work onto another machine (FM).
     var continuityScope: String = "initial"
     var taskEquipmentScopes: [String: String] = [:]
@@ -137,6 +142,11 @@ struct FieldSession: Codable, Identifiable, Equatable {
         }
         officeHistory = nil
         officeSiteRequirements = nil
+        officeEquipment = nil
+        // The brief keeps what the technician heard of the job, but not the office's lines in
+        // it: its history, warranty, flags and site requirements go with the blocks they came
+        // from (Plan HU P1).
+        brief = brief?.withoutOfficeContent()
     }
 
     var hasWorkInCurrentScope: Bool {
@@ -237,7 +247,7 @@ struct FieldSession: Codable, Identifiable, Equatable {
         case jobReference, tasks, partsRequests, identityFields, jobEvidence
         case media, evidenceSelection, signOff, debriefs
         case site, faultReport, brief, jobFile, jobNeeds
-        case officeHistory, officeSiteRequirements, officeContext
+        case officeHistory, officeSiteRequirements, officeContext, officeEquipment
         case continuityScope, taskEquipmentScopes, identityEquipmentScopes, procedureEquipmentScope
         case conversationThreadId, conversationThreadDetached, jobIntake, pendingUnitChange
         case visitedUnits
@@ -293,6 +303,7 @@ extension FieldSession {
         officeHistory = try c.decodeIfPresent(OfficeServiceHistory.self, forKey: .officeHistory)
         officeSiteRequirements = try c.decodeIfPresent(OfficeSiteRequirements.self, forKey: .officeSiteRequirements)
         officeContext = try c.decodeIfPresent(OfficeContextSummary.self, forKey: .officeContext)
+        officeEquipment = try c.decodeIfPresent([KnownEquipment].self, forKey: .officeEquipment)
         continuityScope = try c.decodeIfPresent(String.self, forKey: .continuityScope) ?? "initial"
         taskEquipmentScopes = try c.decodeIfPresent([String: String].self, forKey: .taskEquipmentScopes) ?? [:]
         identityEquipmentScopes = try c.decodeIfPresent([String: String].self, forKey: .identityEquipmentScopes) ?? [:]

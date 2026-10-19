@@ -79,4 +79,9 @@ final class OfflineToolPolicyTests: XCTestCase {
         XCTAssertEqual(offline, ["get_datetime", "set_timer", "calculate"],
                        "without signal the weather tool would only fail")
     }
+
+    /// Plan HU P2 — the office's history rides the job file, so it answers in the van with no signal.
+    func testServiceHistoryWorksOffline() {
+        XCTAssertEqual(OfflineToolPolicy.availability(of: "service_history"), .local)
+    }
 }

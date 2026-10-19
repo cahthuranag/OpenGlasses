@@ -156,16 +156,18 @@ final class LiveJobContractTests: XCTestCase {
     /// The generic declarations both providers start from, built from the real tools rather than
     /// from a registry (which cannot be constructed headlessly).
     private func jobToolDeclarations() -> [[String: Any]] {
-        let tools: [any NativeTool] = [FieldSessionTool(), EquipmentLookupTool()]
+        let tools: [any NativeTool] = [FieldSessionTool(), EquipmentLookupTool(), ServiceHistoryTool()]
         return tools.map {
             ["name": $0.name, "description": $0.description, "parameters": $0.parametersSchema]
         }
     }
 
-    func testTheJobToolSurfaceIsTheTwoToolsTheFlowNeeds() {
-        XCTAssertEqual(LiveJobContract.jobToolNames, ["field_session", "equipment_lookup"])
+    func testTheJobToolSurfaceIsTheToolsTheFlowNeeds() {
+        // `service_history` joined the two the flow needs (Plan HU P2, decided 2026-10-20), so a
+        // live session can answer "has the inducer been replaced before?" too.
+        XCTAssertEqual(LiveJobContract.jobToolNames, ["field_session", "equipment_lookup", "service_history"])
         let shapes = LiveJobContract.jobToolDeclarations(in: jobToolDeclarations())
-        XCTAssertEqual(shapes.map(\.name), ["equipment_lookup", "field_session"])
+        XCTAssertEqual(shapes.map(\.name), ["equipment_lookup", "field_session", "service_history"])
     }
 
     /// `set_job_reference` is an action on `field_session`, not a tool of its own — the plan's

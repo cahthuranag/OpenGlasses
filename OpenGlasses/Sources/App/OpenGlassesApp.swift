@@ -1843,7 +1843,10 @@ class AppState: ObservableObject, AppStateProtocol {
             organisationKey: { Config.organizationJobSigningKey },
             organisationName: { Config.organizationDisplayName },
             fieldAssistActive: { Config.fieldAssistActive },
-            startedJobFiles: { FieldSessionService.shared.history.compactMap(\.jobFile) }))
+            startedJobFiles: { FieldSessionService.shared.history.compactMap(\.jobFile) },
+            speak: { [weak self] line in
+                Task { await self?.speechService.speak(line) }
+            }))
         // The blur the phone-sourced evidence goes through. Wired here rather than constructed
         // with the service, because `privacyFilter` is built alongside it and a filter that is
         // merely absent would fail every attachment closed.

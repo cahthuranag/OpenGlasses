@@ -39,6 +39,9 @@ enum PromptInjectionPolicy {
         // endpoint we only point at. They are a *report* of what something else did — data, with
         // no more authority than a web page (Plan FE P0).
         "code_agent",
+        // The office's service history (Plan HU): signed by the organisation, but written from
+        // its field service records — other people's notes about other visits. Data, never orders.
+        "service_history",
     ]
 
     /// Whether a tool's output must be treated as untrusted data. Native tools not in the

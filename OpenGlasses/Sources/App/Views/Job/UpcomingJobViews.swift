@@ -27,6 +27,7 @@ struct UpcomingJobView: View {
                     detailsSection(job)
                     JobNeedsSection(needs: job.needs)
                     actionsSection(job)
+                    officeFlagsSection(job)
                     if let brief = job.brief {
                         ForEach(brief.sections, id: \.kind) { section in
                             briefSection(section)
@@ -134,6 +135,36 @@ struct UpcomingJobView: View {
         }
     }
 
+    /// The office's maintenance flags, above the brief and before it has been asked for: the
+    /// brief's own copy when there is one, otherwise worded straight from the job (Plan HU §4).
+    @ViewBuilder
+    private func officeFlagsSection(_ job: UpcomingJob) -> some View {
+        let flags = job.brief?.flags ?? OfficeBriefText.flagItems(job.officeHistory, equipment: job.equipment)
+        if !flags.isEmpty {
+            Section {
+                ForEach(Array(flags.enumerated()), id: \.offset) { _, item in
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.text).font(.callout)
+                            Text(item.citation)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: item.severity == .warning ? OfficeFlagMark.symbol : "flag")
+                            .foregroundStyle(item.severity == .warning ? OGTheme.warnLabel : Color.secondary)
+                            .accessibilityLabel(item.severity == .warning ? "Warning" : "For information")
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Flagged by the office")
+            } footer: {
+                Text("The office's flags, with its evidence. Not a diagnosis, and never on the work order.")
+            }
+        }
+    }
+
     private func briefSection(_ section: JobBrief.Section) -> some View {
         Section {
             if section.isEmpty {
@@ -143,7 +174,14 @@ struct UpcomingJobView: View {
             } else {
                 ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(item.text).font(.callout)
+                        if item.isOfficeWarning {
+                            // A site requirement the office marked as a warning.
+                            Label(item.text, systemImage: "exclamationmark.triangle")
+                                .font(.callout)
+                                .foregroundStyle(OGTheme.warnLabel)
+                        } else {
+                            Text(item.text).font(.callout)
+                        }
                         Text(item.citation)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -181,7 +219,9 @@ struct UpcomingJobView: View {
     private func start(_ job: UpcomingJob) {
         do {
             let session = try flow.startUpcomingJob(id: job.id)
-            Task { await appState.speechService.speak(GuidedJobFlow.startedLine(for: job)) }
+            // The started line, then the office's warnings — said this once (Plan HU P3).
+            let spoken = flow.startLines(for: job).joined(separator: " ")
+            Task { await appState.speechService.speak(spoken) }
             onStarted(session)
         } catch {
             problem = error.localizedDescription

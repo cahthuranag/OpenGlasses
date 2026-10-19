@@ -83,6 +83,9 @@ struct JobList: Equatable {
         /// order of to-dos (`JobDay.Todo.Kind`).
         enum Kind: Int, Comparable, CaseIterable {
             case overdue
+            /// The office flagged one of the job's units as a warning (Plan HU). Not owed work:
+            /// it is there to be seen before the job is opened.
+            case officeFlag
             case debrief
             case reportFailed
             case reportStaged
@@ -113,6 +116,7 @@ struct JobList: Equatable {
             var symbol: String {
                 switch self {
                 case .overdue: return "clock.badge.exclamationmark"
+                case .officeFlag: return OfficeFlagMark.symbol
                 case .debrief: return JobDay.Todo.Kind.debrief.symbol
                 case .reportFailed: return JobDay.Todo.Kind.reportFailed.symbol
                 case .reportStaged: return JobDay.Todo.Kind.reportStaged.symbol
@@ -127,7 +131,9 @@ struct JobList: Equatable {
 
             /// Late, a send that failed, or a recording stuck on the phone — the ones a technician
             /// must not read past.
-            var isWarning: Bool { self == .overdue || self == .reportFailed || self == .recordingAttention }
+            var isWarning: Bool {
+                self == .overdue || self == .officeFlag || self == .reportFailed || self == .recordingAttention
+            }
         }
 
         let kind: Kind
@@ -143,9 +149,15 @@ struct JobList: Equatable {
             return Badge(kind: .officeUpdate, label: label(.officeUpdate, parts: count))
         }
 
+        /// The mark for a job ahead the office flagged as a warning. Nil when it flagged none.
+        static func officeFlag(_ mark: OfficeFlagMark?) -> Badge? {
+            mark.map { Badge(kind: .officeFlag, label: $0.label) }
+        }
+
         static func label(_ kind: Kind, parts: Int = 1) -> String {
             switch kind {
             case .overdue: return "Overdue"
+            case .officeFlag: return OfficeFlagMark(warnings: parts).label
             case .debrief: return "Debrief not saved"
             case .reportFailed: return "Report didn't send"
             case .reportStaged: return "Report ready to send"
@@ -378,6 +390,7 @@ enum JobListComposer {
             note: note, noteIsWarning: note != nil && job.provenance?.signature != .signed,
             status: status,
             badges: (status == .overdue ? [JobList.Badge(kind: .overdue, label: JobList.Badge.label(.overdue))] : [])
+                + (JobList.Badge.officeFlag(OfficeFlagMark.mark(for: job)).map { [$0] } ?? [])
                 + (job.provenance?.identity.flatMap {
                     JobList.Badge.officeUpdate(count: inputs.newUpdates[$0.jobID] ?? 0)
                 }.map { [$0] } ?? []))

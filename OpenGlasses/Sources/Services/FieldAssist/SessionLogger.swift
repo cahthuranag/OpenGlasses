@@ -164,6 +164,11 @@ final class SessionLogger {
             /// a job file — carrying its site, fault report and brief. When it came from a file,
             /// the payload says which file, whether it was signed and by whom, and when it arrived.
             case jobAheadStarted = "job_ahead_started"
+            /// The office's `warning` flags were said as the job started (Plan HU P3). Counts
+            /// only; the flags' text is never logged. Said once: a resumed job reads this.
+            case officeFlagsSpoken = "office_flags_spoken"
+            /// …and its `warning` site requirements, said in full before the flags. Counts only.
+            case officeSiteRequirementsSpoken = "office_site_requirements_spoken"
             /// The job report left by a channel the technician chose (Plan EM P2).
             case reportSent = "report_sent"
             /// …or the composer was dismissed, and the record is still in the queue.

@@ -237,7 +237,7 @@ enum AIFeature: String, CaseIterable {
                                                 isEnabled: { Config.fieldAssistToolsEnabled },
                                                 setEnabled: { Config.fieldAssistToolsEnabled = $0 },
                                                 preexisting: false),
-                          toolNames: ["field_session"],
+                          toolNames: ["field_session", "service_history"],
                           stores: [.fieldSessionLogs],
                           dataRetainedWhenDisabled: "Session logs stay: they are the engineer's own compliance record, and a warranty or refrigerant log that vanished with a settings toggle would be worse than one that stayed.",
                           erasure: .unavailable("a session log is the engineer's compliance record"))

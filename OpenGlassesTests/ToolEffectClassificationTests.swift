@@ -399,4 +399,9 @@ final class ToolEffectClassificationTests: XCTestCase {
         registry.register(OpenClawSkillsTool())
         return registry
     }
+
+    /// Plan HU P2 — `service_history` reads what the job carried and writes or sends nothing.
+    func testServiceHistoryIsDeclaredReadOnly() {
+        XCTAssertEqual(ServiceHistoryTool().executionSemantics.effect, .readOnly)
+    }
 }

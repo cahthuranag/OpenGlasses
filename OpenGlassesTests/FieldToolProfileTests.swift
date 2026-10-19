@@ -101,4 +101,11 @@ final class FieldToolProfileTests: XCTestCase {
             .compactMap { $0["name"] as? String }
         XCTAssertEqual(everything, registry.toolNames)
     }
+
+    /// Plan HU P2 — "has the inducer been replaced before?" is a job question, so the office's
+    /// service history is offered during a job.
+    func testServiceHistoryIsOfferedDuringAJob() {
+        XCTAssertTrue(FieldToolProfile.declaredNames(all: ["service_history", "spotify"], fieldJobActive: true,
+                                                     enabled: true).contains("service_history"))
+    }
 }

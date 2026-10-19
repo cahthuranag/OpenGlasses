@@ -1,6 +1,17 @@
 # Plan HT — External Job References (a job from another system keeps its identity in and out)
 
-**Status:** 📝 Drafted 2026-10-08 — nothing implemented. The phone half of connecting Avenkin
+**Status:** 🚧 P0 built 2026-10-20 — job-file format 3 with Plan HU P0 in one bump: contract §10,
+`ExternalJobReference` decoded from the validated job and carried as `JobFileProvenance.external`
+(absent, and absent from the JSON, for every other file), the precedence rule in
+`JobFile.upcomingJob` (`external.job_number` wins; a differing `job_reference` is kept as
+`UpcomingJob.officeReference` and shown on the review as "Office reference"), `JobFileValidator`
+at format 3 under its own signature domain `Avenkin.JobFile.v3` (pinned), the Go `jobfile`
+package (`SealVersion`/`SignVersion`/`OpenVersion`, format-3 rules) and the signed fixture
+`job-file-v3-external.ogjob`; formats 1 and 2 byte for byte unchanged; plus the format-3
+standardisation fields (amendment below). P1 display and P2 log/echo assertions owed; device run
+owed. **Decided 2026-10-20:** format 3, not an amended format 2 (open question 1); a separate
+signature domain (2); no external identifier shown on the phone (3); no copy in the office-report
+envelope (4). Drafted 2026-10-08. The phone half of connecting Avenkin
 Office to a field service management system (FSM). The connector itself, ServiceTitan first, is
 office plan FX21 (private); Jobber is FX22. This plan is generic: the phone gains no FSM
 credentials, no FSM-specific code and no FSM name of its own.
@@ -287,3 +298,38 @@ the office, and the unsigned rule. §9.1 is updated to say format 3 was made und
    id when the number is ambiguous. The plan shows none; a long-press "copy reference" is possible.
 4. **Should the office-report envelope carry the block too?** It is closed and treats the record
    as opaque; adding it duplicates the record. Not proposed.
+
+---
+
+## Amendment 2026-10-20: format-3 standardisation fields
+
+From the office's connector survey, which compared the field service systems an office would take
+jobs from and fixed the boundary format 3 has to carry for all of them. Every format-3 member has
+to land before any released phone reads format 3 (or the next is format 4), so these landed with
+HT P0 and HU P0 in one format-3 bump, decided 2026-10-20 before any release:
+
+1. **`equipment[].unit_key`** (format 3 only): `[a-z0-9_-]{1,32}`, unique within the job, never
+   equal to any `serial` in the job (compared without case). The office's own handle for a
+   machine with no serial; never another system's identifier, never shown.
+2. **`external.equipment_ids`** is keyed by the machine's `unit_key` when it has one, else by its
+   `serial` (was: "every key must be a `serial`"). A machine with neither has no entry.
+3. **`equipment[].make`** (≤ 64) and **`label`** (≤ 80, where the machine sits at the site), plain
+   text. Carried onto `KnownEquipment`; shown from HT P1.
+4. **No other new `external` member.** Tenants, hosts, schedule identifiers and links stay at the
+   office. `appointment_id` is documented as the visit or booking the job file is for.
+5. **`history.units[]`** is keyed by exactly one of `serial` or `unit_key`, which must name a
+   machine on the job, once (answers HU open question 3: never by model).
+6. **`history.units[].installed`**: an optional ISO 8601 date, present only when the office's
+   records hold the installation date.
+7. **Flag kind `maintenance_due`**, with `basis` (`schedule` or `rule`, absent = `rule`), an
+   optional `due` (ISO date) and an optional `schedule` (≤ 80, the service's plain-text name).
+   `evidence` may be empty only when `basis` is `schedule`; a rule's flag needs at least one job.
+8. **A schedule's maintenance flag may omit `unit`**, meaning the whole site; such flags count in
+   the twelve, not in a unit's three.
+
+Judgement calls made in the build, all stricter-or-equal and in the contract (§10): `basis:
+schedule` is allowed on `overdue_maintenance` as well as `maintenance_due` (the survey's schedule
+rules raise both, so a site-wide overdue routine needs it too) and on no other kind; `due` is
+allowed on those two kinds only and is optional even on a schedule's flag; `schedule` only with
+`basis: schedule`; visits must be newest first (a later visit after an earlier one is refused,
+the phone never reorders); a `unit_key` may not equal any serial in any letter case.

@@ -1,6 +1,21 @@
 # Plan HU — Service History on Request, and Maintenance Flags (what the office knows about this unit reaches the technician)
 
-**Status:** 📝 Drafted 2026-10-08 — nothing implemented. Phone half only: the office compiles the
+**Status:** 🚧 P0 built 2026-10-20 — with Plan HT P0, in job-file format 3 (contract §10): the
+`history` member as `OfficeServiceHistory` and the amendment's `site_requirements`
+(`OfficeSiteRequirements`) and per-unit `warranty`, validated with the drafted bounds (10 visits a
+unit, 2 KiB a visit, 3 flags a unit and 12 in all, 24 KiB; 8 requirements and 4 KiB), decoded onto
+`UpcomingJob` and copied to `FieldSession` by `applyJobAhead`, which logs counts only; dropped
+when the job closes, leaving `FieldSession.officeContext` (counts and as-of dates, never text);
+erased from the open job when the phone leaves the organisation; the Go package and the signed
+fixture `job-file-v3-history.ogjob`; plus the format-3 standardisation fields (amendment below).
+P1–P3 not started; device run owed. **Decided 2026-10-20:** the bounds as drafted (open question
+1); clear on close, the finished job keeping only its summary lines (2); history keyed by
+`unit_key` when there is no serial, never by model (3); a removal from the organisation erases
+office-supplied history on jobs ahead — the jobs ahead already go with the organisation's
+content, and the open job's history now goes with them (6); warranty internal in v1 (7). Decided,
+deferred to P1: the Jobs-list flag mark (4), `service_history` added to
+`LiveJobContract.jobToolNames` (5), and re-reading a changed `warning` on an update (8).
+Drafted 2026-10-08. Phone half only: the office compiles the
 history from its field service management system (FSM) and computes the flags with a
 deterministic rule engine in office plan FX21 (private); the phone reads, briefs and answers from
 what the signed job file carries, offline, and computes nothing.
@@ -393,3 +408,38 @@ requirement or warranty string on the work order, summary, sign-off, record or e
    work order, and only that status?
 8. **Requirements that change on the day.** A Plan HN job update can carry a fresh
    `site_requirements` block; is a changed `warning` item re-read on the update, or only shown?
+
+---
+
+## Amendment 2026-10-20: format-3 standardisation fields
+
+From the office's connector survey, which compared the field service systems an office would take
+jobs from and fixed the boundary format 3 has to carry for all of them. Every format-3 member has
+to land before any released phone reads format 3 (or the next is format 4), so these landed with
+HT P0 and HU P0 in one format-3 bump, decided 2026-10-20 before any release:
+
+1. **`equipment[].unit_key`** (format 3 only): `[a-z0-9_-]{1,32}`, unique within the job, never
+   equal to any `serial` in the job (compared without case). The office's own handle for a
+   machine with no serial; never another system's identifier, never shown.
+2. **`external.equipment_ids`** is keyed by the machine's `unit_key` when it has one, else by its
+   `serial` (was: "every key must be a `serial`"). A machine with neither has no entry.
+3. **`equipment[].make`** (≤ 64) and **`label`** (≤ 80, where the machine sits at the site), plain
+   text. Carried onto `KnownEquipment`; shown from HT P1.
+4. **No other new `external` member.** Tenants, hosts, schedule identifiers and links stay at the
+   office. `appointment_id` is documented as the visit or booking the job file is for.
+5. **`history.units[]`** is keyed by exactly one of `serial` or `unit_key`, which must name a
+   machine on the job, once (answers HU open question 3: never by model).
+6. **`history.units[].installed`**: an optional ISO 8601 date, present only when the office's
+   records hold the installation date.
+7. **Flag kind `maintenance_due`**, with `basis` (`schedule` or `rule`, absent = `rule`), an
+   optional `due` (ISO date) and an optional `schedule` (≤ 80, the service's plain-text name).
+   `evidence` may be empty only when `basis` is `schedule`; a rule's flag needs at least one job.
+8. **A schedule's maintenance flag may omit `unit`**, meaning the whole site; such flags count in
+   the twelve, not in a unit's three.
+
+Judgement calls made in the build, all stricter-or-equal and in the contract (§10): `basis:
+schedule` is allowed on `overdue_maintenance` as well as `maintenance_due` (the survey's schedule
+rules raise both, so a site-wide overdue routine needs it too) and on no other kind; `due` is
+allowed on those two kinds only and is optional even on a schedule's flag; `schedule` only with
+`basis: schedule`; visits must be newest first (a later visit after an earlier one is refused,
+the phone never reorders); a `unit_key` may not equal any serial in any letter case.

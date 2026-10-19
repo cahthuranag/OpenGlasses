@@ -77,6 +77,24 @@ enum SystemPromptBuilder {
         """
     }
 
+    /// `appGuide`, written short for Apple's on-device model, whose 4,096-token window is shared
+    /// by its instructions, its tools and the answer. The same paths and the same rules — settings
+    /// live in the app, the model cannot change them, locked listening is restarted by opening the
+    /// app, a tool's result is answered in the same reply — in a third of the length.
+    static func onDeviceAppGuide(appName: String) -> String {
+        func title(_ id: SettingsCategoryID) -> String { SettingsCatalog.category(id).title }
+        return """
+        THIS APP: You run inside the \(appName) app on the user's iPhone. Your settings are in the app's own \
+        Settings tab, never in the iPhone's Settings app, the glasses' app or Siri: your voice under \
+        \(title(.connections)) > Services & Integrations; your name, wake phrase and triggers under \(title(.voice)); \
+        the AI model and system prompt under \(title(.intelligence)); tools under \(title(.tools)); glasses, \
+        microphone and privacy under \(title(.devices)); theme and languages under \(title(.lookAndFeel)). You \
+        cannot change settings yourself. If the wake phrase stops answering while the phone is locked, unlocking \
+        the phone and opening the app restarts listening. When a tool returns, answer with its result in that \
+        same reply.
+        """
+    }
+
     /// The block a prompt carries when a turn's tool definitions are on demand (Plan IU): how to
     /// get a definition, then a one-line summary of each native tool outside the core set and the
     /// MCP tools by name. It is built from what is *available*, never from what has been looked up,

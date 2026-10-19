@@ -1,6 +1,22 @@
 # Plan JD — Apple Intelligence Gets the App's Tools
 
-**Status:** 🚧 P0 built 2026-10-18 (this PR) · device pass owed · P1 planned
+**Status:** 🚧 P0 built 2026-10-18 · window follow-up built 2026-10-20 · device pass owed · P1 planned
+
+**Window follow-up (2026-10-20).** A field report showed "open a new job" on the on-device model
+overflow its window on a brand-new conversation, retry three times (re-running `field_session`
+each time) and be reported as a max-tokens stop. Now: the on-device path has its own instructions
+under 4,800 characters (`AppleOnDeviceInstructions`: the persona without its camera section,
+condensed only when it does not fit; authored short app guide and safety policy; a compact job
+summary instead of the vault and manual passages; memory clipped; date, time and location kept),
+with its blocks recorded for the report; a Field Assist job turn (open, paused or starting) is
+handed to the first usable cloud or local model with one spoken sentence per process
+(`OnDeviceJobRoutePolicy`), staying on the device only when nothing else is configured or the
+offline hand-off chose it; `manual_lookup` is no longer offered on this path; the carry starts at
+what the history holds, so an empty conversation fails at once; a rebuilt session replays the
+turn's tool results (`AppleToolResultCache`); the failure is `LLMError.contextOverflow`
+(`contextOverflow` in the report, cascading like `outputTruncated` until a tool has run); and the
+report's phone line reads "AI model set now:". Device pass for the routed and the compact turns
+owed.
 
 ## Problem
 

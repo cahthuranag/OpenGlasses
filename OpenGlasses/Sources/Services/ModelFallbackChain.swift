@@ -100,6 +100,11 @@ enum ModelFallbackChain {
                 // The allowance went on thinking. A model that thinks less, or not at all, may
                 // well fit the same answer.
                 return .retryOtherModel
+            case .contextOverflow(_, let toolsRan):
+                // As `outputTruncated`: a model with a bigger window may well fit the turn — but
+                // only from the start while nothing has run, the rule `CapacityError` follows.
+                // Restarting a turn whose tool already ran elsewhere could repeat it.
+                return toolsRan ? .terminalForTurn : .retryOtherModel
             case .apiError(_, let status, _, let rejection):
                 // "Malformed — fails everywhere" stopped being true of every 400 once a request
                 // one model accepts is one its successor refuses (Plan IE P0). A refusal that

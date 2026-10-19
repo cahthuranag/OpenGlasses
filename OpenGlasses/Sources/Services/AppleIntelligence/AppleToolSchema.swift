@@ -218,6 +218,14 @@ enum AppleSessionPolicy {
     /// Turns (user and assistant entries) carried into a fresh session.
     static let carriedEntryLimit = 12
 
+    /// The carry a turn starts with: what was asked for, but never more than the history holds.
+    /// A brand-new conversation starts at 0, so a window that is full on the first attempt fails at
+    /// once instead of "shortening" a history that was never there — a field report showed three
+    /// rebuilt sessions (12, 4, 0) for a turn with nothing carried, each one re-running its tools.
+    static func initialCarry(requested: Int, available: Int) -> Int {
+        max(0, min(requested, available))
+    }
+
     /// The next, smaller carry after the model refused the current one for size. `nil` when there
     /// is nothing left to drop: the prompt alone does not fit, which no retry can fix.
     static func carryAfterOverflow(_ current: Int) -> Int? {
@@ -226,5 +234,11 @@ enum AppleSessionPolicy {
         case 1...4: return 0
         default: return 4
         }
+    }
+
+    /// `carryAfterOverflow`, for a history of `available` entries: a shorter carry that would still
+    /// hold every entry builds the same transcript, so it is skipped rather than retried.
+    static func carryAfterOverflow(_ current: Int, available: Int) -> Int? {
+        carryAfterOverflow(initialCarry(requested: current, available: available))
     }
 }

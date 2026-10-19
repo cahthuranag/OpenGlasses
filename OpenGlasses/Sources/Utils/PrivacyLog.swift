@@ -1586,6 +1586,13 @@ enum PrivacyLog {
         // Plan FG P1a — an account route's request was refused with a 401 and a refresh was
         // forced; `success` says whether a new token came back for the one retry. Provider only.
         case authRefreshRetry
+        // A Field Assist job turn on Apple's on-device model: handed to another configuration
+        // (`handOff`, with its provider, model id and fingerprinted name, `success` = the sentence
+        // was said) or kept on the device (`stayOnDevice`, reason `offlineHandoff`/`noAlternative`).
+        case onDeviceJobRouted
+        // An on-device session rebuilt after a full window asked for a tool it had already run;
+        // the first result was replayed instead. Tool name only.
+        case toolResultReplayed
     }
 
     /// How an utterance was classified. The utterance itself, and the classifier's free-form

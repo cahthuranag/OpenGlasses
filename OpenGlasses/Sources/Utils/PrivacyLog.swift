@@ -2135,6 +2135,9 @@ enum PrivacyLog {
         case voiceCommandHandled, voiceCommandDemoted, intentIgnored
         case turnClassified, directToolAnswered, directToolFellBack, turnCompleted
         case modeSwitchRedialed, modeSwitchRedialFailed
+        /// Plan HY P0: a mode switch left the conversation's handover block on the target session.
+        /// `characters` is the block's length; the turns themselves never appear.
+        case modeSwitchSeeded
         case fieldSessionStarted, fieldSessionEnded
         case operationSettledLate, chatReadbackUnconfigured, powerPosture
         case quickDisconnect

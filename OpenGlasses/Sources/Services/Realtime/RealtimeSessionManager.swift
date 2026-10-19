@@ -89,6 +89,13 @@ class RealtimeSessionManager: ObservableObject {
     /// the phone left off. Consumed by that start.
     var pendingResumeContext: String?
 
+    /// Plan HY P0 — the turns a mode switch carries into the next session, read while this one is
+    /// still up: `stopSession()` resets the record, so the switch reads it before its teardown.
+    /// The same bounded window a reconnect handover uses, in-flight turns included.
+    var handoverTurns: [LiveTurnRecord] {
+        conversationRecorder.recentTurns(LiveContextHandover.maxTurns)
+    }
+
     // Camera frame source — set by AppState to the existing CameraService's periodic captures
     var onRequestVideoFrame: (() async -> UIImage?)?
 

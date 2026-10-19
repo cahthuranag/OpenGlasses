@@ -55,6 +55,75 @@ enum LiveCoachDomain: String, CaseIterable {
     }
 }
 
+/// Plan HY P2 — what Live Coach may send, and when: a change gate and a call budget, in that order.
+///
+/// Each tick's frame used to go to a cloud model whether or not the view had changed, up to 7,200
+/// times in a session. Two rules bound that:
+///
+/// * **Unchanged is not re-sent.** The frame runs through ``FrameGate`` (Plan AT's content gate)
+///   with a ``heartbeat`` of 30 s: a view that has not changed goes again only when the heartbeat
+///   comes round, so a still scene costs one call every 30 s rather than one every tick.
+/// * **Only a forwarded frame spends.** The ``CallBudget`` is charged for a frame the gate lets
+///   through, never for one it drops. When the window is spent the coach says so, once
+///   (``spentLine``), and checks in less often: ticks are skipped until the window frees a call.
+///   It never stops on its own account — the session's own `maxDuration` is still the only end.
+///
+/// The budget is consulted *before* the gate so a refused tick never captures a frame and never
+/// moves the gate's "last sent" mark — a frame the budget refused was not sent, and must not stand
+/// in for one when the next distinct view arrives.
+///
+/// Pure value type with time passed in.
+struct LiveCoachPacer {
+
+    /// The heartbeat for an unchanged view.
+    static let heartbeat: TimeInterval = 30
+
+    /// Said once a session, when the budget is first spent.
+    static let spentLine = "I've given a lot of advice this hour; I'll check in less often."
+
+    enum BudgetCheck: Equatable {
+        /// There is room: capture a frame and ask the gate.
+        case open
+        /// The window is spent. `announce` is true the first time in a session.
+        case spent(announce: Bool)
+    }
+
+    enum FrameDecision: Equatable {
+        /// Send it; one call has been charged.
+        case send
+        /// The view has not changed since the last send and the heartbeat has not come round.
+        case unchanged
+    }
+
+    private(set) var gate = FrameGate(heartbeat: LiveCoachPacer.heartbeat)
+    private(set) var budget: CallBudget
+    private(set) var spentAnnounced = false
+
+    init(budget: CallBudget = CallBudget()) {
+        self.budget = budget
+    }
+
+    /// Step one, before any capture: is there a call to spend?
+    mutating func checkBudget(now: Date) -> BudgetCheck {
+        guard budget.remaining(now: now) == 0 else { return .open }
+        defer { spentAnnounced = true }
+        return .spent(announce: !spentAnnounced)
+    }
+
+    /// Step two, with the captured frame's perceptual hash: send it or not. A frame whose hash
+    /// could not be computed is sent — an unreadable frame is no evidence of an unchanged view.
+    mutating func consider(hash: UInt64?, now: Date) -> FrameDecision {
+        if let hash, gate.evaluate(hash: hash, now: now.timeIntervalSinceReferenceDate) == .drop {
+            return .unchanged
+        }
+        _ = budget.admit(now: now)
+        return .send
+    }
+
+    /// When the coach will next be able to make a call.
+    func nextCallAt(now: Date) -> Date { budget.nextAvailable(now: now) }
+}
+
 /// Drives the Live Coach (Plan C): a periodic frame loop that sends the glasses view to the LLM with
 /// a per-domain prompt and speaks concise, deduplicated feedback. Deps are configured once by
 /// AppState; the `live_coach` tool only starts/stops sessions.
@@ -84,6 +153,8 @@ final class LiveCoachService: ObservableObject {
     private var maxWords = 20
     private var maxDuration: TimeInterval = 1800
     private var customPrompt: String?
+    /// Plan HY P2 — the change gate and the call budget. Fresh per session.
+    private(set) var pacer = LiveCoachPacer()
 
     private init() {}
 
@@ -109,6 +180,7 @@ final class LiveCoachService: ObservableObject {
         self.maxDuration = min(max(maxDurationMinutes, 1), 120) * 60
         self.lastAdvice = nil
         self.startedAt = Date()
+        pacer = LiveCoachPacer()
         throttle.reset()   // first tick of a new session runs immediately
         isActive = true
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
@@ -131,7 +203,9 @@ final class LiveCoachService: ObservableObject {
     func statusSummary() -> String {
         guard isActive else { return "Live Coach is not running." }
         let elapsed = startedAt.map { Int(Date().timeIntervalSince($0) / 60) } ?? 0
-        return "Live Coach is running (\(domain.rawValue), ~\(elapsed) min). Last: \(lastAdvice ?? "—")"
+        let pacing = pacer.budget.remaining(now: Date()) == 0
+            ? " Checking in less often: the hour's advice budget is spent." : ""
+        return "Live Coach is running (\(domain.rawValue), ~\(elapsed) min). Last: \(lastAdvice ?? "—")\(pacing)"
     }
 
     // MARK: - Loop
@@ -159,7 +233,21 @@ final class LiveCoachService: ObservableObject {
         analyzing = true
         defer { analyzing = false }
 
-        guard let imageData = await currentFrame(camera) else { return }
+        // Plan HY P2: within the hour's budget, and only for a view that changed (or whose
+        // heartbeat came round). A spent budget is said once, then the coach simply waits for the
+        // window to free a call — it checks in less often, it does not go quiet without a word.
+        let now = Date()
+        if case .spent(let announce) = pacer.checkBudget(now: now) {
+            if announce {
+                PrivacyLog.vision(.liveCoach, .budgetSpent, count: pacer.budget.limit)
+                await tts.speak(LiveCoachPacer.spentLine, urgency: .low)
+            }
+            return
+        }
+        guard let frame = await currentCoachingFrame(camera) else { return }
+        guard isActive else { return }
+        guard pacer.consider(hash: frame.hash, now: Date()) == .send else { return }
+        let imageData = frame.jpeg
         let systemPrompt = domain.systemPrompt(maxWords: maxWords, customPrompt: customPrompt)
         guard let raw = await llm.analyzeFrame(systemPrompt: systemPrompt, userText: domain.userText, imageData: imageData, maxTokens: 80) else {
             return
@@ -181,7 +269,16 @@ final class LiveCoachService: ObservableObject {
     /// Internal, not private, so the privacy routing can be driven headless — the tick above
     /// needs a live LLM and TTS, this needs neither.
     func currentFrame(_ camera: any FilteredStillProviding) async -> Data? {
-        await camera.filteredStill(for: .assistiveGuidance).jpegData(compressionQuality: 0.7)
+        await currentCoachingFrame(camera)?.jpeg
+    }
+
+    /// The tick's frame: the filtered still's JPEG, and its perceptual hash for the change gate
+    /// (Plan HY P2). The one still read this service makes — hashing the filtered pixels, never
+    /// raw ones, so the gate sees exactly what would be sent.
+    func currentCoachingFrame(_ camera: any FilteredStillProviding) async -> (jpeg: Data, hash: UInt64?)? {
+        let still = await camera.filteredStill(for: .assistiveGuidance)
+        guard let jpeg = still.jpegData(compressionQuality: 0.7) else { return nil }
+        return (jpeg, still.image.flatMap(PerceptualHash.dhash))
     }
 
     // MARK: - Dedup

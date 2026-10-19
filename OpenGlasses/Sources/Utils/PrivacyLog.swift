@@ -764,6 +764,9 @@ enum PrivacyLog {
         // Navigation assist: a hazard callout dropped because its frame was older than the limit
         // when the reply came back. Carries the frame's age and the session's drop count only.
         case adviceExpired
+        // Plan HY P2: Live Coach spent its rolling hour's call budget and is checking in less
+        // often. `count` is the budget, never anything the coach said.
+        case budgetSpent
     }
 
     /// `posture` is the power policy's own enum, `percent` is how much of the frame a detected

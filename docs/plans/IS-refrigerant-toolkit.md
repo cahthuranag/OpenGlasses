@@ -26,7 +26,20 @@ unspecified) converted through the P0 table on that line's curve, held in kelvin
 NZ kPa, °C, kg; CA psig, °F, kg; elsewhere psig, °F, lb), and is an organisation-profile starting value
 (`refrigerationUnits`, `"kPa,C,kg"`). `organizationJurisdiction` is deferred to P2, where it first decides something.
 `domain_calc` keeps its own unit rule (psig answers in °F, kPa/bar in °C). Owed: a device pass reading a real manifold
-and digital set; a catalog sync for the new strings. P2–P6 not started. Drafted 2026-10-17, P4–P6 added the same day. The EPA 608 reference was corrected
+and digital set; a catalog sync for the new strings. **Trade presets 2026-10-19:** refrigeration tiles for the gauge
+reader and P-T lookup — a `FieldTrade` (`refrigeration_hvac`, `electrical`) chosen by the technician in Settings ›
+Field Assist › Trade, else the organisation profile's `fieldAssistDefaultTrades`, else the default vault manifest's
+optional `trades`, else none; the refrigeration preset adds Read Gauges (`refrigerant_gauges`, phone camera first
+without glasses) and P-T Lookup (`domain_calc` `pt_lookup`) after the job tiles, injected and never persisted; the
+electrical preset has no tiles yet (Plans IN and IR); the refrigerant log tile waits for P2. The trade also gates
+(`FieldTradeGate`): once a trade is active, another trade's tools are not offered to the model — `refrigerant_gauges`
+and `domain_calc` (all three of its operations are refrigeration) are tagged refrigeration — the prompt's routing
+rules and the router answer a refrigeration request with a redirect to the setting, and Settings › Field Assist shows
+Refrigeration Units only with Refrigeration on; no trade set, or an empty choice, leaves every tool and section as it
+was, and the general job tools and tiles are never gated. A voice fallback rides
+with it: the gauge reader's no-picture and unusable-reading lines offer to take the values by voice, and a spoken
+superheat or subcool in `domain_calc` gets the same per-refrigerant band check and is recorded on the open job.
+P2–P6 not started. Drafted 2026-10-17, P4–P6 added the same day. The EPA 608 reference was corrected
 separately, in [#753](https://github.com/straff2002/OpenGlasses/pull/753). **Amended 2026-10-19
 ([below](#amendment-2026-10-19-canada-australia-and-new-zealand-first)):** Canada, Australia and New Zealand rules come
 first and the US EPA 608 flags become a deferred phase (P2-US); metric units are first-class throughout.

@@ -79,6 +79,11 @@ enum OutboundFrameConsumer: String, CaseIterable {
     case structuredVisionAssessment
     /// The HECA safety assessment, same shape, on a job site full of other people.
     case safetyAssessment
+    /// `refrigerant_gauges` (Plan IS P1): one still of a manifold or gauge set, read by the
+    /// instrument-reading schema on a cloud model, and the same filtered bytes filed on the job as
+    /// its photo. Requested under `.visionAssessment` because the schema assessment is the egress
+    /// it exists for; the job copy is the identical, already-filtered still, never a second read.
+    case refrigerantGaugeReading
     /// Assistive mode's continuous guidance loop.
     case assistiveGuidanceLoop
     /// Navigation assist's hazard/landmark loop.
@@ -289,6 +294,7 @@ enum OutboundFrameConsumer: String, CaseIterable {
         case .jobPhoneEvidence: return "JobPhotoEvidenceService"
         case .parkingSignCapture, .parkingPhonePhoto: return "ParkingPhotoFlow"
         case .structuredVisionAssessment: return "StructuredVisionService"
+        case .refrigerantGaugeReading: return "RefrigerantGaugeTool"
         case .safetyAssessment: return "SafetyAssessmentService"
         case .assistiveGuidanceLoop: return "AssistiveModeService"
         case .navigationAssist: return "NavigationAssistService"
@@ -335,7 +341,7 @@ enum OutboundFrameConsumer: String, CaseIterable {
         case .sceneNarration: return .sceneNarration
         case .livePreview: return .onDevicePreview
         case .readingCompanion, .fingerspelling, .dwellCapture: return .onDeviceVision
-        case .structuredVisionAssessment, .safetyAssessment: return .visionAssessment
+        case .structuredVisionAssessment, .safetyAssessment, .refrigerantGaugeReading: return .visionAssessment
         case .assistiveGuidanceLoop, .navigationAssist, .liveCoach: return .assistiveGuidance
         case .capturePhotoTool, .photoLogTool, .moneyIdentifierTool,
              .jobPhoneEvidence, .parkingSignCapture, .parkingPhonePhoto: return .toolPhotoCapture
@@ -365,7 +371,8 @@ enum OutboundFrameConsumer: String, CaseIterable {
              .sceneNarration, .fitnessPoseFrame: return .latestFrameStill
         case .dwellCaptureSave: return .rawCameraPublisher
         case .jobPhoneEvidence, .parkingPhonePhoto: return .heldImage
-        case .structuredVisionAssessment, .safetyAssessment, .assistiveGuidanceLoop,
+        case .structuredVisionAssessment, .safetyAssessment, .refrigerantGaugeReading,
+             .assistiveGuidanceLoop,
              .navigationAssist, .liveCoach, .capturePhotoTool, .photoLogTool, .moneyIdentifierTool,
              .mcpFrameRequest, .studyScan, .teleprompterScan, .readingAccessibilityTool,
              .smartCaptureTool, .medicationIdentifierTool, .manualLookupTool, .equipmentLookupTool,
@@ -386,7 +393,8 @@ enum OutboundFrameConsumer: String, CaseIterable {
         case .faceRecognition, .sceneNarration, .livePreview, .readingCompanion,
              .fingerspelling, .dwellCapture, .jobRecordingCapture: return .exemptByScope
         case .jobRecordingOfficeSync: return .organisationExit
-        case .structuredVisionAssessment, .safetyAssessment, .assistiveGuidanceLoop,
+        case .structuredVisionAssessment, .safetyAssessment, .refrigerantGaugeReading,
+             .assistiveGuidanceLoop,
              .navigationAssist, .liveCoach, .capturePhotoTool, .photoLogTool, .moneyIdentifierTool,
              .mcpFrameRequest, .dwellCaptureSave, .lookCloselyCapture,
              .jobPhoneEvidence, .parkingSignCapture, .parkingPhonePhoto,

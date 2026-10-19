@@ -406,10 +406,7 @@ final class FieldSessionService: ObservableObject {
             }
             session.spokenReadings = session.spokenReadings.map { reading in
                 guard reading.at >= identifiedAt, reading.unitScope == earlierScope else { return reading }
-                return SpokenReading(id: reading.id, quantity: reading.quantity, value: reading.value,
-                                     unit: reading.unit, unitScope: unitScope, taskId: reading.taskId,
-                                     at: reading.at, supersedes: reading.supersedes,
-                                     citation: reading.citation)
+                return reading.movedToScope(unitScope)
             }
         }
         session.earlierWorkAttachedAt = nil
@@ -2583,6 +2580,40 @@ final class FieldSessionService: ObservableObject {
         return reading
     }
 
+    /// Record a value read off a photographed instrument (Plan IS P1): the same shape as a spoken
+    /// reading, with the method, the job photo it was read from, and — for a refrigeration reading —
+    /// the refrigerant and where that came from. `method` nil records a value the technician said.
+    @discardableResult
+    func recordInstrumentReading(quantity: String, value: String, unit: String?, method: String?,
+                                 photoId: String?, refrigerant: String?, refrigerantSource: String?,
+                                 at: Date = Date()) -> SpokenReading? {
+        let quantity = quantity.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let session = activeSession, !quantity.isEmpty, !value.isEmpty else { return nil }
+        let reading = SpokenReading(quantity: quantity, value: value,
+                                    unit: SpokenReading.normalisedUnit(unit),
+                                    unitScope: session.continuityScope,
+                                    taskId: session.activeTask?.id, at: at,
+                                    method: method, photoId: photoId,
+                                    refrigerant: refrigerant, refrigerantSource: refrigerantSource)
+        mutateSession { $0.spokenReadings.append(reading) }
+        attachEvidence { evidence in
+            if !evidence.readings.contains(reading.id) { evidence.readings.append(reading.id) }
+        }
+        logReading(reading, kind: .readingRecorded)
+        return reading
+    }
+
+    /// The refrigerant written down for the unit the job is on — from the nameplate, the
+    /// technician or the unit's display — or nil. Never a default (Plan IS decision 3).
+    var activeRefrigerant: DeviceIdentityField? {
+        guard let session = activeSession else { return nil }
+        return session.identityFields.last {
+            $0.name.lowercased().contains("refrigerant")
+                && (session.identityEquipmentScopes[$0.name.lowercased()] ?? "initial") == session.continuityScope
+        }
+    }
+
     /// Correct a reading: the new value supersedes the old one. It is **not** a second reading and
     /// never a second finished task — the record prints "140 °F (corrected to 135 °F at 5:28 PM)".
     /// With no id, the latest reading of that quantity on this unit (or the latest at all).
@@ -2602,7 +2633,10 @@ final class FieldSessionService: ObservableObject {
                                        unit: SpokenReading.normalisedUnit(unit) ?? target.unit,
                                        unitScope: target.unitScope, taskId: target.taskId, at: at,
                                        supersedes: target.id,
-                                       citation: verifiedCitation(page) ?? target.citation)
+                                       citation: verifiedCitation(page) ?? target.citation,
+                                       // Said, so no method or photo — but on the same refrigerant.
+                                       refrigerant: target.refrigerant,
+                                       refrigerantSource: target.refrigerantSource)
         mutateSession { $0.spokenReadings.append(correction) }
         logReading(correction, kind: .readingCorrected)
         return correction
@@ -2623,8 +2657,12 @@ final class FieldSessionService: ObservableObject {
             "unit": AnyCodable(reading.unit ?? ""),
             "equipment_scope": AnyCodable(reading.unitScope),
             "task_id": AnyCodable(reading.taskId ?? ""),
-            "reported_by": AnyCodable("technician")
+            "reported_by": AnyCodable(reading.isInstrumentReading ? "instrument_reading" : "technician")
         ]
+        if let method = reading.method { payload["method"] = AnyCodable(method) }
+        if let photoId = reading.photoId { payload["photo_id"] = AnyCodable(photoId) }
+        if let refrigerant = reading.refrigerant { payload["refrigerant"] = AnyCodable(refrigerant) }
+        if let source = reading.refrigerantSource { payload["refrigerant_source"] = AnyCodable(source) }
         if let supersedes = reading.supersedes { payload["supersedes"] = AnyCodable(supersedes) }
         if let citation = reading.citation { payload["citation"] = AnyCodable(citation) }
         logger?.append(.init(timestamp: reading.at, kind: kind,

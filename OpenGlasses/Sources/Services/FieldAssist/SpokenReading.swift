@@ -25,10 +25,23 @@ struct SpokenReading: Codable, Equatable, Identifiable {
     let supersedes: String?
     /// A verified manual page it was checked against, if any.
     let citation: String?
+    /// How the value was taken: nil when the technician said it, `instrument_reading` when it was
+    /// read off a photograph of the instrument (Plan IS P1).
+    let method: String?
+    /// The job photo the value was read from (`JobMediaItem.id`), for an instrument reading.
+    let photoId: String?
+    /// The refrigerant the reading was taken on, when the reading is a refrigeration one, and where
+    /// that designation came from ("nameplate", "technician", "display") — never assumed.
+    let refrigerant: String?
+    let refrigerantSource: String?
+
+    /// The method recorded for a value read off a photographed instrument.
+    static let instrumentReadingMethod = "instrument_reading"
 
     init(id: String = UUID().uuidString, quantity: String, value: String, unit: String? = nil,
          unitScope: String = "initial", taskId: String? = nil, at: Date = Date(),
-         supersedes: String? = nil, citation: String? = nil) {
+         supersedes: String? = nil, citation: String? = nil, method: String? = nil,
+         photoId: String? = nil, refrigerant: String? = nil, refrigerantSource: String? = nil) {
         self.id = id
         self.quantity = quantity
         self.value = value
@@ -38,12 +51,28 @@ struct SpokenReading: Codable, Equatable, Identifiable {
         self.at = at
         self.supersedes = supersedes
         self.citation = citation
+        self.method = method
+        self.photoId = photoId
+        self.refrigerant = refrigerant
+        self.refrigerantSource = refrigerantSource
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, quantity, value, unit, at, supersedes, citation
+        case id, quantity, value, unit, at, supersedes, citation, method, refrigerant
         case unitScope = "unit_scope"
         case taskId = "task_id"
+        case photoId = "photo_id"
+        case refrigerantSource = "refrigerant_source"
+    }
+
+    /// True when the value was read off a photographed instrument rather than said.
+    var isInstrumentReading: Bool { method == Self.instrumentReadingMethod }
+
+    /// The same reading filed under another unit scope (a job split across two units).
+    func movedToScope(_ scope: String) -> SpokenReading {
+        SpokenReading(id: id, quantity: quantity, value: value, unit: unit, unitScope: scope, taskId: taskId,
+                      at: at, supersedes: supersedes, citation: citation, method: method, photoId: photoId,
+                      refrigerant: refrigerant, refrigerantSource: refrigerantSource)
     }
 
     /// "140 °F", "0.28 inWC", "140".
@@ -113,6 +142,8 @@ enum SpokenReadingLedger {
             }
             line += " (" + corrections.joined(separator: ", then ") + ")"
         }
+        if chain.current.isInstrumentReading { line += " — read from the gauge photo" }
+        if let refrigerant = chain.current.refrigerant, !refrigerant.isEmpty { line += " (\(refrigerant))" }
         if let citation = chain.current.citation, !citation.isEmpty { line += " — checked against \(citation)" }
         return line
     }

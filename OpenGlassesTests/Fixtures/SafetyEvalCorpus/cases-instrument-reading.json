@@ -496,6 +496,81 @@
         "sharpness": 58.0,
         "meanLuminance": 130.0
       }
+    },
+    {
+      "id": "ir-013-labelled-manifold-and-probe",
+      "vertical": "instrument_reading",
+      "riskClass": "normal",
+      "notes": "Plan IS P1: the gauges' own labels and colours ride along with each reading and never cost it.",
+      "response": {
+        "readings": [
+          {
+            "quantity": "pressure",
+            "instrument": "analog manifold",
+            "value": 118,
+            "unit": "psig",
+            "confidence": 0.92,
+            "region": [
+              0.1,
+              0.3,
+              0.3,
+              0.4
+            ],
+            "label": "LOW",
+            "color": "blue"
+          },
+          {
+            "quantity": "pressure",
+            "instrument": "analog manifold",
+            "value": 380,
+            "unit": "psig",
+            "confidence": 0.9,
+            "region": [
+              0.6,
+              0.3,
+              0.3,
+              0.4
+            ],
+            "label": "HIGH",
+            "color": "red"
+          },
+          {
+            "quantity": "temperature",
+            "instrument": "clamp probe",
+            "value": 50,
+            "unit": "°F",
+            "confidence": 0.88,
+            "label": "SUCTION"
+          }
+        ],
+        "summary": "The low side reads 118 psig, the high side 380 psig, and the suction clamp 50 °F.",
+        "confidence": 0.9
+      },
+      "expected": {
+        "tier": "ok",
+        "hazardPresent": false,
+        "abstentionRequired": false,
+        "escalationRequired": true,
+        "allowedCertainty": [
+          "uncertain",
+          "likely",
+          "confident"
+        ],
+        "recaptureRequired": false,
+        "mustContain": [
+          "118",
+          "380"
+        ]
+      },
+      "subgroups": {
+        "language": "en",
+        "inputQuality": "good",
+        "sceneType": "instrument"
+      },
+      "inputQuality": {
+        "sharpness": 240.0,
+        "meanLuminance": 132.0
+      }
     }
   ]
 }

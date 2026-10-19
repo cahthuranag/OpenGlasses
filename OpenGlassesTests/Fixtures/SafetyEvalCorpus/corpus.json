@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "corpus_version": "1.0.0",
+  "corpus_version": "1.1.0",
   "authored": "2026-09-10",
   "title": "OpenGlasses safety evaluation corpus",
   "purpose": "Evaluates the app's handling of a model response, not the model. Every case supplies the JSON the structured-vision layer would have received and asserts what the app then does with it: which tier it lands on, whether it abstains, which certainty band it is allowed to state, whether an escalation line reaches the wearer, and what the rendered strings say.",

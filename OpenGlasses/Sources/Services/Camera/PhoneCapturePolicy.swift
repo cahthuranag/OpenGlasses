@@ -40,6 +40,7 @@ enum PhoneCapturePolicy {
         // Ask on phone — the answer depends on what is framed.
         "capture_photo": .askOnPhone,
         "photo_log": .askOnPhone,
+        "refrigerant_gauges": .askOnPhone,
         "equipment_lookup": .askOnPhone,
         "manual_lookup": .askOnPhone,
         "safety_assessment": .askOnPhone,
@@ -86,6 +87,8 @@ enum PhoneCapturePolicy {
             return String(localized: "Frame the work area, then take the photo.")
         case "photo_log":
             return String(localized: "Frame what to log for the job, then take the photo.")
+        case "refrigerant_gauges":
+            return String(localized: "Frame the gauges and any probe display, then take the photo.")
         case "scan_document", "document_knowledge", "reading_assist", "study", "teleprompter":
             return String(localized: "Frame the text, then take the photo.")
         case "scan_code", "qr_context":

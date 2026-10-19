@@ -237,6 +237,7 @@ let allowList: [String: String] = [
     "organizationAccentColor": "owned:string",
     "organizationToolDefinitionsMode": "owned:string",
     "accentColorName": "default:string",
+    "refrigerationUnits": "default:string",
 ]
 
 func typeName(_ value: ProfileValue) -> String {

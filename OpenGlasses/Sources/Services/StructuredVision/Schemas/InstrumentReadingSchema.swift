@@ -23,7 +23,9 @@ struct InstrumentReadingSchema: AssessmentSchema {
                             "value": ["type": "number"],
                             "unit": ["type": "string", "description": "the unit EXACTLY as displayed, e.g. °F, psig, °Bx, lb, V"],
                             "confidence": ["type": "number", "description": "0.0–1.0"],
-                            "region": ["type": "array", "items": ["type": "number"], "description": "normalized [x,y,w,h] of the display"]
+                            "region": ["type": "array", "items": ["type": "number"], "description": "normalized [x,y,w,h] of the display"],
+                            "label": ["type": "string", "description": "text printed on or beside this display, exactly as shown, e.g. LOW, HIGH, SUCTION, LIQUID, T1"],
+                            "color": ["type": "string", "description": "the gauge's bezel, face or hose colour if visible, e.g. blue, red, yellow"]
                         ],
                         "required": ["quantity", "value", "unit", "confidence"]
                     ]
@@ -46,7 +48,10 @@ struct InstrumentReadingSchema: AssessmentSchema {
         Return ONLY the structured assessment: a `readings` array (each with quantity, the instrument if \
         identifiable, value, the unit exactly as displayed, and confidence 0.0–1.0, plus a normalized \
         [x,y,w,h] region for the display when you can), a one-sentence `summary`, and an overall \
-        `confidence`. If no instrument or display is visible, return an empty `readings` array and say so \
+        `confidence`. On a refrigerant manifold or a digital gauge set, also give each reading the \
+        `label` printed on or beside it, exactly as shown (LOW, HIGH, SUCTION, LIQUID, T1), and the \
+        `color` of its bezel, face or hose when you can see one (blue, red, yellow). Leave either out \
+        when there is none; never infer a label or a colour you cannot see. If no instrument or display is visible, return an empty `readings` array and say so \
         in the summary.
         """
     }

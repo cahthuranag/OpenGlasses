@@ -104,10 +104,16 @@ struct InstrumentReading: Codable, Identifiable, Equatable {
     /// treats a low one: unestablished, so re-capture rather than assume.
     let confidence: Double?
     let region: [Double]?        // normalized [x, y, w, h] of the display, for an overlay highlight
+    /// Text printed on or beside this display, exactly as shown: "LOW", "HIGH", "SUCTION", "LIQ",
+    /// "T1" (Plan IS P1). The instrument's own words — what `GaugeRoleResolver` reads a role from.
+    let label: String?
+    /// The colour of the gauge's bezel, face or hose, when the model can see one: "blue", "red",
+    /// "yellow" (Plan IS P1). Read only as a role cue, never as a reading.
+    let color: String?
 
     init(id: UUID = UUID(), quantity: String, instrument: String? = nil,
          value: Double, unit: String, canonical: Double? = nil, canonicalUnit: String? = nil,
-         confidence: Double? = nil, region: [Double]? = nil) {
+         confidence: Double? = nil, region: [Double]? = nil, label: String? = nil, color: String? = nil) {
         self.id = id
         self.quantity = quantity
         self.instrument = instrument
@@ -117,12 +123,14 @@ struct InstrumentReading: Codable, Identifiable, Equatable {
         self.canonicalUnit = canonicalUnit
         self.confidence = confidence
         self.region = region
+        self.label = label
+        self.color = color
     }
 
     enum CodingKeys: String, CodingKey {
         case id, quantity, instrument, value, unit, canonical
         case canonicalUnit = "canonical_unit"
-        case confidence, region
+        case confidence, region, label, color
     }
 
     init(from decoder: Decoder) throws {
@@ -136,6 +144,15 @@ struct InstrumentReading: Codable, Identifiable, Equatable {
         canonicalUnit = try c.decodeIfPresent(String.self, forKey: .canonicalUnit)
         confidence = try c.decodeIfPresent(Double.self, forKey: .confidence)
         region = try c.decodeIfPresent([Double].self, forKey: .region)
+        label = Self.trimmedText(try? c.decodeIfPresent(String.self, forKey: .label))
+        color = Self.trimmedText(try? c.decodeIfPresent(String.self, forKey: .color))
+    }
+
+    /// An optional cue a model may send empty or as a non-string: kept only as non-empty text, and
+    /// never a reason to drop the reading itself.
+    private static func trimmedText(_ raw: String??) -> String? {
+        guard let text = raw??.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        return text
     }
 
     /// Returns a copy with `canonical`/`canonicalUnit` filled from `UnitNormalizer`. If the unit is
@@ -143,7 +160,8 @@ struct InstrumentReading: Codable, Identifiable, Equatable {
     func normalized() -> InstrumentReading {
         guard let c = UnitNormalizer.canonical(value: value, unit: unit) else { return self }
         return InstrumentReading(id: id, quantity: quantity, instrument: instrument, value: value, unit: unit,
-                                 canonical: c.value, canonicalUnit: c.unit, confidence: confidence, region: region)
+                                 canonical: c.value, canonicalUnit: c.unit, confidence: confidence, region: region,
+                                 label: label, color: color)
     }
 }
 

@@ -371,6 +371,36 @@ final class FilteredStillRoutingTests: XCTestCase {
         XCTAssertTrue(result.contains("Could not capture"), "unexpected reply: \(result)")
     }
 
+    /// Plan IS P1: `refrigerant_gauges` sends the filtered still to the model and files the same
+    /// filtered bytes on the job — and with the filter unavailable, sends and files nothing.
+    func testRefrigerantGaugeToolSendsAndFilesOnlyTheFilteredStill() async throws {
+        let provider = availableProvider(scope: .visionAssessment)
+        let sink = RoutingGaugeRecorder()
+        var sent: Data?
+        let tool = RefrigerantGaugeTool(cameraService: provider, recorder: sink, assess: { data in
+            sent = data
+            return try InstrumentReadingSchema().makeCard(from: [
+                "readings": [["quantity": "pressure", "value": 118, "unit": "psig", "confidence": 0.9, "label": "LOW"]],
+                "summary": "118 psig.",
+            ], context: nil)
+        }, units: { .imperial }, fieldAssistActive: { true })
+
+        _ = try await tool.execute(args: ["calculation": "superheat"])
+        assertFiltered(sent, "refrigerant_gauges → model")
+        assertFiltered(sink.photos.first, "refrigerant_gauges → job")
+        XCTAssertEqual(provider.requestedScopes, [.visionAssessment])
+
+        let blocked = RoutingGaugeRecorder()
+        var called = false
+        let refused = RefrigerantGaugeTool(cameraService: unavailableProvider(), recorder: blocked, assess: { _ in
+            called = true
+            throw StructuredVisionError.analysisFailed
+        }, units: { .imperial }, fieldAssistActive: { true })
+        _ = try await refused.execute(args: [:])
+        XCTAssertFalse(called, "the model must not be called with an unfiltered frame")
+        XCTAssertTrue(blocked.photos.isEmpty, "nothing is filed on the job either")
+    }
+
     /// An on-device scanning tool takes the same route, and reports honestly when it cannot.
     func testBarcodeScannerAsksTheChokepointAndFailsClosed() async throws {
         let provider = availableProvider(scope: .onDeviceVision)
@@ -502,4 +532,21 @@ final class RoutingInertBackend: GlassesCameraBackend {
 /// permission is unresolved.
 final class RoutingInertPhone: PhoneCameraCapturing {
     func capturePhoto() async throws -> Data { Data([0xBE, 0xEF]) }
+}
+
+/// The job sink for the gauge tool's routing test: keeps the photo bytes it is handed.
+@MainActor
+final class RoutingGaugeRecorder: RefrigerantReadingFiling {
+    var isOpenForEvidence = true
+    var activeRefrigerant: DeviceIdentityField?
+    private(set) var photos: [Data] = []
+
+    func attachPhoto(_ data: Data, caption: String?, origin: JobMediaItem.Origin, filterWasOn: Bool) -> URL? {
+        photos.append(data)
+        return URL(fileURLWithPath: "/tmp/routing-\(photos.count).jpg")
+    }
+
+    func recordInstrumentReading(quantity: String, value: String, unit: String?, method: String?,
+                                 photoId: String?, refrigerant: String?, refrigerantSource: String?,
+                                 at: Date) -> SpokenReading? { nil }
 }

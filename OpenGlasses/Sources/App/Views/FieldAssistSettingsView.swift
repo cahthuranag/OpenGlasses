@@ -17,6 +17,8 @@ struct FieldAssistSettingsView: View {
     @AppStorage("fieldAssistMinutesPerBillingUnit") private var minutesPerBillingUnit: Int = 15
     /// `Config.fieldAssistContextualSearchEnabled` — on by default (Plan IV P4).
     @AppStorage("fieldAssistContextualSearchEnabled") private var smarterManualSearch: Bool = true
+    /// Plan IS P1: `pressure,temperature,mass`, or empty for the App Store region's default.
+    @AppStorage(RefrigerationUnitsSetting.key) private var refrigerationUnitsStored: String = ""
     /// `Config.preferredMapsApp`'s key and default, stored as its raw value.
     @AppStorage("preferredMapsApp") private var preferredMapsApp: String = MapsApp.apple.rawValue
     @AppStorage("briefOnCarPlayConnect") private var briefOnCarPlayConnect: Bool = false
@@ -269,6 +271,8 @@ struct FieldAssistSettingsView: View {
                 } footer: {
                     Text("Finds the right page in your manuals more often. Switching it on or off re-indexes your manuals once in the background, and search keeps using the current index until that finishes. The first time, your phone may download a language model from Apple.")
                 }
+
+                refrigerationUnitsSection
 
                 // ──────────────── Wake word
                 //
@@ -586,6 +590,55 @@ struct FieldAssistSettingsView: View {
             Button("OK") { deliveryError = nil }
         } message: {
             Text(deliveryError ?? "")
+        }
+    }
+
+    // ──────────────── Refrigeration units (Plan IS P1)
+    //
+    // Gauge, superheat and subcooling answers are rendered in these; readings in any unit are
+    // still understood. Until the technician picks, the App Store region decides, and the
+    // footer says what that default is.
+    private var refrigerationUnitsInForce: RefrigerationUnits {
+        RefrigerationUnits.effective(stored: refrigerationUnitsStored,
+                                     storefront: MarketAvailability.shared.storefront)
+    }
+
+    private func refrigerationUnitsBinding<Value>(
+        _ keyPath: WritableKeyPath<RefrigerationUnits, Value>
+    ) -> Binding<Value> {
+        Binding(
+            get: { refrigerationUnitsInForce[keyPath: keyPath] },
+            set: { value in
+                var units = refrigerationUnitsInForce
+                units[keyPath: keyPath] = value
+                refrigerationUnitsStored = units.encoded
+            })
+    }
+
+    private var refrigerationUnitsSection: some View {
+        Section {
+            Picker("Pressure", selection: refrigerationUnitsBinding(\.pressure)) {
+                ForEach(RefrigerationUnits.Pressure.allCases) { unit in
+                    Text(verbatim: unit.gaugeLabel).tag(unit)
+                }
+            }
+            Picker("Temperature", selection: refrigerationUnitsBinding(\.temperature)) {
+                ForEach(RefrigerationUnits.Temperature.allCases) { unit in
+                    Text(verbatim: unit.label).tag(unit)
+                }
+            }
+            Picker("Refrigerant quantity", selection: refrigerationUnitsBinding(\.mass)) {
+                ForEach(RefrigerationUnits.Mass.allCases) { unit in
+                    Text(verbatim: unit.label).tag(unit)
+                }
+            }
+            if RefrigerationUnits(encoded: refrigerationUnitsStored) != nil {
+                Button("Use Region Defaults") { refrigerationUnitsStored = "" }
+            }
+        } header: {
+            Text("Refrigeration Units")
+        } footer: {
+            Text("Gauge readings, superheat and subcooling are answered in these units, and readings in any unit are still understood. Your region's default is \(RefrigerationUnitsSetting.regionDefault.spokenList).")
         }
     }
 

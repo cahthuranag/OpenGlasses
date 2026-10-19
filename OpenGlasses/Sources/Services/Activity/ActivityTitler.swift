@@ -210,6 +210,7 @@ enum ActivityTitler {
         // Camera, recording and reading
         "capture_photo": .init("Took a photo for you"),
         "photo_log": .init("Logged a photo for you"),
+        "refrigerant_gauges": .init("Read the gauges for you"),
         "audio_recording": .init("Changed an audio recording", actions: [
             "start": "Started recording audio", "stop": "Stopped recording audio",
         ], reads: ["status"]),

@@ -123,6 +123,18 @@ struct StatusIndicator: View {
                 wakeWordOffNotice
             }
 
+            // Plan HY P1: a session that ended itself for want of the wearer says so, rather than
+            // the card simply reading "Ready" with no account of where the session went.
+            if let notice = liveEndNotice {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(OGTheme.secondaryLabel)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 10)
+            }
+
             // Tool call / reconnecting
             if isGemini && session.toolCallStatus.isActive {
                 toolCallPill(session.toolCallStatus.displayText, color: accent)
@@ -585,6 +597,19 @@ struct StatusIndicator: View {
             if appState.speechService.isSpeaking { return "Speaking..." }
             return "Ready"
         }
+    }
+
+    /// Why the selected live mode's last session ended, while none is running (Plan HY P1).
+    private var liveEndNotice: String? {
+        if isGemini {
+            return LiveSessionEndReason.cardNotice(sessionActive: session.isActive,
+                                                   reason: session.endReason)
+        }
+        if isOpenAI {
+            return LiveSessionEndReason.cardNotice(sessionActive: openAISession.isActive,
+                                                   reason: openAISession.endReason)
+        }
+        return nil
     }
 
     private var modeLabel: String {

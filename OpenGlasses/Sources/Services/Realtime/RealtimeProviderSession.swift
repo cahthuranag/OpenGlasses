@@ -13,6 +13,10 @@ final class RealtimeProviderSession {
     var onInterrupted: (() -> Void)?
     var onDisconnected: ((String?) -> Void)?
     var onInputTranscription: ((String) -> Void)?
+    /// The wearer started speaking, as the server's voice activity detection heard it (Plan HY P1:
+    /// idle activity). JSON protocols report a speech-start; Gemini Live reports the barge-in it
+    /// causes (`interrupted`), which is the only speech-start that wire carries.
+    var onUserSpeechStarted: (() -> Void)?
     var onOutputTranscription: ((String) -> Void)?
     var onReconnected: (() -> Void)?
     var onReconnectExhausted: (() -> Void)?
@@ -40,7 +44,7 @@ final class RealtimeProviderSession {
         gemini?.configureConnection(model)
         gemini?.onAudioReceived = { [weak self] in self?.onAudioReceived?($0) }
         gemini?.onTurnComplete = { [weak self] in self?.onTurnComplete?() }
-        gemini?.onInterrupted = { [weak self] in self?.onInterrupted?() }
+        gemini?.onInterrupted = { [weak self] in self?.onUserSpeechStarted?(); self?.onInterrupted?() }
         gemini?.onDisconnected = { [weak self] in self?.onDisconnected?($0) }
         gemini?.onInputTranscription = { [weak self] in self?.onInputTranscription?($0) }
         gemini?.onOutputTranscription = { [weak self] in self?.onOutputTranscription?($0) }
@@ -53,6 +57,7 @@ final class RealtimeProviderSession {
         json?.onInterrupted = { [weak self] in self?.onInterrupted?() }
         json?.onDisconnected = { [weak self] in self?.onDisconnected?($0) }
         json?.onInputTranscription = { [weak self] in self?.onInputTranscription?($0) }
+        json?.onUserSpeechStarted = { [weak self] in self?.onUserSpeechStarted?() }
         json?.onOutputTranscription = { [weak self] in self?.onOutputTranscription?($0) }
         json?.onReconnected = { [weak self] in self?.onReconnected?() }
         json?.onReconnectExhausted = { [weak self] in self?.onReconnectExhausted?() }

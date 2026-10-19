@@ -1175,6 +1175,8 @@ class AppState: ObservableObject, AppStateProtocol {
     var nowPlayingAtStart: NowPlayingSnapshot? = nil
     @Published var micMuted: Bool = false {
         didSet {
+            // Plan HY P1: the capsule's mute is a touch on the live controls too.
+            noteLiveSessionActivity()
             if micMuted {
                 wakeWordService.stopListening()
                 isListening = false
@@ -1975,6 +1977,13 @@ class AppState: ObservableObject, AppStateProtocol {
     lazy var remoteInvoke: RemoteInvokeService = makeRemoteInvokeService()
     let geminiLiveSession = GeminiLiveSessionManager()
     let openAIRealtimeSession = OpenAIRealtimeSessionManager()
+
+    /// Plan HY P1 — the wearer typed, or touched a live control: activity the live session's own
+    /// events cannot see. A no-op on a manager with no session running.
+    func noteLiveSessionActivity() {
+        geminiLiveSession.noteWearerActivity()
+        openAIRealtimeSession.noteWearerActivity()
+    }
 
     /// Plan HY P0 — the handover block the last mode switch left on a manager, and which manager.
     /// Kept so the *next* switch can tell its own unconsumed seed from the offline handoff's (which
@@ -7348,6 +7357,8 @@ class AppState: ObservableObject, AppStateProtocol {
         turnUtterance = query
         isListening = false
         errorMessage = nil
+        // Plan HY P1: a typed message is the wearer being there, whichever brain answers it.
+        noteLiveSessionActivity()
 
         // A typed turn belongs to the job's conversation exactly as a spoken one does (Plan FO P1).
         guidedJobFlow.prepareThreadForTurn(.typed)

@@ -778,6 +778,8 @@ struct BottomControlBar: View {
                 // did nothing visible, which read as the first tap having failed.
                 isDisabled: !appState.realtimeSupportsVision || !realtimeSessionActive || appState.cameraService.isStartingStream
             ) {
+                // Plan HY P1: a touch on a live control is the wearer being there.
+                appState.noteLiveSessionActivity()
                 // Start is an intent decision and reads intent only — never frames. A camera that
                 // is up but delivering nothing must not be started a second time, and a camera
                 // that is stopped must be startable with no pictures anywhere in sight.

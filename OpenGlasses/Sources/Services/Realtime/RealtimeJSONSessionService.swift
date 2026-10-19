@@ -26,6 +26,8 @@ class RealtimeJSONSessionService: ObservableObject {
     var onInterrupted: (() -> Void)?
     var onDisconnected: ((String?) -> Void)?
     var onInputTranscription: ((String) -> Void)?
+    /// The server's voice activity detection heard the wearer start speaking (Plan HY P1).
+    var onUserSpeechStarted: (() -> Void)?
     var onOutputTranscription: ((String) -> Void)?
     var onReconnected: (() -> Void)?
     var onReconnectExhausted: (() -> Void)?
@@ -321,6 +323,7 @@ class RealtimeJSONSessionService: ObservableObject {
         case .outputTranscript(let text): onOutputTranscription?(text)
         case .userSpeaking(let speaking):
             isUserSpeaking = speaking
+            if speaking { onUserSpeechStarted?() }
             if speaking && isModelSpeaking { cancelResponse() }
         case .interrupted: isModelSpeaking = false; onInterrupted?()
         case .speechFinished: isModelSpeaking = false

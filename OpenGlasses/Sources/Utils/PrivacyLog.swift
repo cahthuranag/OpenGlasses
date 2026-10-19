@@ -345,6 +345,9 @@ enum PrivacyLog {
         case audioModeSelected, audioModeUnchanged, audioModeSwitched, audioModeSwitchFailed
         case audioRestartFailed, toolExecutionPaused, toolExecutionResumed
         case postConnectState
+        /// Plan HY P1: the idle warning was given; the session ended for want of the wearer.
+        /// `count` on `idleEnded` is the configured limit in minutes.
+        case idleWarned, idleEnded
     }
 
     enum UtteranceDirection: String { case input, output }

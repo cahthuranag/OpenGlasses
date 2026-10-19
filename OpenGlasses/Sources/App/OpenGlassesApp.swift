@@ -1691,6 +1691,8 @@ class AppState: ObservableObject, AppStateProtocol {
                     VaultRegistry.shared.reloadUserManifests()
                 }
                 self.upcomingJobs.removeAll()
+                // …and so does what the office said about the open job's units and site (Plan HU).
+                FieldSessionService.shared.eraseOfficeSuppliedContext()
                 // Team-learning candidates were filed for this organisation's supervisor (Plan FP).
                 LearningCandidateStore.shared.removeAll()
                 // …and so were the approved entries and the corpus they answer from (Plan FP P2).

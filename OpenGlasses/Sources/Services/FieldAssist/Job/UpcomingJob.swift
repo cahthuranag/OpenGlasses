@@ -75,16 +75,34 @@ struct FaultReport: Codable, Equatable {
 }
 
 /// A machine the office says is on site. Either half may be missing.
+///
+/// A format-3 job file may also give the office's `unit_key` for it (its handle for a machine
+/// with no serial, which the office's history and identifiers name it by), its `make`, and a
+/// `label` saying where it sits at the site. All three are nil, and absent from the JSON, on every
+/// machine that came any other way.
 struct KnownEquipment: Codable, Equatable {
     var model: String?
     var serial: String?
+    var unitKey: String?
+    var make: String?
+    var label: String?
 
-    init(model: String? = nil, serial: String? = nil) {
+    init(model: String? = nil, serial: String? = nil, unitKey: String? = nil, make: String? = nil,
+         label: String? = nil) {
         self.model = JobSite.cleaned(model)
         self.serial = JobSite.cleaned(serial)
+        self.unitKey = JobSite.cleaned(unitKey)
+        self.make = JobSite.cleaned(make)
+        self.label = JobSite.cleaned(label)
     }
 
-    var isEmpty: Bool { model == nil && serial == nil }
+    enum CodingKeys: String, CodingKey {
+        case model, serial
+        case unitKey = "unit_key"
+        case make, label
+    }
+
+    var isEmpty: Bool { model == nil && serial == nil && unitKey == nil && make == nil && label == nil }
 
     var summary: String {
         switch (model, serial) {
@@ -125,9 +143,13 @@ struct JobFileProvenance: Codable, Equatable {
     let jobID: String?
     let revision: Int64?
     let jobSHA256: String?
+    /// The job's identity in the system the office took it from (format 3, Plan HT), echoed into
+    /// the visit's record as it arrived. Nil, and absent from the JSON, for every other file — so
+    /// a record written without it encodes exactly as it did.
+    let external: ExternalJobReference?
 
     init(fileName: String, signature: Signature, signer: String?, receivedAt: Date = Date(),
-         digest: String, identity: JobFile.Identity? = nil) {
+         digest: String, identity: JobFile.Identity? = nil, external: ExternalJobReference? = nil) {
         self.fileName = fileName
         self.signature = signature
         self.signer = signature == .signed ? signer : nil
@@ -136,6 +158,7 @@ struct JobFileProvenance: Codable, Equatable {
         jobID = identity?.jobID
         revision = identity?.revision
         jobSHA256 = identity?.sha256
+        self.external = external
     }
 
     enum CodingKeys: String, CodingKey {
@@ -146,6 +169,7 @@ struct JobFileProvenance: Codable, Equatable {
         case jobID = "job_id"
         case revision
         case jobSHA256 = "job_sha256"
+        case external
     }
 
     /// Which of the office's jobs this is, when the file said.
@@ -207,6 +231,14 @@ struct UpcomingJob: Codable, Equatable, Identifiable {
     /// The last brief assembled for it, kept so the job tab can show it without re-reading the
     /// vault and so a started job's context begins from what the technician actually heard.
     var brief: JobBrief?
+    /// The office's own job number, kept when a format-3 file gave the other system's number as
+    /// the job's and the two differ (Plan HT §4). Shown as "Office reference", never as the title.
+    var officeReference: String?
+    /// What the office knows about the job's units, from a format-3 file (Plan HU). Copied onto
+    /// the visit when it starts and dropped from it when it closes.
+    var officeHistory: OfficeServiceHistory?
+    /// What the site asks of the person arriving, from a format-3 file (Plan HU). As the history.
+    var siteRequirements: OfficeSiteRequirements?
     let createdAt: Date
     var updatedAt: Date
 
@@ -222,6 +254,9 @@ struct UpcomingJob: Codable, Equatable, Identifiable {
          provenance: JobFileProvenance? = nil,
          needs: JobNeeds? = nil,
          brief: JobBrief? = nil,
+         officeReference: String? = nil,
+         officeHistory: OfficeServiceHistory? = nil,
+         siteRequirements: OfficeSiteRequirements? = nil,
          createdAt: Date = Date()) {
         self.id = id
         self.jobReference = JobIntakeState.cleaned(jobReference)
@@ -235,6 +270,9 @@ struct UpcomingJob: Codable, Equatable, Identifiable {
         self.provenance = provenance
         self.needs = needs
         self.brief = brief
+        self.officeReference = JobIntakeState.cleaned(officeReference)
+        self.officeHistory = officeHistory
+        self.siteRequirements = siteRequirements
         self.createdAt = createdAt
         self.updatedAt = createdAt
     }
@@ -247,6 +285,9 @@ struct UpcomingJob: Codable, Equatable, Identifiable {
         case equipment
         case scheduledFor = "scheduled_for"
         case notes, attachments, origin, provenance, needs, brief
+        case officeReference = "office_reference"
+        case officeHistory = "office_history"
+        case siteRequirements = "site_requirements"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -267,6 +308,9 @@ struct UpcomingJob: Codable, Equatable, Identifiable {
         provenance = try c.decodeIfPresent(JobFileProvenance.self, forKey: .provenance)
         needs = try c.decodeIfPresent(JobNeeds.self, forKey: .needs)
         brief = try c.decodeIfPresent(JobBrief.self, forKey: .brief)
+        officeReference = try c.decodeIfPresent(String.self, forKey: .officeReference)
+        officeHistory = try c.decodeIfPresent(OfficeServiceHistory.self, forKey: .officeHistory)
+        siteRequirements = try c.decodeIfPresent(OfficeSiteRequirements.self, forKey: .siteRequirements)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
     }

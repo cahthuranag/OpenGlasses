@@ -104,9 +104,10 @@ final class JobFileTests: XCTestCase {
         XCTAssertEqual(JobFileValidator.validate(Data("hello".utf8)), .failure(.notAJobFile))
         XCTAssertEqual(refusal(document(["format": "something.else"])), .notAJobFile)
         XCTAssertEqual(refusal(document(removing: ["format_version"])), .notAJobFile)
-        XCTAssertEqual(refusal(document(["format_version": 3])), .unsupportedVersion(3))
-        // Format 2 wraps the job's bytes; a format-1 layout under its number is not one.
+        XCTAssertEqual(refusal(document(["format_version": 4])), .unsupportedVersion(4))
+        // Formats 2 and 3 wrap the job's bytes; a format-1 layout under their numbers is not one.
         XCTAssertEqual(refusal(document(["format_version": 2])), .unexpectedField("attachments"))
+        XCTAssertEqual(refusal(document(["format_version": 3])), .unexpectedField("attachments"))
     }
 
     func testAFieldThisVersionDoesNotKnowIsRefused() {

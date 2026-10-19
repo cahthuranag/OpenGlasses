@@ -1109,10 +1109,11 @@ except P1's and P4's routes having a reader.
 
 ## Out of scope
 
-A bank bundled with the app, exam material of any kind, or any question asked that no person
+A bank bundled with the app, exam material of any kind (exam preparation from original questions is
+Plan [JI](JI-apprentice-support.md)'s deliberate exception), or any question asked that no person
 approved; calculation questions (IN P3's calculators answer those); comparing editions (IN P4); the
 office half (authoring, review, intake, aggregation, publishing, the results switch and any office
 view of an apprentice's record);
-apprentice logbooks (IQ, waiting on a partner's answers); practice from manuals or team learnings;
+apprentice logbooks (Plan [JI](JI-apprentice-support.md), which takes the item over from IQ); practice from manuals or team learnings;
 any language but English for spoken answers in P0–P5 (IN's amendment covers the answer language;
 spoken-number parsing in other languages follows EC).

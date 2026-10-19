@@ -259,20 +259,179 @@ final class ToolLoopDriverTests: XCTestCase {
     func testExhaustedLoopWrapsUpWithoutRunningMoreTools() async throws {
         let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
         var executed = 0
-        // Every turn calls a tool → the loop never reaches a final answer by itself.
+        // Every turn calls a tool → the loop never reaches a final answer by itself. Each answer
+        // differs, so this is a budget running out, not a model repeating itself.
         let adapter = makeScriptedAdapter(
             turns: [AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "1", name: "loop", arguments: [:])])],
-            execute: { name, _, _, _ in executed += 1; return .completed("ok:\(name)") },
+            execute: { _, _, _, _ in executed += 1; return .completed("Step \(executed) done.") },
             history: history, statuses: statuses
         )
         let result = try await runToolLoop(maxIterations: 3, adapter: adapter,
                                            setStatus: { statuses.value.append($0) })
         XCTAssertEqual(executed, 3, "dispatched exactly maxIterations times, never in the wrap-up")
-        XCTAssertEqual(result, ToolLoopBudget.spokenFallback)
+        XCTAssertEqual(result, "Done so far: Step 1 done. Step 2 done. Step 3 done.")
         XCTAssertEqual(history.value.filter { $0.hasPrefix("results:") }.count, 4,
                        "the wrap-up's calls get answers so the history stays well-formed")
-        XCTAssertEqual(history.value.last, "final:\(ToolLoopBudget.spokenFallback)")
+        XCTAssertEqual(history.value.last, "final:\(result)", "the summary goes through finalize")
         XCTAssertEqual(statuses.value.last, .idle)
+    }
+
+    /// Nothing succeeded, so there is nothing to summarise: the old sentence, as before.
+    func testTheCannedSentenceIsKeptWhenNothingSucceeded() async throws {
+        let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
+        var attempt = 0
+        let adapter = makeScriptedAdapter(
+            turns: [AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "1", name: "loop", arguments: [:])])],
+            execute: { _, _, _, _ in attempt += 1; return .failedBeforeExecution(reason: "No session \(attempt).") },
+            history: history, statuses: statuses
+        )
+        let result = try await runToolLoop(maxIterations: 2, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+        XCTAssertEqual(result, ToolLoopBudget.spokenFallback)
+        XCTAssertEqual(history.value.last, "final:\(ToolLoopBudget.spokenFallback)")
+    }
+
+    // MARK: - The wrap-up offers no tools
+
+    func testTheWrapUpUsesPerformWrapUpWhenTheProviderHasOne() async throws {
+        let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
+        var adapter = makeScriptedAdapter(
+            turns: [AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "1", name: "task", arguments: [:])])],
+            execute: { _, args, _, _ in .completed("ran \(args.count)") },
+            history: history, statuses: statuses
+        )
+        var wrapUps = 0
+        adapter.performWrapUp = {
+            wrapUps += 1
+            return AssistantTurn(text: "Closed the Verify task.")
+        }
+        let result = try await runToolLoop(maxIterations: 1, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+        XCTAssertEqual(wrapUps, 1)
+        XCTAssertEqual(result, "Closed the Verify task.")
+        XCTAssertEqual(history.value, ["assistant:toolcall", "results:task", "final:Closed the Verify task."])
+    }
+
+    /// The flag a provider reads while it builds the request is raised for the wrap-up only.
+    func testWithholdingRaisesTheFlagForTheWrapUpOnly() async throws {
+        let withholding = ToolWithholding()
+        var seen: [Bool] = []
+        let adapter = ProviderLoopAdapter(
+            label: "Test",
+            dispatcher: ToolDispatcher(execute: { _, _, _, _ in .completed("ok") }, onStatus: { _ in }),
+            performTurn: {
+                seen.append(withholding.active)
+                return withholding.active
+                    ? AssistantTurn(text: "All done.")
+                    : AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "\(seen.count)", name: "t",
+                                                                          arguments: ["n": seen.count])])
+            },
+            appendAssistantToolCall: { _ in },
+            appendToolResults: { _ in },
+            finalize: { $0.text }
+        ).withholdingTools(withholding)
+        let result = try await runToolLoop(maxIterations: 2, adapter: adapter, setStatus: { _ in })
+        XCTAssertEqual(result, "All done.")
+        XCTAssertEqual(seen, [false, false, true])
+        XCTAssertFalse(withholding.active, "lowered again once the wrap-up is in")
+    }
+
+    /// A server that refuses a closed tool choice still gets asked the ordinary way.
+    func testAWrapUpTheServerRefusesFallsBackToAnOrdinaryTurn() async throws {
+        struct Refused: Error {}
+        let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
+        var adapter = makeScriptedAdapter(
+            turns: [AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "1", name: "task", arguments: [:])]),
+                    AssistantTurn(text: "Recorded the reading.")],
+            history: history, statuses: statuses
+        )
+        adapter.performWrapUp = { throw Refused() }
+        let result = try await runToolLoop(maxIterations: 1, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+        XCTAssertEqual(result, "Recorded the reading.")
+    }
+
+    // MARK: - The same call, the same answer
+
+    /// `field_session` five times in one turn, the same reply each time, and the technician heard
+    /// only that it had stopped. The first repeat runs (a read can change); the second is not run.
+    func testTwoIdenticalAnswersEndTheLoopAndTheThirdCallIsNeverDispatched() async throws {
+        let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
+        let appended = Box<[ToolDispatchOutcome]>([])
+        var executed = 0
+        var requests = 0
+        let call = AssistantTurn(text: "", toolCalls: [
+            ToolInvocation(id: "x", name: "field_session", arguments: ["action": "status"])])
+        let adapter = ProviderLoopAdapter(
+            label: "Test",
+            dispatcher: ToolDispatcher(
+                execute: { _, _, _, _ in executed += 1; return .completed("Job 1029 is open. Verify task done.") },
+                onStatus: { statuses.value.append($0) }),
+            performTurn: {
+                requests += 1
+                // Rounds 1–3 call it again; anything after is the wrap-up, which has no words.
+                return requests <= 3 ? call : AssistantTurn(text: "")
+            },
+            appendAssistantToolCall: { _ in history.value.append("assistant:toolcall") },
+            appendToolResults: { appended.value.append(contentsOf: $0) },
+            finalize: { turn in history.value.append("final:\(turn.text)"); return turn.text }
+        )
+        let result = try await runToolLoop(maxIterations: 8, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+
+        XCTAssertEqual(executed, 2, "the first call and its first repeat ran; the third was answered from them")
+        XCTAssertEqual(requests, 4, "three rounds and the wrap-up — not the eight the budget allowed")
+        XCTAssertEqual(appended.value.count, 3, "every call the model made has an answer")
+        XCTAssertEqual(appended.value[2].outcome,
+                       .rejected(reason: ToolLoopBudget.alreadyAnswered(
+                           "field_session", previous: "Job 1029 is open. Verify task done.")))
+        XCTAssertTrue(ToolLoopBudget.alreadyAnswered("field_session", previous: "Job 1029 is open.")
+            .hasPrefix("'field_session' already ran this turn with the same input and gave the same answer: Job 1029 is open."))
+        XCTAssertEqual(result, "Done so far: Job 1029 is open.", "the turn ends in what was done")
+        XCTAssertEqual(history.value.last, "final:Done so far: Job 1029 is open.")
+    }
+
+    /// A repeat that comes back different is a read that changed, not a loop: it keeps running.
+    func testARepeatWithADifferentAnswerIsNotStopped() async throws {
+        let history = Box<[String]>([]), statuses = Box<[ToolCallStatus]>([])
+        var executed = 0
+        let adapter = makeScriptedAdapter(
+            turns: [AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "1", name: "reading", arguments: [:])]),
+                    AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "2", name: "reading", arguments: [:])]),
+                    AssistantTurn(text: "", toolCalls: [ToolInvocation(id: "3", name: "reading", arguments: [:])]),
+                    AssistantTurn(text: "Pressure is settling.")],
+            execute: { _, _, _, _ in executed += 1; return .completed("Pressure \(executed) bar.") },
+            history: history, statuses: statuses
+        )
+        let result = try await runToolLoop(maxIterations: 5, adapter: adapter,
+                                           setStatus: { statuses.value.append($0) })
+        XCTAssertEqual(executed, 3)
+        XCTAssertEqual(result, "Pressure is settling.")
+    }
+
+    // MARK: - The words a turn ends in
+
+    func testTheSummaryIsTheFirstSentenceOfEachDistinctSuccess() {
+        func done(_ text: String) -> ToolDispatchOutcome {
+            ToolDispatchOutcome(invocation: ToolInvocation(id: "1", name: "t", arguments: [:]),
+                                outcome: .completed(text), yieldReason: nil)
+        }
+        let failed = ToolDispatchOutcome(invocation: ToolInvocation(id: "2", name: "t", arguments: [:]),
+                                         outcome: .failedBeforeExecution(reason: "Nothing ran."), yieldReason: nil)
+        XCTAssertEqual(ToolLoopBudget.spoken(from: [
+            done("Reading recorded: 3.5 in. w.c. Saved to the job."),
+            failed,
+            done("Reading recorded: 3.5 in. w.c. Saved again."),
+            done("{\"json\": true}"),
+            done("Verify task closed\nwith a note"),
+        ]), "Done so far: Reading recorded: 3.5 in. Verify task closed.")
+        XCTAssertEqual(ToolLoopBudget.spoken(from: [failed]), ToolLoopBudget.spokenFallback)
+        XCTAssertEqual(ToolLoopBudget.spoken(from: []), ToolLoopBudget.spokenFallback)
+
+        let long = ToolLoopBudget.spoken(from: (1...20).map { done("Task \($0) of the job was closed and filed.") })
+        XCTAssertLessThanOrEqual(long.count, ToolLoopBudget.summaryCharacterLimit)
+        XCTAssertTrue(long.hasPrefix("Done so far: Task 1 of the job was closed and filed. Task 2"), long)
+        XCTAssertTrue(long.hasSuffix("filed."), "whole sentences only: \(long)")
     }
 
     func testExhaustedLoopUsesTheWrapUpAnswerWhenItHasOne() async throws {

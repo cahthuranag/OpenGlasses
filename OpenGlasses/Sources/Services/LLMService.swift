@@ -2177,6 +2177,8 @@ class LLMService: ObservableObject {
         }
         let state = TurnState()
 
+        // Raised for the wrap-up request only, which then offers the model no tool to call.
+        let withholding = ToolWithholding()
         let adapter = ProviderLoopAdapter(
             label: "Anthropic",
             dispatcher: makeToolDispatcher(),
@@ -2250,10 +2252,13 @@ class LLMService: ObservableObject {
                 let baseOutputCap = smallContext
                     ? (imageData != nil ? Self.smallContextVisionMaxTokens : Config.maxTokens)
                     : (includeTools ? Self.toolTurnMaxTokens : Config.maxTokens)
-                let body = AnthropicRequest.body(
+                var body = AnthropicRequest.body(
                     model: config.model, maxTokens: baseOutputCap, system: .blocks(systemBlocks),
                     messages: historyForRequest, tools: includeTools ? tools : nil,
                     reasoning: reasoning, stream: onToken != nil)
+                if withholding.active, includeTools, !tools.isEmpty {
+                    body["tool_choice"] = ["type": "none"]
+                }
                 // Sorted keys: byte-identical bodies for identical content (Plan GB P5).
                 request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
@@ -2388,7 +2393,7 @@ class LLMService: ObservableObject {
             }
         )
 
-        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter),
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter).withholdingTools(withholding),
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -2631,6 +2636,8 @@ class LLMService: ObservableObject {
         trimHistory()
         turnHistoryStart = max(0, conversationHistory.count - 1)
 
+        // Raised for the wrap-up request only, which then offers the model no tool to call.
+        let withholding = ToolWithholding()
         let adapter = ProviderLoopAdapter(
             label: provider.displayName,
             dispatcher: makeToolDispatcher(),
@@ -2698,6 +2705,7 @@ class LLMService: ObservableObject {
                     }
                     let tools = (try? JSONSerialization.jsonObject(with: toolsData)) as? [[String: Any]] ?? []
                     body["tools"] = tools
+                    if withholding.active, !tools.isEmpty { body["tool_choice"] = "none" }
                     // Plan GB P5: route requests that share this prefix to the same cache. A hash of
                     // the model, the stable head and the schemas — none of the prompt's text.
                     if provider == .openai {
@@ -2740,6 +2748,7 @@ class LLMService: ObservableObject {
                     PrivacyLog.model(.toolsPayloadRejected, provider: PrivacyToken("custom"))
                     Self.customEndpointRejectsTools = true
                     body.removeValue(forKey: "tools")
+                    body.removeValue(forKey: "tool_choice")
                     var retried = request
                     retried.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
                     return retried
@@ -2910,7 +2919,7 @@ class LLMService: ObservableObject {
             }
         )
 
-        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter),
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter).withholdingTools(withholding),
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -2979,6 +2988,8 @@ class LLMService: ObservableObject {
         let limit = RequestContextBudget.resolve(model: config.model, endpoint: endpoint)
         let label = provider.displayName
 
+        // Raised for the wrap-up request only, which then offers the model no tool to call.
+        let withholding = ToolWithholding()
         let adapter = ProviderLoopAdapter(
             label: label,
             dispatcher: makeToolDispatcher(),
@@ -3021,7 +3032,7 @@ class LLMService: ObservableObject {
                     tools: tools, protectedStart: protectedStart, limit: limit, recovery: recovery,
                     instructions: { self.refreshedFieldInstructions(system.stable, turn: text) },
                     options: options, providerToken: provider.rawValue, providerLabel: label,
-                    acceptIncomplete: true,
+                    acceptIncomplete: true, withholdTools: withholding.active,
                     onToken: onToken, onStreamReset: onStreamReset)
 
                 let parsed = ResponsesTranslator.parseOutput(responseJSON)
@@ -3085,7 +3096,7 @@ class LLMService: ObservableObject {
                 return turn.text
             }
         )
-        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter),
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter).withholdingTools(withholding),
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -3141,6 +3152,8 @@ class LLMService: ObservableObject {
                                                 mcpClient: nativeToolRouter?.mcpClient, declaring: roundToolFilter())
         }
 
+        // Raised for the wrap-up request only, which then offers the model no tool to call.
+        let withholding = ToolWithholding()
         let adapter = ProviderLoopAdapter(
             label: "ChatGPT",
             dispatcher: makeToolDispatcher(),
@@ -3163,7 +3176,7 @@ class LLMService: ObservableObject {
                         request: request, model: config.model, history: self.conversationHistory,
                         tools: tools, protectedStart: protectedStart, limit: limit, recovery: recovery,
                         instructions: { self.refreshedFieldInstructions(systemPrompt, turn: text) },
-                        reasoning: reasoning,
+                        reasoning: reasoning, withholdTools: withholding.active,
                         onToken: onToken, onStreamReset: onStreamReset)
                 }
 
@@ -3219,7 +3232,7 @@ class LLMService: ObservableObject {
                 return turn.text
             }
         )
-        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter),
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter).withholdingTools(withholding),
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 
@@ -3260,6 +3273,7 @@ class LLMService: ObservableObject {
                                options: ResponsesTranslator.RequestOptions = ResponsesTranslator.RequestOptions(),
                                providerToken: String = "chatgpt", providerLabel: String = "ChatGPT",
                                acceptIncomplete: Bool = false,
+                               withholdTools: Bool = false,
                                onToken: ((String) -> Void)?, onStreamReset: (() -> Void)?) async throws -> [String: Any] {
         while true {
             try Task.checkCancellation()
@@ -3284,6 +3298,9 @@ class LLMService: ObservableObject {
             // request shape, not context.
             var body = selected.body
             reasoning?.apply(to: &body)
+            // The tool loop's wrap-up: the tools stay declared beside the history's function
+            // calls, and the model may not call one.
+            if withholdTools, body["tools"] != nil { body["tool_choice"] = "none" }
             request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
             request.timeoutInterval = 120
             onStreamReset?()
@@ -3790,6 +3807,8 @@ class LLMService: ObservableObject {
         trimHistory()
         turnHistoryStart = max(0, conversationHistory.count - 1)
 
+        // Raised for the wrap-up request only, which then offers the model no tool to call.
+        let withholding = ToolWithholding()
         let adapter = ProviderLoopAdapter(
             label: "Gemini",
             dispatcher: makeToolDispatcher(),
@@ -3853,6 +3872,9 @@ class LLMService: ObservableObject {
                     }
                     let tools = (try? JSONSerialization.jsonObject(with: toolsData)) as? [[String: Any]] ?? []
                     body["tools"] = tools
+                    if withholding.active, !tools.isEmpty {
+                        body["toolConfig"] = ["functionCallingConfig": ["mode": "NONE"]]
+                    }
                 }
 
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -3971,7 +3993,7 @@ class LLMService: ObservableObject {
             }
         )
 
-        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter),
+        return try await runToolLoop(maxIterations: toolLoopIterations, adapter: notingStalls(adapter).withholdingTools(withholding),
                                      setStatus: { [weak self] in self?.toolCallStatus = $0 })
     }
 

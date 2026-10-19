@@ -40,6 +40,10 @@ import CryptoKit
 /// two more, both required: `job_id`, the office's stable identifier for the job, and `revision`.
 /// Its signature covers `signatureDomainV2` followed by those exact bytes — nothing is re-encoded.
 /// A format-1 file stays readable and is never upgraded in place.
+///
+/// **Format 3** (Contracts/job-file.md §10) is format 2's file under its own signature domain,
+/// `signatureDomainV3`, whose job may also carry `external`, `history` and `site_requirements`,
+/// and whose machines may carry `unit_key`, `make` and `label` (`JobFileFormat3.swift`).
 struct JobFile: Equatable {
 
     /// **Wire identifier, not a product name.** The `format` every job file carries, and the
@@ -53,6 +57,12 @@ struct JobFile: Equatable {
     /// job's bytes: the domain and one zero byte. **Never change this value:** every format-2 job
     /// file an office has signed would stop verifying.
     static let signatureDomainV2 = Data("Avenkin.JobFile.v2\0".utf8)
+    /// The format whose job may also say where it came from and what the office knows about it.
+    static let formatVersion3 = 3
+    /// **Signature domain, not a product name.** Format 3's, so a format-3 signature never
+    /// verifies as format 2's and the reverse. **Never change this value:** every format-3 job
+    /// file an office has signed would stop verifying. Pinned by `StorageIdentifierGuardTests`.
+    static let signatureDomainV3 = Data("Avenkin.JobFile.v3\0".utf8)
     static let fileExtension = "ogjob"
     /// **Type identifier, not a product name.** Declared in `OpenGlasses/Info.plist`; iOS routes
     /// `.ogjob` files to the app by it. **Never change this value:** job files already sent would
@@ -164,8 +174,16 @@ struct JobFile: Equatable {
     let signature: Signature?
     /// Nil for a format-1 file, which has no identity of its own.
     var identity: Identity?
-    /// The job's exact bytes, as a format-2 file carried them: what its signature covers.
+    /// The job's exact bytes, as a format-2 or format-3 file carried them: what its signature
+    /// covers.
     var jobBytes: Data?
+    /// What a format-3 job adds. Nil for formats 1 and 2.
+    var format3: Format3?
+
+    /// What a format-2 or format-3 signature covers before the job's bytes.
+    var signatureDomain: Data {
+        body.formatVersion == JobFile.formatVersion3 ? JobFile.signatureDomainV3 : JobFile.signatureDomainV2
+    }
 
     /// Contract §5: a higher revision is newer; the same revision is the same job only with the
     /// same bytes, and a conflict otherwise; a lower revision never replaces a higher one.
@@ -192,17 +210,28 @@ struct JobFile: Equatable {
     var scheduledDate: Date? { body.scheduledFor.flatMap(JobFileValidator.parseDate) }
 
     /// The job ahead this file proposes. Fields the office left out stay empty.
+    ///
+    /// **Which number is the job's (Plan HT §4):** the other system's `external.job_number` when
+    /// the file gives one, because that is the number the technician knows; the office's own
+    /// `job_reference`, when it differs, is kept as the office's reference, never as the title.
     func upcomingJob(provenance: JobFileProvenance, id: String = UUID().uuidString,
                      createdAt: Date = Date()) -> UpcomingJob {
-        UpcomingJob(
+        let officeNumber = JobIntakeState.cleaned(body.jobReference)
+        let externalNumber = JobIntakeState.cleaned(format3?.external?.jobNumber)
+        let details = format3?.units ?? []
+        return UpcomingJob(
             id: id,
-            jobReference: body.jobReference,
+            jobReference: externalNumber ?? officeNumber,
             site: JobSite(customer: body.site?.customer, address: body.site?.address,
                           contact: body.site?.contact),
             faultReport: body.faultReport.map {
                 FaultReport(text: $0, source: .jobFile, receivedAt: provenance.receivedAt)
             },
-            equipment: (body.equipment ?? []).map { KnownEquipment(model: $0.model, serial: $0.serial) },
+            equipment: (body.equipment ?? []).enumerated().map { index, unit in
+                let detail = index < details.count ? details[index] : JobFile.UnitDetail()
+                return KnownEquipment(model: unit.model, serial: unit.serial, unitKey: detail.unitKey,
+                                      make: detail.make, label: detail.label)
+            },
             scheduledFor: scheduledDate,
             notes: body.notes,
             // Only the ones the file merely names. One it names by digest follows the job, and is
@@ -213,6 +242,9 @@ struct JobFile: Equatable {
             origin: .jobFile,
             provenance: provenance,
             needs: needs.isEmpty ? nil : needs,
+            officeReference: externalNumber != nil && officeNumber != externalNumber ? officeNumber : nil,
+            officeHistory: format3?.history,
+            siteRequirements: format3?.siteRequirements,
             createdAt: createdAt)
     }
 
@@ -247,6 +279,13 @@ enum JobFileValidator {
         case empty
         /// A format-2 file whose job has no usable identifier or revision.
         case noIdentity
+        /// A format-3 value outside what the contract allows: a token, an identifier, a name for
+        /// a unit the job does not have, a kind or severity this version does not know.
+        case invalidValue(String)
+        /// A format-3 value that reads as a link. Nothing in a job file is one.
+        case containsLink(String)
+        /// A format-3 date that isn't one.
+        case unreadableDate(String)
 
         /// What the review sheet says. Plain, and never the file's own words.
         var message: String {
@@ -277,6 +316,12 @@ enum JobFileValidator {
                 return "The job file has no job number, site or fault report — there's nothing to add."
             case .noIdentity:
                 return "This job file doesn't say which of the office's jobs it is, or which revision, so it wasn't opened."
+            case .invalidValue(let name):
+                return "The job file's \u{201C}\(name)\u{201D} isn't something this version of the app accepts, so it wasn't opened."
+            case .containsLink(let name):
+                return "The job file's \u{201C}\(name)\u{201D} contains a web address. Job files never carry links, so it wasn't opened."
+            case .unreadableDate(let name):
+                return "The job file's \u{201C}\(name)\u{201D} isn't a date the app can read, so it wasn't opened."
             }
         }
     }
@@ -295,6 +340,9 @@ enum JobFileValidator {
         "reference": 240,
         "issued_by": 120,
         "scheduled_for": 40,
+        // Format 3's machine members.
+        "make": 64,
+        "label": 80,
     ]
     /// The two fields a sentence with a line break in it belongs in.
     static let multilineFields: Set<String> = ["fault_report", "notes"]
@@ -310,6 +358,11 @@ enum JobFileValidator {
     private static let fileKeysV2: Set<String> = ["format", "format_version", "job", "signature"]
     private static let jobKeysV2: Set<String> = topLevelKeys
         .subtracting(["format", "format_version", "signature"]).union(["job_id", "revision", "manuals"])
+    /// Format 3's job: format 2's, and what the office may say about where the job came from.
+    private static let jobKeysV3: Set<String> = jobKeysV2.union(["external", "history", "site_requirements"])
+    /// What a machine may say in each format.
+    private static let equipmentKeys: Set<String> = ["model", "serial"]
+    private static let equipmentKeysV3: Set<String> = equipmentKeys.union(["unit_key", "make", "label"])
 
     static func validate(_ data: Data) -> Result<JobFile, Refusal> {
         guard data.count <= JobFile.maximumBytes else { return .failure(.tooLarge(data.count)) }
@@ -319,13 +372,15 @@ enum JobFileValidator {
             return .failure(.notAJobFile)
         }
         guard let version = root["format_version"] as? Int else { return .failure(.notAJobFile) }
-        if version == JobFile.formatVersion2 { return validateFormat2(data, root: root) }
+        if version == JobFile.formatVersion2 || version == JobFile.formatVersion3 {
+            return validateWrapped(data, root: root, version: version)
+        }
         guard version == JobFile.formatVersion else { return .failure(.unsupportedVersion(version)) }
         if let unknown = root.keys.sorted().first(where: { !topLevelKeys.contains($0) }) {
             return .failure(.unexpectedField(unknown))
         }
         do {
-            try checkContent(root, format2: false)
+            try checkContent(root, version: JobFile.formatVersion)
             try checkSignature(root)
         } catch let refusal as Refusal {
             return .failure(refusal)
@@ -339,13 +394,14 @@ enum JobFileValidator {
         return .success(JobFile(body: body, signature: signature(root)))
     }
 
-    /// Format 2: a closed outer file around the job's exact bytes. The job is held to the same
-    /// content rules as a format-1 file, and must say which job it is and which revision.
-    private static func validateFormat2(_ data: Data, root: [String: Any]) -> Result<JobFile, Refusal> {
+    /// Formats 2 and 3: a closed outer file around the job's exact bytes. The job is held to the
+    /// same content rules as a format-1 file, and must say which job it is and which revision.
+    /// Format 3's job may say more (`JobFileFormat3Validator`); the file around it is the same.
+    private static func validateWrapped(_ data: Data, root: [String: Any], version: Int) -> Result<JobFile, Refusal> {
         // Exact bytes are what the signature covers, so nothing in them may be ambiguous: no
-        // member named twice at any depth, no trailing data, and the version spelled `2`.
+        // member named twice at any depth, no trailing data, and the version spelled `2` or `3`.
         guard let outer = JobFileJSON.members(data),
-              outer["format_version"].map({ String(decoding: $0, as: UTF8.self) }) == "2" else {
+              outer["format_version"].map({ String(decoding: $0, as: UTF8.self) }) == "\(version)" else {
             return .failure(.notAJobFile)
         }
         if let unknown = root.keys.sorted().first(where: { !fileKeysV2.contains($0) }) {
@@ -357,36 +413,44 @@ enum JobFileValidator {
               let jobRoot = (try? JSONSerialization.jsonObject(with: jobBytes)) as? [String: Any] else {
             return .failure(.notAJobFile)
         }
-        if let unknown = jobRoot.keys.sorted().first(where: { !jobKeysV2.contains($0) }) {
+        let jobKeys = version == JobFile.formatVersion3 ? jobKeysV3 : jobKeysV2
+        if let unknown = jobRoot.keys.sorted().first(where: { !jobKeys.contains($0) }) {
             return .failure(.unexpectedField(unknown))
         }
         guard let jobID = jobRoot["job_id"] as? String, OfficeManualAssignment.safeIdentifier(jobID),
               let revision = plainPositiveInteger(members["revision"]) else {
             return .failure(.noIdentity)
         }
+        var format3: JobFile.Format3?
         do {
-            try checkContent(jobRoot, format2: true)
+            try checkContent(jobRoot, version: version)
             try checkSignature(root)
+            if version == JobFile.formatVersion3 {
+                format3 = try JobFileFormat3Validator.check(jobRoot, members: members)
+            }
         } catch let refusal as Refusal {
             return .failure(refusal)
         } catch {
             return .failure(.notAJobFile)
         }
-        // The fields are read through format 1's own type; only the identity is new.
+        // The fields are read through format 1's own type; the identity, and format 3's
+        // members, are read on their own.
         var fields = jobRoot
-        fields["job_id"] = nil
-        fields["revision"] = nil
+        for member in ["job_id", "revision", "external", "history", "site_requirements"] { fields[member] = nil }
         fields["format"] = JobFile.format
-        fields["format_version"] = JobFile.formatVersion2
+        fields["format_version"] = version
         guard let reencoded = try? JSONSerialization.data(withJSONObject: fields),
               let body = try? JSONDecoder().decode(JobFile.Body.self, from: reencoded) else {
             return .failure(.notAJobFile)
         }
-        guard proposesSomething(body) else { return .failure(.empty) }
+        // A format-3 job may give its number only as the other system's.
+        guard proposesSomething(body) || JobIntakeState.cleaned(format3?.external?.jobNumber) != nil else {
+            return .failure(.empty)
+        }
         return .success(JobFile(
             body: body, signature: signature(root),
             identity: JobFile.Identity(jobID: jobID, revision: revision, sha256: JobFile.digest(jobBytes)),
-            jobBytes: jobBytes))
+            jobBytes: jobBytes, format3: format3))
     }
 
     /// A positive integer in plain decimal, at most 2^53 − 1: no sign, fraction, exponent, quotes
@@ -399,8 +463,10 @@ enum JobFileValidator {
         return value
     }
 
-    /// The job's own fields, in either format. Only a format-2 job may name what follows it.
-    private static func checkContent(_ root: [String: Any], format2: Bool) throws {
+    /// The job's own fields, in any format. Only a format-2 or format-3 job may name what follows
+    /// it, and only a format-3 machine may carry a `unit_key`, a `make` or a `label`.
+    private static func checkContent(_ root: [String: Any], version: Int) throws {
+        let format2 = version >= JobFile.formatVersion2
         try checkText(root, "job_reference")
         try checkText(root, "fault_report")
         try checkText(root, "notes")
@@ -416,9 +482,11 @@ enum JobFileValidator {
             guard list.count <= maximumEquipment else { throw Refusal.tooMany("machines") }
             for entry in list {
                 guard let unit = entry as? [String: Any] else { throw Refusal.wrongType("equipment") }
-                try checkKeys(unit, allowed: ["model", "serial"])
+                try checkKeys(unit, allowed: version >= JobFile.formatVersion3 ? equipmentKeysV3 : equipmentKeys)
                 try checkText(unit, "model")
                 try checkText(unit, "serial")
+                try checkText(unit, "make")
+                try checkText(unit, "label")
             }
         }
         if let attachments = root["attachments"] {
@@ -581,8 +649,9 @@ enum JobFileSignatureCheck {
               let key = try? Curve25519.Signing.PublicKey(rawRepresentation: keyData) else {
             return .unverifiable
         }
-        // Format 2 signs the domain and the job's exact bytes; format 1 its canonical encoding.
-        let covered = file.jobBytes.map { JobFile.signatureDomainV2 + $0 } ?? (try? file.body.canonicalData())
+        // Formats 2 and 3 sign their own domain and the job's exact bytes; format 1 its canonical
+        // encoding.
+        let covered = file.jobBytes.map { file.signatureDomain + $0 } ?? (try? file.body.canonicalData())
         guard let signatureData = Data(base64Encoded: signature.value), signatureData.count == 64,
               let message = covered,
               key.isValidSignature(signatureData, for: message) else {
@@ -604,11 +673,21 @@ enum JobFileSignatureCheck {
     /// Office/test side only: a whole format-2 file for exact job bytes, signed when a key is
     /// given. The members are written in the order the reference implementation writes them.
     static func format2File(job: Data, privateKeyBase64: String? = nil) throws -> Data {
-        var text = #"{"format":"\#(JobFile.format)","format_version":2,"job":"\#(job.base64EncodedString())""#
+        try wrappedFile(job: job, version: JobFile.formatVersion2, privateKeyBase64: privateKeyBase64)
+    }
+
+    /// Office/test side only: a whole format-3 file, signed under format 3's domain.
+    static func format3File(job: Data, privateKeyBase64: String? = nil) throws -> Data {
+        try wrappedFile(job: job, version: JobFile.formatVersion3, privateKeyBase64: privateKeyBase64)
+    }
+
+    private static func wrappedFile(job: Data, version: Int, privateKeyBase64: String?) throws -> Data {
+        var text = #"{"format":"\#(JobFile.format)","format_version":\#(version),"job":"\#(job.base64EncodedString())""#
         if let privateKeyBase64 {
             guard let keyData = Data(base64Encoded: privateKeyBase64) else { throw SigningError.badKey }
             let key = try Curve25519.Signing.PrivateKey(rawRepresentation: keyData)
-            let value = try key.signature(for: JobFile.signatureDomainV2 + job).base64EncodedString()
+            let domain = version == JobFile.formatVersion3 ? JobFile.signatureDomainV3 : JobFile.signatureDomainV2
+            let value = try key.signature(for: domain + job).base64EncodedString()
             text += #","signature":{"algorithm":"ed25519","value":"\#(value)"}"#
         }
         return Data((text + "}").utf8)
@@ -632,6 +711,17 @@ enum JobFileJSON {
         scanner.skipSpace()
         guard scanner.index == scanner.bytes.count else { return nil }
         return ranges.mapValues { Data(scanner.bytes[$0]) }
+    }
+
+    /// Each element of a JSON array, as its own bytes — or nil unless `data` is exactly one
+    /// array, with nothing after it, in which no object names a member twice.
+    static func elements(_ data: Data) -> [Data]? {
+        var scanner = Scanner(bytes: Array(data))
+        scanner.skipSpace()
+        guard let ranges = scanner.array(depth: 0) else { return nil }
+        scanner.skipSpace()
+        guard scanner.index == scanner.bytes.count else { return nil }
+        return ranges.map { Data(scanner.bytes[$0]) }
     }
 
     private struct Scanner {
@@ -668,18 +758,7 @@ enum JobFileJSON {
             case 0x7B:
                 return object(depth: depth) != nil
             case 0x5B:
-                index += 1
-                skipSpace()
-                if index < bytes.count, bytes[index] == 0x5D { index += 1; return true }
-                while true {
-                    skipSpace()
-                    guard value(depth: depth + 1) else { return false }
-                    skipSpace()
-                    guard index < bytes.count else { return false }
-                    if bytes[index] == 0x5D { index += 1; return true }
-                    guard bytes[index] == 0x2C else { return false }
-                    index += 1
-                }
+                return array(depth: depth) != nil
             case 0x22:
                 return string() != nil
             default:
@@ -688,6 +767,26 @@ enum JobFileJSON {
                 while index < bytes.count,
                       ![0x2C, 0x7D, 0x5D, 0x20, 0x0A, 0x0D, 0x09].contains(bytes[index]) { index += 1 }
                 return index > start
+            }
+        }
+
+        /// The range of each element, in order.
+        mutating func array(depth: Int) -> [Range<Int>]? {
+            guard depth <= Self.maximumDepth, index < bytes.count, bytes[index] == 0x5B else { return nil }
+            index += 1
+            var elements: [Range<Int>] = []
+            skipSpace()
+            if index < bytes.count, bytes[index] == 0x5D { index += 1; return elements }
+            while true {
+                skipSpace()
+                let start = index
+                guard value(depth: depth + 1) else { return nil }
+                elements.append(start..<index)
+                skipSpace()
+                guard index < bytes.count else { return nil }
+                if bytes[index] == 0x5D { index += 1; return elements }
+                guard bytes[index] == 0x2C else { return nil }
+                index += 1
             }
         }
 
@@ -813,6 +912,8 @@ struct JobFileReview: Equatable, Identifiable {
                      now: Date = Date()) -> JobFileReview {
         let job = file.upcomingJob(provenance: provenance, createdAt: now)
         var lines: [Line] = [Line(label: "Job number", value: job.jobReference ?? JobTabModel.noJobNumber)]
+        // The office's own number, when the other system's is the job's and the two differ.
+        if let office = job.officeReference { lines.append(Line(label: "Office reference", value: office)) }
         if let revision = file.identity?.revision { lines.append(Line(label: "Revision", value: "\(revision)")) }
         if let customer = job.site.customer { lines.append(Line(label: "Customer", value: customer)) }
         if let address = job.site.address { lines.append(Line(label: "Address", value: address)) }

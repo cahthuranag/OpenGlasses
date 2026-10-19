@@ -42,6 +42,12 @@ targets:
         buildPhase: resources
       - path: Contracts/fixtures/job-file-v2-needs.ogjob
         buildPhase: resources
+      # Format 3 (Plans HT and HU): the external block, and the office's history and site
+      # requirements. Invented data, the same fictional key.
+      - path: Contracts/fixtures/job-file-v3-external.ogjob
+        buildPhase: resources
+      - path: Contracts/fixtures/job-file-v3-history.ogjob
+        buildPhase: resources
       # The bulk-content contract: a publisher grant, a vault it signed, its assignment and receipts.
       - path: Contracts/fixtures/office-publisher-grant-v1.json
         buildPhase: resources

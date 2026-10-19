@@ -81,6 +81,14 @@ struct FieldSession: Codable, Identifiable, Equatable {
     /// What the job file said follows the job from the office, kept so a started job still has
     /// the attachments it was sent.
     var jobNeeds: JobNeeds?
+    /// What the office knows about the job's units, carried over from the job ahead (Plan HU).
+    /// Internal: never in the work record. **Dropped when the job closes**, leaving only
+    /// `officeContext`; nil on every older session.
+    var officeHistory: OfficeServiceHistory?
+    /// What the site asks of the person arriving, from the job ahead (Plan HU). As the history.
+    var officeSiteRequirements: OfficeSiteRequirements?
+    /// What a closed job keeps of what the office sent: counts and dates, never the text.
+    var officeContext: OfficeContextSummary?
     /// A new scope on equipment change prevents carrying work onto another machine (FM).
     var continuityScope: String = "initial"
     var taskEquipmentScopes: [String: String] = [:]
@@ -120,6 +128,17 @@ struct FieldSession: Codable, Identifiable, Equatable {
     /// task with no recorded scope is `"initial"`), or a reading reported on it. Photos and pages
     /// recorded against a task travel with that task; the job-level evidence list carries no unit
     /// scope at all, so tasks and scoped readings are what can be counted — and are enough.
+    /// Drop what the office sent about the job's units and site, keeping only how much it was and
+    /// when it was compiled (Plan HU, decided 2026-10-20). What the technician heard stays in
+    /// `brief`. Called when the job closes, and when the phone leaves the organisation.
+    mutating func dropOfficeSuppliedContext() {
+        if let summary = OfficeContextSummary(history: officeHistory, siteRequirements: officeSiteRequirements) {
+            officeContext = summary
+        }
+        officeHistory = nil
+        officeSiteRequirements = nil
+    }
+
     var hasWorkInCurrentScope: Bool {
         tasks.contains(where: belongsToCurrentEquipment)
             || spokenReadings.contains { $0.unitScope == continuityScope }
@@ -218,6 +237,7 @@ struct FieldSession: Codable, Identifiable, Equatable {
         case jobReference, tasks, partsRequests, identityFields, jobEvidence
         case media, evidenceSelection, signOff, debriefs
         case site, faultReport, brief, jobFile, jobNeeds
+        case officeHistory, officeSiteRequirements, officeContext
         case continuityScope, taskEquipmentScopes, identityEquipmentScopes, procedureEquipmentScope
         case conversationThreadId, conversationThreadDetached, jobIntake, pendingUnitChange
         case visitedUnits
@@ -270,6 +290,9 @@ extension FieldSession {
         brief = try c.decodeIfPresent(JobBrief.self, forKey: .brief)
         jobFile = try c.decodeIfPresent(JobFileProvenance.self, forKey: .jobFile)
         jobNeeds = try c.decodeIfPresent(JobNeeds.self, forKey: .jobNeeds)
+        officeHistory = try c.decodeIfPresent(OfficeServiceHistory.self, forKey: .officeHistory)
+        officeSiteRequirements = try c.decodeIfPresent(OfficeSiteRequirements.self, forKey: .officeSiteRequirements)
+        officeContext = try c.decodeIfPresent(OfficeContextSummary.self, forKey: .officeContext)
         continuityScope = try c.decodeIfPresent(String.self, forKey: .continuityScope) ?? "initial"
         taskEquipmentScopes = try c.decodeIfPresent([String: String].self, forKey: .taskEquipmentScopes) ?? [:]
         identityEquipmentScopes = try c.decodeIfPresent([String: String].self, forKey: .identityEquipmentScopes) ?? [:]

@@ -80,7 +80,7 @@ final class JobFileService: ObservableObject {
         case .offer(let file, let signature, let signer, let revises):
             let provenance = JobFileProvenance(fileName: fileName, signature: signature, signer: signer,
                                                receivedAt: seams.now(), digest: JobFile.digest(data),
-                                               identity: file.identity)
+                                               identity: file.identity, external: file.format3?.external)
             stage = .review(JobFileReview.make(file: file, provenance: provenance,
                                                existing: seams.store()?.jobs ?? [], revises: revises,
                                                now: seams.now()))
@@ -215,6 +215,7 @@ extension UpcomingJob {
         UpcomingJob(id: existing.id, jobReference: jobReference, site: site, faultReport: faultReport,
                     equipment: equipment, scheduledFor: scheduledFor, notes: notes,
                     attachments: attachments, origin: origin, provenance: provenance, needs: needs,
-                    brief: nil, createdAt: existing.createdAt)
+                    brief: nil, officeReference: officeReference, officeHistory: officeHistory,
+                    siteRequirements: siteRequirements, createdAt: existing.createdAt)
     }
 }

@@ -184,7 +184,10 @@ final class JobFileFormat2Tests: XCTestCase {
         XCTAssertEqual(refusal(changed(#"{"format""#, #"{"note":"x","format""#)), .unexpectedField("note"))
         XCTAssertEqual(refusal(changed(#"{"format""#, #"{"format":"openglasses.job","format""#)), .notAJobFile)
         XCTAssertEqual(refusal(changed(#""format_version":2"#, #""format_version":2.0"#)), .notAJobFile)
-        XCTAssertEqual(refusal(changed(#""format_version":2"#, #""format_version":3"#)), .unsupportedVersion(3))
+        XCTAssertEqual(refusal(changed(#""format_version":2"#, #""format_version":4"#)), .unsupportedVersion(4))
+        // Relabelled as format 3 it is read as format 3, and format 2's signature does not
+        // verify there (JobFileFormat3Tests).
+        XCTAssertNil(refusal(changed(#""format_version":2"#, #""format_version":3"#)))
         XCTAssertEqual(refusal(Data((good + "{}").utf8)), .notAJobFile)
         XCTAssertEqual(refusal(changed(#"{"algorithm":"ed25519","#, #"{"algorithm":"ed25519","algorithm":"ed25519","#)),
                        .notAJobFile)

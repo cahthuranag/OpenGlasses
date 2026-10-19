@@ -195,6 +195,12 @@ final class StorageIdentifierGuardTests: XCTestCase {
                        "JobFile.typeIdentifier changed. Job files already sent would stop opening in the app.")
         XCTAssertEqual(JobFile.format, "\(Self.slug).job",
                        "JobFile.format changed. Job files offices have already sent would be refused.")
+        // Signature domains (Contracts/job-file.md §3, §10): a change stops every signed file of
+        // that format verifying, and the two must never be the same.
+        XCTAssertEqual(JobFile.signatureDomainV2, Data("Avenkin.JobFile.v2\0".utf8),
+                       "JobFile.signatureDomainV2 changed. Every signed format-2 job file would stop verifying.")
+        XCTAssertEqual(JobFile.signatureDomainV3, Data("Avenkin.JobFile.v3\0".utf8),
+                       "JobFile.signatureDomainV3 changed. Every signed format-3 job file would stop verifying.")
 
         let info = try plist("OpenGlasses/Info.plist")
         let exported = (info["UTExportedTypeDeclarations"] as? [[String: Any]]) ?? []

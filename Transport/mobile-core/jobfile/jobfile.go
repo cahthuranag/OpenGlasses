@@ -1,10 +1,13 @@
-// Package jobfile is the reference implementation of job-file format 2
+// Package jobfile is the reference implementation of job-file formats 2 and 3
 // (Contracts/job-file.md): a job an office sends to a technician's phone, with an
-// office-assigned identifier and revision, signed over its exact bytes.
+// office-assigned identifier and revision, signed over its exact bytes. Format 3 is format 2's
+// file under its own signature domain, whose job may also say where it came from and what the
+// office knows about it (§10, format3.go).
 //
-// It reads and writes the outer file and checks the job's identity. The limits on what a job
-// may say to a technician — lengths, plain text, no markup — are the phone's validator's and are
-// written down in the contract; an office that wants its files accepted keeps to them.
+// It reads and writes the outer file and checks the job's identity, and in format 3 the shape,
+// bounds and cross-references of the members format 3 adds. The rules on what a job's text may
+// say to a technician — plain text, no markup — are the phone's validator's and are written down
+// in the contract; an office that wants its files accepted keeps to them.
 package jobfile
 
 import (
@@ -26,6 +29,11 @@ const (
 	// Domain separates a format-2 signature from every other signature the organisation's key
 	// makes, a format-1 job file's included.
 	Domain = "Avenkin.JobFile.v2"
+	// Version3 is the format whose job may carry external, history and site_requirements.
+	Version3 = 3
+	// Domain3 separates a format-3 signature from format 2's and from everything else: a
+	// format-3 signature never verifies as format 2's, nor the reverse.
+	Domain3 = "Avenkin.JobFile.v3"
 	// MaximumBytes caps the whole file.
 	MaximumBytes = 64 * 1024
 
@@ -34,7 +42,7 @@ const (
 
 var (
 	ErrMalformed = errors.New("malformed job file")
-	ErrVersion   = errors.New("not a format-2 job file")
+	ErrVersion   = errors.New("not a format-2 or format-3 job file")
 	ErrFields    = errors.New("invalid job file fields")
 	ErrSignature = errors.New("job file is not signed by the organisation's key")
 	ErrUnsigned  = errors.New("job file is not signed")
@@ -45,6 +53,29 @@ var (
 // truth.
 var jobMembers = map[string]bool{"job_id": true, "revision": true, "job_reference": true, "site": true, "fault_report": true,
 	"equipment": true, "scheduled_for": true, "notes": true, "attachments": true, "issued_by": true, "manuals": true}
+
+// jobMembersV3 is format 2's, and what the office may say about where the job came from.
+var jobMembersV3 = func() map[string]bool {
+	out := map[string]bool{"external": true, "history": true, "site_requirements": true}
+	for name := range jobMembers {
+		out[name] = true
+	}
+	return out
+}()
+
+func membersFor(version int) map[string]bool {
+	if version == Version3 {
+		return jobMembersV3
+	}
+	return jobMembers
+}
+
+func domainFor(version int) string {
+	if version == Version3 {
+		return Domain3
+	}
+	return Domain
+}
 
 // What a job may ask to follow it (Contracts/office-bulk.md §5).
 const (
@@ -79,11 +110,14 @@ func plainInteger(raw json.RawMessage) (int64, bool) {
 	return v, e == nil && v > 0 && v <= maximumSafeInteger
 }
 
-// ReadNeeds reads what a job's exact bytes say follows it. An attachment with no digest is only
-// named, as in format 1, and is not in the result.
-func ReadNeeds(job []byte) (Needs, error) {
+// ReadNeeds reads what a format-2 job's exact bytes say follows it. An attachment with no digest
+// is only named, as in format 1, and is not in the result.
+func ReadNeeds(job []byte) (Needs, error) { return ReadNeedsVersion(Version, job) }
+
+// ReadNeedsVersion is ReadNeeds for a job of the given format version.
+func ReadNeedsVersion(version int, job []byte) (Needs, error) {
 	var needs Needs
-	if _, e := identity(job); e != nil {
+	if _, e := identityFor(version, job); e != nil {
 		return needs, e
 	}
 	fields, _ := members(job)
@@ -172,8 +206,12 @@ type file struct {
 
 // SigningInput is the exact bytes a format-2 signature covers: the domain, one zero byte, the
 // job's bytes.
-func SigningInput(job []byte) []byte {
-	return append(append([]byte(Domain), 0), job...)
+func SigningInput(job []byte) []byte { return SigningInputVersion(Version, job) }
+
+// SigningInputVersion is what a signature covers in the given format: that format's domain, one
+// zero byte, the job's bytes.
+func SigningInputVersion(version int, job []byte) []byte {
+	return append(append([]byte(domainFor(version)), 0), job...)
 }
 
 func identifier(s string) bool {
@@ -274,8 +312,12 @@ func unambiguous(raw []byte) bool {
 	}
 }
 
-// identity reads a job's identifier and revision from its exact bytes.
-func identity(job []byte) (Identity, error) {
+// identity reads a format-2 job's identifier and revision from its exact bytes.
+func identity(job []byte) (Identity, error) { return identityFor(Version, job) }
+
+// identityFor reads a job's identifier and revision from its exact bytes, holding it to the
+// members its format allows — and, in format 3, to format 3's rules.
+func identityFor(version int, job []byte) (Identity, error) {
 	if !unambiguous(job) {
 		return Identity{}, ErrMalformed
 	}
@@ -283,9 +325,15 @@ func identity(job []byte) (Identity, error) {
 	if e != nil {
 		return Identity{}, e
 	}
+	allowed := membersFor(version)
 	for name := range fields {
-		if !jobMembers[name] {
+		if !allowed[name] {
 			return Identity{}, ErrFields
+		}
+	}
+	if version == Version3 {
+		if e := checkFormat3(fields); e != nil {
+			return Identity{}, e
 		}
 	}
 	var id string
@@ -305,13 +353,20 @@ func identity(job []byte) (Identity, error) {
 	return Identity{id, n, hex.EncodeToString(sum[:])}, nil
 }
 
-// Seal writes the file for exact job bytes and, when there is one, the signature the
+// Seal writes the format-2 file for exact job bytes and, when there is one, the signature the
 // organisation's key made over SigningInput(job). An empty signature writes an unsigned file.
-func Seal(job, sig []byte) ([]byte, error) {
-	if _, e := identity(job); e != nil {
+func Seal(job, sig []byte) ([]byte, error) { return SealVersion(Version, job, sig) }
+
+// SealVersion writes the file of the given format (2 or 3) for exact job bytes and a signature
+// over SigningInputVersion(version, job).
+func SealVersion(version int, job, sig []byte) ([]byte, error) {
+	if version != Version && version != Version3 {
+		return nil, ErrVersion
+	}
+	if _, e := identityFor(version, job); e != nil {
 		return nil, e
 	}
-	f := file{Format, Version, base64.StdEncoding.EncodeToString(job), nil}
+	f := file{Format, version, base64.StdEncoding.EncodeToString(job), nil}
 	if len(sig) != 0 {
 		if len(sig) != ed25519.SignatureSize {
 			return nil, ErrSignature
@@ -328,60 +383,80 @@ func Seal(job, sig []byte) ([]byte, error) {
 	return out, nil
 }
 
-// Sign writes a signed file for a key held in process.
+// Sign writes a signed format-2 file for a key held in process.
 func Sign(job []byte, organisationKey ed25519.PrivateKey) ([]byte, error) {
+	return SignVersion(Version, job, organisationKey)
+}
+
+// SignVersion writes a signed file of the given format, under that format's domain.
+func SignVersion(version int, job []byte, organisationKey ed25519.PrivateKey) ([]byte, error) {
 	if len(organisationKey) != ed25519.PrivateKeySize {
 		return nil, ErrSignature
 	}
-	return Seal(job, ed25519.Sign(organisationKey, SigningInput(job)))
+	return SealVersion(version, job, ed25519.Sign(organisationKey, SigningInputVersion(version, job)))
 }
 
-// Open reads a format-2 file: its closed outer form, the job's exact bytes and its identity.
-// signed says whether the file carries a signature at all; it is not yet checked (see Verify).
+// Open reads a format-2 or format-3 file: its closed outer form, the job's exact bytes and its
+// identity. signed says whether the file carries a signature at all; it is not yet checked (see
+// Verify).
 func Open(data []byte) (job []byte, id Identity, signed bool, err error) {
+	job, id, _, signed, err = OpenVersion(data)
+	return job, id, signed, err
+}
+
+// OpenVersion is Open, also saying which format the file is.
+func OpenVersion(data []byte) (job []byte, id Identity, version int, signed bool, err error) {
 	if len(data) == 0 || len(data) > MaximumBytes {
-		return nil, Identity{}, false, ErrMalformed
+		return nil, Identity{}, 0, false, ErrMalformed
 	}
 	if !unambiguous(data) {
-		return nil, Identity{}, false, ErrMalformed
+		return nil, Identity{}, 0, false, ErrMalformed
 	}
 	outer, e := members(data)
 	if e != nil {
-		return nil, Identity{}, false, e
+		return nil, Identity{}, 0, false, e
 	}
 	var format string
-	var version json.Number
+	var spelled json.Number
 	if json.Unmarshal(outer["format"], &format) != nil || format != Format {
-		return nil, Identity{}, false, ErrMalformed
+		return nil, Identity{}, 0, false, ErrMalformed
 	}
-	if json.Unmarshal(outer["format_version"], &version) != nil || version.String() != "2" {
-		return nil, Identity{}, false, ErrVersion
+	if json.Unmarshal(outer["format_version"], &spelled) != nil {
+		return nil, Identity{}, 0, false, ErrVersion
+	}
+	switch spelled.String() {
+	case "2":
+		version = Version
+	case "3":
+		version = Version3
+	default:
+		return nil, Identity{}, 0, false, ErrVersion
 	}
 	for name := range outer {
 		if name != "format" && name != "format_version" && name != "job" && name != "signature" {
-			return nil, Identity{}, false, ErrFields
+			return nil, Identity{}, 0, false, ErrFields
 		}
 	}
 	var encoded string
 	if json.Unmarshal(outer["job"], &encoded) != nil {
-		return nil, Identity{}, false, ErrMalformed
+		return nil, Identity{}, 0, false, ErrMalformed
 	}
 	job, e = base64.StdEncoding.Strict().DecodeString(encoded)
 	if e != nil || base64.StdEncoding.EncodeToString(job) != encoded {
-		return nil, Identity{}, false, ErrMalformed
+		return nil, Identity{}, 0, false, ErrMalformed
 	}
-	if id, e = identity(job); e != nil {
-		return nil, Identity{}, false, e
+	if id, e = identityFor(version, job); e != nil {
+		return nil, Identity{}, 0, false, e
 	}
 	_, signed = outer["signature"]
-	return job, id, signed, nil
+	return job, id, version, signed, nil
 }
 
-// Verify reads a format-2 file and checks its signature under the organisation's key, over the
-// domain and the job's exact bytes. An unsigned file is ErrUnsigned: whether one may be offered
-// to a technician is the phone's policy, not this check's.
+// Verify reads a format-2 or format-3 file and checks its signature under the organisation's
+// key, over that format's domain and the job's exact bytes. An unsigned file is ErrUnsigned:
+// whether one may be offered to a technician is the phone's policy, not this check's.
 func Verify(data []byte, organisationKey ed25519.PublicKey) ([]byte, Identity, error) {
-	job, id, signed, e := Open(data)
+	job, id, version, signed, e := OpenVersion(data)
 	if e != nil {
 		return nil, Identity{}, e
 	}
@@ -401,7 +476,7 @@ func Verify(data []byte, organisationKey ed25519.PublicKey) ([]byte, Identity, e
 	if e != nil || len(sig) != ed25519.SignatureSize || base64.StdEncoding.EncodeToString(sig) != s.Value {
 		return nil, Identity{}, ErrMalformed
 	}
-	if len(organisationKey) != ed25519.PublicKeySize || !ed25519.Verify(organisationKey, SigningInput(job), sig) {
+	if len(organisationKey) != ed25519.PublicKeySize || !ed25519.Verify(organisationKey, SigningInputVersion(version, job), sig) {
 		return nil, Identity{}, ErrSignature
 	}
 	return job, id, nil

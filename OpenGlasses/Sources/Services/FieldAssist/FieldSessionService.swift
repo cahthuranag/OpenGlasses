@@ -211,6 +211,9 @@ final class FieldSessionService: ObservableObject {
         session.endedAt = Date()
         session.endLocation = endLocation.map(FieldSession.GeoPoint.init)
         session.outcome = outcome
+        // The office's history and site requirements were for the visit, not for the phone to
+        // keep: the finished job holds only how much there was (Plan HU).
+        session.dropOfficeSuppliedContext()
         history = history.replacingFirst(matching: session.id, with: session)
         logger.updateSession { $0 = session }
         logger.appendLifecycle(.sessionEnded, note: "outcome=\(outcome.rawValue), billable_seconds=\(Int(session.billableSeconds))")
@@ -544,6 +547,8 @@ final class FieldSessionService: ObservableObject {
             session.brief = job.brief
             session.jobFile = job.provenance
             session.jobNeeds = job.needs
+            session.officeHistory = job.officeHistory
+            session.officeSiteRequirements = job.siteRequirements
         }
         var payload: [String: AnyCodable] = [
             "origin": AnyCodable(job.origin.rawValue),
@@ -562,8 +567,25 @@ final class FieldSessionService: ObservableObject {
                 payload["revision"] = AnyCodable(Int(identity.revision))
             }
         }
+        // Counts only: the office's text never reaches the log (Plan HU §2).
+        if let history = job.officeHistory {
+            payload["office_history_units"] = AnyCodable(history.units.count)
+            payload["office_flags"] = AnyCodable(history.flags.count)
+        }
+        if let requirements = job.siteRequirements {
+            payload["office_site_requirements"] = AnyCodable(requirements.items.count)
+        }
         logger?.append(.init(timestamp: Date(), kind: .jobAheadStarted,
                              text: job.provenance?.recordLine ?? job.title, payload: payload))
+    }
+
+    /// The phone has left the organisation: what its office said about the open job's units and
+    /// site goes now, not at close (Plan HU, decided 2026-10-20). The jobs ahead, which carry the
+    /// rest of it, are erased with the organisation's content.
+    func eraseOfficeSuppliedContext() {
+        guard let session = activeSession,
+              session.officeHistory != nil || session.officeSiteRequirements != nil else { return }
+        mutateSession { $0.dropOfficeSuppliedContext() }
     }
 
     /// Bind the job to a saved conversation, or let go of one.

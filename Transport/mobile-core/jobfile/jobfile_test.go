@@ -42,8 +42,13 @@ func TestTheGoldenFixtureIsCurrentAndReadsBack(t *testing.T) {
 		}
 		job, id, e := Verify(got, FixtureKey().Public().(ed25519.PublicKey))
 		wantJob, wantID, wantRevision := FixtureJob, "job-2031", int64(2)
-		if name == "job-file-v2-needs.ogjob" {
+		switch name {
+		case "job-file-v2-needs.ogjob":
 			wantJob, wantID, wantRevision = FixtureJobWithNeeds, "job-2032", 1
+		case "job-file-v3-external.ogjob":
+			wantJob, wantID, wantRevision = FixtureJobV3External, "job-3031", 1
+		case "job-file-v3-history.ogjob":
+			wantJob, wantID, wantRevision = FixtureJobV3History, "job-3032", 1
 		}
 		if e != nil || string(job) != wantJob || id.JobID != wantID || id.Revision != wantRevision {
 			t.Fatalf("%s: %v %+v", name, e, id)
@@ -83,7 +88,8 @@ func TestOnlyAClosedFormatTwoFileWithAnIdentityOpens(t *testing.T) {
 		want error
 	}{
 		"format 1":                                   {`{"format":"openglasses.job","format_version":1,"job_reference":"FX-1007"}`, ErrVersion},
-		"format 3":                                   {strings.Replace(good, `"format_version":2`, `"format_version":3`, 1), ErrVersion},
+		"format 4":                                   {strings.Replace(good, `"format_version":2`, `"format_version":4`, 1), ErrVersion},
+		"format 3 spelled as a fraction":             {strings.Replace(good, `"format_version":2`, `"format_version":3.0`, 1), ErrVersion},
 		"another format":                             {strings.Replace(good, `openglasses.job`, `openglasses.vault`, 1), ErrMalformed},
 		"an extra outer member":                      {strings.Replace(good, `{"format"`, `{"note":"x","format"`, 1), ErrFields},
 		"a duplicate outer member":                   {strings.Replace(good, `{"format"`, `{"format":"openglasses.job","format"`, 1), ErrMalformed},
@@ -102,7 +108,7 @@ func TestOnlyAClosedFormatTwoFileWithAnIdentityOpens(t *testing.T) {
 		"a member named twice inside a machine":      {withJob(`{"job_id":"job-1","revision":1,"equipment":[{"model":"A","model":"B"}]}`), ErrMalformed},
 		"a member named twice inside the signature":  {strings.Replace(good, `{"algorithm":"ed25519",`, `{"algorithm":"ed25519","algorithm":"ed25519",`, 1), ErrMalformed},
 		"a format-1 signature member inside the job": {withJob(`{"job_id":"job-1","revision":1,"signature":{}}`), ErrFields},
-		"nothing":                                    {``, ErrMalformed},
+		"nothing": {``, ErrMalformed},
 	} {
 		_, _, _, e := Open([]byte(c.data))
 		refused(t, name, e, c.want)

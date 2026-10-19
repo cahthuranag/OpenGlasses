@@ -1,6 +1,12 @@
 # Plan IS — Refrigerant Toolkit (gauges to an answer, full P-T tables, refrigerant-rule flags, a door-sticker diagram)
 
-**Status:** 📝 Drafted 2026-10-17, P4–P6 added the same day — nothing implemented. The EPA 608 reference was corrected
+**Status:** 🚧 **P0 built 2026-10-19** — saturation tables generated with CoolProp 8.0.0 (pinned in
+`Scripts/generate-pt-tables.py`, run by hand): 13 bundled tables (the planned twelve plus R-454B, which
+CoolProp defines as a predefined mixture), dew and bubble series on the −40…150 °F (1 °F) and −40…65 °C
+(0.5 °C) grids, absolute kPa; pure `SaturationTable`, `Atmosphere` (ISA altitude correction) and
+`RefrigerantPressure`; `domain_calc` reads them (superheat on dew, subcool on bubble, glide, the source
+line and the sea-level line; psig/°F or kPa/bar with °C); `pt_charts.md` reduced to a pointer; CoolProp in
+Settings › About › Attributions. P1–P6 not started. Drafted 2026-10-17, P4–P6 added the same day. The EPA 608 reference was corrected
 separately, in [#753](https://github.com/straff2002/OpenGlasses/pull/753). **Amended 2026-10-19
 ([below](#amendment-2026-10-19-canada-australia-and-new-zealand-first)):** Canada, Australia and New Zealand rules come
 first and the US EPA 608 flags become a deferred phase (P2-US); metric units are first-class throughout.

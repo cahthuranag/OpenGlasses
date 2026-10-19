@@ -19,6 +19,8 @@ struct FieldAssistSettingsView: View {
     @AppStorage("fieldAssistContextualSearchEnabled") private var smarterManualSearch: Bool = true
     /// Plan IS P1: `pressure,temperature,mass`, or empty for the App Store region's default.
     @AppStorage(RefrigerationUnitsSetting.key) private var refrigerationUnitsStored: String = ""
+    /// The technician's own trades (`FieldTradeSetting.key`): nil until they choose, "" for none.
+    @AppStorage(FieldTradeSetting.key) private var tradesStored: String?
     /// `Config.preferredMapsApp`'s key and default, stored as its raw value.
     @AppStorage("preferredMapsApp") private var preferredMapsApp: String = MapsApp.apple.rawValue
     @AppStorage("briefOnCarPlayConnect") private var briefOnCarPlayConnect: Bool = false
@@ -272,7 +274,12 @@ struct FieldAssistSettingsView: View {
                     Text("Finds the right page in your manuals more often. Switching it on or off re-indexes your manuals once in the background, and search keeps using the current index until that finishes. The first time, your phone may download a language model from Apple.")
                 }
 
-                refrigerationUnitsSection
+                tradeSection
+
+                // A refrigeration section: shown while Refrigeration is on, or no trade is set.
+                if FieldTradeGate.isAvailable(.refrigerationHVAC, activeTrades: tradesInForce.trades) {
+                    refrigerationUnitsSection
+                }
 
                 // ──────────────── Wake word
                 //
@@ -590,6 +597,67 @@ struct FieldAssistSettingsView: View {
             Button("OK") { deliveryError = nil }
         } message: {
             Text(deliveryError ?? "")
+        }
+    }
+
+    // ──────────────── Trade
+    //
+    // Each trade adds its tiles to the Field Assist grid. Until the technician chooses, the
+    // organisation's default and then the default vault's declared trades decide; the section says
+    // which, and the toggles stay as that layer set them until "Use My Own Choice".
+    /// What the organisation and the vault say, ignoring the technician's own choice.
+    private var inheritedTrades: FieldTradeSelection {
+        FieldTradeResolver.resolve(explicit: nil,
+                                   organization: FieldTradeSetting.organizationDefault(),
+                                   vault: FieldTradeSetting.vaultDeclaredTrades(vaultId: defaultVaultId))
+    }
+
+    private var tradesInForce: FieldTradeSelection {
+        guard let explicit = FieldTradeSetting.decode(tradesStored) else { return inheritedTrades }
+        return FieldTradeResolver.resolve(explicit: explicit, organization: nil, vault: nil)
+    }
+
+    private func tradeBinding(_ trade: FieldTrade, in selection: FieldTradeSelection) -> Binding<Bool> {
+        Binding(
+            get: { selection.contains(trade) },
+            set: { on in
+                var trades = selection.trades.filter { $0 != trade }
+                if on { trades.append(trade) }
+                tradesStored = FieldTradeSetting.encode(trades)
+            })
+    }
+
+    private var tradeSection: some View {
+        let selection = tradesInForce
+        let inherited = selection.source == .organization || selection.source == .vault
+        return Section {
+            ForEach(FieldTrade.allCases) { trade in
+                Toggle(trade.title, isOn: tradeBinding(trade, in: selection))
+                    .disabled(inherited)
+            }
+            if inherited {
+                Button("Use My Own Choice") { tradesStored = FieldTradeSetting.encode(selection.trades) }
+            } else if selection.source == .technician {
+                switch inheritedTrades.source {
+                case .organization:
+                    Button("Use Organisation's Choice") { tradesStored = nil }
+                case .vault:
+                    Button("Use Vault's Trades") { tradesStored = nil }
+                case .technician, .none:
+                    EmptyView()
+                }
+            }
+        } header: {
+            Text("Trade")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                switch selection.source {
+                case .organization: Text("Set by your organisation.")
+                case .vault: Text("From your vault.")
+                case .technician, .none: EmptyView()
+                }
+                Text("Each trade adds its tiles to the Field Assist grid, after the job tiles. While a trade is on, the tools and settings of the trades that are off are hidden. Refrigeration & HVAC adds Read Gauges and P-T Lookup; Electrical adds none yet.")
+            }
         }
     }
 

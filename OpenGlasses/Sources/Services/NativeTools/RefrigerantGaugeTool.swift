@@ -24,7 +24,10 @@ final class RefrigerantGaugeTool: NativeTool {
     without it the answer is pressures only. Line temperatures come from a probe in the picture or \
     from what the technician says ('suction_line_temp_f' / '_c'). When this tool asks which gauge \
     is which, call it again with the answer ('suction_gauge': 'left', or the value shown) and \
-    'reuse_last_capture': true. Readings are recorded on the open job with the photo.
+    'reuse_last_capture': true. Readings are recorded on the open job with the photo. When no \
+    picture can be taken or the reading is unusable, this tool offers voice instead: take the \
+    pressures and line temperatures the technician says to domain_calc ('superheat' / 'subcool'), \
+    which checks and records them the same way.
     """
 
     let parametersSchema: [String: Any] = [
@@ -154,7 +157,8 @@ final class RefrigerantGaugeTool: NativeTool {
         } else {
             switch await takeCapture() {
             case .success(let fresh): capture = fresh
-            case .failure(let problem): return problem.text
+            // No picture, or one that read as nothing: the existing line, then the voice way on.
+            case .failure(let problem): return problem.text + " " + Self.voiceOffer(request.calculations)
             }
         }
 
@@ -162,10 +166,29 @@ final class RefrigerantGaugeTool: NativeTool {
             SaturationTableCatalog.table(for: designation, bundle: bundle)
         }
         var reply = outcome.text
+        if outcome.asksRecapture && outcome.answered.isEmpty {
+            // Nothing could be worked out from the picture; saying the values is the other way.
+            reply += " " + Self.voiceOffer(request.calculations)
+        }
         if let note = record(outcome.recordable, capture: capture, refrigerant: request.refrigerant) {
             reply += " " + note
         }
         return reply
+    }
+
+    // MARK: - The voice fallback
+
+    /// The way on when the picture gave nothing: the values the calculation needs, said aloud,
+    /// which the model takes to `domain_calc`.
+    static func voiceOffer(_ calculations: [RefrigerantLineCalculation.Kind]) -> String {
+        switch Set(calculations) {
+        case [.superheat]:
+            return "Or tell me the suction pressure and suction line temperature and I'll work it out."
+        case [.subcool]:
+            return "Or tell me the liquid pressure and liquid line temperature and I'll work it out."
+        default:
+            return "Or tell me the suction and liquid pressures and line temperatures and I'll work it out."
+        }
     }
 
     // MARK: - The photograph

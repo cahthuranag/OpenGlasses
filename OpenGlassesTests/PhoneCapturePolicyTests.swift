@@ -83,7 +83,7 @@ final class PhoneCapturePolicyTests: XCTestCase {
     }
 
     func testPreCaptureTilesExistAndNameAskOnPhoneTools() {
-        let tileIds = Set(QuickAction.fieldAssistJobActions.map(\.id))
+        let tileIds = Set(QuickAction.fieldAssistManagedActions.map(\.id))
         for (tile, tool) in PhoneCapturePolicy.preCaptureTiles {
             XCTAssertTrue(tileIds.contains(tile), "\(tile) is not a Field Assist tile")
             XCTAssertEqual(PhoneCapturePolicy.route(forTool: tool), .askOnPhone, tool)

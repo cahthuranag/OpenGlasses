@@ -215,7 +215,8 @@ final class NativeToolRegistry {
             register(ProjectNoteTool())
             register(ProcedureRunnerTool())
             register(CaptureFlowTool())
-            register(DomainCalcTool())
+            // A spoken superheat or subcool is checked and recorded like a photographed one.
+            register(DomainCalcTool(recorder: FieldSessionService.shared))
             register(EscalateToExpertTool())
             register(NetworkCalcTool())
             // equipment_lookup gains an on-device OCR path when a camera is present.

@@ -10,7 +10,7 @@
 <meta name="description" content="How to build a Field Assist vault from your own manuals, import it on the iPhone, test it and share it.">
 <!-- Converted from docs/field-assist-vault-guide.md by Scripts/build-vault-guide-page.py. That file
      is the source: change the guide there and run the script again, rather than editing this page.
-     source-sha256: e4c7609e9db00f3134017cac048441f7e46c0a2d72ae40fe1f2fb7f7139ad8af -->
+     source-sha256: 3c5096f139a48c0752ee60bc960a8af658291910fd5ab139d458f19aef3dbb45 -->
 <link rel="stylesheet" href="/assets/site.css">
 <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
 </head>
@@ -229,7 +229,8 @@ is the honest answer.</p>
     &quot;Remind the technician of the relevant safety steps before any action that opens an electrical panel, the gas train, or the refrigerant circuit.&quot;
   ],
   &quot;source_attribution_format&quot;: &quot;Source: {files}&quot;,
-  &quot;source_attribution_required&quot;: true
+  &quot;source_attribution_required&quot;: true,
+  &quot;trades&quot;: [&quot;refrigeration_hvac&quot;]
 }
 </code></pre>
 <div class="table-scroll">
@@ -284,6 +285,10 @@ is the honest answer.</p>
 <tr>
 <td><code>source_attribution_*</code></td>
 <td>Forces a source line on every factual claim drawn from the core files.</td>
+</tr>
+<tr>
+<td><code>trades</code></td>
+<td>Optional. The trades this vault is for: <code>refrigeration_hvac</code>, <code>electrical</code>. Each trade adds its own tiles to the Field Assist grid on phones whose default vault is this one — <code>refrigeration_hvac</code> adds <strong>Read Gauges</strong> and <strong>P-T Lookup</strong>; <code>electrical</code> adds none yet. The technician's own choice in Settings › Field Assist › Trade, then the organisation's, comes first; the vault's is used when neither has chosen. A value the app does not know is ignored, not refused, so you can list a trade a newer version will understand. Omit it to leave the choice to the technician.</td>
 </tr>
 </tbody>
 </table>

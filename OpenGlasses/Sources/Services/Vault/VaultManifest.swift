@@ -44,6 +44,12 @@ struct VaultManifest: Codable, Equatable {
     let sourceAttributionFormat: String?
     /// When true, the prompt explicitly instructs the model to refuse answering without a citation.
     let sourceAttributionRequired: Bool
+    /// The trades this vault is for (`refrigeration_hvac`, `electrical`), as the author wrote them.
+    /// Optional: absent means the vault says nothing, and the technician's or the organisation's
+    /// choice decides which trade tiles Field Assist shows. Kept as written, so an export carries a
+    /// value this build does not know; `FieldTrade.known(_:)` reads it and ignores what it does not
+    /// recognise rather than refusing the manifest.
+    let trades: [String]?
 
     struct Gating: Codable, Equatable {
         /// IAP product identifier required to unlock this vault. Nil = free.
@@ -72,7 +78,7 @@ struct VaultManifest: Codable, Equatable {
                       documents: documents, documentsIncluded: documentsIncluded,
                       gating: gating, promptRules: promptRules,
                       sourceAttributionFormat: sourceAttributionFormat,
-                      sourceAttributionRequired: sourceAttributionRequired)
+                      sourceAttributionRequired: sourceAttributionRequired, trades: trades)
     }
 
     /// Location of a document relative to the vault root.
@@ -97,6 +103,7 @@ struct VaultManifest: Codable, Equatable {
         case promptRules = "prompt_rules"
         case sourceAttributionFormat = "source_attribution_format"
         case sourceAttributionRequired = "source_attribution_required"
+        case trades
     }
 
     init(
@@ -111,7 +118,8 @@ struct VaultManifest: Codable, Equatable {
         gating: Gating = Gating(iap: nil),
         promptRules: [String] = [],
         sourceAttributionFormat: String? = "Source: {files}",
-        sourceAttributionRequired: Bool = true
+        sourceAttributionRequired: Bool = true,
+        trades: [String]? = nil
     ) {
         self.id = id
         self.name = name
@@ -125,6 +133,7 @@ struct VaultManifest: Codable, Equatable {
         self.promptRules = promptRules
         self.sourceAttributionFormat = sourceAttributionFormat
         self.sourceAttributionRequired = sourceAttributionRequired
+        self.trades = trades
     }
 
     /// Hand-written so every manifest authored before the reference tier existed — and every
@@ -143,6 +152,9 @@ struct VaultManifest: Codable, Equatable {
         promptRules = try c.decodeIfPresent([String].self, forKey: .promptRules) ?? []
         sourceAttributionFormat = try c.decodeIfPresent(String.self, forKey: .sourceAttributionFormat)
         sourceAttributionRequired = try c.decodeIfPresent(Bool.self, forKey: .sourceAttributionRequired) ?? true
+        // A malformed `trades` (not a list of strings) is ignored like an unknown value, never a
+        // refused manifest: it only chooses tiles.
+        trades = (try? c.decodeIfPresent([String].self, forKey: .trades)) ?? nil
     }
 }
 

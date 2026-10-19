@@ -922,6 +922,11 @@ extension SettingKey {
         case (.refrigerationUnits, .string(let raw)):
             return RefrigerationUnits(encoded: raw).map { "Refrigeration answers start in \($0.spokenList)" }
                 ?? rawValue
+        case (.fieldAssistDefaultTrades, .strings(let raw)):
+            let trades = FieldTrade.known(raw)
+            return trades.isEmpty
+                ? "Field Assist starts with no trade tiles"
+                : "Field Assist starts with the " + trades.map(\.title).joined(separator: " and ") + " tiles"
         case (.fieldAssistDefaultMode, .string(let mode)):
             return mode == FieldSession.Mode.humanAssisted.rawValue
                 ? "Field Assist starts in human-assisted mode" : "Field Assist starts in AI-only mode"

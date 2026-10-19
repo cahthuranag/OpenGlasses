@@ -1,6 +1,24 @@
 # Plan HU — Service History on Request, and Maintenance Flags (what the office knows about this unit reaches the technician)
 
-**Status:** 🚧 P0 built 2026-10-20 — with Plan HT P0, in job-file format 3 (contract §10): the
+**Status:** 🚧 P0–P3 built 2026-10-20; the device check below is owed, and re-reading a changed
+warning on an open job waits for Plan HN. **P1–P3 (2026-10-20):** the brief merges the office's
+history after this phone's visits (three lines, newest first across units, cited "Office service
+history (system), as of …", then "And N more…"), a visit both hold shown once as the phone's line
+"(also in the office's history)", site requirements opening *Site and history* warnings first, the
+warranty as its own line straight after the unit's, the new empty line, and `JobBrief.flags` (warnings
+first, kind in words, cited with the evidence); every office line is marked (`office_origin`) and
+**dropped from the brief at close** and on leaving the organisation, so the closed visit keeps none
+of the text. `JobBriefContract` carries `OFFICE FLAG:` lines inside its 1,200 characters under one
+more lede sentence. The job's page shows the flags above the brief; a warning flag puts a mark on
+the Jobs-list row and the job-day card, with a VoiceOver label (decision 4). `service_history`
+(read-only, `.local` offline, Field Assist gated, in `FieldToolProfile`, the `.fieldAssist` record
+and `LiveJobContract.jobToolNames` — decision 5) answers from the open job's history or the next
+job ahead's, dated and sourced, with the warranty on request. At Start, `startedLines(for:)` reads
+warning requirements in full then at most two warning flags, once (`officeSiteRequirementsSpoken`,
+`officeFlagsSpoken`, counts only); a resumed job says nothing more. A job-file revision of a job
+ahead that changes a `warning` requirement or flag reads the changed warning once as it is accepted
+(`OfficeWarningChanges`, decision 8); the open-job path is HN's to call.
+**P0 (2026-10-20):** with Plan HT P0, in job-file format 3 (contract §10): the
 `history` member as `OfficeServiceHistory` and the amendment's `site_requirements`
 (`OfficeSiteRequirements`) and per-unit `warranty`, validated with the drafted bounds (10 visits a
 unit, 2 KiB a visit, 3 flags a unit and 12 in all, 24 KiB; 8 requirements and 4 KiB), decoded onto
@@ -8,13 +26,13 @@ unit, 2 KiB a visit, 3 flags a unit and 12 in all, 24 KiB; 8 requirements and 4 
 when the job closes, leaving `FieldSession.officeContext` (counts and as-of dates, never text);
 erased from the open job when the phone leaves the organisation; the Go package and the signed
 fixture `job-file-v3-history.ogjob`; plus the format-3 standardisation fields (amendment below).
-P1–P3 not started; device run owed. **Decided 2026-10-20:** the bounds as drafted (open question
+**Decided 2026-10-20:** the bounds as drafted (open question
 1); clear on close, the finished job keeping only its summary lines (2); history keyed by
 `unit_key` when there is no serial, never by model (3); a removal from the organisation erases
 office-supplied history on jobs ahead — the jobs ahead already go with the organisation's
-content, and the open job's history now goes with them (6); warranty internal in v1 (7). Decided,
-deferred to P1: the Jobs-list flag mark (4), `service_history` added to
-`LiveJobContract.jobToolNames` (5), and re-reading a changed `warning` on an update (8).
+content, and the open job's history now goes with them (6); warranty internal in v1 (7); the
+Jobs-list flag mark (4), `service_history` added to `LiveJobContract.jobToolNames` (5), and
+re-reading a changed `warning` on an update (8), all built in P1–P3.
 Drafted 2026-10-08. Phone half only: the office compiles the
 history from its field service management system (FSM) and computes the flags with a
 deterministic rule engine in office plan FX21 (private); the phone reads, briefs and answers from

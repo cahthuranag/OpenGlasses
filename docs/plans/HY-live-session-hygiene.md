@@ -1,9 +1,27 @@
 # Plan HY: Live Session Hygiene (carry the conversation, stop when nobody is there, spend within a budget)
 
-**Status:** 📝 Drafted 2026-10-10. Nothing built. Four small items, each its own PR with a pure
-core: P0 mode-switch handover, P1 idle end, P2 Live Coach budget, P3 tools-off announcements. The
-doff half of "end when nobody is there" is folded into Plan [CM](CM-dat-0-9-0-unlocks.md) P1 (see
-Design 2).
+**Status:** 🚧 Built 2026-10-19, all four parts in one PR; the device pass is owed. **P0**
+`ModeSwitchHandover.seed` (pure) + wiring in `performModeSwitch`: the old session's recorder is
+read before the teardown and the block is set on the target manager before the redial; Direct →
+live carries the Direct thread's last six turns when the newest is under ten minutes old; a later
+switch drops only its own unconsumed seed, never the offline handoff's. `LiveContextHandover.build`
+gained a `cause` so the block says the wearer switched rather than that the connection dropped.
+**P1** pure `LiveIdlePolicy` + `LiveIdleClock` (5 s tick, injected clock) in the shared
+`RealtimeSessionManager` both live modes run on; activity is input transcription, the server's
+speech-start (Gemini Live: its barge-in), the local barge-in VAD, a tool call and its result, a
+typed message, the mic mute and the live camera control; `Config.liveIdleMinutes` (default 10;
+a stepper under Settings › AI & Personality › Live conversation, 5 to 60 or Off); the warning goes
+through the session's own voice; `stopSession(reason: .idleEnded)` is logged and shown on the
+status card. **P2** pure
+`CallBudget` + `LiveCoachPacer` (the budget, then `FrameGate` with a 30 s heartbeat; only forwarded
+frames spend); the spent line is said once a session. **P3**
+`realtimeResponseCreate(toolsAllowed:)`; `LiveAnnouncementDelivery` (agent completions and
+notifications read aloud) and the idle warning use the tools-off lane. A deferred *tool* result
+on OpenAI Realtime comes back as that tool's own output and keeps its chain, so it is not an
+announcement; Qwen Audio keeps the bare trigger (its contract is unchecked for the field); Gemini
+Live is unchanged and pinned by a test. **Owed:** the device pass below (an 11-minute idle Gemini
+Live session hearing the warning and the end, socket closed, camera stopped). The doff half of
+"end when nobody is there" stays with Plan [CM](CM-dat-0-9-0-unlocks.md) P1 (see Design 2).
 **Origin:** The [October 2026 ecosystem review](../ecosystem-review-2026-10.md) (section 3 rows
 "Mode switch forgets the conversation", "Live sessions never idle out", "Live Coach has no call
 budget"; section 4 row "Tools-off realtime announcements"; Appendix B claim 5).
@@ -152,12 +170,14 @@ and hear the warning and the end; confirm the socket closes and the camera stops
 
 ## Open questions
 
-1. Should a live → Direct switch seed the Direct thread with the live turns? Recommended: not in
-   this plan; Direct already keeps its own thread, and mixing transcripts needs a decision about
-   what the Direct history means.
-2. Default idle limit: 10 minutes (recommended) or shorter on a metered key? A per-provider
+All three decided by the owner on 2026-10-19, at the recommendations.
+
+1. Should a live → Direct switch seed the Direct thread with the live turns? **Decided: no.**
+   Direct already keeps its own thread, and mixing transcripts needs a decision about what the
+   Direct history means.
+2. Default idle limit: **decided 10 minutes** for every provider. A per-provider or metered-key
    default is possible later.
-3. Live Coach default budget: 240 an hour is a proposal; the cost tracker (Plan AU) can show
+3. Live Coach default budget: **decided 240 calls an hour**; the cost tracker (Plan AU) can show
    whether it bites.
 
 ## Dependencies

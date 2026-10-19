@@ -9,7 +9,7 @@ Superheat and subcool are the two most useful diagnostic measurements for charge
 - **Subcool (Subcooling)**: How much the liquid-line refrigerant has cooled below its saturation temperature.
   `subcool_F = saturation_temp_F_at_liquid_pressure − actual_liquid_temp_F`
 
-Both use values from the PT chart for the refrigerant in question (`pt_charts.md`).
+Both use the saturation temperature for the refrigerant in question, from `domain_calc` (see `pt_charts.md`): the dew point for superheat, the bubble point for subcool.
 
 ## Measurement procedure (TXV / EEV systems — target subcool)
 

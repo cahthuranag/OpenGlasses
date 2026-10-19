@@ -1,63 +1,16 @@
 # Refrigerant Pressure–Temperature (PT) Reference
 
-Saturation temperatures (°F) at given gauge pressures (psig) for common HVAC/R refrigerants.
-Values are approximate and intended for field reference; always confirm against a calibrated PT chart for precision diagnostics.
+Saturation temperatures and pressures come from the `domain_calc` tool, not from this file. Never quote a
+saturation value from memory.
 
-## R-410A (most common 2010-2024 commercial)
-
-| Pressure (psig) | Saturation Temp (°F) |
-|----------------:|---------------------:|
-| 50  | 8   |
-| 75  | 23  |
-| 100 | 31  |
-| 125 | 44  |
-| 135 | 47  |
-| 150 | 54  |
-| 175 | 63  |
-| 200 | 70  |
-| 250 | 84  |
-| 300 | 96  |
-| 400 | 119 |
-| 450 | 129 |
-
-## R-32 (newer single-component, mildly flammable A2L)
-
-| Pressure (psig) | Saturation Temp (°F) |
-|----------------:|---------------------:|
-| 50  | 12  |
-| 100 | 38  |
-| 135 | 52  |
-| 150 | 58  |
-| 200 | 75  |
-| 250 | 89  |
-| 300 | 102 |
-| 400 | 124 |
-
-## R-454B (A2L blend; replacing R-410A from 2024)
-
-| Pressure (psig) | Saturation Temp (°F) |
-|----------------:|---------------------:|
-| 50  | 9   |
-| 100 | 35  |
-| 135 | 49  |
-| 150 | 55  |
-| 200 | 73  |
-| 250 | 87  |
-| 300 | 100 |
-| 400 | 124 |
-
-## R-22 (legacy — phaseout, virgin production banned in US since 2020)
-
-| Pressure (psig) | Saturation Temp (°F) |
-|----------------:|---------------------:|
-| 50  | 25  |
-| 75  | 44  |
-| 100 | 59  |
-| 125 | 72  |
-| 150 | 83  |
-| 200 | 102 |
-| 250 | 117 |
-| 300 | 130 |
+- `domain_calc` reads full saturation tables (dew and bubble, −40 °F to 150 °F and −40 °C to 65 °C) generated
+  from CoolProp for R-22, R-32, R-134a, R-404A, R-407A, R-407C, R-410A, R-454B, R-507A, R-290, R-600a, R-744
+  and R-1234yf. Its answer names the source; repeat it.
+- Superheat uses the dew point and subcooling the bubble point. Blends with glide (R-407A, R-407C) differ by
+  several degrees between the two.
+- Gauge pressure is read against sea-level atmosphere unless an altitude is given.
+- The refrigerant comes from the nameplate or the technician, never a guess. For a refrigerant with no table,
+  give the pressures only.
 
 ## Quick rule-of-thumb pressures (R-410A, 70-75°F ambient, normal operation)
 

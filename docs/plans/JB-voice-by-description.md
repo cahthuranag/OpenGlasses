@@ -1,13 +1,18 @@
 # Plan JB — Voice by Description ("warmer, slower, a Scottish accent")
 
-**Status:** 📝 Drafted (not scheduled), 2026-10-18 — nothing built.
+**Status:** 📝 Drafted (not scheduled), 2026-10-18 — nothing built. **2026-10-19:** P3 (organisation
+voice) added after the question "could an organisation set one voice across its phones?" — yes,
+through the organisation profile; the shapes and the limit are in P3.
 **Extends:** `TextToSpeechService` (engine chain `TTSEngineSelector`: ElevenLabs → Kokoro → system),
 `ServicesSettingsView` (voice pickers), `Persona` (`Models/Persona.swift`).
 **Related:** Plan [FY](FY-rename-to-avenkin.md) (how the name is pronounced on each tier — owed on
 device), Plan [ID](ID-ecosystem-review-hardening-bundle.md) §5 (a second cloud voice tier and the
 egress checklist any new voice endpoint must ship with), Plan [HQ](HQ-eu-ai-act-second-tranche.md)
 (a synthetic voice is already disclosed on every artefact that leaves the phone), Plan
-[EU](EU-remediation-roadmap.md) W04.2 (route registry).
+[EU](EU-remediation-roadmap.md) W04.2 (route registry), Plan [CT](CT-org-configuration-profiles.md)
+(the organisation profile P3 extends: `ConfigProfile.aiModel` is the shape an organisation voice
+copies, `OrgEnrolmentService.modelKey` the way its key is entered, `organizationAccentColor` the
+set-and-locked precedent).
 
 ---
 
@@ -201,6 +206,55 @@ preview sentence under each persona; device: three descriptions on each tier, th
 the name on a generated voice, the time from "describe" to the first preview on a phone, and the
 vendor dashboard showing exactly one saved voice after keep.
 
+**P3 — Organisation voice.** An organisation that enrols its phones can set the voice every one of
+them speaks in, the way it already sets the accent colour and the AI model. The goal is one voice
+across the crew; the limit is that a voice can only be pinned to a tier the phone can play, so the
+profile names a tier and an identifier, never a voice file.
+
+- **Shape.** A `voice` block on `ConfigProfile`, beside `aiModel`, not a `SettingKey`: `{engine,
+  identifier, rate?, pitch?, description?, fallback?}`, decoded without failing and resolved by a
+  pure `OrgVoice.resolve` into a `VoiceSelection` — a malformed or unknown engine is a named drop
+  that leaves the phone's voice alone, like a bad model entry. `fallback` is a second `{engine,
+  identifier}` for when the first tier is unavailable; absent means the normal chain. The block is
+  **set and locked** (the `organizationAccentColor` precedent): the Voice section shows the
+  selection read-only with "Set by <organisation>", the sliders are disabled, `voice_design` is
+  refused with "your organisation sets the voice on this phone", and the organisation voice wins
+  over a persona voice (P2) for as long as the profile is in force. Leaving the organisation
+  (`OrgDeparture`) restores the wearer's own selection, which is kept, not overwritten.
+- **Three shapes, in order of what they cost the organisation.**
+  1. *An Apple voice* — `engine: system`, the `AVSpeechSynthesisVoice` identifier, optional rate
+     and pitch. Free, offline, backgrounded, identical on every phone that has the voice
+     installed. If it is not installed, enrolment says so and points to iOS Settings ›
+     Accessibility › Spoken Content › Voices; until then `LocalVoiceMatcher` plays the nearest
+     installed voice for the same language and the enrolment summary lists the voice as owed.
+  2. *A Kokoro speaker* — `engine: kokoro`, a speaker index from `KokoroSpeakerCatalog`, optional
+     rate. Free and offline; the model download is offered at enrolment (Wi-Fi) and the Apple
+     fallback speaks until it lands.
+  3. *A voice in the organisation's own cloud account* — `engine: elevenLabs`, a voice id, optional
+     rate and the description it was made from (for the settings line only). The organisation
+     designs or clones the voice in its own account; a voice it first made elsewhere and cloned
+     into that account is its affair and is synthetic, so the no-real-person rule holds, and the
+     app itself still never clones. The account key never travels in the profile — it is entered on
+     the phone at enrolment through the same step as the model key (`OrgEnrolmentService.modelKey`
+     gains a `voiceKey` case), stored in the Keychain, and `fallback` says which local voice speaks
+     when the cloud is refused, in Local Only, or offline. The key's provider entry and routes are
+     the P1 ones; nothing new leaves the phone.
+- **What it cannot do.** The phone's own tiers have fixed speakers, so an organisation wanting its
+  *own* voice has the cloud shape only, and offline moments on that shape speak the pinned
+  fallback — a different voice, said once ("the organisation's voice needs a connection; using the
+  built-in voice until then"). A self-hosted voice server on the organisation's own network, which
+  would give a designed voice with no vendor and no egress, is a separate later plan (a fourth
+  engine in `TTSEngineSelector`, a wire contract to pin, a commercially licensed model to choose);
+  this phase leaves `VoiceSelection.engine` open for it.
+- **Tests.** `OrgVoiceResolveTests` (the three shapes resolve; unknown engine, missing identifier
+  and an HTTPS-less field are named drops; a missing Apple voice yields the nearest installed voice
+  and an owed line; `fallback` resolves independently), `ProfileApplierTests` (voice applied and
+  locked, sliders and tool refused, persona voice overridden, departure restores the wearer's
+  selection byte-for-byte), `SettingsVisibilityPolicyTests` (Voice rows read-only under a profile
+  with a voice, untouched without one), and the existing secret-disjointness test extended so a
+  profile cannot carry a voice key. Device pass (owed): a crew link with each shape on two phones,
+  the Apple voice not yet installed on one of them, and the cloud shape with the key refused.
+
 ## Risks
 
 - **Vendor drift.** The design endpoints are younger than the synthesis one and have changed
@@ -221,9 +275,16 @@ vendor dashboard showing exactly one saved voice after keep.
    installs once the vendor path is proven?
 5. **Kokoro speaker table**: maintain the static catalogue (recommended, with the count
    assertion) or expose a bare "speaker 0–N" picker?
+6. **Organisation voice precedence** (P3): the organisation voice wins over a persona voice
+   (recommended — one voice across the crew is the point), or personas keep theirs?
+7. **Which shape to recommend to an organisation first**: an Apple voice (recommended — free,
+   offline, identical on every phone, nothing to enrol) until it asks for its own voice, which is
+   the cloud shape; the self-hosted server stays a later plan until a tester asks for speech that
+   never leaves their network.
 
 ## Out of scope
 
 Voice cloning from audio, emotion or sentiment-driven delivery (removed on purpose, Plan HR),
 changing the wake phrase, the realtime providers' own `voice` fields, the gateway's spoken-reply
-control line, and any voice for the watch or CarPlay beyond what the phone already speaks there.
+control line, any voice for the watch or CarPlay beyond what the phone already speaks there, a
+self-hosted voice server (see P3), and any voice file or sample carried in an organisation profile.

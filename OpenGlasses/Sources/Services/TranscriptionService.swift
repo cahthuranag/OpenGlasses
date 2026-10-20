@@ -85,6 +85,19 @@ class TranscriptionService: ObservableObject {
     /// Shared audio engine — set by AppState from WakeWordService
     weak var sharedAudioEngineProvider: WakeWordService?
 
+    // MARK: - Hearing the words we know are coming (Plan JM P0)
+
+    /// The contextual strings for the next Apple Speech turn, built by `DictationVocabulary` from
+    /// the job, the van, the vaults, the wake phrases and the trade. Read once per turn in
+    /// `setupAndStartRecording()`, so a job change applies from the next turn. The on-device
+    /// engine takes no hints and never calls it. Empty by default: AppState installs the real one.
+    var vocabularyProvider: () -> [String] = { [] }
+
+    /// The conversation mic the wearer chose, and the developer switch for the phone-mic voice
+    /// processing experiment. Closures so `DictationCapturePolicy`'s inputs are read live per turn.
+    var micRouteProvider: () -> MicRoute = { Config.micRoute }
+    var voiceProcessingSwitchProvider: () -> Bool = { Config.dictationVoiceProcessingEnabled }
+
     // MARK: - On-device ASR (Additional Capabilities #8)
     //
     // SenseVoice is offline / whole-buffer (not streaming), so when it's the selected engine we
@@ -232,6 +245,12 @@ class TranscriptionService: ObservableObject {
             throw TranscriptionError.setupFailed("Could not create recognition request")
         }
         recognitionRequest.shouldReportPartialResults = true
+        // Plan JM P0: tell the recogniser which words are likely. The count is logged, never a word.
+        let vocabulary = vocabularyProvider()
+        if !vocabulary.isEmpty {
+            recognitionRequest.contextualStrings = vocabulary
+            PrivacyLog.speech(.dictation, .vocabularyApplied, count: vocabulary.count)
+        }
 
         // Try to reuse the shared audio engine from WakeWordService
         // This avoids stopping/starting the engine which fails in background
@@ -251,7 +270,32 @@ class TranscriptionService: ObservableObject {
             // input format, and a tap on that is the uncatchable crash `requireUsableTapFormat`
             // guards against.
             await AudioSessionCoordinator.shared.ensureActiveOffMain()
-            let audioEngine = AVAudioEngine()
+            var audioEngine = AVAudioEngine()
+            // Plan JM P0: the phone-mic voice-processing experiment. Turned on BEFORE the format is
+            // read and the tap installed — it reformats the input node — and only on an engine this
+            // service owns. A failure, or the dead-IO format it can leave behind, falls back to a
+            // fresh engine without it: the turn is never lost to the experiment.
+            fallbackVoiceProcessing = false
+            if DictationCapturePolicy.voiceProcessing(route: Self.liveCaptureRoute(configured: micRouteProvider()),
+                                                      engine: .dedicated,
+                                                      developerSwitch: voiceProcessingSwitchProvider()) {
+                do {
+                    try audioEngine.inputNode.setVoiceProcessingEnabled(true)
+                    let processed = audioEngine.inputNode.outputFormat(forBus: 0)
+                    switch VoiceProcessingProbe.verdict(sampleRate: processed.sampleRate,
+                                                        channelCount: processed.channelCount) {
+                    case .usable:
+                        fallbackVoiceProcessing = true
+                        PrivacyLog.speech(.dictation, .voiceProcessingOn)
+                    case .deadIO:
+                        PrivacyLog.speech(.dictation, .voiceProcessingFailed, detail: PrivacyToken("deadIO"))
+                        audioEngine = AVAudioEngine()
+                    }
+                } catch {
+                    PrivacyLog.speech(.dictation, .voiceProcessingFailed, error: SafeErrorSummary(error))
+                    audioEngine = AVAudioEngine()
+                }
+            }
             let inputNode = audioEngine.inputNode
             let recordingFormat = inputNode.outputFormat(forBus: 0)
             try Self.requireUsableTapFormat(recordingFormat, channel: .dictation)
@@ -274,6 +318,20 @@ class TranscriptionService: ObservableObject {
 
     /// Fallback engine used only when shared engine isn't available
     private var fallbackAudioEngine: AVAudioEngine?
+    /// Whether the fallback engine's input node has voice processing on, so cleanup turns it off.
+    private var fallbackVoiceProcessing = false
+
+    /// The route `DictationCapturePolicy` judges: the wearer's chosen route, but only while the
+    /// session's live input really is the phone's built-in mic. A conversation that was meant for
+    /// the phone and landed on a Bluetooth input — or meant for the glasses and fell back to the
+    /// phone — is not treated as the phone mic, so the experiment never touches a hands-free link.
+    private static func liveCaptureRoute(configured: MicRoute) -> MicRoute {
+        guard configured == .phone else { return configured }
+        let inputs = AVAudioSession.sharedInstance().currentRoute.inputs.map(\.portType)
+        let onBuiltInMic = inputs.contains(.builtInMic) && !MicRoutePolicy.containsBluetoothMic(inputs)
+        // Not the built-in mic despite the choice: judge it as the external input it is.
+        return onBuiltInMic ? .phone : .headset
+    }
 
     /// The dedicated-engine guard. The microphone is unavailable — backgrounded behind another
     /// app that holds it (the "in background with Meta AI open" crash in TestFlight build 463),
@@ -294,6 +352,10 @@ class TranscriptionService: ObservableObject {
         if let engine = fallbackAudioEngine {
             engine.stop()
             engine.inputNode.removeTap(onBus: 0)
+            if fallbackVoiceProcessing {
+                try? engine.inputNode.setVoiceProcessingEnabled(false)
+                fallbackVoiceProcessing = false
+            }
             fallbackAudioEngine = nil
         }
     }

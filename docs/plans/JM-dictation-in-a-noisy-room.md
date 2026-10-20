@@ -1,6 +1,6 @@
 # Plan JM — Dictation in a Noisy Room (heard right on site, a way to type or check when it isn't, and a cloud recogniser as an option)
 
-**Status:** 📝 Drafted 2026-10-21 — nothing implemented. Raised by a tester after a demo over lunch
+**Status:** 🚧 P0 built 2026-10-21 — dictation now passes `DictationVocabulary` hints (active equipment, job equipment, van stock, the vault's manual titles, wake phrases, a per-trade glossary; capped at 250, no customer or site fields) to Apple Speech, `DictationCapturePolicy` turns on phone-mic voice processing on dictation's own engine behind a developer switch (off until measured on the device), and `MicRouteHintPolicy` shows once per process that the phone mic hears better after a wearer-opened turn on the glasses mic heard nothing; device pass owed, P1–P3 not started. Drafted 2026-10-21. Raised by a tester after a demo over lunch
 in a noisy restaurant: the assistant kept mishearing them, it works well somewhere quiet, and
 background conversation or equipment noise on site would be a problem. They asked for a typed
 fallback, a chance to correct the transcript before it goes, and whether a cloud recogniser through

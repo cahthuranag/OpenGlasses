@@ -15,6 +15,9 @@ struct DeveloperPanelView: View {
     /// Plan HZ P1 — `Config.directSentenceStreamingEnabled`, the same key and default (off until
     /// measured on device).
     @AppStorage("directSentenceStreamingEnabled") private var directSentenceStreamingEnabled = false
+    /// Plan JM P0 — `Config.dictationVoiceProcessingEnabled`, the same key and default (off until
+    /// measured on device).
+    @AppStorage("dictationVoiceProcessingEnabled") private var dictationVoiceProcessingEnabled = false
 
     init(appState: AppState) {
         self.appState = appState
@@ -101,6 +104,14 @@ struct DeveloperPanelView: View {
             ) {
                 OGRow("Speak as it writes", isOn: $directSentenceStreamingEnabled,
                       icon: "text.bubble")
+            }
+
+            OGSection(
+                header: "Dictation",
+                footer: "An experiment: asks the iPhone's own mic for noise suppression while you dictate. Only on the iPhone mic, and only when dictation runs its own audio engine. It changes the input format and may add delay, so it stays off until it has been measured. Applies from the next turn."
+            ) {
+                OGRow("Voice processing on the phone mic (dictation)", isOn: $dictationVoiceProcessingEnabled,
+                      icon: "waveform.and.mic")
             }
 
             OGSection(header: "Turn Latency") {

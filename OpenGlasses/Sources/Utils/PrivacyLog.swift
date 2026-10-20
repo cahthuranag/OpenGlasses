@@ -1390,6 +1390,10 @@ enum PrivacyLog {
         case artifactDropped, silenceGated, noteInserted
         case translated, translationUnavailable, providerUnavailable
         case sendFailed, analysisCompleted
+        /// Dictation's vocabulary hints were set on the request — `count` is how many, never which.
+        /// The phone-mic voice-processing experiment came on, or failed and the turn went on
+        /// without it. The once-per-process hint that the phone's mic hears better was shown.
+        case vocabularyApplied, voiceProcessingOn, voiceProcessingFailed, micRouteHinted
     }
 
     /// `language` is a BCP-47 tag — a property of the session, not of what was said — so it is

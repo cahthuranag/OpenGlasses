@@ -2568,6 +2568,12 @@ class AppState: ObservableObject, AppStateProtocol {
         // Share the audio engine so transcription works in background
         transcriptionService.sharedAudioEngineProvider = wakeWordService
 
+        // Plan JM P0: dictation hears the words the job, the van, the vaults and the trade name.
+        // Read live every turn, so a job change applies from the next one.
+        transcriptionService.vocabularyProvider = { [weak self] in
+            self?.dictationVocabulary() ?? []
+        }
+
         // TTS borrows the wake-word service so it can pause/resume other audio via the
         // same reference-counted hold that the active-listening flow uses.
         speechService.wakeWordService = wakeWordService
@@ -3665,6 +3671,50 @@ class AppState: ObservableObject, AppStateProtocol {
         }
     }
 
+    // MARK: - Dictation in a noisy room (Plan JM P0)
+
+    /// The contextual strings for the next dictation turn, from what the app holds right now.
+    ///
+    /// The Field Assist sources are read only while Field Assist is on, so a wearer who never uses
+    /// it is not handed refrigerant names. Nothing about the customer or the site goes in —
+    /// `DictationVocabulary.Input` has no field for it.
+    func dictationVocabulary() -> [String] {
+        var input = DictationVocabulary.Input(wakePhrases: Config.allActiveWakePhrases)
+        if Config.fieldAssistEnabled {
+            let field = FieldSessionService.shared
+            let session = field.activeSession
+            input.activeEquipment = field.activeEquipment ?? session?.equipment
+            input.jobEquipment = session?.officeEquipment ?? []
+            if !Config.organizationForbidsVanStock {
+                input.vanStock = VanStockStore.shared.log.items
+            }
+            // The open job's vault, else the vault Field Assist opens on.
+            if let vault = field.activeVault?.manifest
+                ?? VaultRegistry.shared.manifest(id: Config.fieldAssistDefaultVaultId) {
+                input.vaults = [vault]
+            }
+            input.trades = FieldTradeSetting.current.trades
+        }
+        return DictationVocabulary.build(input)
+    }
+
+    /// Says, once per process, that the phone's mic hears better in a loud room.
+    private var micRouteHint = MicRouteHintPolicy()
+
+    /// The dictation turn now open was reopened after a reply (a follow-up), not opened by the
+    /// wearer. A follow-up that hears nothing is the ordinary end of a conversation, not noise.
+    private var dictationIsFollowUp = false
+
+    /// A dictation turn ended on silence. On the glasses mic in Direct mode, the first turn the
+    /// wearer opened that recognised nothing puts the hint on screen — shown, never spoken.
+    private func noteDictationHeardNothing() {
+        let outcome: MicRouteHintPolicy.TurnOutcome = dictationIsFollowUp ? .followUpUnanswered : .noSpeech
+        dictationIsFollowUp = false
+        guard micRouteHint.shouldHint(route: Config.micRoute, outcome: outcome, mode: currentMode) else { return }
+        PrivacyLog.speech(.dictation, .micRouteHinted)
+        NoticeCenter.shared.post(MicRouteHintPolicy.message, severity: .advisory, source: .app)
+    }
+
     /// The active model id before a Field Assist session swapped in the vault's model.
     private var modelBeforeFieldSession: String?
 
@@ -4308,6 +4358,7 @@ class AppState: ObservableObject, AppStateProtocol {
         transcriptionService.onTranscriptionComplete = { [weak self] text in
             Task { @MainActor in
                 guard let self = self else { return }
+                self.dictationIsFollowUp = false   // Plan JM P0: this turn heard something
                 self.noteUserInteraction()   // Plan W: a spoken command is an explicit engagement
                 // While Assistive Mode (A3) is active it owns the loop — feed the transcript to bias
                 // Scene vs Social routing instead of starting a normal turn.
@@ -4352,6 +4403,7 @@ class AppState: ObservableObject, AppStateProtocol {
         transcriptionService.onSilenceTimeout = { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
+                self.noteDictationHeardNothing()
                 PrivacyLog.app(.conversationEnded, detail: PrivacyToken("silence"))
                 await self.returnToWakeWord()
             }
@@ -4620,6 +4672,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // Stay in conversation — listen for follow-up right away
         if inConversation {
             isListening = true
+            dictationIsFollowUp = true
             transcriptionService.startRecording()
         } else {
             Task { await returnToWakeWord() }
@@ -6390,7 +6443,10 @@ class AppState: ObservableObject, AppStateProtocol {
             pauseOtherAudio: { [self] in await wakeWordService.pauseOtherAudio() },
             handOffMic: { [self] in await wakeWordService.handOffMic() },
             playAcknowledgmentTone: { [self] in speechService.playAcknowledgmentTone() },
-            startRecording: { [self] in transcriptionService.startRecording() },
+            startRecording: { [self] in
+                dictationIsFollowUp = false
+                transcriptionService.startRecording()
+            },
             updateLiveActivity: { [self] in updateLiveActivity() }
         ))
     }
@@ -6465,6 +6521,7 @@ class AppState: ObservableObject, AppStateProtocol {
             // CO Item 4: if what we just said was a question, give the user room to think before
             // the silence window ends the conversation out from under them.
             transcriptionService.noteAssistantSpoke(speechService.lastSpokenText)
+            dictationIsFollowUp = true
             transcriptionService.startRecording()
             // CO Item 3: a turn is over, so anything held while it ran can be answered now.
             replayHeldUtteranceIfFresh()

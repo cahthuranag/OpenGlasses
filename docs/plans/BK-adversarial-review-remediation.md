@@ -268,6 +268,17 @@ and only surfaces an error when *every* candidate is exhausted.
 
 ---
 
+**Follow-up 2026-10-21 — the chain remembers a hop.** A tester's afternoon on a degraded Gemini
+(503s that took eight seconds to arrive, requests that hung for the whole 30 s timeout): every turn
+started on Gemini again, spent the 503 plus the in-provider retry's fresh timeout, hopped to ChatGPT,
+and was answered in seconds — four turns of 40–50 s in twenty minutes, "OK" included.
+`ModelCascadeMemory` (pure, time as a parameter) records a transient hop away from the lead and the
+model that answered; for ten minutes the chain starts on that model with the lead second, and the
+hold ends early the moment the lead answers again. Start order only — the active model setting is
+untouched, and `cascadeLeadDeferred` logs the deferred start. In the same change `geminiRetryDelay`
+skips Gemini's own retry when the cascade has another candidate: the hop to a different provider is
+the retry.
+
 ## P2c — Narrate what the app is doing (audible model-switch notification) 🟠 Important
 
 **Principle (user request).** The app should *tell the user what it's doing* rather than silently

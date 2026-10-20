@@ -1430,6 +1430,12 @@ enum PrivacyLog {
         // synthesizer being replaced. Reasons are case names (`neverStarted`, `stalled`,
         // `mediaServicesReset`).
         case started, engineUnresponsive, synthesizerRebuilt
+        // Plan HZ — a reply spoken a sentence at a time: its first sentence playing, its end, a
+        // barge-in/stop/reset cutting it short (with sentences heard of the total), the cloud voice
+        // demoted for the rest of it, and what was left to say once the reply was final. Counts and
+        // case names only.
+        case streamedReplyStarted, streamedReplyFinished, streamedReplyInterrupted
+        case streamedCloudDemoted, streamedReplyReconciled
     }
 
     /// The spoken text is the assistant answering the wearer — the other half of the transcript,
@@ -1438,6 +1444,7 @@ enum PrivacyLog {
     /// and the fallback chain it belongs to, are public operation class.
     @discardableResult
     static func tts(_ event: TTSEvent, engine: PrivacyToken? = nil, characters: Int? = nil,
+                    count: Int? = nil, total: Int? = nil,
                     bytes: Int? = nil, seconds: Double? = nil, quality: Int? = nil,
                     voice: PrivateIdentifier? = nil, status: Int? = nil, success: Bool? = nil,
                     detail: PrivacyToken? = nil,
@@ -1445,6 +1452,8 @@ enum PrivacyLog {
         var fields: [PrivacyEvent.Field] = [.init(.event, .token(PrivacyToken(event.rawValue)))]
         if let engine { fields.append(.init(.engine, .token(engine))) }
         if let characters { fields.append(.init(.characters, .count(characters))) }
+        if let count { fields.append(.init(.count, .count(count))) }
+        if let total { fields.append(.init(.total, .count(total))) }
         if let bytes { fields.append(.init(.bytes, .count(bytes))) }
         if let seconds { fields.append(.init(.elapsed, .seconds(seconds))) }
         if let quality { fields.append(.init(.quality, .count(quality))) }

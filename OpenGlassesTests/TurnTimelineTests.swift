@@ -125,6 +125,44 @@ final class TurnTimelineTests: XCTestCase {
                           "the two must never collapse into one number")
     }
 
+    /// Plan HZ P1: the same shape, produced by a streamed reply through the recorder rather than
+    /// written by hand — the first sentence reaches the engine and starts playing while the model
+    /// is still writing, so the sealed turn carries the negative lead-in the plan is measured by.
+    @MainActor
+    func testAStreamedReplyThroughTheRecorderHasANegativeLeadIn() async {
+        final class Clock { var now: Date; init(_ now: Date) { self.now = now } }
+        let clock = Clock(at(0))
+        let ledger = TurnLedger()
+        TurnRecorder.reset(ledger: ledger, now: { clock.now }, micRoutePorts: { [] })
+        defer { TurnRecorder.reset() }
+
+        let speech = RecordingStreamedSpeech()
+        speech.onPlay = { _, _ in TurnRecorder.markPlaybackStart(at: clock.now) }
+        let stream = DirectReplySpeechStream(speaker: speech)
+
+        TurnRecorder.beginTurn()
+        TurnRecorder.mark(.commit)
+        clock.now = at(1.0)
+        stream.ingest("The forecast for Auckland is sunny today.")
+        clock.now = at(1.2)
+        stream.ingest(" Expect light winds after three.")      // the first sentence goes to speech
+        clock.now = at(1.6)
+        for _ in 0..<1_000 where speech.played.isEmpty { await Task.yield() }
+        XCTAssertEqual(speech.played.count, 1, "the first sentence is playing while generation continues")
+
+        clock.now = at(4.0)
+        TurnRecorder.mark(.generationDone)
+        TurnRecorder.handOffToSpeech()                        // the runner's own hand-off: first-wins
+        await stream.finish(reply: "The forecast for Auckland is sunny today. Expect light winds after three.")
+        TurnRecorder.endTurn()
+
+        let turn = ledger.sealed.last
+        XCTAssertEqual(turn?.ttsRequestedAt, at(1.2), "requested when the first sentence was released")
+        XCTAssertEqual(turn?.ttsLeadIn ?? .nan, -2.4, accuracy: 0.001,
+                       "speech began 2.4 s before generation finished")
+        XCTAssertEqual(turn?.ttsTimeToFirstByte ?? .nan, 0.4, accuracy: 0.001)
+    }
+
     // MARK: - Invariant 4: frame-grab time is held separately
 
     /// Vision TTFT contains the wait on the glasses' Bluetooth stream. Raw TTFT keeps it, because

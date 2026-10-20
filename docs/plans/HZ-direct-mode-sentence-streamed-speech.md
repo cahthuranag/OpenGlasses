@@ -1,8 +1,9 @@
 # Plan HZ: Direct-Mode Sentence-Streamed Speech (start talking at the first sentence, not the last token)
 
-**Status:** 📝 Drafted 2026-10-10. Nothing built. P0 is a pure core; P1 wires it into the Direct turn
-behind a flag that defaults off until P2's device numbers; P2 is a device measurement read through
-Plan [CU](CU-voice-turn-latency.md)'s `ttsLeadIn`.
+**Status:** 🚧 P0 + P1 built 2026-10-21 (one PR), behind `Config.directSentenceStreamingEnabled`,
+**default off**; P2's device measurement through Plan [CU](CU-voice-turn-latency.md)'s `ttsLeadIn`
+is owed and decides the default. Drafted 2026-10-10. What shipped and where it differs from the
+design below: [Built 2026-10-21](#built-2026-10-21).
 **Origin:** The [October 2026 ecosystem review](../ecosystem-review-2026-10.md) (section 3 row
 "Direct-mode replies are not sentence-streamed"; section 5; Appendix B claim 4).
 **Why a new plan and not a CU phase:** CU was checked first. It names sentence streaming as the
@@ -151,6 +152,88 @@ On both mic routes, Anthropic, OpenAI and Gemini Direct with ElevenLabs and with
 turns each: perceived time to first word, `ttsLeadIn` distribution, audible gaps between
 sentences, barge-in mid-reply. If streaming is not clearly better on the glasses route, the flag
 stays off and the numbers are recorded here. If it is, a one-line PR flips the default.
+
+## Built 2026-10-21
+
+P0 and P1 in one PR. The flag is off, so nothing changes for a wearer until P2.
+
+**P0, pure core (`Services/TTS/`).**
+- `SentenceStreamSplitter` — the design's boundary rules, abbreviation list and guards. Two
+  details settled in the building: a boundary is decided only once **two** characters past it are
+  visible (or the stream has ended), so a chunk that stops at a list marker's digit or at "e." is
+  never guessed at; and the minimum length applies to list items too, so very short items merge
+  (each item of ordinary length is its own sentence). `flushIfComplete()` releases a waiting
+  sentence only when it already ends in a terminator.
+- `StreamSpeechGate` — think filtering reuses `ThinkStreamFilter`, so nothing after an open block
+  reaches the splitter until it closes. `holdWholeReply` defaults to the memory-command shape (the
+  `[REMEMBER`, `[FORGET`, `[DIARY` tags `parseAndExecuteCommands` strips). The choice-list rule
+  holds a reply whose opening (first 300 characters) has a lettered item ("A) …"), or a numbered
+  item with a choice cue before it (a question mark, "which", "pick", "choose", "prefer",
+  "option"); numbered steps with no cue stream like prose. The app applies it only while HUD choice
+  buttons are on. `endIteration()` is the reset, and `reconcile(reply:spoken:)` says what is left
+  to say once the reply is final.
+- `StreamedReplySchedule` — ordering, depth (default 2, clamped 1…3), per-sentence engine fallback,
+  per-reply demotion after two consecutive cloud failures, cancellation, and the heard count and
+  first-unheard boundary.
+
+**P1, wiring.**
+- `StreamedReplyQueue` drives the schedule against a `StreamedSpeechBackend`;
+  `TextToSpeechService` is the backend. ElevenLabs synthesis is split from playback
+  (`fetchElevenLabsAudio`, with `speakWithElevenLabs` unchanged for its callers), Kokoro returns
+  audio, and the system voice has nothing to prepare. Each sentence gets the same symbol expansion
+  and the same engine chain as `speak`; a cloud rejection is reported and announced as before, its
+  one-off line riding on the sentence the next engine says.
+- `DirectReplySpeechStream` joins the turn's closures: `onToken` feeds the gate, `onStreamReset`
+  ends an iteration, and `speak:` reconciles the final reply with what was already said and queues
+  only the rest. When nothing was released (the flag is on but the gate held from the start, or
+  the backend sent no tokens) it is `speak(response)`, unchanged. With the flag off no stream
+  exists and the closures are exactly today's.
+- Both Direct turns are wired: the voice turn (whose cloud send had **no** `onToken` before — the
+  plan's line reference was the typed turn's bubble — so it now asks for a streamed response only
+  when the flag is on) and the typed turn when it speaks its reply.
+- Barge-in and "stop" reach the queue through `stopSpeaking(interruption:)`: synthesis in flight is
+  cancelled, the rest is dropped, and `TextToSpeechService.lastStreamedReply` records the
+  sentences heard, the interruption and the unheard sentences. A conversation reset is checked
+  before every sentence plays. The stop listener starts when the first sentence plays, as it did
+  at the top of `speak`.
+- `TurnRecorder.handOffToSpeech()` is stamped when the first sentence is released, so a streamed
+  turn seals with a negative `ttsLeadIn` (pinned in `TurnTimelineTests`).
+- OpenClaw's `speakStreaming` is on the same splitter and queue, with its API unchanged.
+- The Developer panel has the switch (Reply Speech › "Speak as it writes").
+
+**Deviations and limits.**
+- **Gemini Direct is not streamed.** `sendGemini` takes no token callback, so a Gemini turn with
+  the flag on falls back to today's path. So do the on-device agent route (`sendViaLocalAgent`),
+  Apple's on-device model and the agent bridge. Anthropic, ChatGPT, the OpenAI-compatible
+  providers and the local MLX path stream.
+- **A tool preamble is said at the reset, not before the tool runs.** The provider loops call
+  `onStreamReset` when the *next* iteration starts, so "Let me check the forecast." is heard after
+  the tool has run and just before the answer. Open question 1 is answered as recommended: the
+  preamble that was heard is appended to the conversation as its own line. A fragment cut off mid
+  clause (a cascade hop) is not said.
+- **A prefix the stream never carried is said with the remainder.** The team-learning lead-in and
+  the spend-cap and job-route notices are added after generation; when one is present it is said
+  after the opening sentences rather than before them. A final reply that is not the streamed text
+  at all (a yield, a wrap-up) is said in full, and what was already heard is kept as its own line.
+- **Another utterance taking the floor** (a model-switch notice, an alert) cancels the queue; the
+  unheard rest of the reply is said whole once the reply is final.
+- **Replay.** There is no Direct-mode replay offer to extend (FE's replay belongs to agent
+  results). The boundary is recorded (`lastStreamedReply.unheardSentences`) for one; no new spoken
+  offer was built.
+- **OpenClaw has no end-of-stream signal**, so a sentence waiting on what follows it is released
+  after 0.8 s of quiet when it already ends in a terminator, and the reply is closed; a new reply
+  waits for a closing one to finish playing rather than cutting it off.
+- Each sentence is mirrored to the HUD as it plays, the way each `speak` is. Paged answers remain
+  Plan [IB](IB-paged-hud-answers.md).
+- Open question 3: no — the reply starts on the engine the chain picks.
+- The new Developer-panel strings are not in the localisation catalog yet (catalog syncs are their
+  own commit).
+
+**Tests.** `SentenceStreamSplitterTests`, `StreamSpeechGateTests`, `StreamedReplyScheduleTests`,
+`StreamedReplyTurnTests` (the Anthropic streaming fixtures through the stream, barge-in, reset,
+supersede, the switched-off path, and the real service with a scripted synthesizer: `stopSpeaking`
+mid-reply, and the gateway's `speakStreaming`), and a recorder-driven streamed turn in
+`TurnTimelineTests`.
 
 ## Open questions
 

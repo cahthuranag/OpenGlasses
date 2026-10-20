@@ -7216,6 +7216,9 @@ class AppState: ObservableObject, AppStateProtocol {
 
         // See the photo turn: the generation this answer belongs to.
         let turnGeneration = conversationReset.currentGeneration
+        // Plan HZ P1: with the switch on, the reply is spoken a sentence at a time as it is written.
+        // Nil — today's path, unchanged — when it is off.
+        let replyStream = makeReplySpeechStream(turnGeneration: turnGeneration, threadId: turnThreadId)
 
         // Run the turn inside a tracked, cancellable task (Plan BG P2). Barge-in / stop / cancel
         // cancel it, so a normal text turn no longer speaks its now-stale response after the user
@@ -7259,6 +7262,16 @@ class AppState: ObservableObject, AppStateProtocol {
                             shortcutsContext: ShortcutsCatalog.shared.promptBlock(),
                             promptSections: classification.relevantSections,
                             backgrounded: backgrounded,
+                            // Plan HZ P1: tokens are only asked for when the reply will be streamed
+                            // to speech; with the switch off both stay nil, as before.
+                            // `LLMService` calls both on the main actor; this nested function is
+                            // not itself isolated, so the hop is asserted rather than assumed.
+                            onToken: replyStream.map { stream in
+                                { chunk in MainActor.assumeIsolated { stream.ingest(chunk) } }
+                            },
+                            onStreamReset: replyStream.map { stream in
+                                { MainActor.assumeIsolated { stream.streamDidReset() } }
+                            },
                             onModelSwitch: { [self] from, to, failure in
                                 await narrateModelSwitch(from: from, to: to, failure: failure)
                             }
@@ -7354,6 +7367,13 @@ class AppState: ObservableObject, AppStateProtocol {
                 },
                 speak: { [self] response in
                     guard conversationReset.isCurrent(turnGeneration) else { return }
+                    // Plan HZ P1: the reply has been speaking since its first sentence (and the
+                    // stop listener with it) — say what is left of it.
+                    if let replyStream, replyStream.didStream {
+                        await replyStream.finish(reply: response)
+                        releaseReplyStreamStopListener(replyStream)
+                        return
+                    }
                     // Start wake word listener during TTS so user can say "stop"
                     startStopListener()
                     await speechService.speak(response)
@@ -7375,6 +7395,7 @@ class AppState: ObservableObject, AppStateProtocol {
                     await speechService.speak(spoken)
                 },
                 finish: { [self] in
+                    if let replyStream { endReplyStream(replyStream) }
                     llmService.offlineHandoffTurn = false
                     // Restore original model if we switched for this request
                     if let originalId = originalModelId {
@@ -7487,6 +7508,9 @@ class AppState: ObservableObject, AppStateProtocol {
 
         // See the photo turn: the generation this answer belongs to.
         let turnGeneration = conversationReset.currentGeneration
+        // Plan HZ P1: spoken a sentence at a time when the switch is on and the reply is spoken here.
+        let replyStream = speakResponse
+            ? makeReplySpeechStream(turnGeneration: turnGeneration, threadId: turnThreadId) : nil
 
         // Typed turns run the same skeleton as voice turns, tracked in `currentLLMTask` so
         // barge-in / cancel stops a typed turn too (Plan BG P2: every turn is cancellable).
@@ -7510,10 +7534,12 @@ class AppState: ObservableObject, AppStateProtocol {
                         shortcutsContext: ShortcutsCatalog.shared.promptBlock(),
                         backgrounded: UIApplication.shared.applicationState == .background,
                         onToken: { [weak self] chunk in
+                            replyStream?.ingest(chunk)
                             guard let self, let id = streamThreadId else { return }
                             if self.streamingTurn?.threadId == id { self.streamingTurn?.text += chunk }
                         },
                         onStreamReset: { [weak self] in
+                            replyStream?.streamDidReset()
                             // A new tool-loop iteration is starting (BM P9): drop the previous
                             // iteration's text so the bubble never shows intermediate+final concatenated.
                             guard let self, let id = streamThreadId else { return }
@@ -7571,6 +7597,11 @@ class AppState: ObservableObject, AppStateProtocol {
                 speak: { [self] response in
                     // Speak the response (user can still say "stop")
                     guard speakResponse, conversationReset.isCurrent(turnGeneration) else { return }
+                    if let replyStream, replyStream.didStream {
+                        await replyStream.finish(reply: response)
+                        releaseReplyStreamStopListener(replyStream)
+                        return
+                    }
                     startStopListener()
                     await speechService.speak(response)
                     stopStopListener()
@@ -7593,6 +7624,7 @@ class AppState: ObservableObject, AppStateProtocol {
                     }
                 },
                 finish: { [self] in
+                    if let replyStream { endReplyStream(replyStream) }
                     if answeredOnPhone {
                         llmService.offlineHandoffTurn = false
                         if let phoneOriginalModelId {
@@ -7754,6 +7786,49 @@ class AppState: ObservableObject, AppStateProtocol {
                 PrivacyLog.wakeWord(.listenAttemptFailed, error: SafeErrorSummary(error))
             }
         }
+    }
+
+    // MARK: - Sentence-streamed replies (Plan HZ P1)
+
+    /// A streamed reply for one Direct turn, or nil when the switch is off — today's path.
+    private func makeReplySpeechStream(turnGeneration: UInt64,
+                                       threadId: String?) -> DirectReplySpeechStream? {
+        guard Config.directSentenceStreamingEnabled else { return nil }
+        // Held whole, as today: a reply post-processing rewrites (memory commands), and one opening
+        // with a choice list while the buttons are on, so the spoken options and the buttons agree.
+        let choiceButtons = Config.hudChoiceButtonsEnabled
+        let rules = StreamSpeechGate.Rules(
+            holdWholeReply: StreamSpeechGate.looksLikeMemoryCommand,
+            looksLikeChoiceList: { choiceButtons && StreamSpeechGate.looksLikeChoiceListOpening($0) })
+        let stream = DirectReplySpeechStream(
+            speaker: speechService, rules: rules,
+            isCurrent: { [weak self] in self?.conversationReset.isCurrent(turnGeneration) ?? false })
+        // The wearer can say "stop" from the first sentence on, as from the start of `speak`.
+        stream.onSpeechBegan = { [weak self] in self?.startStopListener() }
+        // Open question 1: a preamble said before a tool runs stays in the transcript as its own
+        // line, so what was heard is what is shown.
+        stream.onPreamble = { [weak self] line in
+            guard let self, Config.conversationPersistenceEnabled else { return }
+            self.conversationStore.appendMessage(role: "assistant", content: line, toThread: threadId)
+        }
+        return stream
+    }
+
+    /// The streamed reply has been said: its stop listener goes the way `speak`'s does.
+    private func releaseReplyStreamStopListener(_ stream: DirectReplySpeechStream) {
+        guard stream.holdsStopListener else { return }
+        stream.holdsStopListener = false
+        stopStopListener()
+    }
+
+    /// The turn is over. A streamed reply nobody finished (an error, a cancellation) is stopped,
+    /// and a stop listener it started is released.
+    private func endReplyStream(_ stream: DirectReplySpeechStream) {
+        if let queue = stream.queue, !queue.isClosed, !queue.isCancelled,
+           speechService.activeStreamedReply === queue {
+            speechService.stopSpeaking(interruption: .stop)
+        }
+        releaseReplyStreamStopListener(stream)
     }
 
     /// How the next reply plays (`ReplyRoutePolicy`): the "Reply audio" setting, the measured switch

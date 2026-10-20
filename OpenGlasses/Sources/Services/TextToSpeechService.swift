@@ -397,9 +397,7 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         // invalidate the generation we're about to capture.
         currentSpeechTask?.cancel()
         currentSpeechTask = nil
-        streamSpeechTask?.cancel()
-        streamSpeechTask = nil
-        streamBuffer = ""
+        endStreamedReply(.newUtterance)
         audioPlayer?.stop()
         audioPlayer = nil
         synthesizer.stopSpeaking(at: .immediate)
@@ -491,25 +489,7 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         // just turned it down for a reason the wearer has to act on.
         var text = SpokenSymbolExpander.spokenForm(of: text)
         let elevenLabsKey = Config.elevenLabsAPIKey
-        // ElevenLabs is "ready" only with a key, online, and not quota-exhausted. Kokoro is "ready"
-        // only with the model present *and* the binary compiled in (always false in the shipped
-        // build → the chain collapses to ElevenLabs/AVSpeech exactly as before).
-        let availability = TTSEngineSelector.Availability(
-            // Medical local-only removes the cloud voice from the chain rather than failing the
-            // utterance: Kokoro and the iOS voice are already the fallback, and a wearer in a
-            // clinical setting still needs to be spoken to.
-            elevenLabsReady: !onDeviceOnly
-                && !elevenLabsKey.isEmpty
-                && !elevenLabsQuotaExhausted
-                && MedicalEgressGuard.allows(.elevenLabsSpeechSynthesis)
-                && (reachability?.isOnline ?? true),
-            kokoroReady: kokoroEngine.isReady
-        )
-        let chain = TTSEngineSelector.chain(
-            preference: Config.ttsEnginePreference,
-            availability: availability,
-            urgency: urgency
-        )
+        let chain = engineChain(urgency: urgency, onDeviceOnly: onDeviceOnly)
         // The utterance is the assistant's half of the conversation — as private as the
         // wearer's half — so only its length goes to the log. The chain is public operation
         // class and is the thing an "it came out in the wrong voice" report actually needs.
@@ -574,6 +554,29 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         deliveryLedger.record(.noEngineAvailable, for: gen, liveGeneration: speechGeneration)
     }
 
+    /// The engines to try for one utterance, best first.
+    private func engineChain(urgency: SpeechUrgency, onDeviceOnly: Bool) -> [TTSEngine] {
+        // ElevenLabs is "ready" only with a key, online, and not quota-exhausted. Kokoro is "ready"
+        // only with the model present *and* the binary compiled in (always false in the shipped
+        // build → the chain collapses to ElevenLabs/AVSpeech exactly as before).
+        let availability = TTSEngineSelector.Availability(
+            // Medical local-only removes the cloud voice from the chain rather than failing the
+            // utterance: Kokoro and the iOS voice are already the fallback, and a wearer in a
+            // clinical setting still needs to be spoken to.
+            elevenLabsReady: !onDeviceOnly
+                && !Config.elevenLabsAPIKey.isEmpty
+                && !elevenLabsQuotaExhausted
+                && MedicalEgressGuard.allows(.elevenLabsSpeechSynthesis)
+                && (reachability?.isOnline ?? true),
+            kokoroReady: kokoroEngine.isReady
+        )
+        return TTSEngineSelector.chain(
+            preference: Config.ttsEnginePreference,
+            availability: availability,
+            urgency: urgency
+        )
+    }
+
     // MARK: - Kokoro on-device TTS
 
     /// Speak via the on-device Kokoro engine: synthesize a WAV off the main actor, then play it
@@ -585,44 +588,105 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         try await playAudioData(data)
     }
 
-    // MARK: - Streaming TTS
+    // MARK: - Streaming TTS (OpenClaw)
 
-    /// Buffer for accumulating streaming chunks until a sentence boundary.
-    private var streamBuffer = ""
-    private var streamSpeechTask: Task<Void, Never>?
+    /// Sentences of the gateway's stream not yet complete (Plan HZ: the same splitter the Direct
+    /// turn uses, so "2.5 mm" and "Dr. Patel" no longer split mid-phrase here either).
+    private var openClawSplitter = SentenceStreamSplitter()
+    /// The gateway reply being spoken.
+    private var openClawReply: StreamedReplyQueue?
+    /// The gateway has no end-of-stream signal, so a sentence still waiting on what follows it is
+    /// released once the stream has been quiet this long.
+    static let streamIdleFlushDelay: TimeInterval = 0.8
+    private var openClawIdleFlush: Task<Void, Never>?
 
-    /// Queue a partial text chunk for streaming speech.
-    /// Accumulates text and speaks at sentence boundaries (. ! ? newline).
+    /// Queue a partial text chunk for streaming speech. Sentences are spoken as they complete,
+    /// with synthesis running ahead of playback, through the same queue as a streamed Direct reply.
     func speakStreaming(_ chunk: String) async {
-        streamBuffer += chunk
-
-        // Check for sentence boundary in buffer
-        let sentenceEnders: [Character] = [".", "!", "?", "\n"]
-        if let lastEnder = streamBuffer.lastIndex(where: { sentenceEnders.contains($0) }) {
-            let speakableEnd = streamBuffer.index(after: lastEnder)
-            let sentence = String(streamBuffer[streamBuffer.startIndex..<speakableEnd])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            streamBuffer = String(streamBuffer[speakableEnd...])
-
-            if !sentence.isEmpty {
-                // Wait for any current speech to finish, then speak the sentence
-                await streamSpeechTask?.value
-                streamSpeechTask = Task {
-                    await speak(sentence)
-                }
+        enqueueOpenClaw(openClawSplitter.ingest(chunk))
+        openClawIdleFlush?.cancel()
+        openClawIdleFlush = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.streamIdleFlushDelay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.enqueueOpenClaw(self.openClawSplitter.flushIfComplete())
+            // Everything waiting has been released: close the reply so it ends when it has played.
+            if self.openClawSplitter.isEmpty, let reply = self.openClawReply {
+                self.openClawReply = nil
+                await reply.finish()
             }
         }
     }
 
-    /// Flush any remaining buffered text and speak it.
+    /// Flush any remaining buffered text and speak it, then wait for the reply to finish.
     func flushStreamBuffer() async {
-        let remaining = streamBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-        streamBuffer = ""
-        if !remaining.isEmpty {
-            await streamSpeechTask?.value
-            await speak(remaining)
+        openClawIdleFlush?.cancel()
+        openClawIdleFlush = nil
+        enqueueOpenClaw(openClawSplitter.flush())
+        if let reply = openClawReply {
+            openClawReply = nil
+            await reply.finish()
         }
-        streamSpeechTask = nil
+    }
+
+    private func enqueueOpenClaw(_ sentences: [String]) {
+        guard !sentences.isEmpty else { return }
+        if openClawReply == nil || openClawReply?.isCancelled == true {
+            openClawReply = beginStreamedReply()
+        }
+        sentences.forEach { openClawReply?.enqueue($0) }
+    }
+
+    // MARK: - Streamed replies (Plan HZ P1)
+
+    /// The streamed reply that has the floor, if any.
+    private(set) var activeStreamedReply: StreamedReplyQueue?
+    /// How the last streamed reply ended: how many sentences were heard, and the unheard rest —
+    /// where a replay starts. In memory only.
+    private(set) var lastStreamedReply: StreamedReplyRecord?
+    /// A closed reply still playing out when a new one began; the new one waits for it.
+    private var drainingStreamedReply: StreamedReplyQueue?
+    /// Sentences synthesising ahead of the one playing. Plan HZ P2 settles 2 or 3 on device.
+    var streamedPrefetchDepth = StreamedReplySchedule.defaultPrefetchDepth
+
+    /// Start a reply that will be spoken a sentence at a time. A streamed reply already speaking
+    /// is superseded. `isCurrent` is checked before each sentence plays.
+    @discardableResult
+    func beginStreamedReply(isCurrent: @escaping @MainActor () -> Bool = { true }) -> StreamedReplyQueue {
+        // A reply that is closed and only playing out what it has is not cut off: the new one
+        // starts when it ends (a gateway that paused long enough to close its reply, then went
+        // on). One still open is superseded.
+        if let current = activeStreamedReply, current.isClosed, !current.isCancelled {
+            activeStreamedReply = nil
+            drainingStreamedReply = current
+        } else {
+            cancelStreamedReplies(.newUtterance)
+        }
+        let queue = StreamedReplyQueue(backend: self, prefetchDepth: streamedPrefetchDepth,
+                                       isCurrent: isCurrent)
+        activeStreamedReply = queue
+        return queue
+    }
+
+    /// Something else takes the floor: stop the streamed reply and drop the gateway text not yet
+    /// spoken, as `speak` always dropped the old streamer's buffer.
+    private func endStreamedReply(_ interruption: SpeechDeliveryOutcome.Interruption) {
+        openClawIdleFlush?.cancel()
+        openClawIdleFlush = nil
+        openClawSplitter.reset()
+        openClawReply = nil
+        cancelStreamedReplies(interruption)
+    }
+
+    /// Stop the streamed replies that hold the floor, recording why and how much was heard.
+    private func cancelStreamedReplies(_ interruption: SpeechDeliveryOutcome.Interruption) {
+        if let draining = drainingStreamedReply {
+            drainingStreamedReply = nil
+            draining.cancel(interruption)
+        }
+        guard let reply = activeStreamedReply else { return }
+        activeStreamedReply = nil
+        reply.cancel(interruption)
+        if reply.sentenceCount > 0 { lastStreamedReply = reply.record }
     }
 
     /// `ScanAssistSpeaking`'s requirement, and every caller that just wants silence.
@@ -644,9 +708,7 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         speechGeneration += 1
         currentSpeechTask?.cancel()
         currentSpeechTask = nil
-        streamSpeechTask?.cancel()
-        streamSpeechTask = nil
-        streamBuffer = ""
+        endStreamedReply(interruption)
         audioPlayer?.stop()
         audioPlayer = nil
         synthesizer.stopSpeaking(at: .immediate)
@@ -916,6 +978,28 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     /// Internal rather than private so the medical egress canary can drive the exact point where
     /// the ElevenLabs request is built, instead of inferring it from playback.
     func speakWithElevenLabs(text: String, apiKey: String) async throws {
+        let data: Data
+        do {
+            data = try await fetchElevenLabsAudio(text: text, apiKey: apiKey)
+        } catch let rejected as ElevenLabsRejection {
+            pendingCloudVoiceRejection = rejected.rejection
+            throw TTSError.apiError(statusCode: rejected.statusCode)
+        }
+        // Play the MP3 audio
+        try await playAudioData(data)
+    }
+
+    /// ElevenLabs answered with something other than audio. Carries the classified reason so the
+    /// caller decides what to do with it — a streamed reply synthesises several sentences at once,
+    /// so a single shared "pending rejection" slot would be overwritten by whichever came back last.
+    struct ElevenLabsRejection: Error {
+        let statusCode: Int
+        let rejection: CloudVoiceRejection?
+    }
+
+    /// Request one utterance's audio from ElevenLabs without playing it (Plan HZ: a streamed reply
+    /// synthesises the next sentences while one plays). Throws `ElevenLabsRejection` for a non-200.
+    func fetchElevenLabsAudio(text: String, apiKey: String) async throws -> Data {
         let voiceId = Config.elevenLabsVoiceId
         let urlString = "https://api.elevenlabs.io/v1/text-to-speech/\(voiceId)"
 
@@ -968,15 +1052,12 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
                 PrivacyLog.tts(.quotaExhausted, engine: PrivacyToken("elevenLabs"))
                 elevenLabsQuotaExhausted = true
             }
-            pendingCloudVoiceRejection = rejection
-            throw TTSError.apiError(statusCode: statusCode)
+            throw ElevenLabsRejection(statusCode: statusCode, rejection: rejection)
         }
 
         // The cloud voice answered: whatever turned it away before is over.
         cloudVoiceAnnouncer.episodeEnded()
-
-        // Play the MP3 audio
-        try await playAudioData(data)
+        return data
     }
 
     private func playAudioData(_ data: Data) async throws {
@@ -1367,6 +1448,124 @@ extension TextToSpeechService: AVAudioPlayerDelegate {
             self.speechContinuation?.resume()
             self.speechContinuation = nil
         }
+    }
+}
+
+// MARK: - Streamed replies (Plan HZ P1)
+
+extension TextToSpeechService: StreamedSpeechBackend, StreamedReplySpeaking {
+
+    func streamedSpeechChain() -> [TTSEngine] {
+        engineChain(urgency: .low, onDeviceOnly: false)
+    }
+
+    /// Prepare one sentence. Each sentence of a streamed reply is said exactly as `speak` would say
+    /// it — symbols written out as words — and walks the same engines; only the system voice has
+    /// nothing to prepare, because it speaks live.
+    func synthesizeStreamedSentence(_ text: String, engine: TTSEngine) async throws -> StreamedSpeechAudio {
+        let spoken = SpokenSymbolExpander.spokenForm(of: text)
+        guard !spoken.isEmpty else { throw TTSError.audioPlaybackFailed }
+        switch engine {
+        case .elevenLabs:
+            do {
+                return .audio(try await fetchElevenLabsAudio(text: spoken, apiKey: Config.elevenLabsAPIKey))
+            } catch let rejected as ElevenLabsRejection {
+                // Same handling as the one-shot chain: the first rejection of each kind reaches the
+                // screen, and the one-off spoken notice rides on the sentence the next engine says.
+                var line: String?
+                if let rejection = rejected.rejection {
+                    if cloudVoiceRejectionsShown.insert(rejection).inserted {
+                        onCloudVoiceRejected?(rejection)
+                    }
+                    line = cloudVoiceAnnouncer.lineToSpeak(for: rejection, plainReply: true)
+                }
+                throw StreamedSynthesisFailure(lineToAppend: line)
+            }
+        case .kokoro:
+            return .audio(try await kokoroEngine.synthesize(spoken))
+        case .system:
+            return .live
+        }
+    }
+
+    func beginStreamedPlayback() async {
+        // A reply still playing out goes first, then it is this one's turn.
+        if let draining = drainingStreamedReply {
+            await draining.finish()
+            if drainingStreamedReply === draining { drainingStreamedReply = nil }
+        }
+        // An utterance already playing — a model-switch notice — finishes rather than being cut off.
+        if let current = currentSpeechTask { await current.value }
+        stopThinkingSound()
+        activeRateMultiplier = 1.0
+        isSpeaking = true
+        await beginPause()
+    }
+
+    func playStreamedSentence(_ text: String, audio: StreamedSpeechAudio,
+                              engine: TTSEngine) async -> SpeechDeliveryOutcome {
+        lastSpokenText = text
+        glassesDisplay?.showText(text, flashWhileInteractive: true)
+        if let reason = currentSuppression() {
+            PrivacyLog.tts(.suppressed, detail: PrivacyToken(reason.rawValue))
+            return SpeechDeliveryLedger.outcome(for: .withheld(reason), teardownCause: nil)
+        }
+        let session = AVAudioSession.sharedInstance()
+        if session.category == .playAndRecord,
+           MicRoutePolicy.shouldOverrideToSpeaker(outputs: session.currentRoute.outputs.map(\.portType)) {
+            try? session.overrideOutputAudioPort(.speaker)
+        }
+
+        // Each sentence is its own utterance to the engine callbacks, exactly as a `speak` is.
+        speechGeneration += 1
+        let gen = speechGeneration
+        deliveryLedger.beginUtterance(generation: gen)
+        isSpeaking = true
+        TurnRecorder.noteSpeechEngine(engine)
+        PrivacyLog.tts(.speaking, engine: PrivacyToken(engine.rawValue), characters: text.count,
+                       detail: PrivacyToken("streamed"))
+        let spoken = SpokenSymbolExpander.spokenForm(of: text)
+        let task = Task { @MainActor [weak self] in
+            guard let self, gen == self.speechGeneration else { return }
+            switch audio {
+            case .audio(let data):
+                do {
+                    try await self.playAudioData(data)
+                } catch {
+                    // Audio the player cannot open: the system voice is the terminal fallback, as
+                    // it is for the one-shot chain.
+                    guard !Task.isCancelled, gen == self.speechGeneration else { return }
+                    PrivacyLog.tts(.engineFallback, engine: PrivacyToken(engine.rawValue),
+                                   error: SafeErrorSummary(error))
+                    TurnRecorder.noteSpeechEngine(.system)
+                    await self.speakWithiOS(text: spoken)
+                }
+            case .live:
+                await self.speakWithiOS(text: spoken)
+            }
+        }
+        currentSpeechTask = task
+        await task.value
+        let fallback: SpeechDeliveryOutcome = gen == speechGeneration
+            ? .failed(reason: "no engine spoke it")
+            : SpeechDeliveryLedger.outcome(for: .superseded, teardownCause: deliveryLedger.teardownCause)
+        return finishOutcome(for: gen, fallback: fallback)
+    }
+
+    func streamedReplyDidEnd(_ queue: StreamedReplyQueue, record: StreamedReplyRecord,
+                             playbackBegan: Bool) async {
+        if record.sentenceCount > 0 { lastStreamedReply = record }
+        guard activeStreamedReply === queue else { return }
+        activeStreamedReply = nil
+        if openClawReply === queue { openClawReply = nil }
+        guard playbackBegan else { return }
+        isSpeaking = false
+        await endPause()
+        PrivacyLog.tts(.finished, detail: PrivacyToken("streamed"))
+    }
+
+    func speakWholeReply(_ text: String) async {
+        await speak(text)
     }
 }
 

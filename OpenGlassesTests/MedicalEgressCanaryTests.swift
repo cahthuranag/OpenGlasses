@@ -151,6 +151,65 @@ final class MedicalEgressCanaryTests: XCTestCase {
         XCTAssertEqual(EgressCanaryURLProtocol.seen.count, 1)
     }
 
+    func testOpenAISynthesisNeverReachesTheTransportInLocalOnly() async {
+        let service = TextToSpeechService()
+
+        setMode(.localOnly)
+        do {
+            try await service.speakWithOpenAI(text: "vitals are stable", apiKey: "canary-key")
+            XCTFail("the OpenAI synthesis request was allowed in local-only mode")
+        } catch let refusal as MedicalEgressRefusal {
+            XCTAssertEqual(refusal.route, .openAISpeechSynthesis)
+        } catch {
+            XCTFail("expected a MedicalEgressRefusal, got \(error)")
+        }
+        XCTAssertEqual(EgressCanaryURLProtocol.seen, [], "reply text reached the transport")
+
+        setMode(.off)
+        try? await service.speakWithOpenAI(text: "vitals are stable", apiKey: "canary-key")
+        XCTAssertEqual(EgressCanaryURLProtocol.seen.count, 1,
+                       "with the guard off the same drive must reach the transport")
+        XCTAssertEqual(EgressCanaryURLProtocol.seen.first?.host, "api.openai.com")
+    }
+
+    func testXAISynthesisNeverReachesTheTransportInLocalOnly() async {
+        let service = TextToSpeechService()
+
+        setMode(.localOnly)
+        do {
+            try await service.speakWithXAI(text: "vitals are stable", credential: "canary-key")
+            XCTFail("the xAI synthesis request was allowed in local-only mode")
+        } catch let refusal as MedicalEgressRefusal {
+            XCTAssertEqual(refusal.route, .xaiSpeechSynthesis)
+        } catch {
+            XCTFail("expected a MedicalEgressRefusal, got \(error)")
+        }
+        XCTAssertEqual(EgressCanaryURLProtocol.seen, [], "reply text reached the transport")
+
+        setMode(.off)
+        try? await service.speakWithXAI(text: "vitals are stable", credential: "canary-key")
+        XCTAssertEqual(EgressCanaryURLProtocol.seen.count, 1,
+                       "with the guard off the same drive must reach the transport")
+        XCTAssertEqual(EgressCanaryURLProtocol.seen.first?.host, "api.x.ai")
+    }
+
+    func testXAIVoiceCatalogNeverReachesTheTransportInLocalOnly() async {
+        setMode(.localOnly)
+        do {
+            _ = try await TextToSpeechService.fetchXAIVoices(credential: "canary-key")
+            XCTFail("the xAI voice catalog request was allowed in local-only mode")
+        } catch let refusal as MedicalEgressRefusal {
+            XCTAssertEqual(refusal.route, .xaiVoiceCatalog)
+        } catch {
+            XCTFail("expected a MedicalEgressRefusal, got \(error)")
+        }
+        XCTAssertEqual(EgressCanaryURLProtocol.seen, [])
+
+        setMode(.off)
+        _ = try? await TextToSpeechService.fetchXAIVoices(credential: "canary-key")
+        XCTAssertEqual(EgressCanaryURLProtocol.seen.count, 1)
+    }
+
     // MARK: - Realtime
 
     /// The realtime sessions are websockets, so the probe asserts on the two things that are

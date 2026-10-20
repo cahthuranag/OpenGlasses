@@ -178,4 +178,41 @@ final class StreamedReplyScheduleTests: XCTestCase {
         XCTAssertEqual(schedule.enqueue("More text.", chain: [.system]), [])
         XCTAssertEqual(schedule.heardCount, 1, "a sentence cut off mid-play was not heard")
     }
+
+    // MARK: - More than one cloud voice (Plan ID item 5)
+
+    /// Auto with ElevenLabs and OpenAI set up: OpenAI failing twice is demoted for the rest of
+    /// the reply, and its sentences go to the next engine in the chain, not back to the start.
+    func testADemotionFromOpenAIGoesToTheNextEngineInTheChain() {
+        let chain: [TTSEngine] = [.openAI, .xai, .kokoro, .system]
+        var schedule = StreamedReplySchedule(prefetchDepth: 2)
+        _ = schedule.enqueue("First sentence here.", chain: chain)
+        _ = schedule.enqueue("Second sentence here.", chain: chain)
+        _ = schedule.enqueue("Third sentence here.", chain: chain)
+        XCTAssertEqual(schedule.synthesisFailed(index: 0, engine: .openAI), [.synthesize(index: 0, engine: .xai)])
+        XCTAssertEqual(schedule.synthesisFailed(index: 1, engine: .openAI), [.synthesize(index: 1, engine: .xai)])
+        XCTAssertEqual(schedule.demotedEngines, [.openAI])
+
+        let actions = schedule.synthesisSucceeded(index: 0, engine: .xai)
+        XCTAssertTrue(actions.contains(.synthesize(index: 2, engine: .xai)), "\(actions)")
+        XCTAssertFalse(actions.contains(.synthesize(index: 2, engine: .openAI)))
+    }
+
+    /// One cloud voice's failures say nothing about another's: demoting ElevenLabs leaves OpenAI.
+    func testEachCloudVoiceIsDemotedOnItsOwn() {
+        let chain: [TTSEngine] = [.elevenLabs, .openAI, .system]
+        var schedule = StreamedReplySchedule(prefetchDepth: 2)
+        for index in 0..<3 { _ = schedule.enqueue("Sentence number \(index).", chain: chain) }
+        _ = schedule.synthesisFailed(index: 0, engine: .elevenLabs)
+        _ = schedule.synthesisFailed(index: 1, engine: .elevenLabs)
+        XCTAssertEqual(schedule.demotedEngines, [.elevenLabs])
+        XCTAssertEqual(schedule.effectiveChain(chain), [.openAI, .system])
+
+        // A failure of each, alternating, is not two in a row for either.
+        var mixed = StreamedReplySchedule(prefetchDepth: 3)
+        for index in 0..<3 { _ = mixed.enqueue("Sentence number \(index).", chain: chain) }
+        _ = mixed.synthesisFailed(index: 0, engine: .elevenLabs)
+        _ = mixed.synthesisFailed(index: 0, engine: .openAI)
+        XCTAssertFalse(mixed.cloudDemoted)
+    }
 }

@@ -54,7 +54,7 @@ enum SystemPromptBuilder {
         You run inside the \(appName) app on the user's iPhone, and the app's own Settings tab is where you are set up. \
         When asked how to change something about you, give the path below. These settings are NOT in the iPhone's \
         Settings app, the glasses' companion app or Siri — never send the user there for them.
-        - Your voice (voice engine, ElevenLabs key and voice, built-in iOS voice): Settings > \(title(.connections)) > Services & Integrations.
+        - Your voice (voice engine, the ElevenLabs, OpenAI or xAI cloud voice, built-in iOS voice): Settings > \(title(.connections)) > Services & Integrations.
         - Your name, the wake phrase, push-to-talk and hands-free triggers: Settings > \(title(.voice)).
         - The AI model, personas and system prompt: Settings > \(title(.intelligence)).
         - Tools and quick actions: Settings > \(title(.tools)).

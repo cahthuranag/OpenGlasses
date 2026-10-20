@@ -105,6 +105,16 @@ struct ServicesSettingsView: View {
     @State private var elevenLabsVoicesLoading = false
     @State private var elevenLabsVoicesError: String?
 
+    // OpenAI and xAI voices (Plan ID item 5). The credentials are the LLM models' own, so whether
+    // each voice is offered is read when the screen appears rather than on every render.
+    @State private var openAIVoiceAvailable = false
+    @State private var xaiVoiceAvailable = false
+    @State private var openAIVoice: String = Config.openAITTSVoice
+    @State private var xaiVoice: String = Config.xaiTTSVoice
+    @State private var xaiVoices: [CloudVoiceRequests.XAIVoice] = []
+    @State private var xaiVoicesLoading = false
+    @State private var xaiVoicesError: String?
+
     // The `@AppStorage` properties above exist to make SwiftUI re-render when a setting changes
     // elsewhere; the *values* still come from Config. Re-implementing these predicates here would
     // put a second copy of a HIPAA suppression rule in a view, and two copies is how one of them
@@ -133,8 +143,17 @@ struct ServicesSettingsView: View {
             } header: {
                 Text("Voice Engine")
             } footer: {
-                Text(ttsEnginePreference.detail)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(ttsEnginePreference.detail)
+                    if ttsEnginePreference == .openAI, !openAIVoiceAvailable {
+                        Text("No OpenAI API key is saved. Add an OpenAI model with an API key under \(SettingsCatalog.category(.intelligence).title) to use this voice.")
+                    }
+                    if ttsEnginePreference == .xai, !xaiVoiceAvailable {
+                        Text("No xAI key or sign-in is saved. Add an xAI model under \(SettingsCatalog.category(.intelligence).title) to use this voice.")
+                    }
+                }
             }
+            .onAppear(perform: refreshCloudVoiceCredentials)
 
             // MARK: Text-to-Speech
             Section {
@@ -211,6 +230,65 @@ struct ServicesSettingsView: View {
                 }
             }
 
+            // MARK: OpenAI and xAI voices
+            if openAIVoiceAvailable || xaiVoiceAvailable {
+                Section {
+                    if openAIVoiceAvailable {
+                        Picker("OpenAI Voice", selection: $openAIVoice) {
+                            ForEach(CloudVoiceRequests.openAIVoices, id: \.self) { voice in
+                                Text(voice.capitalized).tag(voice)
+                            }
+                        }
+                        .onChange(of: openAIVoice) { _, newValue in
+                            Config.setOpenAITTSVoice(newValue)
+                            appState.speechService.resetCloudVoiceQuota(.openAI)
+                        }
+                    }
+
+                    if xaiVoiceAvailable {
+                        if xaiVoices.isEmpty {
+                            Button {
+                                loadXAIVoices()
+                            } label: {
+                                Label(xaiVoicesLoading ? "Loading Voices…" : "Fetch xAI Voices",
+                                      systemImage: "person.wave.2")
+                            }
+                            .disabled(xaiVoicesLoading)
+                        } else {
+                            Picker("xAI Voice", selection: $xaiVoice) {
+                                ForEach(xaiVoices) { voice in
+                                    Text(voice.label).tag(voice.voiceId)
+                                }
+                            }
+                            .onChange(of: xaiVoice) { _, newValue in
+                                Config.setXAITTSVoice(newValue)
+                                appState.speechService.resetCloudVoiceQuota(.xai)
+                            }
+                        }
+
+                        // A voice id typed by hand, for one the list does not show.
+                        TextField("xAI Voice ID", text: $xaiVoice)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .font(.system(.body, design: .monospaced))
+                            .onChange(of: xaiVoice) { _, newValue in
+                                Config.setXAITTSVoice(newValue)
+                                appState.speechService.resetCloudVoiceQuota(.xai)
+                            }
+
+                        if let xaiVoicesError {
+                            Text(xaiVoicesError)
+                                .font(.caption)
+                                .foregroundStyle(OGTheme.errorLabel)
+                        }
+                    }
+                } header: {
+                    Text("OpenAI and xAI Voices")
+                } footer: {
+                    Text("These voices use the keys saved with your OpenAI and xAI models. The OpenAI voice is paid from your OpenAI API credit; a ChatGPT sign-in is not enough. The xAI voice uses your xAI key, or your xAI sign-in.")
+                }
+            }
+
             // MARK: iOS Voice (fallback)
             Section {
                 Picker("iOS Voice", selection: $iosVoiceId) {
@@ -236,7 +314,7 @@ struct ServicesSettingsView: View {
             } header: {
                 Text("iOS Voice")
             } footer: {
-                Text("Used when ElevenLabs is unavailable or quota is exhausted. Download more voices in iOS Settings → Accessibility → Spoken Content → Voices.")
+                Text("Used when no cloud voice is available or its credit has run out. Download more voices in iOS Settings → Accessibility → Spoken Content → Voices.")
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 installedVoicesGeneration += 1
@@ -892,6 +970,47 @@ struct ServicesSettingsView: View {
                     elevenLabsVoicesLoading = false
                     elevenLabsVoicesError = "Could not load voices: \(error.localizedDescription)"
                 }
+            }
+        }
+    }
+
+    /// Whether the OpenAI and xAI voices have a credential to use. Read from the saved models,
+    /// the same lookup the speech service makes.
+    private func refreshCloudVoiceCredentials() {
+        let models = Config.savedModels
+        openAIVoiceAvailable = !CloudVoiceCredentials.openAIKey(
+            savedModels: models, legacyKey: Config.openAIAPIKey).isEmpty
+        xaiVoiceAvailable = CloudVoiceCredentials.xaiSource(
+            savedModels: models, accountConnected: XAIOAuthService.shared.isConnected) != .none
+    }
+
+    private func loadXAIVoices() {
+        guard !xaiVoicesLoading else { return }
+        xaiVoicesLoading = true
+        xaiVoicesError = nil
+        Task { @MainActor in
+            let credential = await CloudVoiceCredentials.resolveXAICredential(
+                savedModels: Config.savedModels, account: .shared)
+            guard !credential.isEmpty else {
+                xaiVoicesLoading = false
+                xaiVoicesError = "No xAI key or sign-in is available."
+                return
+            }
+            do {
+                let voices = try await TextToSpeechService.fetchXAIVoices(credential: credential)
+                xaiVoices = voices
+                xaiVoicesLoading = false
+                xaiVoicesError = voices.isEmpty ? "No voices returned for this xAI account." : nil
+                // If the saved voice isn't in the list, default to the first.
+                if !voices.isEmpty, !voices.contains(where: { $0.voiceId == xaiVoice }),
+                   let first = voices.first {
+                    xaiVoice = first.voiceId
+                    Config.setXAITTSVoice(first.voiceId)
+                    appState.speechService.resetCloudVoiceQuota(.xai)
+                }
+            } catch {
+                xaiVoicesLoading = false
+                xaiVoicesError = "Could not load voices: \(error.localizedDescription)"
             }
         }
     }

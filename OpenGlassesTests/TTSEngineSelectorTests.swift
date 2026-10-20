@@ -123,4 +123,129 @@ final class TTSEngineSelectorTests: XCTestCase {
             XCTAssertEqual(selected, head)
         }
     }
+
+    // MARK: - OpenAI and xAI voices (Plan ID item 5)
+
+    private func ready(eleven: Bool = false, openAI: Bool = false, xai: Bool = false,
+                       kokoro: Bool = false) -> Availability {
+        Availability(elevenLabsReady: eleven, kokoroReady: kokoro, openAIReady: openAI, xaiReady: xai)
+    }
+
+    /// Auto tries every cloud voice that is ready, ElevenLabs then OpenAI then xAI, then the phone.
+    func testAutoOrdersEveryCombinationOfTheThreeCloudVoices() {
+        for eleven in [false, true] {
+            for openAI in [false, true] {
+                for xai in [false, true] {
+                    for kokoro in [false, true] {
+                        var expected: [TTSEngine] = []
+                        if eleven { expected.append(.elevenLabs) }
+                        if openAI { expected.append(.openAI) }
+                        if xai { expected.append(.xai) }
+                        if kokoro { expected.append(.kokoro) }
+                        expected.append(.system)
+                        XCTAssertEqual(chain(.auto, ready(eleven: eleven, openAI: openAI, xai: xai, kokoro: kokoro)),
+                                       expected, "eleven=\(eleven) openAI=\(openAI) xai=\(xai) kokoro=\(kokoro)")
+                    }
+                }
+            }
+        }
+    }
+
+    func testAutoWithOnlyAnOpenAIKeyUsesTheOpenAIVoice() {
+        XCTAssertEqual(TTSEngineSelector.select(preference: .auto, availability: ready(openAI: true)), .openAI)
+    }
+
+    /// A chosen cloud voice falls back to the phone, never to another paid cloud.
+    func testAChosenCloudVoiceFallsBackToKokoroThenSystemOnly() {
+        let everything = ready(eleven: true, openAI: true, xai: true, kokoro: true)
+        XCTAssertEqual(chain(.openAI, everything), [.openAI, .kokoro, .system])
+        XCTAssertEqual(chain(.xai, everything), [.xai, .kokoro, .system])
+        XCTAssertEqual(chain(.elevenLabs, everything), [.elevenLabs, .kokoro, .system])
+
+        let chosenUnavailable = ready(eleven: true, openAI: false, xai: true, kokoro: true)
+        XCTAssertEqual(chain(.openAI, chosenUnavailable), [.kokoro, .system])
+        XCTAssertEqual(chain(.openAI, ready(eleven: true, xai: true)), [.system])
+    }
+
+    func testKokoroAndSystemPreferencesNeverReachTheNewCloudVoices() {
+        let everything = ready(eleven: true, openAI: true, xai: true, kokoro: true)
+        XCTAssertEqual(chain(.kokoro, everything), [.kokoro, .system])
+        XCTAssertEqual(chain(.system, everything), [.system])
+    }
+
+    /// Urgency behaves as before: a ready Kokoro goes ahead of every network voice, and nothing
+    /// else moves.
+    func testHighUrgencyPromotesKokoroAheadOfEveryCloudVoice() {
+        let everything = ready(eleven: true, openAI: true, xai: true, kokoro: true)
+        XCTAssertEqual(chain(.auto, everything, .high), [.kokoro, .elevenLabs, .openAI, .xai, .system])
+        XCTAssertEqual(chain(.auto, ready(openAI: true, kokoro: true), .high), [.kokoro, .openAI, .system])
+        XCTAssertEqual(chain(.openAI, everything, .high), [.kokoro, .openAI, .system])
+        XCTAssertEqual(chain(.auto, ready(openAI: true, xai: true), .high), [.openAI, .xai, .system],
+                       "no Kokoro, no reordering")
+        XCTAssertEqual(chain(.auto, everything, .medium), [.elevenLabs, .openAI, .xai, .kokoro, .system])
+    }
+
+    func testEveryPreferenceStillEndsInSystemWithTheNewVoices() {
+        for preference in TTSEnginePreference.allCases {
+            for bits in 0..<16 {
+                let availability = ready(eleven: bits & 1 != 0, openAI: bits & 2 != 0,
+                                         xai: bits & 4 != 0, kokoro: bits & 8 != 0)
+                let result = chain(preference, availability)
+                XCTAssertEqual(result.last, .system, "\(preference) \(bits)")
+                XCTAssertEqual(result.filter { $0 == .system }.count, 1)
+                XCTAssertEqual(Set(result).count, result.count, "no engine twice")
+            }
+        }
+    }
+
+    // MARK: - Readiness of a cloud voice
+
+    private func cloudReady(_ engine: TTSEngine, credential: Bool = true, quota: Bool = false,
+                            onDeviceOnly: Bool = false, online: Bool = true,
+                            medical: MedicalEgressGuard.Mode = .off) -> Bool {
+        TTSEngineSelector.cloudVoiceReady(engine, hasCredential: credential, quotaExhausted: quota,
+                                          onDeviceOnly: onDeviceOnly, online: online,
+                                          medicalMode: medical)
+    }
+
+    func testACloudVoiceIsReadyOnlyWithEverySignalGreen() {
+        for engine in TTSEngine.cloudVoices {
+            XCTAssertTrue(cloudReady(engine), "\(engine)")
+            XCTAssertFalse(cloudReady(engine, credential: false), "\(engine) without a credential")
+            XCTAssertFalse(cloudReady(engine, quota: true), "\(engine) out of credit")
+            XCTAssertFalse(cloudReady(engine, onDeviceOnly: true), "\(engine) for on-device-only text")
+            XCTAssertFalse(cloudReady(engine, online: false), "\(engine) offline")
+        }
+        XCTAssertFalse(cloudReady(.kokoro), "not a cloud voice")
+        XCTAssertFalse(cloudReady(.system), "not a cloud voice")
+    }
+
+    /// Medical local-only takes every cloud voice out of the chain; Medical Compliance without
+    /// local-only does not.
+    func testMedicalLocalOnlyRemovesAllThreeCloudVoices() {
+        for engine in TTSEngine.cloudVoices {
+            XCTAssertFalse(cloudReady(engine, medical: .localOnly), "\(engine)")
+            XCTAssertTrue(cloudReady(engine, medical: .init(hipaaMode: true, localOnly: false)), "\(engine)")
+        }
+        let medical = Availability(
+            elevenLabsReady: cloudReady(.elevenLabs, medical: .localOnly),
+            kokoroReady: true,
+            openAIReady: cloudReady(.openAI, medical: .localOnly),
+            xaiReady: cloudReady(.xai, medical: .localOnly))
+        XCTAssertEqual(chain(.auto, medical), [.kokoro, .system])
+        XCTAssertEqual(chain(.openAI, medical), [.kokoro, .system])
+        XCTAssertEqual(chain(.xai, medical), [.kokoro, .system])
+    }
+
+    func testEachCloudVoiceNamesItsVendorAndRoute() {
+        XCTAssertEqual(TTSEngine.cloudVoices, [.elevenLabs, .openAI, .xai])
+        XCTAssertEqual(TTSEngine.openAI.speechRoute, .openAISpeechSynthesis)
+        XCTAssertEqual(TTSEngine.xai.speechRoute, .xaiSpeechSynthesis)
+        XCTAssertEqual(TTSEngine.elevenLabs.speechRoute, .elevenLabsSpeechSynthesis)
+        XCTAssertNil(TTSEngine.kokoro.speechRoute)
+        XCTAssertEqual(TTSEngine.openAI.vendorName, "OpenAI")
+        XCTAssertEqual(TTSEngine.xai.vendorName, "xAI")
+        XCTAssertEqual(TTSEnginePreference.openAI.displayName, "Cloud (OpenAI)")
+        XCTAssertEqual(TTSEnginePreference.xai.displayName, "Cloud (xAI)")
+    }
 }

@@ -38,52 +38,155 @@ final class CloudVoiceFallbackTests: XCTestCase {
         for status in [0, 400, 404, 429, 500, 503] {
             XCTAssertNil(CloudVoiceRejection.classify(statusCode: status, body: ""), "\(status)")
         }
+        XCTAssertNil(CloudVoiceRejection.classify(
+            statusCode: 429, body: #"{"error":{"code":"rate_limit_exceeded"}}"#))
+    }
+
+    /// OpenAI sends an empty account as a 429, which the status alone reads as a rate limit.
+    func testOpenAIsInsufficientQuotaIsOutOfCredit() {
+        let body = #"{"error":{"message":"You exceeded your current quota.","type":"insufficient_quota","code":"insufficient_quota"}}"#
+        XCTAssertEqual(CloudVoiceRejection.classify(statusCode: 429, body: body), .outOfCredit)
+    }
+
+    func testXAIsSpentCreditIsOutOfCredit() {
+        let body = #"{"error":"Your team has either used all available credits or reached its monthly spending limit."}"#
+        XCTAssertEqual(CloudVoiceRejection.classify(statusCode: 403, body: body), .outOfCredit)
     }
 
     // MARK: - Said once
 
+    private func notice(_ rejection: CloudVoiceRejection,
+                        from engine: TTSEngine = .elevenLabs) -> CloudVoiceNotice {
+        CloudVoiceNotice(engine: engine, rejection: rejection)
+    }
+
     func testARejectionIsSaidOnceAndNotAgain() {
         var announcer = CloudVoiceFallbackAnnouncer(defaults: defaults)
-        XCTAssertEqual(announcer.lineToSpeak(for: .outOfCredit, plainReply: true),
-                       CloudVoiceRejection.outOfCredit.spokenLine)
-        XCTAssertNil(announcer.lineToSpeak(for: .outOfCredit, plainReply: true))
+        XCTAssertEqual(announcer.lineToSpeak(for: notice(.outOfCredit), plainReply: true),
+                       notice(.outOfCredit).spokenLine)
+        XCTAssertNil(announcer.lineToSpeak(for: notice(.outOfCredit), plainReply: true))
     }
 
     func testItStaysSaidAcrossALaunch() {
         var first = CloudVoiceFallbackAnnouncer(defaults: defaults)
-        _ = first.lineToSpeak(for: .outOfCredit, plainReply: true)
+        _ = first.lineToSpeak(for: notice(.outOfCredit), plainReply: true)
         var afterRelaunch = CloudVoiceFallbackAnnouncer(defaults: defaults)
-        XCTAssertNil(afterRelaunch.lineToSpeak(for: .outOfCredit, plainReply: true))
+        XCTAssertNil(afterRelaunch.lineToSpeak(for: notice(.outOfCredit), plainReply: true))
+    }
+
+    /// What an earlier release stored — a bare reason, for ElevenLabs — still counts as said.
+    func testAnEpisodeStoredBeforeThereWereOtherCloudVoicesStillCounts() {
+        defaults.set("outOfCredit", forKey: CloudVoiceFallbackAnnouncer.defaultsKey)
+        var announcer = CloudVoiceFallbackAnnouncer(defaults: defaults)
+        XCTAssertNil(announcer.lineToSpeak(for: notice(.outOfCredit), plainReply: true))
+        XCTAssertNotNil(announcer.lineToSpeak(for: notice(.outOfCredit, from: .openAI), plainReply: true))
     }
 
     func testADifferentReasonIsNews() {
         var announcer = CloudVoiceFallbackAnnouncer(defaults: defaults)
-        _ = announcer.lineToSpeak(for: .outOfCredit, plainReply: true)
-        XCTAssertEqual(announcer.lineToSpeak(for: .refused, plainReply: true),
-                       CloudVoiceRejection.refused.spokenLine)
+        _ = announcer.lineToSpeak(for: notice(.outOfCredit), plainReply: true)
+        XCTAssertEqual(announcer.lineToSpeak(for: notice(.refused), plainReply: true),
+                       notice(.refused).spokenLine)
     }
 
     func testAnAlertIsNeverLengthenedAndTheNextReplyStillCarriesIt() {
         var announcer = CloudVoiceFallbackAnnouncer(defaults: defaults)
-        XCTAssertNil(announcer.lineToSpeak(for: .outOfCredit, plainReply: false))
-        XCTAssertNotNil(announcer.lineToSpeak(for: .outOfCredit, plainReply: true))
+        XCTAssertNil(announcer.lineToSpeak(for: notice(.outOfCredit), plainReply: false))
+        XCTAssertNotNil(announcer.lineToSpeak(for: notice(.outOfCredit), plainReply: true))
     }
 
     func testTheCloudVoiceComingBackMakesTheNextRejectionNews() {
         var announcer = CloudVoiceFallbackAnnouncer(defaults: defaults)
-        _ = announcer.lineToSpeak(for: .outOfCredit, plainReply: true)
+        _ = announcer.lineToSpeak(for: notice(.outOfCredit), plainReply: true)
         announcer.episodeEnded()
-        XCTAssertNotNil(announcer.lineToSpeak(for: .outOfCredit, plainReply: true))
+        XCTAssertNotNil(announcer.lineToSpeak(for: notice(.outOfCredit), plainReply: true))
+    }
+
+    // MARK: - One episode per cloud voice
+
+    /// Auto with two cloud voices: the first refuses every reply and the second speaks. The
+    /// second speaking must not make the first's refusal news on every reply.
+    func testAnotherCloudVoiceSpeakingDoesNotEndThisOnesEpisode() {
+        var announcer = CloudVoiceFallbackAnnouncer(defaults: defaults)
+        XCTAssertNotNil(announcer.lineToSpeak(for: notice(.refused), plainReply: true))
+        announcer.episodeEnded(for: .openAI)
+        XCTAssertNil(announcer.lineToSpeak(for: notice(.refused), plainReply: true))
+        announcer.episodeEnded(for: .elevenLabs)
+        XCTAssertNotNil(announcer.lineToSpeak(for: notice(.refused), plainReply: true))
+    }
+
+    func testEachCloudVoicesRejectionIsItsOwnNews() {
+        var announcer = CloudVoiceFallbackAnnouncer(defaults: defaults)
+        XCTAssertNotNil(announcer.lineToSpeak(for: notice(.refused), plainReply: true))
+        XCTAssertNotNil(announcer.lineToSpeak(for: notice(.refused, from: .openAI), plainReply: true))
+        XCTAssertNotNil(announcer.lineToSpeak(for: notice(.refused, from: .xai), plainReply: true))
+        // And each stays said while the others are told.
+        XCTAssertNil(announcer.lineToSpeak(for: notice(.refused), plainReply: true))
+        XCTAssertNil(announcer.lineToSpeak(for: notice(.refused, from: .openAI), plainReply: true))
+    }
+
+    func testAnnouncementTokensNameTheirCloudVoice() {
+        for engine in TTSEngine.cloudVoices {
+            for rejection in CloudVoiceRejection.allCases {
+                let token = notice(rejection, from: engine).announcementToken
+                XCTAssertEqual(CloudVoiceNotice.engine(ofToken: token), engine, token)
+            }
+        }
+        XCTAssertEqual(notice(.refused).announcementToken, "refused", "ElevenLabs keeps the stored form")
+        XCTAssertNil(CloudVoiceNotice.engine(ofToken: "unknown"))
     }
 
     // MARK: - What is said
 
     func testBothTellingsNameWhereTheVoiceIsChanged() {
-        for rejection in CloudVoiceRejection.allCases {
-            XCTAssertTrue(rejection.spokenLine.contains("Connections"), "\(rejection)")
-            XCTAssertTrue(rejection.spokenLine.contains("built-in voice"), "\(rejection)")
-            XCTAssertTrue(rejection.banner.contains(SettingsCatalog.category(.connections).title),
-                          "\(rejection)")
+        for engine in TTSEngine.cloudVoices {
+            for rejection in CloudVoiceRejection.allCases {
+                let told = notice(rejection, from: engine)
+                XCTAssertTrue(told.spokenLine.contains("Connections"), "\(engine) \(rejection)")
+                XCTAssertTrue(told.spokenLine.contains("built-in voice"), "\(engine) \(rejection)")
+                XCTAssertTrue(told.banner.contains(SettingsCatalog.category(.connections).title),
+                              "\(engine) \(rejection)")
+            }
         }
+    }
+
+    func testEachTellingNamesTheVendor() throws {
+        for engine in TTSEngine.cloudVoices {
+            let vendor = try XCTUnwrap(engine.vendorName)
+            for rejection in CloudVoiceRejection.allCases {
+                for nextIsCloud in [false, true] {
+                    var told = notice(rejection, from: engine)
+                    told.nextIsCloud = nextIsCloud
+                    XCTAssertTrue(told.spokenLine.contains(vendor), "\(engine) \(rejection) \(nextIsCloud)")
+                    XCTAssertTrue(told.banner.contains(vendor), "\(engine) \(rejection) \(nextIsCloud)")
+                }
+            }
+        }
+    }
+
+    /// The ElevenLabs wording is the one it has always had.
+    func testTheElevenLabsWordingIsUnchanged() {
+        XCTAssertEqual(notice(.outOfCredit).spokenLine,
+                       "By the way, your ElevenLabs credit has run out, so I'm using the built-in voice. You can change voices in the app's Settings, under Connections, then Services and Integrations.")
+        XCTAssertEqual(notice(.refused).banner,
+                       "ElevenLabs refused the voice request, so replies use the built-in voice. Check the key and voice in Settings › Connections › Services & Integrations.")
+    }
+
+    /// With another cloud voice taking over, "the built-in voice" would be untrue.
+    func testAnotherCloudVoiceTakingOverIsNotCalledTheBuiltInVoice() {
+        for rejection in CloudVoiceRejection.allCases {
+            var told = notice(rejection)
+            told.nextIsCloud = true
+            XCTAssertFalse(told.spokenLine.contains("built-in voice"), "\(rejection)")
+            XCTAssertTrue(told.spokenLine.contains("another voice"), "\(rejection)")
+            XCTAssertFalse(told.banner.contains("built-in voice"), "\(rejection)")
+        }
+    }
+
+    func testTheNextEngineDecidesWhetherAnotherCloudVoiceFollows() {
+        let chain: [TTSEngine] = [.elevenLabs, .openAI, .kokoro, .system]
+        XCTAssertTrue(TextToSpeechService.cloudVoiceFollows(.elevenLabs, in: chain))
+        XCTAssertFalse(TextToSpeechService.cloudVoiceFollows(.openAI, in: chain))
+        XCTAssertFalse(TextToSpeechService.cloudVoiceFollows(.xai, in: chain), "not in the chain")
     }
 }

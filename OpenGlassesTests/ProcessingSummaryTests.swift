@@ -55,6 +55,19 @@ final class ProcessingSummaryTests: XCTestCase {
         XCTAssertEqual(destination(composed, .spokenVoice), .onDevice)
     }
 
+    /// Plan ID item 5: the spoken-voice row names whichever cloud voice will speak.
+    func testTheOpenAIAndXAIVoicesAreNamedAsTheirVendor() {
+        for (engine, vendor) in [(TTSEngine.openAI, "OpenAI"), (.xai, "xAI"), (.elevenLabs, "ElevenLabs")] {
+            let facts = ProcessingFacts(voiceEngine: engine, modelKind: .onDevice,
+                                        modelProviderName: "Local (On-Device MLX)",
+                                        modelAssetName: "Gemma 3n E2B", modelAssetPresent: true,
+                                        speechRecognitionOnDevice: true, kokoroInstalled: true)
+            let composed = ProcessingSummary.compose(facts: facts)
+            XCTAssertEqual(destination(composed, .spokenVoice), .cloud(provider: vendor), "\(engine)")
+            XCTAssertEqual(composed.verdict.token, "mixed", "a cloud voice is never fully on-device")
+        }
+    }
+
     // MARK: - Fully on-device
 
     func testEverythingOnDeviceWithItsAssetsPresentIsFullyOnDevice() {

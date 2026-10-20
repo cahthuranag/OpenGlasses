@@ -94,7 +94,7 @@ final class StreamedReplyQueue {
     /// No more sentences will be added.
     var isClosed: Bool { schedule.isClosed }
     var isComplete: Bool { schedule.isComplete }
-    /// The cloud voice was demoted for the rest of this reply.
+    /// A cloud voice was demoted for the rest of this reply.
     var cloudDemoted: Bool { schedule.cloudDemoted }
 
     /// Sentences from `start` on that were played to their end.
@@ -177,9 +177,9 @@ final class StreamedReplyQueue {
             let line = (error as? StreamedSynthesisFailure)?.lineToAppend
             PrivacyLog.tts(.engineFallback, engine: PrivacyToken(engine.rawValue),
                            error: error is StreamedSynthesisFailure ? nil : SafeErrorSummary(error))
-            let wasDemoted = schedule.cloudDemoted
+            let wasDemoted = schedule.demotedEngines.contains(engine)
             perform(schedule.synthesisFailed(index: index, engine: engine, appendingText: line))
-            if schedule.cloudDemoted, !wasDemoted {
+            if schedule.demotedEngines.contains(engine), !wasDemoted {
                 PrivacyLog.tts(.streamedCloudDemoted, engine: PrivacyToken(engine.rawValue),
                                count: StreamedReplySchedule.cloudFailuresBeforeDemotion)
             }

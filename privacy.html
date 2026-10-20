@@ -144,9 +144,9 @@
   <td>If you set one up.</td>
 </tr>
 <tr>
-  <td>ElevenLabs</td>
-  <td>The text of the assistant's reply, so it can be spoken aloud, and your API key.</td>
-  <td>Only if you add an ElevenLabs key. Otherwise the app uses a voice on your phone.</td>
+  <td>Cloud voice: ElevenLabs, OpenAI or xAI</td>
+  <td>The text of the assistant's reply, so it can be spoken aloud, and your API key (for xAI, your API key or xAI sign-in token).</td>
+  <td>Only if a cloud voice can be used: an ElevenLabs key you add, or the OpenAI API key or xAI key or sign-in saved with one of your AI models, with the voice engine on Auto or set to that voice. The voice engine setting chooses which; Auto tries ElevenLabs, then OpenAI, then xAI. Never in Medical Compliance's local-only mode. Otherwise the app uses a voice on your phone.</td>
 </tr>
 <tr>
   <td>Deepgram</td>
@@ -220,7 +220,7 @@
 <p><strong>Diagnostics reports</strong> are only created when you ask for one in Settings, "Diagnostics &amp; Support". You see the whole report before anything leaves the phone, and it's only sent if you share it yourself: by emailing it to us, through the share sheet, or as a pre-filled public GitHub issue that you choose to submit. An emailed report reaches us like any other email you send us, and you can add to it or change it before you send it.</p>
 <p><strong>Support reports</strong> are fuller, and are made the same way: in "Diagnostics &amp; Support", from the Job tab, or from the offer the app shows when an AI request fails. Unlike a diagnostics report, a support report contains your conversations from the day or job you choose (what was said, as transcribed, and what the assistant replied), together with the AI turn records, the Field Assist job log, your phone and glasses details and the app's event log. Keys and tokens are masked. Nothing is created until you tap to make one, you see it before anything leaves the phone, and it's only sent if you send it yourself, through the share sheet or by email to the support address shown on the screen. On a personal phone that address is ours unless you enter another one in "Diagnostics &amp; Support". On a phone set up by an organisation, or running on an organisation's licence, it is always the organisation's own address and never ours: the support address it set, or else the office that receives its job reports.</p>
 <p><strong>TestFlight.</strong> If you test a pre-release build through Apple's TestFlight, Apple may share crash reports and any feedback you submit with us, under Apple's TestFlight terms. The app itself sends no crash reports.</p>
-<p><strong>A voice you choose.</strong> If you paste an ElevenLabs voice ID into the app, which voice the assistant speaks with is your choice and your responsibility. Don't use a voice that imitates a real person without their permission.</p>
+<p><strong>A voice you choose.</strong> If you paste an ElevenLabs voice ID into the app, or choose an OpenAI or xAI voice, which voice the assistant speaks with is your choice and your responsibility. Don't use a voice that imitates a real person without their permission.</p>
 <p class="note">You can see and switch off individual tools, check what context is sent to the assistant, and review recorded network requests in the app's settings.</p>
 
 <h2 id="camera">4. Camera, microphone and people around you</h2>
@@ -303,12 +303,12 @@
 <p>The services in section 3 may process your data outside New Zealand, under their own privacy policies. Before you use a service, check where it processes data and read its policy:</p>
 <ul>
   <li><a href="https://www.anthropic.com/legal/privacy">Anthropic</a></li>
-  <li><a href="https://openai.com/policies/privacy-policy/">OpenAI</a></li>
+  <li><a href="https://openai.com/policies/privacy-policy/">OpenAI</a> (AI models and the OpenAI voice)</li>
   <li><a href="https://policies.google.com/privacy">Google</a> (Gemini, Vertex AI, Google News)</li>
   <li><a href="https://groq.com/privacy-policy/">Groq</a></li>
   <li><a href="https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html">DeepSeek</a></li>
   <li><a href="https://legal.mistral.ai/terms/privacy-policy/">Mistral AI</a></li>
-  <li><a href="https://x.ai/legal/privacy-policy">xAI</a></li>
+  <li><a href="https://x.ai/legal/privacy-policy">xAI</a> (AI models and the xAI voice)</li>
   <li><a href="https://openrouter.ai/privacy">OpenRouter</a></li>
   <li><a href="https://www.alibabacloud.com/help/en/legal/latest/alibaba-cloud-international-website-privacy-policy">Alibaba Cloud</a> (Qwen)</li>
   <li><a href="https://docs.z.ai/legal-agreement/privacy-policy">Z.ai</a> (GLM)</li>

@@ -1,5 +1,6 @@
 import Foundation
 import NaturalLanguage
+import PDFKit
 
 // The local retrieval eval on a Mac, on the device's embedding model. Compiled by run.sh with the
 // app's own DocumentStore, DocumentChunker and VaultRetriever and the shared eval core in
@@ -21,6 +22,11 @@ struct RetrievalEvalMain {
         // Plan IV P5: estimate how often one guided retry (the book's index, or the nearest
         // headings) would find what a missed question was after.
         RetrievalEval.retry = env["RETRIEVAL_EVAL_RETRY"].flatMap(RetrievalEval.Retry.init(rawValue:))
+        // Plan JJ P1: which routes search a table's row passages (1, 0, token or table).
+        if let rows = env["RETRIEVAL_EVAL_TABLE_ROWS"] {
+            guard let mode = RetrievalEval.TableRows(rawValue: rows) else { fail("RETRIEVAL_EVAL_TABLE_ROWS is 1, 0, token or table") }
+            RetrievalEval.tableRows = mode
+        }
         let embedder = Embedder()
         guard embedder.isAvailable else { fail("no NaturalLanguage embedding model on this Mac") }
 
@@ -34,13 +40,27 @@ struct RetrievalEvalMain {
         for document in manifestDocuments(in: vault) {
             if store.document(named: document.title) != nil { continue }
             let file = document.url
-            guard ["md", "txt"].contains(file.pathExtension.lowercased()) else {
-                fail("\(file.lastPathComponent): the Mac runner reads extracted text — run "
-                     + "Scripts/extract-manual-text.swift on the PDF and list the .md in the manifest")
+            // A PDF is indexed as the phone indexes it: its text, here as the Mac extractor writes
+            // it (into the work folder, once), and its tables, read by the app's own table reader
+            // (Plan JJ P1). A text document gets the tables of the original it names, if any.
+            let isPDF = file.pathExtension.lowercased() == "pdf"
+            let pdf = isPDF ? file : document.source.flatMap { $0.pathExtension.lowercased() == "pdf" ? $0 : nil }
+            let textFile: URL
+            if isPDF {
+                textFile = extractedText(of: file, into: work)
+            } else {
+                guard ["md", "txt"].contains(file.pathExtension.lowercased()) else {
+                    fail("document \(store.documents.count + 1): the Mac runner reads a PDF or extracted text")
+                }
+                textFile = file
             }
-            guard let text = try? String(contentsOf: file, encoding: .utf8) else { fail("can't read \(file.lastPathComponent)") }
+            guard let text = try? String(contentsOf: textFile, encoding: .utf8) else { fail("can't read document \(store.documents.count + 1)") }
             FileHandle.standardError.write("indexing document \(store.documents.count + 1)…\n".data(using: .utf8)!)
-            _ = await store.ingest(name: document.title, text: text, sourceType: "vault_document")
+            let tables = pdf.flatMap { url -> [ManualTable]? in
+                guard let doc = PDFDocument(url: url) else { return nil }
+                return PDFTableReader.read(document: doc, printedLabels: printedLabels(of: doc)).stored
+            } ?? []
+            _ = await store.ingest(name: document.title, text: text, sourceType: "vault_document", tables: tables)
         }
 
         // The shipped gate for this embedder, or a candidate one to calibrate a gate against both
@@ -67,17 +87,62 @@ struct RetrievalEvalMain {
                                        store: store,
                                        passageLimit: env["RETRIEVAL_EVAL_PASSAGES"] == "4" ? nil : ManualPassageLimit())
         let label = (env["RETRIEVAL_EVAL_LABEL"] ?? "local vault") + (env["RETRIEVAL_EVAL_GATE"].map { " gate=\($0)" } ?? "")
+            + " table_rows=\(RetrievalEval.tableRows.rawValue)"
         for line in report.lines(label: label, embedder: embedder.modelId) {
             print(line)
         }
     }
 
-    struct Document { let title: String; let url: URL; let kind: String?; let edition: String? }
+    struct Document { let title: String; let url: URL; let kind: String?; let edition: String?; let source: URL? }
+
+    /// The text of a PDF as `Scripts/extract-manual-text.swift` writes it, extracted once into the
+    /// work folder (never the repository) and reused.
+    static func extractedText(of pdf: URL, into work: URL) -> URL {
+        let digest = pdf.lastPathComponent.unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
+        let out = work.appendingPathComponent("text-\(String(digest, radix: 16)).md")
+        if FileManager.default.fileExists(atPath: out.path) { return out }
+        let here = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+        let script = ProcessInfo.processInfo.environment["RETRIEVAL_EVAL_EXTRACTOR"].map { URL(fileURLWithPath: $0) }
+            ?? here.appendingPathComponent("extract-manual-text.swift")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["swift", script.path, pdf.path, out.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        FileHandle.standardError.write("extracting text…\n".data(using: .utf8)!)
+        do { try process.run() } catch { fail("can't run the text extractor") }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0, FileManager.default.fileExists(atPath: out.path) else {
+            fail("the text extractor failed")
+        }
+        return out
+    }
+
+    /// The printed page numbers, read as the phone reads them (`VaultDocumentExtractor.pageLabels`).
+    static func printedLabels(of document: PDFDocument) -> [Int: String] {
+        var labels: [Int: String] = [:]
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index) else { continue }
+            let physical = index + 1
+            if let label = page.label?.trimmingCharacters(in: .whitespaces), !label.isEmpty, label != String(physical) {
+                labels[physical] = label
+                continue
+            }
+            let bounds = page.bounds(for: .mediaBox)
+            guard bounds.height > 0 else { continue }
+            let band = bounds.height * 0.09
+            let bottom = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: band)
+            let top = CGRect(x: bounds.minX, y: bounds.maxY - band, width: bounds.width, height: band)
+            let text = [top, bottom].compactMap { page.selection(for: $0)?.string }.joined(separator: "\n")
+            if let printed = PrintedPageBand.label(in: text) { labels[physical] = printed }
+        }
+        return labels
+    }
 
     /// The manifest's documents, read with only the fields this needs.
     static func manifestDocuments(in vault: URL) -> [Document] {
         struct Manifest: Decodable {
-            struct Entry: Decodable { let file: String; let title: String; let kind: String?; let edition: String? }
+            struct Entry: Decodable { let file: String; let title: String; let kind: String?; let edition: String?; let source: String? }
             let documents: [Entry]?
             let documents_dir: String?
         }
@@ -87,7 +152,8 @@ struct RetrievalEvalMain {
         }
         let dir = manifest.documents_dir.map { vault.appendingPathComponent($0, isDirectory: true) } ?? vault
         return (manifest.documents ?? []).map {
-            Document(title: $0.title, url: dir.appendingPathComponent($0.file), kind: $0.kind, edition: $0.edition)
+            Document(title: $0.title, url: dir.appendingPathComponent($0.file), kind: $0.kind, edition: $0.edition,
+                     source: $0.source.map { dir.appendingPathComponent($0) })
         }
     }
 

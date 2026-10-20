@@ -1933,7 +1933,37 @@ struct Config {
         UserDefaults.standard.set(voiceId, forKey: "elevenLabsVoiceId")
     }
 
-    /// Preferred iOS TTS voice identifier (used when ElevenLabs is unavailable).
+    // MARK: - OpenAI and xAI voices (Plan ID item 5)
+
+    /// The OpenAI speech voice, from its fixed list. The key is the OpenAI model's own
+    /// (`CloudVoiceCredentials.openAIKey`); there is no separate voice key.
+    static var openAITTSVoice: String {
+        if let voice = UserDefaults.standard.string(forKey: "openAITTSVoice"),
+           CloudVoiceRequests.openAIVoices.contains(voice) {
+            return voice
+        }
+        return CloudVoiceRequests.defaultOpenAIVoice
+    }
+
+    static func setOpenAITTSVoice(_ voice: String) {
+        UserDefaults.standard.set(voice, forKey: "openAITTSVoice")
+    }
+
+    /// The xAI speech voice id, from the catalog or typed. The credential is the xAI model's key or
+    /// the connected xAI account (`CloudVoiceCredentials`).
+    static var xaiTTSVoice: String {
+        if let voice = UserDefaults.standard.string(forKey: "xaiTTSVoice")?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !voice.isEmpty {
+            return voice
+        }
+        return CloudVoiceRequests.defaultXAIVoice
+    }
+
+    static func setXAITTSVoice(_ voice: String) {
+        UserDefaults.standard.set(voice.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "xaiTTSVoice")
+    }
+
+    /// Preferred iOS TTS voice identifier (used when no cloud voice is available).
     /// Empty string means auto-select best available voice.
     static var iosTTSVoiceId: String {
         UserDefaults.standard.string(forKey: "iosTTSVoiceId") ?? ""

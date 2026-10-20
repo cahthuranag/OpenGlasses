@@ -11,10 +11,12 @@ import Foundation
 ///   waits for every sentence before it to have played (or to have been given up on).
 /// - **Each sentence walks the engine chain** it was enqueued with, falling to the next engine
 ///   when one fails.
-/// - **Per-reply demotion.** Two consecutive cloud-voice failures inside one reply take the cloud
+/// - **Per-reply demotion.** Two consecutive failures of one cloud voice inside one reply take that
 ///   voice out of the chain for every sentence of this reply not yet started, so a flaky network
-///   produces one voice change rather than a sentence-by-sentence stutter of timeouts. A schedule
-///   is one reply: the next reply starts with a fresh one and tries the cloud voice again.
+///   produces one voice change rather than a sentence-by-sentence stutter of timeouts. Each cloud
+///   voice is counted and demoted on its own (Plan ID item 5): with Auto and two set up, the
+///   second still gets its chance. A schedule is one reply: the next reply starts with a fresh one
+///   and tries the cloud voices again.
 /// - **Cancellation drops the remainder.** What had played stays played; nothing else plays.
 ///
 /// The driver (`StreamedReplyQueue`) turns `Action`s into synthesis and playback calls and feeds
@@ -63,9 +65,11 @@ struct StreamedReplySchedule {
     /// No more sentences will be enqueued.
     private(set) var isClosed = false
     private(set) var isCancelled = false
-    /// The cloud voice has been taken out of the rest of this reply.
-    private(set) var cloudDemoted = false
-    private var consecutiveCloudFailures = 0
+    /// The cloud voices taken out of the rest of this reply.
+    private(set) var demotedEngines: Set<TTSEngine> = []
+    /// A cloud voice has been taken out of the rest of this reply.
+    var cloudDemoted: Bool { !demotedEngines.isEmpty }
+    private var consecutiveCloudFailures: [TTSEngine: Int] = [:]
 
     init(prefetchDepth: Int = StreamedReplySchedule.defaultPrefetchDepth) {
         self.prefetchDepth = min(max(prefetchDepth, 1), Self.maximumPrefetchDepth)
@@ -112,7 +116,7 @@ struct StreamedReplySchedule {
     mutating func synthesisSucceeded(index: Int, engine: TTSEngine) -> [Action] {
         guard !isCancelled, items.indices.contains(index),
               items[index].state == .synthesizing(engine) else { return [] }
-        if engine == .elevenLabs { consecutiveCloudFailures = 0 }
+        if engine.isCloud { consecutiveCloudFailures[engine] = 0 }
         items[index].state = .ready(engine)
         return advance()
     }
@@ -121,9 +125,10 @@ struct StreamedReplySchedule {
     mutating func synthesisFailed(index: Int, engine: TTSEngine, appendingText: String? = nil) -> [Action] {
         guard !isCancelled, items.indices.contains(index),
               items[index].state == .synthesizing(engine) else { return [] }
-        if engine == .elevenLabs {
-            consecutiveCloudFailures += 1
-            if consecutiveCloudFailures >= Self.cloudFailuresBeforeDemotion { cloudDemoted = true }
+        if engine.isCloud {
+            let failures = (consecutiveCloudFailures[engine] ?? 0) + 1
+            consecutiveCloudFailures[engine] = failures
+            if failures >= Self.cloudFailuresBeforeDemotion { demotedEngines.insert(engine) }
         }
         if let appendingText, !appendingText.isEmpty {
             items[index].text += " " + appendingText
@@ -172,7 +177,7 @@ struct StreamedReplySchedule {
     /// The chain this reply may still use for a sentence.
     func effectiveChain(_ chain: [TTSEngine]) -> [TTSEngine] {
         guard cloudDemoted else { return chain }
-        let demoted = chain.filter { $0 != .elevenLabs }
+        let demoted = chain.filter { !demotedEngines.contains($0) }
         return demoted.isEmpty ? [.system] : demoted
     }
 

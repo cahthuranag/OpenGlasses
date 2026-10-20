@@ -141,17 +141,20 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     /// *which* gate it was, and so those branches are exercised in tests rather than described.
     var suppressionCheck: (() -> SpeechDeliveryOutcome.SuppressionReason?)?
 
-    /// When ElevenLabs returns quota_exceeded, cache the failure so we skip
-    /// further ElevenLabs calls and go straight to iOS TTS for the session.
-    private var elevenLabsQuotaExhausted = false
+    /// The cloud voices that said their account is out of credit this session (ElevenLabs's
+    /// quota_exceeded, OpenAI's insufficient_quota), so we skip further calls to them and go
+    /// straight to the next engine. One latch per voice: one account running dry says nothing
+    /// about another.
+    private(set) var quotaExhausted: Set<TTSEngine> = []
 
-    /// Why ElevenLabs turned down the request in flight, when it is something only the wearer can
-    /// fix. Set where the response is read, consumed where the chain falls through.
-    private var pendingCloudVoiceRejection: CloudVoiceRejection?
+    /// Why a cloud voice turned down the request in flight, when it is something only the wearer
+    /// can fix. Set where the response is read, consumed where the chain falls through.
+    private var pendingCloudVoiceRejection: CloudVoiceNotice?
     private var cloudVoiceAnnouncer = CloudVoiceFallbackAnnouncer()
-    /// The first such rejection of each kind this session, for the screen. Wired by `AppState`.
-    var onCloudVoiceRejected: ((CloudVoiceRejection) -> Void)?
-    private var cloudVoiceRejectionsShown: Set<CloudVoiceRejection> = []
+    /// The first such rejection of each kind from each cloud voice this session, for the screen.
+    /// Wired by `AppState`.
+    var onCloudVoiceRejected: ((CloudVoiceNotice) -> Void)?
+    private var cloudVoiceRejectionsShown: Set<String> = []
 
     /// A voice available on the user's ElevenLabs account (from GET /v1/voices).
     struct ElevenLabsVoice: Identifiable, Hashable, Codable {
@@ -191,6 +194,21 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
             throw TTSError.apiError(statusCode: code)
         }
         return try JSONDecoder().decode(ElevenLabsVoicesResponse.self, from: data).voices
+    }
+
+    /// Fetch the voices the xAI key or sign-in may use, for the picker (Plan ID item 5). OpenAI
+    /// has no such list; its voices are fixed (`CloudVoiceRequests.openAIVoices`).
+    static func fetchXAIVoices(credential: String) async throws -> [CloudVoiceRequests.XAIVoice] {
+        try MedicalEgressGuard.check(.xaiVoiceCatalog)
+        let request = CloudVoiceRequests.xaiVoiceCatalog(credential: credential)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            PrivacyLog.tts(.voicesRequestFailed, engine: PrivacyToken(TTSEngine.xai.rawValue),
+                           bytes: data.count, status: code)
+            throw TTSError.apiError(statusCode: code)
+        }
+        return try CloudVoiceRequests.parseXAIVoices(data)
     }
 
     init(synthesizerFactory: @escaping @MainActor () -> any SpeechSynthesizing = { AVSpeechSynthesizer() }) {
@@ -297,10 +315,18 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
 
     /// Reset the ElevenLabs quota cache (call when API key changes or credits are added).
     func resetElevenLabsQuota() {
-        elevenLabsQuotaExhausted = false
-        cloudVoiceAnnouncer.episodeEnded()
-        cloudVoiceRejectionsShown = []
-        PrivacyLog.tts(.quotaCacheReset, engine: PrivacyToken("elevenLabs"))
+        resetCloudVoiceQuota(.elevenLabs)
+    }
+
+    /// Reset one cloud voice's quota latch and its rejection episode (call when its key or voice
+    /// changes or credit is added): the next rejection from it is news again.
+    func resetCloudVoiceQuota(_ engine: TTSEngine) {
+        quotaExhausted.remove(engine)
+        cloudVoiceAnnouncer.episodeEnded(for: engine)
+        cloudVoiceRejectionsShown = cloudVoiceRejectionsShown.filter {
+            CloudVoiceNotice.engine(ofToken: $0) != engine
+        }
+        PrivacyLog.tts(.quotaCacheReset, engine: PrivacyToken(engine.rawValue))
     }
 
     /// Speaks `text` with a verbal urgency: higher urgency speeds up the iOS voice and prepends a
@@ -490,12 +516,14 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         var text = SpokenSymbolExpander.spokenForm(of: text)
         let elevenLabsKey = Config.elevenLabsAPIKey
         let chain = engineChain(urgency: urgency, onDeviceOnly: onDeviceOnly)
+        // One notice per utterance, however many cloud voices turn it away.
+        var noticeAppended = false
         // The utterance is the assistant's half of the conversation — as private as the
         // wearer's half — so only its length goes to the log. The chain is public operation
         // class and is the thing an "it came out in the wrong voice" report actually needs.
         PrivacyLog.tts(.speaking, engine: PrivacyToken(chain.map(\.rawValue).joined(separator: "-")),
                        characters: text.count,
-                       detail: PrivacyToken(elevenLabsQuotaExhausted ? "quotaExhausted" : "quotaOk"))
+                       detail: PrivacyToken(quotaExhausted.isEmpty ? "quotaOk" : "quotaExhausted"))
 
         for engine in chain {
             guard !Task.isCancelled, gen == speechGeneration else {
@@ -516,6 +544,12 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
                 case .elevenLabs:
                     pendingCloudVoiceRejection = nil
                     try await speakWithElevenLabs(text: text, apiKey: elevenLabsKey)
+                case .openAI:
+                    pendingCloudVoiceRejection = nil
+                    try await speakWithOpenAI(text: text, apiKey: openAISpeechKey())
+                case .xai:
+                    pendingCloudVoiceRejection = nil
+                    try await speakWithXAI(text: text, credential: await xaiSpeechCredential())
                 case .kokoro:
                     try await speakWithKokoro(text: text)
                 case .system:
@@ -535,14 +569,16 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
                 }
                 PrivacyLog.tts(.engineFallback, engine: PrivacyToken(engine.rawValue),
                                error: SafeErrorSummary(error))
-                if engine == .elevenLabs, let rejection = pendingCloudVoiceRejection {
+                if engine.isCloud, var notice = pendingCloudVoiceRejection {
                     pendingCloudVoiceRejection = nil
-                    if cloudVoiceRejectionsShown.insert(rejection).inserted {
-                        onCloudVoiceRejected?(rejection)
+                    notice.nextIsCloud = Self.cloudVoiceFollows(engine, in: chain)
+                    if cloudVoiceRejectionsShown.insert(notice.announcementToken).inserted {
+                        onCloudVoiceRejected?(notice)
                     }
-                    if let line = cloudVoiceAnnouncer.lineToSpeak(
-                        for: rejection, plainReply: urgency == .low && !onDeviceOnly) {
+                    if !noticeAppended, let line = cloudVoiceAnnouncer.lineToSpeak(
+                        for: notice, plainReply: urgency == .low && !onDeviceOnly) {
                         text += " " + line
+                        noticeAppended = true
                     }
                 }
                 continue
@@ -554,21 +590,38 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         deliveryLedger.record(.noEngineAvailable, for: gen, liveGeneration: speechGeneration)
     }
 
+    /// Whether another cloud voice comes after `engine` in `chain` — what the wearer hears next
+    /// when `engine` turns a reply away.
+    nonisolated static func cloudVoiceFollows(_ engine: TTSEngine, in chain: [TTSEngine]) -> Bool {
+        guard let index = chain.firstIndex(of: engine) else { return false }
+        return chain[(index + 1)...].contains(where: \.isCloud)
+    }
+
     /// The engines to try for one utterance, best first.
     private func engineChain(urgency: SpeechUrgency, onDeviceOnly: Bool) -> [TTSEngine] {
-        // ElevenLabs is "ready" only with a key, online, and not quota-exhausted. Kokoro is "ready"
-        // only with the model present *and* the binary compiled in (always false in the shipped
-        // build → the chain collapses to ElevenLabs/AVSpeech exactly as before).
+        // A cloud voice is "ready" only with its credential, online, and not quota-exhausted.
+        // Kokoro is "ready" only with the model present *and* the binary compiled in (always false
+        // in the shipped build → the chain collapses to the cloud voices/AVSpeech exactly as before).
+        //
+        // Medical local-only removes every cloud voice from the chain rather than failing the
+        // utterance: Kokoro and the iOS voice are already the fallback, and a wearer in a clinical
+        // setting still needs to be spoken to.
+        let online = reachability?.isOnline ?? true
+        let medicalMode = MedicalEgressGuard.currentMode()
+        let savedModels = Config.savedModels
+        func ready(_ engine: TTSEngine, hasCredential: Bool) -> Bool {
+            TTSEngineSelector.cloudVoiceReady(engine, hasCredential: hasCredential,
+                                              quotaExhausted: quotaExhausted.contains(engine),
+                                              onDeviceOnly: onDeviceOnly, online: online,
+                                              medicalMode: medicalMode)
+        }
         let availability = TTSEngineSelector.Availability(
-            // Medical local-only removes the cloud voice from the chain rather than failing the
-            // utterance: Kokoro and the iOS voice are already the fallback, and a wearer in a
-            // clinical setting still needs to be spoken to.
-            elevenLabsReady: !onDeviceOnly
-                && !Config.elevenLabsAPIKey.isEmpty
-                && !elevenLabsQuotaExhausted
-                && MedicalEgressGuard.allows(.elevenLabsSpeechSynthesis)
-                && (reachability?.isOnline ?? true),
-            kokoroReady: kokoroEngine.isReady
+            elevenLabsReady: ready(.elevenLabs, hasCredential: !Config.elevenLabsAPIKey.isEmpty),
+            kokoroReady: kokoroEngine.isReady,
+            openAIReady: ready(.openAI, hasCredential: !CloudVoiceCredentials.openAIKey(
+                savedModels: savedModels, legacyKey: Config.openAIAPIKey).isEmpty),
+            xaiReady: ready(.xai, hasCredential: CloudVoiceCredentials.xaiSource(
+                savedModels: savedModels, accountConnected: XAIOAuthService.shared.isConnected) != .none)
         )
         return TTSEngineSelector.chain(
             preference: Config.ttsEnginePreference,
@@ -978,27 +1031,70 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
     /// Internal rather than private so the medical egress canary can drive the exact point where
     /// the ElevenLabs request is built, instead of inferring it from playback.
     func speakWithElevenLabs(text: String, apiKey: String) async throws {
+        try await speakCloudAudio { try await self.fetchElevenLabsAudio(text: text, apiKey: apiKey) }
+    }
+
+    /// Fetch one cloud voice's audio and play it, keeping a classified refusal for the chain.
+    private func speakCloudAudio(_ fetch: () async throws -> Data) async throws {
         let data: Data
         do {
-            data = try await fetchElevenLabsAudio(text: text, apiKey: apiKey)
-        } catch let rejected as ElevenLabsRejection {
-            pendingCloudVoiceRejection = rejected.rejection
+            data = try await fetch()
+        } catch let rejected as CloudVoiceRequestRejected {
+            pendingCloudVoiceRejection = rejected.notice
             throw TTSError.apiError(statusCode: rejected.statusCode)
         }
         // Play the MP3 audio
         try await playAudioData(data)
     }
 
-    /// ElevenLabs answered with something other than audio. Carries the classified reason so the
-    /// caller decides what to do with it — a streamed reply synthesises several sentences at once,
-    /// so a single shared "pending rejection" slot would be overwritten by whichever came back last.
-    struct ElevenLabsRejection: Error {
+    /// A cloud voice answered with something other than audio. Carries the classified reason so
+    /// the caller decides what to do with it — a streamed reply synthesises several sentences at
+    /// once, so a single shared "pending rejection" slot would be overwritten by whichever came
+    /// back last.
+    struct CloudVoiceRequestRejected: Error {
+        let engine: TTSEngine
         let statusCode: Int
         let rejection: CloudVoiceRejection?
+
+        var notice: CloudVoiceNotice? {
+            rejection.map { CloudVoiceNotice(engine: engine, rejection: $0) }
+        }
+    }
+
+    /// Read a cloud voice's answer: audio on a 200; otherwise classify the refusal, latch the voice
+    /// off for the session when its account is out of credit, and throw. The audio is returned
+    /// untouched, and the reply text is never logged — only its engine, size and status.
+    private func cloudVoiceAudio(engine: TTSEngine, data: Data, response: URLResponse,
+                                 startedAt startTime: Date) throws -> Data {
+        let elapsed = Date().timeIntervalSince(startTime)
+        PrivacyLog.tts(.received, engine: PrivacyToken(engine.rawValue), bytes: data.count,
+                       seconds: elapsed)
+
+        // Check cancellation after network wait — a newer speak() may have started
+        try Task.checkCancellation()
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            PrivacyLog.tts(.engineFailed, engine: PrivacyToken(engine.rawValue), status: statusCode)
+            let rejection = CloudVoiceRejection.classify(
+                statusCode: statusCode, body: String(data: data, encoding: .utf8) ?? "")
+            // Cache quota exhaustion so we skip this voice for the rest of this session
+            if rejection == .outOfCredit {
+                PrivacyLog.tts(.quotaExhausted, engine: PrivacyToken(engine.rawValue))
+                quotaExhausted.insert(engine)
+            }
+            throw CloudVoiceRequestRejected(engine: engine, statusCode: statusCode, rejection: rejection)
+        }
+
+        // The cloud voice answered: whatever turned it away before is over.
+        cloudVoiceAnnouncer.episodeEnded(for: engine)
+        return data
     }
 
     /// Request one utterance's audio from ElevenLabs without playing it (Plan HZ: a streamed reply
-    /// synthesises the next sentences while one plays). Throws `ElevenLabsRejection` for a non-200.
+    /// synthesises the next sentences while one plays). Throws `CloudVoiceRequestRejected` for a
+    /// non-200.
     func fetchElevenLabsAudio(text: String, apiKey: String) async throws -> Data {
         let voiceId = Config.elevenLabsVoiceId
         let urlString = "https://api.elevenlabs.io/v1/text-to-speech/\(voiceId)"
@@ -1033,31 +1129,64 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         let startTime = Date()
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        return try cloudVoiceAudio(engine: .elevenLabs, data: data, response: response,
+                                   startedAt: startTime)
+    }
 
-        let elapsed = Date().timeIntervalSince(startTime)
-        PrivacyLog.tts(.received, engine: PrivacyToken("elevenLabs"), bytes: data.count,
-                       seconds: elapsed)
+    // MARK: - OpenAI and xAI TTS (Plan ID item 5)
 
-        // Check cancellation after network wait — a newer speak() may have started
-        try Task.checkCancellation()
+    /// Internal rather than private so the medical egress canary and the request-shape tests can
+    /// drive the exact point where the request is built.
+    func speakWithOpenAI(text: String, apiKey: String) async throws {
+        try await speakCloudAudio { try await self.fetchOpenAIAudio(text: text, apiKey: apiKey) }
+    }
 
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            PrivacyLog.tts(.engineFailed, engine: PrivacyToken("elevenLabs"), status: statusCode)
-            let rejection = CloudVoiceRejection.classify(
-                statusCode: statusCode, body: String(data: data, encoding: .utf8) ?? "")
-            // Cache quota exhaustion so we skip ElevenLabs for the rest of this session
-            if rejection == .outOfCredit {
-                PrivacyLog.tts(.quotaExhausted, engine: PrivacyToken("elevenLabs"))
-                elevenLabsQuotaExhausted = true
-            }
-            throw ElevenLabsRejection(statusCode: statusCode, rejection: rejection)
+    /// One utterance's MP3 from OpenAI's speech endpoint, with the OpenAI API key — never a
+    /// ChatGPT sign-in, which the endpoint refuses. Always the standard address: a custom base URL
+    /// on the OpenAI model is not followed. Throws `CloudVoiceRequestRejected` for a non-200.
+    func fetchOpenAIAudio(text: String, apiKey: String) async throws -> Data {
+        // Defence in depth, as for ElevenLabs: the chain already drops this voice in local-only
+        // mode, but the request is built here, so the refusal belongs here too.
+        try MedicalEgressGuard.check(.openAISpeechSynthesis)
+        guard !apiKey.isEmpty else {
+            throw CloudVoiceRequestRejected(engine: .openAI, statusCode: 0, rejection: nil)
         }
+        let request = try CloudVoiceRequests.openAISpeech(text: text, apiKey: apiKey,
+                                                          voice: Config.openAITTSVoice)
+        PrivacyLog.tts(.requested, engine: PrivacyToken(TTSEngine.openAI.rawValue), characters: text.count)
+        let startTime = Date()
+        let (data, response) = try await URLSession.shared.data(for: request)
+        return try cloudVoiceAudio(engine: .openAI, data: data, response: response, startedAt: startTime)
+    }
 
-        // The cloud voice answered: whatever turned it away before is over.
-        cloudVoiceAnnouncer.episodeEnded()
-        return data
+    func speakWithXAI(text: String, credential: String) async throws {
+        try await speakCloudAudio { try await self.fetchXAIAudio(text: text, credential: credential) }
+    }
+
+    /// One utterance's MP3 from xAI's speech endpoint, with the saved xAI key or the connected
+    /// account's token. Throws `CloudVoiceRequestRejected` for a non-200.
+    func fetchXAIAudio(text: String, credential: String) async throws -> Data {
+        try MedicalEgressGuard.check(.xaiSpeechSynthesis)
+        guard !credential.isEmpty else {
+            throw CloudVoiceRequestRejected(engine: .xai, statusCode: 0, rejection: nil)
+        }
+        let request = try CloudVoiceRequests.xaiSpeech(text: text, credential: credential,
+                                                       voice: Config.xaiTTSVoice)
+        PrivacyLog.tts(.requested, engine: PrivacyToken(TTSEngine.xai.rawValue), characters: text.count)
+        let startTime = Date()
+        let (data, response) = try await URLSession.shared.data(for: request)
+        return try cloudVoiceAudio(engine: .xai, data: data, response: response, startedAt: startTime)
+    }
+
+    /// The OpenAI key the voice uses (`CloudVoiceCredentials.openAIKey`).
+    private func openAISpeechKey() -> String {
+        CloudVoiceCredentials.openAIKey(savedModels: Config.savedModels, legacyKey: Config.openAIAPIKey)
+    }
+
+    /// The xAI credential the voice uses: the saved key, else the connected account's token.
+    private func xaiSpeechCredential() async -> String {
+        await CloudVoiceCredentials.resolveXAICredential(savedModels: Config.savedModels,
+                                                         account: .shared)
     }
 
     private func playAudioData(_ data: Data) async throws {
@@ -1466,18 +1595,19 @@ extension TextToSpeechService: StreamedSpeechBackend, StreamedReplySpeaking {
         let spoken = SpokenSymbolExpander.spokenForm(of: text)
         guard !spoken.isEmpty else { throw TTSError.audioPlaybackFailed }
         switch engine {
-        case .elevenLabs:
+        case .elevenLabs, .openAI, .xai:
             do {
-                return .audio(try await fetchElevenLabsAudio(text: spoken, apiKey: Config.elevenLabsAPIKey))
-            } catch let rejected as ElevenLabsRejection {
+                return .audio(try await fetchCloudAudio(spoken, engine: engine))
+            } catch let rejected as CloudVoiceRequestRejected {
                 // Same handling as the one-shot chain: the first rejection of each kind reaches the
                 // screen, and the one-off spoken notice rides on the sentence the next engine says.
                 var line: String?
-                if let rejection = rejected.rejection {
-                    if cloudVoiceRejectionsShown.insert(rejection).inserted {
-                        onCloudVoiceRejected?(rejection)
+                if var notice = rejected.notice {
+                    notice.nextIsCloud = Self.cloudVoiceFollows(engine, in: streamedSpeechChain())
+                    if cloudVoiceRejectionsShown.insert(notice.announcementToken).inserted {
+                        onCloudVoiceRejected?(notice)
                     }
-                    line = cloudVoiceAnnouncer.lineToSpeak(for: rejection, plainReply: true)
+                    line = cloudVoiceAnnouncer.lineToSpeak(for: notice, plainReply: true)
                 }
                 throw StreamedSynthesisFailure(lineToAppend: line)
             }
@@ -1485,6 +1615,16 @@ extension TextToSpeechService: StreamedSpeechBackend, StreamedReplySpeaking {
             return .audio(try await kokoroEngine.synthesize(spoken))
         case .system:
             return .live
+        }
+    }
+
+    /// One sentence's audio from the cloud voice `engine`, with that voice's credential.
+    private func fetchCloudAudio(_ text: String, engine: TTSEngine) async throws -> Data {
+        switch engine {
+        case .elevenLabs: return try await fetchElevenLabsAudio(text: text, apiKey: Config.elevenLabsAPIKey)
+        case .openAI: return try await fetchOpenAIAudio(text: text, apiKey: openAISpeechKey())
+        case .xai: return try await fetchXAIAudio(text: text, credential: await xaiSpeechCredential())
+        case .kokoro, .system: throw TTSError.audioPlaybackFailed   // not a cloud voice
         }
     }
 
@@ -1578,8 +1718,8 @@ enum TTSError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL: return "Invalid ElevenLabs URL"
-        case .apiError(let code): return "ElevenLabs API error: \(code)"
+        case .invalidURL: return "Invalid cloud voice URL"
+        case .apiError(let code): return "Cloud voice API error: \(code)"
         case .audioPlaybackFailed: return "Audio playback failed"
         }
     }

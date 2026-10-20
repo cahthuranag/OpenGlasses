@@ -118,6 +118,10 @@ enum NetworkRoute: String, CaseIterable, Sendable {
     // MARK: Text to speech
     case elevenLabsSpeechSynthesis
     case elevenLabsVoiceCatalog
+    /// Plan ID item 5: the OpenAI and xAI voices. OpenAI publishes no voice list, so no catalog.
+    case openAISpeechSynthesis
+    case xaiSpeechSynthesis
+    case xaiVoiceCatalog
 
     // MARK: Realtime and translation
     case openAIRealtimeSession
@@ -204,6 +208,9 @@ extension NetworkRoute {
         case .deepgramBatchTranscription: return "Upload a recorded audio file for diarized transcription after the fact."
         case .elevenLabsSpeechSynthesis: return "Send the assistant's reply text to the cloud voice vendor and play back the returned audio."
         case .elevenLabsVoiceCatalog: return "List the voices the configured key may use, for the voice picker."
+        case .openAISpeechSynthesis: return "Send the assistant's reply text to OpenAI's speech endpoint with the OpenAI key and play back the returned audio."
+        case .xaiSpeechSynthesis: return "Send the assistant's reply text to xAI's speech endpoint with the xAI key or sign-in and play back the returned audio."
+        case .xaiVoiceCatalog: return "List the voices the xAI key or sign-in may use, for the voice picker."
         case .openAIRealtimeSession: return "Hold a live speech-to-speech session, streaming audio and optional frames both ways."
         case .openAICompatibleRealtimeSession: return "Hold a live session with the OpenAI-compatible server explicitly configured by the wearer."
         case .geminiLiveSession: return "Hold a live multimodal session, streaming audio and optional frames both ways."
@@ -264,9 +271,9 @@ extension NetworkRoute {
         switch self {
         case .deepgramLiveTranscription, .deepgramBatchTranscription:
             return [.audio, .transcript]
-        case .elevenLabsSpeechSynthesis:
+        case .elevenLabsSpeechSynthesis, .openAISpeechSynthesis, .xaiSpeechSynthesis:
             return [.transcript, .credential]
-        case .elevenLabsVoiceCatalog, .geminiLiveModelCatalog, .providerModelCatalog,
+        case .elevenLabsVoiceCatalog, .xaiVoiceCatalog, .geminiLiveModelCatalog, .providerModelCatalog,
              .gatewayConnectionTest, .fhirConnectionTest:
             return [.credential]
         case .openAIRealtimeSession, .openAICompatibleRealtimeSession, .geminiLiveSession:
@@ -330,6 +337,7 @@ extension NetworkRoute {
         switch self {
         case .deepgramLiveTranscription, .deepgramBatchTranscription,
              .elevenLabsSpeechSynthesis, .elevenLabsVoiceCatalog,
+             .openAISpeechSynthesis, .xaiSpeechSynthesis, .xaiVoiceCatalog,
              .openAIRealtimeSession, .geminiLiveSession, .geminiLiveModelCatalog,
              .cloudTranslationCaptions, .llmCompletion, .intentClassification,
              .providerModelCatalog, .conversationRecallSummary, .connectivityProbe,
@@ -412,7 +420,8 @@ extension NetworkRoute {
         switch self {
         case .deepgramLiveTranscription: return ["DeepgramSTTService"]
         case .deepgramBatchTranscription: return ["DeepgramBatchService"]
-        case .elevenLabsSpeechSynthesis, .elevenLabsVoiceCatalog: return ["TextToSpeechService"]
+        case .elevenLabsSpeechSynthesis, .elevenLabsVoiceCatalog,
+             .openAISpeechSynthesis, .xaiSpeechSynthesis, .xaiVoiceCatalog: return ["TextToSpeechService"]
         case .openAIRealtimeSession: return ["RealtimeJSONSessionService"]
         case .openAICompatibleRealtimeSession: return []
         case .geminiLiveSession: return ["GeminiLiveService"]

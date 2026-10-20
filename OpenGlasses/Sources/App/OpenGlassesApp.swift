@@ -2579,14 +2579,14 @@ class AppState: ObservableObject, AppStateProtocol {
             Task { @MainActor in self?.addDebugEvent(message) }
         }
 
-        // Let the TTS engine selector know whether we're online, so a configured ElevenLabs key
+        // Let the TTS engine selector know whether we're online, so a configured cloud voice
         // isn't preferred while offline (it'd fail the network call and fall back anyway).
         speechService.reachability = reachability
 
         // The cloud voice ran out of credit or refused the key: say so on screen, once. The
         // wearer otherwise only hears a different voice (the spoken half is the service's own).
-        speechService.onCloudVoiceRejected = { [weak self] rejection in
-            self?.errorMessage = rejection.banner
+        speechService.onCloudVoiceRejected = { [weak self] notice in
+            self?.errorMessage = notice.banner
         }
 
         // Wire Tier 1 services

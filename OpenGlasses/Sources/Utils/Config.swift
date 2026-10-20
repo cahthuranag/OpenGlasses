@@ -2937,12 +2937,17 @@ struct Config {
 
     // MARK: - Home Assistant
 
+    /// The Home Assistant base URL, with a scheme even when the wearer typed a bare host
+    /// (`homeassistant.local:8123` → `http://homeassistant.local:8123`; see `GatewayAddress`).
+    /// Normalised on read as well as on save, so a value saved before normalisation existed works
+    /// too. Something that is not an address is returned as stored, for `EndpointPolicy` to name.
     static var homeAssistantURL: String {
-        UserDefaults.standard.string(forKey: "homeAssistantURL") ?? ""
+        let stored = UserDefaults.standard.string(forKey: "homeAssistantURL") ?? ""
+        return GatewayAddress.normalise(stored) ?? stored
     }
 
     static func setHomeAssistantURL(_ url: String) {
-        UserDefaults.standard.set(url, forKey: "homeAssistantURL")
+        UserDefaults.standard.set(GatewayAddress.normalise(url) ?? url, forKey: "homeAssistantURL")
     }
 
     /// Home Assistant long-lived access token. Stored in the Keychain (see `KeychainService`).

@@ -264,8 +264,8 @@ class OpenClawEventClient {
     // never in the URL — keeping it out of the query string prevents it leaking into device,
     // proxy, and server access logs.
     private static func tunnelWebSocketURL(for gateway: GatewayConfig) -> String {
-        let base = gateway.tunnelHost
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        // `tunnelURL` carries the scheme even when the wearer typed a bare name.
+        let base = gateway.tunnelURL
             .replacingOccurrences(of: "https://", with: "wss://")
             .replacingOccurrences(of: "http://", with: "ws://")
         return "\(base)/ws"

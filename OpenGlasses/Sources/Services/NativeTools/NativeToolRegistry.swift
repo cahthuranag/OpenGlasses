@@ -261,6 +261,9 @@ final class NativeToolRegistry {
             // arithmetic, a check — one step at a time, read back with a citation per step (Plan JJ
             // P2).
             register(RuleChainTool(documentStore: documentStore))
+            // propose_chain checks a chain the model proposes from the passages it retrieved, for a
+            // question no authored chain answers, and holds it for the technician's go (Plan JJ P3).
+            register(ProposeChainTool(documentStore: documentStore))
             // Safety Assessment (HECA) — camera high-energy hazard assessment via SafetyAssessmentService.shared.
             register(SafetyAssessmentTool())
             if let camera = cameraService {

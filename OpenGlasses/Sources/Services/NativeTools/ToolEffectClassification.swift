@@ -114,6 +114,9 @@ extension ProcedureRunnerTool { var executionSemantics: ToolExecutionSemantics {
 /// and a finished or stopped chain files its read-back on the job as a reading (Plan JJ P2).
 /// `list` and `status` only read, but the row is the strongest action's.
 extension RuleChainTool { var executionSemantics: ToolExecutionSemantics { .local() } }
+/// Checks a proposed chain against the job's retrieved passages and holds it for the technician's
+/// go; nothing runs and nothing is filed (Plan JJ P3).
+extension ProposeChainTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 extension BadgeScanTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 extension LiveCoachTool {
     var executionSemantics: ToolExecutionSemantics { .local(idempotency: .intrinsic) }

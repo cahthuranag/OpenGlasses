@@ -132,6 +132,38 @@ final class LearningCandidateService {
         return .success(candidate)
     }
 
+    // MARK: - A kept rule chain (Plan JJ P3)
+
+    /// File a rule chain kept on this phone for the office's review: the `chains.md` fragment
+    /// and its passages as the finding, and nothing else from the job — no machine, no evidence
+    /// counts, no symptom or fix. The binding the contract requires (the job's id and number, the
+    /// vault) is all that rides with it. Called only when the organisation's office is this
+    /// phone's destination; without one, keeping a chain needs none of this.
+    func noteRuleChain(fragment: String) -> Result<LearningCandidate, Refusal> {
+        if let refusal = entitlementRefusal() { return .failure(refusal) }
+        guard let session = sessions.activeSession else { return .failure(.noActiveJob) }
+        let finding = "A rule chain kept on a phone, unreviewed, for review before it is added to the vault's "
+            + "chains.md:\n\n" + fragment
+        let cleaned: LearningCandidateText.Cleaned
+        switch LearningCandidateText.clean(finding: finding, symptom: nil, fix: nil) {
+        case .failure(let refusal): return .failure(.text(refusal))
+        case .success(let value): cleaned = value
+        }
+        let filedAt = now()
+        let candidate = LearningCandidate(
+            sessionId: session.id, jobReference: session.jobReference, taskId: nil,
+            vaultId: session.vaultId, equipment: nil, spokenModel: nil,
+            finding: cleaned.finding, symptom: nil, fix: nil,
+            evidence: LearningCandidate.Evidence(),
+            author: LearningCandidateText.author(authorName()),
+            createdAt: filedAt, redactions: cleaned.redactions)
+        store.add(candidate)
+        sessions.recordTeamLearning(.teamLearningFiled, reference: candidate.reference,
+                                    sessionId: candidate.sessionId, now: filedAt)
+        onChange?(candidate)
+        return .success(candidate)
+    }
+
     // MARK: - Amend
 
     /// Change what a candidate says. Each field given replaces the one stored; a field left out

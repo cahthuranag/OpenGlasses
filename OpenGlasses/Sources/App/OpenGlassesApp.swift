@@ -5020,6 +5020,14 @@ class AppState: ObservableObject, AppStateProtocol {
                 : "Team learnings not confirmed sent — they stay waiting on this phone.")
             return
         }
+        // Kept rule chains belong to no job either (Plan JJ P3): no job's log or report flag
+        // follows them, and the chains stay kept on the phone whatever happened to the share.
+        if request.payload.ruleChains != nil {
+            addDebugEvent(outcome.isSent
+                ? "Kept rule chains shared by \(request.channel.label)."
+                : "Kept rule chains not shared; they stay kept on this phone.")
+            return
+        }
         FieldSessionService.shared.completeDelivery(request, outcome: outcome)
         // A parts order is not the job report: no send-queue entry follows it, and what is said
         // about it names the order, never the report.

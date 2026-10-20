@@ -283,7 +283,11 @@ enum ActivityTitler {
         "table_lookup": .init("Looked up a value in a manual's table"),
         "rule_chain": .init("Worked through a rule chain", actions: [
             "start": "Started a rule chain", "answer": "Answered a rule chain's question",
-            "stop": "Stopped a rule chain",
+            "stop": "Stopped a rule chain", "keep": "Kept a rule chain on this phone",
+            "share": "Shared the kept rule chains",
         ], reads: ["list", "status"]),
+        "propose_chain": .init("Proposed a rule chain", actions: [
+            "change": "Changed a step of a proposed rule chain", "withdraw": "Withdrew a proposed rule chain",
+        ], reads: ["show"]),
     ]
 }

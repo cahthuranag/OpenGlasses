@@ -1,6 +1,6 @@
 # Plan ID: Hardening Bundle from the October 2026 Ecosystem Review
 
-**Status:** 🚧 Item 1 shipped 2026-10-10 (PR #704); item 4 built 2026-10-21 (PR pending); item 7 built
+**Status:** 🚧 Item 1 shipped 2026-10-10 (PR #704); item 4 built 2026-10-21 ([#812](https://github.com/straff2002/OpenGlasses/pull/812)); item 7 built
 2026-10-19 as Plan FG's P1a (PR #788); items 2, 3, 5, 6 and 8 unbuilt. A checklist plan: each item is its own small,
 direct PR with a test, in any order, and is ticked here (with its PR number) when it merges. Item 7
 is tracked in Plan [FG](FG-workflow-vaults-and-enterprise-auth.md) and only referenced here.
@@ -25,7 +25,7 @@ string a user sees; this file's checklist and the index row updated in the same 
   done 2026-10-10, [#704](https://github.com/straff2002/OpenGlasses/pull/704).
 - [ ] **2. Broadcast frame pacing on a deadline** (S, Plan [CY](CY-broadcast-resilience-and-quality.md)'s surface).
 - [ ] **3. Web mirror page sized to the device and quiet while hidden** (XS, Plan [BP](BP-web-hud-mirror.md)).
-- [x] **4. Gateway hosts typed without a scheme** (S): done 2026-10-21, PR pending.
+- [x] **4. Gateway hosts typed without a scheme** (S): done 2026-10-21, [#812](https://github.com/straff2002/OpenGlasses/pull/812).
 - [ ] **5. A second cloud voice from the OpenAI key** (S-M).
 - [ ] **6. `framegate-probe` replay script** (S).
 - [x] **7. OAuth single-flight refresh, failure classes and a forced refresh on 401** (S): tracked
@@ -120,7 +120,7 @@ The settings field shows the normalised form after editing so the wearer sees wh
 whitespace) and one `EndpointPolicy` case showing a normalised cleartext public host is still
 refused.
 
-**Built 2026-10-21 (PR pending).** As specified, with these details. The pure core is
+**Built 2026-10-21 ([#812](https://github.com/straff2002/OpenGlasses/pull/812)).** As specified, with these details. The pure core is
 `GatewayAddress` (`Services/Security/GatewayAddress.swift`): `normalise(_:defaultPort:)` returns the
 URL or nil for empty or malformed input, `components(_:defaultPort:)` splits scheme, host, port and
 the rest, and `fieldValues(host:port:webSocket:)` gives what a host field with a port field beside

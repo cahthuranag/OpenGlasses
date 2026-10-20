@@ -274,6 +274,114 @@ Each procedure is one JSON file in `procedures/`. The importer checks the graph 
 }
 ```
 
+## Tables and chains (optional)
+
+A table in a manual or a code book you load is read into rows and columns at import, on the phone, from your own copy, and the technician can ask for one value from it: *"what's the rating in Table 99 for QXRT, three conductors, rating group 2?"* The answer comes back with its row, its column, its notes and the page it is printed on, or as the two rows a number falls between. Nothing is interpolated, and the app never picks "the next size up" on its own.
+
+Some answers take several tables and a rule or two together: size a conductor for a load once it is corrected for the temperature and the grouping, or check whether one already installed carries it. The app does not know which rules your code applies, so it does not guess. You write the steps down once, as a **rule chain**, against the table and rule numbers of your own code and edition, and the assistant runs them for the technician one step at a time: it asks for each value in its own words, does every lookup and every sum itself, never goes past a step it could not complete, and reads the whole chain back with the page of every value it used. The read-back goes on the job record like a reading.
+
+### Write the chains
+
+Add a core file called `chains.md` and list it in `files` like any other core file. It is not read into every question the way the other core files are; the assistant offers its chains by name when a question is one of them. Each chain is a `##` heading, its name, then an `Answers:` line saying what it answers, then its steps, one per line, in a fenced block (or as a list, one step per item).
+
+| Step | Written as | What it does |
+|---|---|---|
+| `ask` | `ask load (A) range 1..400: What load will the circuit carry, in amps?` | Asks the technician for a value, with its unit and the range you accept. An answer outside the range, or one that is not a number, is asked again; it is never taken. A temperature or a length said in another unit the app knows (°F for °C, feet for metres) is converted, and the read-back says what was said. `(text)` asks for words instead, such as a size as the table prints it, and takes no range. |
+| `lookup` … `row` | `lookup factor = Table 98 row {ambient} column Rating group {group} › {band} rule at_least` | Reads one cell: the table by its number as printed, the row by its heading or a number, and the column by its heading, or a path of headings joined with `›`. |
+| `lookup` … `cell` | `lookup size = Table 99 column Rating group {group} cell {corrected} rule at_least` | Searches one column for a number and takes the row whose cell meets it, which is how a table of ratings gives a size. |
+| `calc` | `calc corrected (A) = load / factor` | Arithmetic over earlier values: `+ - * /` and brackets, with the unit of the result. |
+| `convert` | `convert metres = length to m` | Converts an earlier value, which has to carry its unit, to another unit. |
+| `check` | `check capacity >= load ? "carries it" : "does not carry it"` | Compares two values (`<`, `<=`, `>`, `>=`, `==`, `!=`) and says one of two sentences. The verdict goes in the read-back. |
+| `cite` | `cite Rule QR-14` | The rule the step above follows, written as your book prints it. The app does not read or check it. It carries the text into the read-back. |
+| `say` | `say "Use {size.row}, rated {size} A."` | The result, as a sentence. |
+
+**Which row.** Every lookup ends with its rule: `exact` takes the row whose heading is the number, or a printed range that holds it (5 is in "4-6"); `at_least` takes that row, else the first row above the number; `at_most` takes that row, else the last row below it. In the `cell` form, `at_least` is the smallest cell at or above the number and `at_most` the largest at or below it. A number between two rows under `exact`, a row or column the table does not have, a cell with nothing printed, or a table whose page could not be read as a grid stops the chain at that step. The technician is told why and offered the page.
+
+**Values.** Every step that makes a value names it, and later steps use it by that name, in braces inside headings and sentences: `{load}`. A value from a lookup also has `{size.row}`, `{size.column}`, `{size.table}`, `{size.page}` and `{size.next}`, the row printed after it, for "the next size up is …". Any value has `{name.unit}`. A name is used only after the step that sets it, and set only once. Name the table itself as printed (`Table 98`), not from a value, so the import can check it is there.
+
+**At import.** Every step is checked. A step that does not read stops the import with its line, as a procedure that does not decode does. A chain that names a table none of the vault's manuals prints is kept and reported as a warning. `rule_chain list` marks it as needing that table, and it stops at that step until a manual that prints it is loaded. A table whose caption was found but whose grid could not be read counts as present: the chain stops on it and shows its page.
+
+### A worked example
+
+These three chains are the ones the app's own tests run, over invented tables: Table 90 says which band a number of conductors falls in, Table 98 gives correction factors by ambient band and rating group, Table 99 gives conductor ratings by rating group, and Table 97 gives a drop per size. Every table, rule number and value in them is made up. Write yours against your own book.
+
+~~~markdown
+# Rule chains
+
+Invented for the example: every table, rule and value here is made up.
+
+## Size a conductor for a load
+Answers: which conductor carries a load once it is corrected for the ambient temperature and the conductors grouped in the run.
+
+```chain
+ask load (A) range 1..400: What load will the circuit carry, in amps?
+ask ambient (°C) range 0..40: What is the ambient temperature along the run?
+ask conductors (conductors) range 1..9: How many current-carrying conductors share the run?
+ask group range 1..3: Which rating group is the installation method in?
+lookup band = Table 90 row {conductors} column Band rule exact
+cite Rule QR-12
+lookup factor = Table 98 row {ambient} column Rating group {group} › {band} rule at_least
+cite Rule QR-14
+calc corrected (A) = load / factor
+lookup size = Table 99 column Rating group {group} cell {corrected} rule at_least
+cite Rule QR-17
+say "Use {size.row}: rated {size} A in rating group {group}, against {corrected} A once the load is divided by the factor of {factor} ({factor.table}, {factor.page})."
+```
+
+## Check an installed conductor
+Answers: whether a conductor already installed carries a load, after the same correction.
+
+```chain
+ask size (text): Which conductor is installed, by its designation and number of conductors?
+ask load (A) range 1..400: What load does the circuit carry, in amps?
+ask ambient (°C) range 0..40: What is the ambient temperature along the run?
+ask conductors (conductors) range 1..9: How many current-carrying conductors share the run?
+ask group range 1..3: Which rating group is the installation method in?
+lookup band = Table 90 row {conductors} column Band rule exact
+cite Rule QR-12
+lookup factor = Table 98 row {ambient} column Rating group {group} › {band} rule at_least
+cite Rule QR-14
+lookup rating = Table 99 row {size} column Rating group {group} rule exact
+cite Rule QR-17
+calc capacity (A) = rating * factor
+check capacity >= load ? "{rating.row} carries it: {capacity} A once corrected, against a load of {load} A." : "{rating.row} does not carry it: {capacity} A once corrected, against a load of {load} A. The next row is {rating.next}."
+```
+
+## Voltage drop on a run
+Answers: the voltage drop along a run as a share of the supply, against the limit this example sets.
+
+```chain
+ask size (text): Which size is the run, as the table prints it?
+ask current (A) range 1..400: What current does the run carry, in amps?
+ask length (ft) range 1..2000: How long is the run, one way, in feet?
+convert metres = length to m
+lookup drop = Table 97 row {size} column Drop rule exact
+cite Rule QR-30
+calc volts (V) = drop * current * metres / 100
+ask supply (V) range 50..1000: What is the supply voltage?
+calc percent (%) = volts / supply * 100
+check percent <= 4.5 ? "The drop is {volts} V, {percent} % of {supply} V: within the 4.5 % this example allows." : "The drop is {volts} V, {percent} % of {supply} V: over the 4.5 % this example allows, so a larger size or a shorter run is needed."
+```
+~~~
+
+Asked to size a conductor for 32 A at 14 °C with five conductors in the run and rating group 2, the first chain reads back:
+
+```text
+Chain: Size a conductor for a load
+1. load: 32 A, as the technician said
+2. ambient: 14 °C, as the technician said
+3. conductors: 5 conductors, as the technician said
+4. group: 2, as the technician said
+5. band: Table 90 (Grouping bands), row 4-6, column Band: Band B — page 5 of Example Book (row asked for: 5; rule exact) — follows Rule QR-12
+6. factor: Table 98 (Correction factors), row 13-15, column Rating group 2 › Band B: 0.86 — page 3 of Example Book (row asked for: 14; rule at_least) — follows Rule QR-14
+7. corrected = load / factor = 32 / 0.86 = 37.21 A
+8. size: Table 99 (Conductor ratings), row QMX90 › two conductors, column Rating group 2: 45 — page 12 of Example Book (the row whose cell is at least 37.209302; rule at_least) — follows Rule QR-17
+9. said: Use QMX90 › two conductors: rated 45 A in rating group 2, against 37.21 A …
+Result: Use QMX90 › two conductors: rated 45 A in rating group 2, …
+```
+
+Each page in it opens from the answer's source chips, with the row marked where the page lets it be found.
+
 ## Describing a site system (optional)
 
 A manual describes one unit on its own. Nobody writes down how the units at one site work together, and that is where the hard faults live: the heat pump shows a communication fault because the furnace board dropped off the bus, and a technician who reads only the heat pump's manual replaces the wrong board. A **site document** is the overlay that joins them: which units are at the site, how they are connected, which controller commands which, the systems outside the site they talk to, the settings someone set on site, and the faults your crew has seen come from the link between two of them.
@@ -481,6 +589,8 @@ Removing a manual is only offered for vaults you imported yourself. A signed pac
 | `… → unknown step` | A procedure branch points at a step id that does not exist. |
 | `no terminal step is reachable` | Give the procedure at least one step with `"terminal": true` that the entry step can reach. |
 | `core files total … characters (budget 32768)` | Warning only. Move the long material into a document. |
+| `chains.md line N: … unknown step '…'` (or another message after a line number) | A rule chain step does not read. Fix that line; the message says what the step should look like. |
+| `chains.md: the chain '…' needs Table N, which no manual in this vault prints as a table the app could find` | Warning only. The chain is kept and stops at that step. Check the table's number as the book prints it, or load the book that prints it. |
 | `sites/…: unit '…' model '…' is not a model this vault has a section for` | Spell the model as its section's heading does, or mark a unit the vault does not cover `"covered": false`. |
 | `sites/…: … names '…', which is not a declared unit` | A connection, control, setting or fault names a unit id the file does not declare. |
 | `sites/…: serial '…' is also listed in sites/…` | One serial is one unit in one place; a reusable system type has no serials. |

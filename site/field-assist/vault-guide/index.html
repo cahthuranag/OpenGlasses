@@ -10,7 +10,7 @@
 <meta name="description" content="How to build a Field Assist vault from your own manuals, import it on the iPhone, test it and share it.">
 <!-- Converted from docs/field-assist-vault-guide.md by Scripts/build-vault-guide-page.py. That file
      is the source: change the guide there and run the script again, rather than editing this page.
-     source-sha256: 13ea27409f95033810d21dac8d818b8094ba93943d5b2110c9efaf66b6c87084 -->
+     source-sha256: 91ef12c8502afe0318c896e220226010c2760a10370f060b85086f6eeca19a05 -->
 <link rel="stylesheet" href="/assets/site.css">
 <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
 </head>
@@ -492,6 +492,17 @@ check percent &lt;= 4.5 ? &quot;The drop is {volts} V, {percent} % of {supply} V
 Result: Use QMX90 › two conductors: rated 45 A in rating group 2, …
 </code></pre>
 <p>Each page in it opens from the answer's source chips, with the row marked where the page lets it be found.</p>
+<h3 id="when-no-chain-answers-a-proposed-chain">When no chain answers: a proposed chain</h3>
+<p>The technician does not need to know which rules apply. For a question about a table or a rule that none of your chains answers, the assistant first looks up the clauses in your loaded books, then proposes a chain in the same syntax, built only from what those passages say: a <code>cite</code> line on every lookup and every check, and the passage each lookup came from. The app checks the proposal before the technician hears it, and refuses one that cites nothing, a lookup or check with no <code>cite</code>, a lookup whose passage was not retrieved on the job, or a rule the retrieved passages do not contain, which is a rule the assistant brought from memory. A lookup naming a table your manuals do not print is kept and marked "needs Table N", as an authored chain's is.</p>
+<p>The technician hears the proposal read back step by step, each step with its rule and its passage, marked "proposed, unreviewed". Then they say go, change a step ("ask me the ambient instead"), or stop. Nothing runs before go. A proposed chain runs through the same runner as yours, and its read-back goes on the job record marked "proposed, unreviewed", with the passages it was built from.</p>
+<p><strong>Keeping one, on the phone.</strong> A proposed chain that ran to a result can be kept: "keep that chain". It is saved on that phone in the vault's own folder, beside your <code>chains.md</code>, marked "unreviewed — kept on this phone". It is listed on that phone only and runs like any other chain. It is not one of the vault's files, so it never leaves in an export, a pack or a link, and a new version of the vault leaves it alone.</p>
+<p><strong>Getting it to your organisation.</strong> "Share the kept chains" puts them on the share sheet as a <code>chains.md</code> file. Each chain carries a line saying when and on which job it was kept, and the passage each lookup was read from. Check every step against your own book, paste the chains you want into your vault's <code>chains.md</code>, and push the vault the usual way. None of this needs the office app. If your organisation has the office app, keeping a chain also files the same file for review with the next team-learning bundle.</p>
+<pre><code class="language-text">## Size a conductor, ambient assumed
+Answers: which conductor carries a load at an assumed ambient, once corrected for grouping.
+Unreviewed — kept on a phone on 2026-10-20, worked out on job 1042.
+Read from: band from Example Book, page 6, §QR-12; factor from Example Book, page 7, §QR-14; size from Example Book, page 8, §QR-17.
+</code></pre>
+<p>The lines under the heading are prose to <code>chains.md</code>, so the file imports as it is. <strong>A reviewed chain replaces the kept one:</strong> once the vault arrives with a chain of the same name in <code>chains.md</code>, the phone offers yours and no longer offers its kept copy.</p>
 <h2 id="describing-a-site-system-optional">Describing a site system (optional)</h2>
 <p>A manual describes one unit on its own. Nobody writes down how the units at one site work together, and that is where the hard faults live: the heat pump shows a communication fault because the furnace board dropped off the bus, and a technician who reads only the heat pump's manual replaces the wrong board. A <strong>site document</strong> is the overlay that joins them: which units are at the site, how they are connected, which controller commands which, the systems outside the site they talk to, the settings someone set on site, and the faults your crew has seen come from the link between two of them.</p>
 <p>It is for any trade. The same shape describes a furnace, heat pump and communicating thermostat; a plant line with its PLC, drives and fieldbus; a comms room with its switches, UPS and management network; a building with its chiller, air handlers and building management system; a dairy shed or a solar installation. The kinds of relationship are a small shared vocabulary, and your trade's own words go in the free text beside them.</p>

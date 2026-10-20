@@ -17,8 +17,17 @@ organisation writes rule chains in its vault's `chains.md` — `ask`, `lookup` (
 at import, with a chain naming a table the vault lacks warned of and kept; `rule_chain` runs one
 step at a time with the current question in the prompt, stops at a step it cannot complete with
 the page to show, and files the read-back, a citation per step, on the job as a reading; cable
-sizing both ways and voltage drop ship as the invented example (see "What shipped in P2"). P3–P4
-not built.
+sizing both ways and voltage drop ship as the invented example (see "What shipped in P2"). 🚧 P3
+built 2026-10-20 (draft PR): for a question no authored chain answers, the model retrieves the
+clauses and proposes a chain in the P2 syntax with `propose_chain`, checked against the passages
+retrieved on the job (a `cite` on every lookup and check, every lookup's passage one that was
+retrieved, every cited rule printed in one) and read back for go, a changed step, or stop; it runs
+through the same runner and files its read-back marked "proposed, unreviewed"; one that ran to a
+result is kept **on the phone** first, offered there only, shared by the share sheet as a
+`chains.md` fragment with no office needed, and also filed for review through the team-learning
+bundle when the organisation has the office app; a running chain survives a relaunch; a table named by title words now needs the
+whole title, which brings the code book's key back to hit@1 / hit@4 0.39 / 0.56 (see "What
+shipped in P3"). P4 not built.
 Decisions confirmed 2026-10-20. Field Assist first; every phase is a headless core with the live
 edge last. Written for the partner's electricians, whose stated priority
 after the first round of code-book testing is **table lookup**: "those tables contain much of the
@@ -510,21 +519,125 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   checks. A running chain is held in memory, so a relaunch mid-chain loses it (nothing is filed
   until it ends). The partner's own chains are written outside the repo (decision 3).
 
-### P3 — Chains the model proposes, the technician runs, the organisation keeps
+### P3 — Chains the model proposes, the technician runs, the organisation keeps 🚧 (built 2026-10-20, draft PR)
 
 - **`propose_chain`.** For a question no authored chain answers, the model is told (in the
   Field Assist prompt, standards section) to retrieve the clauses first and then propose a chain
   in the P2 schema from what they say — never from memory of a code. The proposal is read back as
   steps with each clause cited, and the technician says go, changes a step, or stops. Running it
   goes through `ChainRunner` unchanged.
-- **Keeping one.** A proposed chain that ran to a result can be saved as a draft chain through the
-  team-learning path (Plan FP): it goes to the organisation's review, not into the vault, and
-  until reviewed it is offered only on the phone that made it, marked "unreviewed". A reviewed
-  chain lands in `chains.md` on the office side and reaches phones with the next vault update.
+- **Keeping one.** A proposed chain that ran to a result can be kept. Amended 2026-10-20 by the
+  owner's standing rule that a technician can do everything from the phone without the office
+  app: it is kept on the phone first, offered there only, marked "unreviewed", and shared as a
+  `chains.md` fragment by the share sheet for the organisation to paste in by hand; the
+  team-learning path (Plan FP) is an addition when the organisation has the office app, never a
+  prerequisite. A reviewed chain in `chains.md` with the same name supersedes the kept one when the
+  vault next arrives.
 - **Exit tests:** a proposal must cite a clause per lookup step or it is refused; a proposed chain
   runs through the same runner and reads back the same; an unreviewed chain is offered only on its
   origin phone; the review hand-off carries the proposal and its citations and nothing else from
   the job.
+
+#### What shipped in P3 (2026-10-20)
+
+- **`ChainProposal` (pure, `Sources/Services/Vault/`).** The model's text in (one chain in the P2
+  syntax, under a `##` heading or with `name` and `answers` beside it, steps fenced or bare), with
+  `sources`, the `Source:` line of the passage each lookup came from in the order the lookups are
+  written; the passages retrieved on the job, the labels of the tables the vault's manuals print
+  (read or not) and the names already offered beside it. It goes through `ChainParser` unchanged
+  and is refused, by a named reason the model is told, when it does not read as exactly one chain,
+  takes an offered chain's name, nothing has been retrieved on the job, it cites nothing, a lookup
+  or a check has no `cite`, a lookup has no source or its source is not a retrieved passage (by
+  document and physical page, as `CitationLineParser` reads it), or a cited rule is not printed in
+  any retrieved passage. A rule is matched by its first numbered token ("QR-14" in "Rule QR-14(2)")
+  as a whole token of a passage's text or section heading, so "Rule QR-1" is not "QR-12"; a rule
+  with no number by its words. A lookup naming a table the vault lacks is accepted and marked
+  "needs Table N". The read-back numbers every step in words with the rule it follows and the
+  passage it came from, headed "(proposed, unreviewed)". `changing(step:to:source:)` replaces one
+  step ("ask me the ambient instead") and checks the whole chain again; a lookup it removes takes
+  its source with it, and a lookup it adds needs one.
+- **`propose_chain` tool** (`NativeTools/ProposeChainTool.swift`): `propose`, `change`, `show`,
+  `withdraw`. It reads the passages from the session's source memory (what `manual_lookup` and the
+  per-turn retrieval noted on this job, `AnswerSourceMemory.retrieved`), so a proposal can only
+  cite what was actually retrieved. An accepted proposal is held on the session (`PROPOSED RULE
+  CHAIN — …` in the prompt) for the technician's go; nothing runs. Registered, in
+  `FieldToolProfile.names`, `.local()`, local offline, titled; **not** in `AppleOnDeviceToolSet`.
+- **The prompt.** `chainPromptContext` adds, whenever the vault offers chains or a manual in it has
+  table rows, "PROPOSING A CHAIN": retrieve the clauses with `manual_lookup` (and the cells with
+  `table_lookup`) first, propose only what those passages say with a `cite` on every lookup and
+  check and each lookup's `Source:` line, never a step, rule, table or value from memory of any
+  code, read the proposal back and start it only on go. This is the Field Assist session prompt,
+  where the chains are offered; `SystemPromptBuilder` has no standards section of its own.
+- **Running it.** `rule_chain start` takes the proposal by name, beside the vault's chains and the
+  kept ones (`FieldSessionService.offeredChains`). It runs through `ChainRunner` unchanged. The run
+  carries its origin (`ChainOrigin`: authored, proposed, kept) and its lookups' sources: the
+  prompt's `ACTIVE RULE CHAIN` line, `start`, `status` and the finished reply say "(proposed,
+  unreviewed)" or "(unreviewed — kept on this phone)", and the reading filed on the job is
+  `chain: <name> (proposed, unreviewed)` with the runner's read-back marked in its first line and a
+  second line, "Proposed from the passages retrieved: …". An authored chain's reading is byte for
+  byte as P2 files it.
+- **Keeping one, on the phone first.** `rule_chain keep` keeps the last proposed chain that ran to
+  a result on this job (one that stopped is not kept) in `_kept_chains.json` in the vault's overlay
+  folder (`KeptChains`), beside `chains.md`: not a manifest file, so never in the prompt, an export,
+  a pack or a link; untouched by a vault update; removed with the vault. `list` offers it marked
+  "[unreviewed — kept on this phone: offered on this phone only]" and it runs like any other
+  chain. A chain the vault's `chains.md` has under the same name supersedes it (it is no longer
+  offered). `rule_chain share` stages a `DeliveryRequest` (new payload `.ruleChains`, attachment
+  kind `chains_markdown`, filed under no job) on the share sheet with the fragment as `chains.md`
+  and in the body: a title, a paragraph saying what the chains are and that nobody has reviewed
+  them, and each chain with a line saying when and on which job it was kept and the passage each
+  lookup was read from — prose to `ChainParser`, so the file imports as it is. No office, endpoint
+  or queue is involved. **With the office app** (`AppState.officeIsReportDestination`), keeping also
+  files the fragment as a team-learning candidate (`LearningCandidateService.noteRuleChain`): the
+  fragment as the finding and nothing else from the job — no machine, no evidence counts, no
+  symptom or fix, only the contract's binding — so it rides the next candidates bundle
+  (`LearningBundleOutbox`) to the reviewer. The bundle's closed contract is unchanged; the reviewer
+  adds a reviewed chain to `chains.md` by hand.
+- **A running chain survives a relaunch.** The job record carries `ruleChainRun`
+  (`PersistedChainRun`: the chain as `chains.md` writes it, its origin, its sources and every answer
+  given, taken or not), written as each question is asked and cleared when the chain ends or is
+  stopped. After a relaunch, `activeChain` rebuilds the run by replaying the answers through the
+  runner against the vault's tables, so it resumes at the same step with the same values and the
+  same "asked again" note, and nothing is filed until it ends. No table cell is written into the
+  job record before the read-back.
+- **The guide.** "Tables and chains" gains "When no chain answers: a proposed chain": the
+  proposal and its checks, go / change / stop, keeping on the phone, sharing the `chains.md` file
+  with no office, the office's review as an addition, and a reviewed chain replacing the kept one.
+  The site page and PDF are regenerated.
+- **Tests (invented fixtures, committed before any run against licensed material).**
+  `ChainProposalTests` and `ChainProposalSessionTests`, over P2's invented tables and three
+  invented passages for invented Rules QR-12, QR-14 and QR-17: a proposal with a citation per
+  lookup accepted and read back with every rule and passage; one with a lookup or a check and no
+  `cite` refused; one citing nothing refused; one citing a rule not in the passages refused (and
+  "QR-1" not taken for "QR-12", a subrule taken for its rule); a source not retrieved, a missing
+  source and nothing retrieved refused; a table the vault lacks accepted and marked; a changed step
+  ("ask me the ambient instead") re-parsed and run to its result; on a job, the proposal read back,
+  changed, started, run through the runner and filed marked "proposed, unreviewed" with its
+  passages, in the work record; `keep` saving on the phone and `list` offering it marked
+  unreviewed, on a later job too; the share-sheet fragment a `chains.md` the P2 parser accepts;
+  with no office, keeping and sharing working and no candidate or bundle; with the office, the
+  fragment also in the candidates bundle with nothing else from the job; a reviewed chain of the
+  same name superseding the kept one; a running chain (authored, and proposed) surviving a
+  simulated relaunch at the same step and filing nothing until it ends; and the on-device set
+  offering neither `propose_chain` nor `rule_chain`.
+- **Retrieval (item 4, measured privately, kept).** One change, after every fixture and test was
+  committed: a table named by its title words (`TableReference.titled`) now needs every content
+  word of the title and at least two, where it took half the title and one word. A table named by
+  its number is unchanged. On the code book's newest-edition answer key (66 scorable questions),
+  the contextual model and the PDF-backed vault, aggregates only:
+
+  | | hit@1 | hit@4 | as sent | in-scope refused | misses |
+  |---|---|---|---|---|---|
+  | Before (P2 as merged) | 0.38 | 0.55 | 0.59 | 0 | 30 |
+  | Stronger title match (shipped) | **0.39** | **0.56** | **0.61** | 0 | 29 |
+
+  The question P1 lost is back and no longer counts as naming a table; every other count is
+  unchanged except that one miss (ranking 18 → 17, multi-rule misses 16 → 15). The P1 test that
+  routed "the ratings table" to a table titled "Conductor ratings" now asks for "the conductor
+  ratings table" and holds that half a title is not routed.
+- **Not known yet.** Whether a model proposes chains well from real passages, and asks before
+  running them: a device and partner check. Whether a reviewer wants the kept chains in the
+  office's own review surface (Plan FP P4) rather than as a pasted file: open question 4.
 
 ### P4 — The electrical starter vault
 

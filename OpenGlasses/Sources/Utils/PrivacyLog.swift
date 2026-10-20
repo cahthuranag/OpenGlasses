@@ -1023,7 +1023,7 @@ enum PrivacyLog {
 
     // MARK: - Auth
 
-    enum AuthProvider: String { case claude, chatgpt, google }
+    enum AuthProvider: String { case claude, chatgpt, google, xai }
     enum AuthOperation: String { case tokenRefresh }
 
     @discardableResult

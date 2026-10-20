@@ -142,6 +142,8 @@ enum LLMProvider: String, CaseIterable {
         switch self {
         case .anthropic:
             return "Anthropic API key not configured — add a key in Settings → AI Models, sign in with Claude, or switch to on-device intelligence"
+        case .xai:
+            return "xAI API key not configured — add a key in Settings → AI Models, sign in with xAI, or switch to on-device intelligence"
         default:
             return "\(displayName) API key not configured — add a key in Settings → AI Models, or switch to on-device intelligence"
         }
@@ -302,10 +304,12 @@ class LLMService: ObservableObject {
     var claudeAccountOverride: ClaudeOAuthService?
     var chatGPTAccountOverride: ChatGPTOAuthService?
     var googleAccountOverride: GoogleOAuthService?
+    var xaiAccountOverride: XAIOAuthService?
 
     private var claudeAccount: ClaudeOAuthService { claudeAccountOverride ?? .shared }
     private var chatGPTAccount: ChatGPTOAuthService { chatGPTAccountOverride ?? .shared }
     private var googleAccount: GoogleOAuthService { googleAccountOverride ?? .shared }
+    private var xaiAccount: XAIOAuthService { xaiAccountOverride ?? .shared }
 
 
     /// The on-device turn's tool results, replayed when a full window rebuilds the session
@@ -1268,6 +1272,9 @@ class LLMService: ObservableObject {
             return !localOnly
         case .anthropic:
             return !localOnly && (!config.apiKey.isEmpty || claudeAccount.isConnected)
+        case .xai:
+            return !localOnly && (!config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                  || xaiAccount.isConnected)
         case .custom:
             return !localOnly && !config.baseURL.isEmpty
         default:
@@ -1776,7 +1783,8 @@ class LLMService: ObservableObject {
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.setValue("Bearer \(modelConfig.apiKey)", forHTTPHeaderField: "Authorization")
+                let credential = await openAICompatibleCredential(modelConfig)
+                request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
                 request.timeoutInterval = 15
                 var body: [String: Any] = [
                     "model": modelConfig.model,
@@ -1864,7 +1872,8 @@ class LLMService: ObservableObject {
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.setValue("Bearer \(modelConfig.apiKey)", forHTTPHeaderField: "Authorization")
+                let credential = await openAICompatibleCredential(modelConfig)
+                request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
                 request.timeoutInterval = 20
                 var body: [String: Any] = [
                     "model": modelConfig.model,
@@ -1968,7 +1977,8 @@ class LLMService: ObservableObject {
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.setValue("Bearer \(modelConfig.apiKey)", forHTTPHeaderField: "Authorization")
+                let credential = await openAICompatibleCredential(modelConfig)
+                request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
                 request.timeoutInterval = 30
                 var body: [String: Any] = [
                     "model": modelConfig.model,
@@ -2061,7 +2071,8 @@ class LLMService: ObservableObject {
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.setValue("Bearer \(modelConfig.apiKey)", forHTTPHeaderField: "Authorization")
+                let credential = await openAICompatibleCredential(modelConfig)
+                request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
                 request.timeoutInterval = 45
                 var body: [String: Any] = [
                     "model": modelConfig.model,
@@ -2580,6 +2591,15 @@ class LLMService: ObservableObject {
         return nil
     }
 
+    /// The credential an OpenAI-compatible request authenticates with: the saved key, or — for an
+    /// xAI model saved without one — the connected xAI account's token, which carries `api:access`
+    /// and is accepted as a bearer on the public API. A typed key always wins. Empty when there is
+    /// neither, which `openAICompatibleAuthorization` reports as a missing key.
+    private func openAICompatibleCredential(_ config: ModelConfig) async -> String {
+        guard config.llmProvider == .xai else { return config.apiKey }
+        return await XAIAuth.resolveCredential(apiKey: config.apiKey, account: xaiAccount)
+    }
+
     /// A `.custom` endpoint that 400'd on a `tools` payload (some Ollama/LM Studio builds).
     /// Remembered for the session so later turns skip tools instead of re-tripping the 400.
     /// `static nonisolated(unsafe)` because it's flipped inside the nonisolated per-turn
@@ -2720,8 +2740,20 @@ class LLMService: ObservableObject {
     private func sendOpenAICompatible(_ text: String, systemPrompt: String, volatileTail: String? = nil, config: ModelConfig, includeTools: Bool, imageData: Data?, smallContext: Bool = false, onToken: ((String) -> Void)? = nil, onStreamReset: (() -> Void)? = nil) async throws -> String {
         try enforceMedicalRemoteBoundary(config)
         let provider = config.llmProvider
-        let apiKey = config.apiKey
+        let apiKey = await openAICompatibleCredential(config)
+        if apiKey.isEmpty, provider == .xai, xaiAccount.isConnected {
+            // Signed in, but no usable token is left: say what the sign-in said, not "add a key".
+            throw LLMError.missingAPIKey(xaiAccount.lastError ?? "xAI sign-in expired — please sign in again.")
+        }
         let authorization = try Self.openAICompatibleAuthorization(provider: provider, apiKey: apiKey)
+        // Plan FG P1a: a token the xAI sign-in supplied is refreshed once on a 401; every later
+        // round of the tool loop sends the replacement. A typed key never rides this.
+        let xaiAccountCredential: SubscriptionAuthRetry.Credential? =
+            provider == .xai && XAIAuth.usesAccountSignIn(apiKey: config.apiKey) && !apiKey.isEmpty
+                ? SubscriptionAuthRetry.Credential(apiKey) : nil
+        if provider == .xai {
+            TurnRecorder.noteCredential(xaiAccountCredential == nil ? .key : .accountSignIn)
+        }
 
         // Plan GC: which endpoint this turn goes to, at what reasoning level, and why.
         let routeToolsAttached = includeTools
@@ -2985,8 +3017,20 @@ class LLMService: ObservableObject {
                 }
                 }
 
+                // Every send goes through the account route's one forced refresh on a 401; with no
+                // account credential it is a plain send.
+                @MainActor func sendSigned(_ request: URLRequest) async throws -> [String: Any] {
+                    try await SubscriptionAuthRetry.send(
+                        request, credential: xaiAccountCredential, provider: provider.rawValue,
+                        refresh: { await self.xaiAccount.accessToken(afterRejecting: $0) },
+                        sign: { token, request in
+                            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                        },
+                        attempt: { try await sendOnce($0) })
+                }
+
                 do {
-                    message = try await sendOnce(request)
+                    message = try await sendSigned(request)
                 } catch LLMError.apiError(_, 400, let refusal, _)
                             where ReasoningRejectionClassifier.shouldRetry(
                                 status: 400, message: refusal,
@@ -3004,7 +3048,7 @@ class LLMService: ObservableObject {
                     TurnRecorder.noteReasoning(ReasoningEffort.none.rawValue)
                     var retried = request
                     retried.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
-                    message = try await sendOnce(retried)
+                    message = try await sendSigned(retried)
                 }
 
                 var toolCalls: [ToolInvocation] = []

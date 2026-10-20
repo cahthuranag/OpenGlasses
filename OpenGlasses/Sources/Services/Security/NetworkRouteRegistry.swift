@@ -187,6 +187,7 @@ enum NetworkRoute: String, CaseIterable, Sendable {
     case claudeOAuthToken
     case chatGPTOAuthToken
     case googleOAuthToken
+    case xaiOAuthToken
 
     // MARK: Local listeners
     case webHUDMirrorListener
@@ -250,6 +251,7 @@ extension NetworkRoute {
         case .claudeOAuthToken: return "Exchange or refresh an OAuth token for the model provider account."
         case .chatGPTOAuthToken: return "Exchange or refresh an OAuth token for the model provider account."
         case .googleOAuthToken: return "Exchange or refresh an OAuth token for the linked Google account."
+        case .xaiOAuthToken: return "Discover the sign-in endpoints, then exchange or refresh an OAuth token for the xAI account."
         case .webHUDMirrorListener: return "Serve the HUD mirror to a browser on the wearer's own network."
         case .mcpGlassesListener: return "Serve the glasses MCP tool surface to a client on the wearer's own network."
         case .loopbackOAuthCallback: return "Receive the OAuth redirect on 127.0.0.1 during account linking."
@@ -313,7 +315,7 @@ extension NetworkRoute {
             return [.modelAsset]
         case .fhirExport:
             return [.healthFact, .credential]
-        case .claudeOAuthToken, .chatGPTOAuthToken, .googleOAuthToken:
+        case .claudeOAuthToken, .chatGPTOAuthToken, .googleOAuthToken, .xaiOAuthToken:
             return [.credential]
         case .webHUDMirrorListener:
             return [.frame, .transcript]
@@ -335,7 +337,7 @@ extension NetworkRoute {
              .offlineEndpointSync, .webRTCBrowserStreaming,
              .fhirExport, .fhirConnectionTest:
             return .userConfiguredCloud
-        case .claudeOAuthToken, .chatGPTOAuthToken, .googleOAuthToken,
+        case .claudeOAuthToken, .chatGPTOAuthToken, .googleOAuthToken, .xaiOAuthToken,
              .localModelRepositoryMetadata, .localModelDownload, .ttsVoiceModelDownload,
              .asrModelDownload, .fingerspellingModelDownload, .localizationCatalogDownload,
              .clawHubCatalog, .vaultPackCatalog, .weatherAttributionMark:
@@ -458,6 +460,7 @@ extension NetworkRoute {
         case .claudeOAuthToken: return ["ClaudeOAuthService"]
         case .chatGPTOAuthToken: return ["ChatGPTOAuthService"]
         case .googleOAuthToken: return ["GoogleOAuthService"]
+        case .xaiOAuthToken: return ["XAIOAuthService"]
         case .webHUDMirrorListener: return ["WebHUDMirrorServer"]
         case .mcpGlassesListener: return ["MCPGlassesServer"]
         case .loopbackOAuthCallback: return ["LoopbackCallbackServer"]

@@ -326,7 +326,8 @@ struct AIPersonalitySettingsScreen: View {
                             hasKey: !model.apiKey.isEmpty,
                             claudeConnected: ClaudeOAuthService.shared.isConnected,
                             chatgptConnected: ChatGPTOAuthService.shared.isConnected,
-                            googleConnected: GoogleOAuthService.shared.isConnected),
+                            googleConnected: GoogleOAuthService.shared.isConnected,
+                            xaiConnected: XAIOAuthService.shared.isConnected),
                         vision: model.visionEnabled
                     ))
                     .accessibilityAddTraits(.isButton)
@@ -566,7 +567,8 @@ struct AIPersonalitySettingsScreen: View {
                     hasKey: !model.apiKey.isEmpty,
                     claudeConnected: ClaudeOAuthService.shared.isConnected,
                     chatgptConnected: ChatGPTOAuthService.shared.isConnected,
-                    googleConnected: GoogleOAuthService.shared.isConnected)
+                    googleConnected: GoogleOAuthService.shared.isConnected,
+                    xaiConnected: XAIOAuthService.shared.isConnected)
                 OGStatusLabel(badge.label, kind: badge.isReady ? .ok : .warn)
             }
             Spacer(minLength: 8)
@@ -591,7 +593,7 @@ struct AIPersonalitySettingsScreen: View {
     /// then a connected account; on-device providers never involve either.
     static func modelAuthBadge(provider: LLMProvider, hasKey: Bool,
                                claudeConnected: Bool, chatgptConnected: Bool,
-                               googleConnected: Bool) -> ModelAuthBadge {
+                               googleConnected: Bool, xaiConnected: Bool = false) -> ModelAuthBadge {
         switch provider {
         case .local, .appleOnDevice:
             return ModelAuthBadge(label: "On-device", isReady: true)
@@ -607,6 +609,11 @@ struct AIPersonalitySettingsScreen: View {
             if hasKey { return ModelAuthBadge(label: "Key set", isReady: true) }
             return claudeConnected
                 ? ModelAuthBadge(label: "Claude account connected", isReady: true)
+                : ModelAuthBadge(label: "No account or key", isReady: false)
+        case .xai:
+            if hasKey { return ModelAuthBadge(label: "Key set", isReady: true) }
+            return xaiConnected
+                ? ModelAuthBadge(label: "xAI account connected", isReady: true)
                 : ModelAuthBadge(label: "No account or key", isReady: false)
         case .custom:
             return hasKey

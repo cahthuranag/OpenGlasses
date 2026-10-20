@@ -2,7 +2,7 @@
 
 **Status: ✅ Shipped through P4's code half; account-scoped models + advanced device-code
 fallback added 2026-08-29 — on-device verification checklist still owed (wire-format fixes
-2026-08-31–09-04 show partial live exercise against a real ChatGPT account).** P1 (`ChatGPTOAuth` + shared `PKCE`/`OAuthCodeInput`), P2 (`ResponsesTranslator` +
+2026-08-31–09-04 show partial live exercise against a real ChatGPT account). 2026-10-21: an xAI (SuperGrok) account sign-in added on the same scaffolding — see the amendment at the end; its live sign-in check is owed.** P1 (`ChatGPTOAuth` + shared `PKCE`/`OAuthCodeInput`), P2 (`ResponsesTranslator` +
 stream accumulator), P3 (`ChatGPTOAuthService`, `LLMProvider.chatgpt`, `sendChatGPT`, shared
 `OAuthSignInRows` in the model editor), and P4's codeable half — stateless helpers
 (summarization, `analyzeFrame`, structured vision/completion via forced function-call), the
@@ -140,3 +140,58 @@ confirmed covered. **Live half: pending, needs the phone + a real ChatGPT accoun
 Headless: P1/P2 test suites + full suite + Release green per PR. Device: the P4 checklist
 above, on the phone, with the results written back into this doc before the onboarding tile
 ships.
+
+## Amendment 2026-10-21: xAI subscription sign-in
+
+**What shipped.** A wearer with a SuperGrok subscription can sign in to xAI from the model editor
+(Settings → AI Models → xAI (Grok) → **Sign in with xAI**) and use Grok models with no xAI API key.
+Same shape as this plan's ChatGPT sign-in and the Claude one before it: a pure core
+(`Utils/XAIOAuth.swift` — PKCE authorize URL, pasted-input parsing via the shared
+`OAuthCodeInput`, form-encoded exchange/refresh with no client secret, the discovery trust rule,
+`id_token` email/name for the "Signed in as" row, the chat-model filter) and a `@MainActor`
+service (`Services/XAIOAuthService.swift` — exchange, refresh through the shared
+`SingleFlightRefresher` slot `xai`, `OAuthRefreshFailure.classify` so a dead refresh token signs
+out and a network blip does not, credentials in the this-device-only keychain item
+`xaiOAuthCredentials`). It conforms to `OAuthSignInService`, so the editor reuses
+`OAuthSignInRows` and the in-app sheet. The client is xAI's CLI public client, the same
+arrangement as the ChatGPT and Claude sign-ins.
+
+**Where it differs from the ChatGPT shape.**
+
+- **No provider case.** The token carries `api:access`, which the public API accepts as a plain
+  `Bearer` on `api.x.ai/v1`. So the existing `LLMProvider.xai` Chat Completions path serves it —
+  photos and tool calls included. A saved xAI model whose key is empty uses the account token when
+  signed in; a typed key always wins (`XAIAuth.resolveCredential`). `LLMService` gained
+  `xaiAccountOverride` beside the Claude/ChatGPT/Google seams; the main turn wraps every send in
+  `SubscriptionAuthRetry` (one forced refresh and one retry on a 401, only for a sign-in token),
+  and the one-shot paths (summarise, frame analysis, structured completion) resolve the same
+  credential. Job-turn routing counts a signed-in xAI model as usable.
+- **Loopback on `127.0.0.1:56121/callback`.** `LoopbackCallbackServer` already took a port and a
+  path, so the zero-paste capture needed no change; the paste field stays as the fallback.
+- **Discovery.** `https://auth.x.ai/.well-known/openid-configuration` may move the authorize and
+  token endpoints, but each discovered endpoint is used only if it is `https` on `x.ai` or a
+  subdomain, with no credentials or port of its own (`XAIOAuth.trustedEndpoint`); anything else, a
+  failed fetch or a slow one (5 s) keeps the static `auth.x.ai/oauth2/{authorize,token}`. The
+  answer is cached for the launch. Discovery starts when a sign-in starts, never at launch, so a
+  wearer who never uses xAI never reaches its sign-in host; the authorize URL uses the static
+  endpoint until this launch has a discovered one.
+- **Model picker.** "Fetch available models" on a keyless, signed-in xAI model reads `GET /v1/models`
+  with the account token; the xAI list is filtered to chat models (image/video generators, voice,
+  realtime, embedding and build models dropped), keyed or not.
+- **Egress and disclosure.** New route `NetworkRoute.xaiOAuthToken` (first-party cloud, credential
+  only, blocked under the medical local-only rule like the other sign-ins — discovery included),
+  `PrivacyLog.AuthProvider.xai`, the keychain key in `Config.accountCredentialKeychainKeys`, the
+  `DataStoreRegistry` OAuth row, `privacy.html`'s provider list and `docs/BUILDING.md`.
+- **Not added.** No onboarding tile (xAI is not an onboarding provider) and no organisation-profile
+  sign-in option (an org xAI model stays key-based, as an org Anthropic model does).
+
+**Owed (device).**
+
+- [ ] Live sign-in on the phone with a real SuperGrok account: the sheet captures the
+      `127.0.0.1:56121` redirect without a paste; the "Signed in as" row shows the email.
+- [ ] A keyless xAI model answers a spoken turn, a photo turn and a tool call on the account token.
+- [ ] Fetch available models lists only chat models for the account.
+- [ ] Token refresh across an expiry (leave the app overnight, ask again).
+- [ ] Note whether the discovery document moves either endpoint, and what a quota-exhausted
+      subscription returns (expected 429 → cascade hop).
+

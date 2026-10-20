@@ -75,13 +75,13 @@ enum TableFixtureLayouts {
         var items = [caption("TABLE 98 Correction factors")]
         items.append(Item(text: "Rating group 1", x: 222, y: 90, bold: true))
         items.append(Item(text: "Rating group 2", x: 402, y: 90, bold: true))
-        items += row(104, [("Ambient (°C)", 50), ("60", 200), ("75", 250), ("90", 300),
-                           ("60", 380), ("75", 430), ("90", 480)], bold: true)
+        items += row(104, [("Ambient (°C)", 50), ("Band A", 200), ("Band B", 250), ("Band C", 300),
+                           ("Band A", 380), ("Band B", 430), ("Band C", 480)], bold: true)
         let body: [[String]] = [
-            ["21-25", "1.04", "1.02", "1.01", "1.05", "1.03", "1.02"],
-            ["26-30", "1.00", "1.00", "1.00", "1.00", "1.00", "1.00"],
-            ["31-35", "0.94", "0.96", "0.97", "0.93", "0.95", "0.96"],
-            ["36-40", "0.88", "0.91", "0.93", "0.86", "0.90", "0.92"],
+            ["7-9", "1.13", "1.09", "1.07", "1.12", "1.08", "1.06"],
+            ["10-12", "0.99", "0.98", "0.97", "0.98", "0.97", "0.96"],
+            ["13-15", "0.83", "0.87", "0.89", "0.82", "0.86", "0.88"],
+            ["16-18", "0.71", "0.76", "0.79", "0.69", "0.74", "0.77"],
         ]
         for (index, cells) in body.enumerated() {
             items += row(120 + Double(index) * 14, zip(cells, [50, 200, 250, 300, 380, 430, 480]).map { ($0, $1) })
@@ -143,6 +143,47 @@ enum TableFixtureLayouts {
         items.append(Item(text: "Use only with rating group 2.", x: 55, y: 170, size: 8))
         items.append(Item(text: "(a) Applies inside an enclosure.", x: 50, y: 182, size: 8))
         return items
+    }
+
+    // MARK: - A text layer with no bold
+
+    /// Table 95 on a page set in one weight, caption, header and rows alike — a text layer with no
+    /// bold anywhere. `boldElsewhere` adds one bold line above it, which makes the page one that
+    /// does carry weight, where the plain caption line is not a caption.
+    static func singleFontGrid(boldElsewhere: Bool = false) -> Page {
+        var items: [Item] = []
+        if boldElsewhere { items.append(Item(text: "Invented section heading", x: 50, y: 30, bold: true)) }
+        items.append(Item(text: "Table 95 Spacing limits", x: 50, y: 60))
+        items += row(90, [("Designation", 50), ("Limit (A)", 200), ("Spacing (mm)", 320)])
+        let body: [[String]] = [["QA7", "14", "26"], ["QA8", "17", "31"], ["QA9", "23", "38"], ["QA11", "29", "44"]]
+        for (index, cells) in body.enumerated() {
+            items += row(106 + Double(index) * 14, zip(cells, [50, 210, 330]).map { ($0, $1) })
+        }
+        return items
+    }
+
+    /// Table 94 on a page with no bold, its long title wrapping onto two more lines under the
+    /// caption before the header — lines that read as prose once there is no weight to tell them
+    /// apart.
+    static func singleFontWrappedTitle() -> Page {
+        var items = [Item(text: "Table 94 Invented spacing limits", x: 50, y: 60),
+                     Item(text: "for the invented designations set out in this example, arranged for a test", x: 50, y: 71),
+                     Item(text: "of a title that wraps", x: 50, y: 82)]
+        items += row(100, [("Designation", 50), ("Limit (A)", 200), ("Spacing (mm)", 320)])
+        let body: [[String]] = [["QB2", "11", "19"], ["QB3", "13", "22"], ["QB5", "16", "27"]]
+        for (index, cells) in body.enumerated() {
+            items += row(116 + Double(index) * 14, zip(cells, [50, 210, 330]).map { ($0, $1) })
+        }
+        return items
+    }
+
+    /// Plain prose that begins with a reference to a table, on a page with no bold: a long line
+    /// that is not a caption, then a short one that reads like one, and no grid under either.
+    static func proseTableReference() -> Page {
+        [Item(text: "Table 95 shows the limits that apply to every invented designation on this page and the next.", x: 50, y: 60),
+         Item(text: "Each limit is described in words in the paragraph that follows the list of invented items.", x: 50, y: 74),
+         Item(text: "Table 95 shows the limits.", x: 50, y: 102),
+         Item(text: "Nothing on this page is set out in rows or columns of any kind, and every line is prose.", x: 50, y: 116)]
     }
 
     // MARK: - Pages that are not tables

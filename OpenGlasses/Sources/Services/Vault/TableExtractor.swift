@@ -146,7 +146,8 @@ struct ManualTable: Codable, Equatable {
 ///
 /// **How the grid is found.** Words that share a line become a line, and words close enough to be
 /// one phrase become a cell. The lines between the caption (and its title) and the first body row
-/// are the header: the leading run of bold lines. The body is the run of lines under it, ended by
+/// are the header: the leading run of bold lines, or, on a page set in one weight, the lines
+/// before the first row of numbers. The body is the run of lines under it, ended by
 /// a note, a wide gap or a paragraph. Columns are the union of the body cells' horizontal extents,
 /// taken over the rows with the most common number of cells, so a column is wherever the body
 /// prints something and a gap is wherever it never does. A heading over several columns becomes a
@@ -329,12 +330,30 @@ enum TableExtractor {
     private static let figurePattern = #"^FIGURE\s+\d+"#
     private static let continuedPattern = #"[\(\[]?\s*\b(?:continued|cont'd|cont\.)\s*[\)\]]?"#
 
-    /// The table caption a line carries: bold, starting `TABLE` and a number — the rule
-    /// `ManualStructure.caption` applies to typed lines, so the label here and the chunk's
-    /// `figure` agree. A cross-reference in a sentence is not bold and is not a caption.
-    static func caption(of line: Line) -> Caption? {
-        guard let first = line.words.first, first.bold else { return nil }
+    /// Longest line read as a caption on a page set in one weight.
+    static let plainCaptionMaximumWords = 12
+
+    /// The table caption a line carries, starting `TABLE` (any case) and a number.
+    ///
+    /// Where the page sets anything in bold, the caption must be bold — the rule
+    /// `ManualStructure.caption` applies to typed lines, so every caption that names a chunk's
+    /// `figure` is a caption here with the same label, and a cross-reference in a sentence is not
+    /// bold and is not a caption. A page whose text layer carries no bold at all (a code book set
+    /// in one font, with no weight in its text layer) has no bold to read, so there the caption is
+    /// the line that begins `Table N` and stands on its own: at most
+    /// `plainCaptionMaximumWords` words, with no sentence ended before its last word. The grid that
+    /// must follow is what keeps a short line of prose that begins with a table reference from
+    /// extracting anything. `ManualStructure.caption` is unchanged: it names passages and decides
+    /// which pages open (Plan IV measured it), and a table found here only on a plain page is not
+    /// named there.
+    static func caption(of line: Line, pageHasBold: Bool = true) -> Caption? {
+        guard let first = line.words.first else { return nil }
         let text = line.text
+        if pageHasBold {
+            guard first.bold else { return nil }
+        } else {
+            guard standsAlone(text) else { return nil }
+        }
         guard let match = text.range(of: captionPattern, options: [.regularExpression, .caseInsensitive]) else {
             return nil
         }
@@ -350,18 +369,35 @@ enum TableExtractor {
         return Caption(label: "Table \(number)", title: title, continues: continues)
     }
 
+    /// A short line that is not a sentence: at most `plainCaptionMaximumWords` words, and no full
+    /// stop, question or exclamation mark followed by more words.
+    private static func standsAlone(_ text: String) -> Bool {
+        let words = text.split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty, words.count <= plainCaptionMaximumWords else { return false }
+        return !words.dropLast().contains { word in
+            guard let last = word.last, ".!?".contains(last) else { return false }
+            // "No." or an abbreviation with a dot inside is not the end of a sentence.
+            return word.count > 2 && !word.dropLast().contains(".")
+        }
+    }
+
+    /// Whether any word on the page is set in bold.
+    static func hasBold(_ words: [PositionedWord]) -> Bool { words.contains(where: \.bold) }
+
     /// Every table caption on a page, top to bottom, with the title read off the next line when
     /// the caption line carries none.
     static func captions(in words: [PositionedWord]) -> [Caption] {
-        captionLines(in: lines(of: words)).map(\.caption)
+        captionLines(in: lines(of: words), pageHasBold: hasBold(words)).map(\.caption)
     }
 
-    private static func captionLines(in lines: [Line]) -> [(caption: Caption, index: Int, titleLines: Int)] {
+    private static func captionLines(in lines: [Line], pageHasBold: Bool)
+        -> [(caption: Caption, index: Int, titleLines: Int)] {
         var found: [(Caption, Int, Int)] = []
         for (index, line) in lines.enumerated() {
-            guard var caption = caption(of: line) else { continue }
+            guard var caption = caption(of: line, pageHasBold: pageHasBold) else { continue }
             var titleLines = 0
-            if caption.title.isEmpty, index + 1 < lines.count {
+            // A title on the line below is read only where weight says it is one.
+            if pageHasBold, caption.title.isEmpty, index + 1 < lines.count {
                 let next = lines[index + 1]
                 let phrases = next.phrases
                 if next.isBold, phrases.count == 1, next.text.count <= 80, Self.caption(of: next) == nil,
@@ -386,9 +422,11 @@ enum TableExtractor {
     static func extractAll(words: [PositionedWord], page: ManualTable.Page) -> [(caption: Caption, outcome: Outcome)] {
         let all = lines(of: words)
         let rotated = words.contains(where: \.isRotated)
-        return captionLines(in: all).map { found in
+        let bold = hasBold(words)
+        return captionLines(in: all, pageHasBold: bold).map { found in
             (found.caption, extract(lines: all, at: found.index, titleLines: found.titleLines,
-                                    caption: found.caption, page: page, hasRotatedWords: rotated))
+                                    caption: found.caption, page: page, hasRotatedWords: rotated,
+                                    pageHasBold: bold))
         }
     }
 
@@ -396,11 +434,12 @@ enum TableExtractor {
     static func extract(words: [PositionedWord], caption: Caption, page: ManualTable.Page) -> Outcome {
         let all = lines(of: words)
         guard !all.isEmpty else { return .failed(.noTextLayer) }
-        guard let found = captionLines(in: all).first(where: { $0.caption.label == caption.label }) else {
+        let bold = hasBold(words)
+        guard let found = captionLines(in: all, pageHasBold: bold).first(where: { $0.caption.label == caption.label }) else {
             return .failed(.captionNotFound)
         }
         return extract(lines: all, at: found.index, titleLines: found.titleLines, caption: found.caption,
-                       page: page, hasRotatedWords: words.contains(where: \.isRotated))
+                       page: page, hasRotatedWords: words.contains(where: \.isRotated), pageHasBold: bold)
     }
 
     private static let noteStart = #"^(\*+|\x{2020}|\x{2021}|\([a-z0-9]\)|\d{1,2}[\).]|[\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{2079}]+|notes?\b)"#
@@ -423,6 +462,20 @@ enum TableExtractor {
         }
     }
 
+    /// Most header lines a plain page's table is read with before its first row of numbers.
+    static let plainHeaderMaximumLines = 4
+    /// Most lines a plain page's caption title is read as wrapping onto.
+    static let plainTitleMaximumLines = 3
+
+    /// A row of two or more cells whose cells after the first are at least half numbers.
+    private static func isNumericRow(_ line: Line) -> Bool {
+        let phrases = line.phrases
+        guard phrases.count >= 2 else { return false }
+        let rest = phrases.dropFirst()
+        let numbers = rest.filter { parseCell($0.text, markers: $0.markers, columnUnit: nil).value != nil }.count
+        return numbers * 2 >= rest.count
+    }
+
     /// A line of running prose rather than a row: one long phrase, or a sentence.
     private static func isProse(_ line: Line, phrases: [Phrase]) -> Bool {
         guard phrases.count == 1 else { return false }
@@ -431,14 +484,14 @@ enum TableExtractor {
     }
 
     private static func extract(lines all: [Line], at captionIndex: Int, titleLines: Int, caption: Caption,
-                                page: ManualTable.Page, hasRotatedWords: Bool) -> Outcome {
+                                page: ManualTable.Page, hasRotatedWords: Bool, pageHasBold: Bool) -> Outcome {
         // The table's region: under the caption and its title, up to the next caption or the end.
         let start = captionIndex + 1 + titleLines
         var end = all.count
         for index in start..<all.count {
             let line = all[index]
-            if Self.caption(of: line) != nil
-                || (line.words.first?.bold == true
+            if Self.caption(of: line, pageHasBold: pageHasBold) != nil
+                || ((pageHasBold ? line.words.first?.bold == true : standsAlone(line.text))
                     && line.text.range(of: figurePattern, options: [.regularExpression, .caseInsensitive]) != nil) {
                 end = index
                 break
@@ -450,22 +503,48 @@ enum TableExtractor {
         }
         guard !region.isEmpty else { return .failed(.tooFewRows) }
 
-        // Header: the leading run of bold lines that are not prose.
+        // Header: the leading run of bold lines that are not prose. On a page with no bold at all,
+        // the lines before the first row whose cells after the first are mostly numbers — after
+        // the lines of a long title that wrapped under the caption, which have no weight to tell
+        // them apart and read as prose.
+        var title = caption.title
+        var headerStart = 0
         var headerCount = 0
-        while headerCount < region.count, region[headerCount].isBold,
-              !isProse(region[headerCount], phrases: region[headerCount].phrases),
-              !isNoteLine(region[headerCount]) {
-            headerCount += 1
+        func isHeaderLine(_ line: Line) -> Bool {
+            !isProse(line, phrases: line.phrases) && !isNoteLine(line)
+        }
+        if pageHasBold {
+            while headerCount < region.count, region[headerCount].isBold, isHeaderLine(region[headerCount]) {
+                headerCount += 1
+            }
+        } else {
+            let reach = plainTitleMaximumLines + plainHeaderMaximumLines
+            if let firstRow = region.prefix(reach + 1).firstIndex(where: isNumericRow) {
+                var previous = captionIndex
+                while headerStart < min(firstRow, plainTitleMaximumLines),
+                      region[headerStart].phrases.count == 1, !isNoteLine(region[headerStart]),
+                      region[headerStart].top - all[previous].bottom < region[headerStart].size {
+                    title += (title.isEmpty ? "" : " ") + region[headerStart].text
+                    previous = start + headerStart
+                    headerStart += 1
+                }
+                if firstRow - headerStart <= plainHeaderMaximumLines,
+                   region[headerStart..<firstRow].allSatisfy(isHeaderLine) {
+                    headerCount = firstRow
+                } else {
+                    headerCount = headerStart
+                }
+            }
         }
         // A bold run that swallows the whole region is a table with bold rows, not all header.
-        if headerCount >= region.count - 1 { headerCount = min(headerCount, 1) }
-        let header = Array(region.prefix(headerCount))
+        if pageHasBold, headerCount >= region.count - 1 { headerCount = min(headerCount, 1) }
+        let header = Array(region[headerStart..<max(headerStart, headerCount)])
 
         // Body: until a note, a paragraph or a wide gap.
         var body: [Line] = []
-        var bodyEnd = headerCount
+        var bodyEnd = max(headerStart, headerCount)
         var gaps: [Double] = []
-        for index in headerCount..<region.count {
+        for index in bodyEnd..<region.count {
             let line = region[index]
             let phrases = line.phrases
             if isNoteLine(line) || isProse(line, phrases: phrases) { break }
@@ -604,7 +683,7 @@ enum TableExtractor {
         }
         notes.removeAll { $0.text.isEmpty }
 
-        return .table(ManualTable(label: caption.label, title: caption.title, page: page, rowHeaders: rowHeaders,
+        return .table(ManualTable(label: caption.label, title: title, page: page, rowHeaders: rowHeaders,
                                   columns: columns, rows: rows, notes: notes, continues: caption.continues))
     }
 

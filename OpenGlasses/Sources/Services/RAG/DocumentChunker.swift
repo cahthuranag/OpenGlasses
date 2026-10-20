@@ -65,9 +65,15 @@ struct DocumentChunker {
 
     /// What kind of page a chunk came off. A drawing's text is a bag of terminal labels: it embeds
     /// to noise and crowds a semantic result, but it is exactly what an exact-token search is for.
+    ///
+    /// `tableRow` is never produced by the chunker: it is one row of a table extracted from the
+    /// PDF, written as a sentence by [[TableRowPassage]] (Plan JJ P0). It is text the app wrote,
+    /// not text on the page, so it is not a drawing, it is left out of the document's own text,
+    /// and it never opens a page by itself.
     enum Kind: String, Equatable, CaseIterable {
         case prose
         case diagram
+        case tableRow = "table_row"
     }
 
     struct Chunk: Equatable {

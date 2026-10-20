@@ -211,6 +211,43 @@ enum VaultDocumentExtractor {
         return PrintedPageBand.label(in: text)
     }
 
+    // MARK: - Tables (Plan JJ P0)
+
+    /// The captioned tables in a vault document's PDF, read from the words' positions on the page
+    /// by [[PDFTableReader]], each page named by its printed number where one is known. Nil when
+    /// `url` is not a PDF PDFKit can open — a Markdown or text import has no positions to read.
+    /// Nothing here touches `extract(from:)`: the chunk text, the page separators and the labels
+    /// are exactly what they were.
+    static func tables(from url: URL) -> PDFTableReader.Result? {
+        guard url.pathExtension.lowercased() == "pdf", let document = PDFDocument(url: url) else { return nil }
+        let labels = Dictionary(pageLabels(of: document).map { ($0.page, $0.label) }, uniquingKeysWith: { first, _ in first })
+        return PDFTableReader.read(document: document, printedLabels: labels)
+    }
+
+    /// The PDF a vault document's tables are read from: the document itself when it is one, else
+    /// the original it was extracted from when the vault carries that, else nil.
+    static func tablesSource(document: URL, original: URL?) -> URL? {
+        if document.pathExtension.lowercased() == "pdf" { return document }
+        guard let original, original.pathExtension.lowercased() == "pdf",
+              FileManager.default.fileExists(atPath: original.path) else { return nil }
+        return original
+    }
+
+    /// What one document's tables came to, in counts: how many captions, how many extracted to a
+    /// grid, how many rows the passage cap left out — or that there was no PDF to read them from.
+    /// Never a label, a title or a cell.
+    static func logTables(_ result: PDFTableReader.Result?, rowsDropped: Int) {
+        guard let result else {
+            PrivacyLog.store(.ragDocuments, .saveSkipped, detail: PrivacyToken("tables_no_pdf"))
+            return
+        }
+        PrivacyLog.store(.ragDocuments, .indexed, count: result.extracted, total: result.captioned,
+                         detail: PrivacyToken("tables"))
+        if rowsDropped > 0 {
+            PrivacyLog.store(.ragDocuments, .dropped, count: rowsDropped, detail: PrivacyToken("table_rows_capped"))
+        }
+    }
+
     // MARK: - Helpers
 
     /// What a document's text layer came out as, page by page, once its type has been read.

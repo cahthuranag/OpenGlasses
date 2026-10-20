@@ -127,6 +127,19 @@ enum FigureAutoOpenPolicy {
         case diagram
         /// A captioned passage that is not a drawing: a table, mostly.
         case captioned
+        /// One row of an extracted table, written by the app (Plan JJ P0). Never a drawing, and
+        /// never opens its page unasked: it is attached to the model at most.
+        case tableRow
+
+        /// The kind a retrieved chunk presents as. A prose passage reaches here only when it
+        /// carries a caption (`FieldSessionService.bestFigure`).
+        init(_ kind: DocumentChunker.Kind) {
+            switch kind {
+            case .diagram: self = .diagram
+            case .prose: self = .captioned
+            case .tableRow: self = .tableRow
+            }
+        }
     }
 
     enum Decision: Equatable {
@@ -202,7 +215,7 @@ enum FigureAutoOpenPolicy {
         }
         switch (turnKind, passageKind) {
         case (.question, .diagram): return .present(reason: .diagramForQuestion)
-        case (.question, .captioned): return .attachToModelOnly(reason: .tableNotAskedFor)
+        case (.question, .captioned), (.question, .tableRow): return .attachToModelOnly(reason: .tableNotAskedFor)
         case (_, .diagram): return .attachToModelOnly(reason: .notAQuestion)
         default: return .none(reason: .notAQuestion)
         }

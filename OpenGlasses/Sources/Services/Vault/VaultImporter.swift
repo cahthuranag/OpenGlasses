@@ -324,11 +324,23 @@ enum VaultImporter {
                 throw ImportError.documentFailed(error.localizedDescription)
             }
             let sourceType = extracted.usedRecognition ? recognisedSourceType : "vault_document"
+            // The document's tables (Plan JJ P0), read from its PDF — the document itself, or the
+            // original a text import was made from — off the main actor. A page with no text layer
+            // has none to read; a vault with no PDF at all has no tables, and the log says so.
+            let document = manifest.documents.first { $0.file == want.file }
+            let original = document.flatMap { manifest.documentSourceRelativePath($0) }
+                .map { root.appendingPathComponent($0) }
+            let tablesPDF = VaultDocumentExtractor.tablesSource(document: url, original: original)
+            let tables: PDFTableReader.Result? = await Task.detached(priority: .utility) {
+                tablesPDF.flatMap { VaultDocumentExtractor.tables(from: $0) }
+            }.value
             let ref = await store.ingest(name: want.title, text: extracted.text,
                                          sourceType: sourceType, namespace: namespace,
-                                         pageLabels: extracted.pageLabels) { done, total in
+                                         pageLabels: extracted.pageLabels,
+                                         tables: tables?.tables ?? []) { done, total in
                 progress?(want.title, done, total)
             }
+            VaultDocumentExtractor.logTables(tables, rowsDropped: store.lastTableRowsDropped)
             guard let ref else {
                 ledger.entries = entries
                 try? ledger.save(to: ledgerDir)

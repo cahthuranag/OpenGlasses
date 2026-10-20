@@ -97,12 +97,17 @@ final class DocumentStore: ObservableObject {
                 sourceType: String = "text",
                 namespace: String = "global",
                 pageLabels: [PageLabel] = [],
+                tables: [ManualTable] = [],
                 progress: ((Int, Int) -> Void)? = nil) async -> DocumentRef? {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
 
-        let chunks = chunker.chunk(cleaned)
-        guard !chunks.isEmpty else { return nil }
+        let textChunks = chunker.chunk(cleaned)
+        guard !textChunks.isEmpty else { return nil }
+        // A table's rows follow the document's own text (Plan JJ P0), numbered after it, so the
+        // text chunks are numbered exactly as they would be without any table.
+        let rows = TableRowPassage.chunks(for: tables, startingAt: textChunks.count)
+        let chunks = textChunks + rows.chunks
 
         let docId = UUID().uuidString
         let now = Date().timeIntervalSince1970
@@ -126,6 +131,8 @@ final class DocumentStore: ObservableObject {
             await Task.yield()
         }
         if !pageLabels.isEmpty { setPageLabels(pageLabels, documentId: docId) }
+        if !tables.isEmpty { setTables(tables, documentId: docId) }
+        lastTableRowsDropped = rows.dropped
 
         refresh()
         // The document's name is its title — of a scanned letter, a report, a prescription — and
@@ -148,8 +155,11 @@ final class DocumentStore: ObservableObject {
     /// embeds to noise, scores like everything else on a manual-wide embedder, and crowds out the
     /// prose that answers the question. It is reached instead by `passages(containingToken:)`,
     /// which is what a technician asking about `W951` or `24VAXC` actually needs.
+    ///
+    /// A table's row passages are searched beside the prose (Plan JJ P0): each is one sentence
+    /// naming the table, the row and its values, which is what a question about a cell reads like.
     func query(_ text: String, limit: Int = 4, namespace: String? = nil, documentIds: [String]? = nil,
-               kinds: Set<DocumentChunker.Kind> = [.prose]) -> [Passage] {
+               kinds: Set<DocumentChunker.Kind> = DocumentStore.searchedKinds) -> [Passage] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
         let rows = fetchChunks(namespace: namespace, documentIds: documentIds).filter { kinds.contains($0.kind) }
@@ -220,12 +230,12 @@ final class DocumentStore: ObservableObject {
     /// the Lennox flame-sensor section, which uses nearly every word of "how to test the flame
     /// sensor readings or signal", scored below a page of diagnostic-code rows (build 497).
     ///
-    /// Prose only, like `query`, and a passage must share at least one term. Its `similarity` is
+    /// Prose and table rows, like `query`, and a passage must share at least one term. Its `similarity` is
     /// the real cosine where the stored vector is current (0 otherwise, which the next `query`
     /// heals), so the evidence gate judges it exactly as it judges a semantic hit.
     func passages(sharingTermsWith text: String, limit: Int = 8, namespace: String? = nil,
                   documentIds: [String]? = nil,
-                  kinds: Set<DocumentChunker.Kind> = [.prose]) -> [Passage] {
+                  kinds: Set<DocumentChunker.Kind> = DocumentStore.searchedKinds) -> [Passage] {
         let terms = LexicalSupport.contentTerms(text)
         guard !terms.isEmpty else { return [] }
         let current = embedder.version
@@ -347,7 +357,7 @@ final class DocumentStore: ObservableObject {
         if documentId.hasPrefix("captured:"), !capturedNamespaceAllowed(documentId) { return [] }
         let sql = """
         SELECT page, text FROM doc_chunks
-        WHERE document_id = '\(escapedSQL(documentId))' AND page IS NOT NULL
+        WHERE document_id = '\(escapedSQL(documentId))' AND page IS NOT NULL AND \(Self.notTableRow)
         ORDER BY chunk_index ASC
         """
         var stmt: OpaquePointer?
@@ -402,6 +412,7 @@ final class DocumentStore: ObservableObject {
     /// Used by sources that need the whole document, e.g. the teleprompter.
     func fullText(documentId: String) -> String? {
         let chunks = fetchChunks(namespace: nil, documentIds: [documentId])
+            .filter { $0.kind != .tableRow }
             .sorted { $0.chunkIndex < $1.chunkIndex }
             .map(\.text)
         guard !chunks.isEmpty else { return nil }
@@ -411,6 +422,7 @@ final class DocumentStore: ObservableObject {
     func forget(documentId: String) {
         let id = escapedSQL(documentId)
         exec("DELETE FROM doc_page_labels WHERE document_id = '\(id)'")
+        exec("DELETE FROM doc_tables WHERE document_id = '\(id)'")
         exec("DELETE FROM doc_chunks WHERE document_id = '\(id)'")
         exec("DELETE FROM documents WHERE id = '\(id)'")
         refresh()
@@ -465,6 +477,7 @@ final class DocumentStore: ObservableObject {
             let orphans = chunkCount(documentId: documentId)
             if orphans > 0 {
                 try transaction {
+                    try execChecked("DELETE FROM doc_tables WHERE document_id = '\(id)'")
                     try execChecked("DELETE FROM doc_chunks WHERE document_id = '\(id)'")
                 }
                 refresh()
@@ -478,6 +491,7 @@ final class DocumentStore: ObservableObject {
         let chunks = chunkCount(documentId: documentId)
         try transaction {
             try execChecked("DELETE FROM doc_page_labels WHERE document_id = '\(id)'")
+            try execChecked("DELETE FROM doc_tables WHERE document_id = '\(id)'")
             try execChecked("DELETE FROM doc_chunks WHERE document_id = '\(id)'")
             try execChecked("DELETE FROM documents WHERE id = '\(id)' AND namespace = '\(escapedSQL(namespace))'")
             let remainingDocuments = storedNamespace(documentId: documentId) == nil ? 0 : 1
@@ -536,6 +550,7 @@ final class DocumentStore: ObservableObject {
 
     func clearAll() {
         exec("DELETE FROM doc_page_labels")
+        exec("DELETE FROM doc_tables")
         exec("DELETE FROM doc_chunks")
         exec("DELETE FROM documents")
         refresh()
@@ -548,6 +563,7 @@ final class DocumentStore: ObservableObject {
     func clear(namespace: String) {
         let ns = escapedSQL(namespace)
         exec("DELETE FROM doc_page_labels WHERE document_id IN (SELECT id FROM documents WHERE namespace = '\(ns)')")
+        exec("DELETE FROM doc_tables WHERE document_id IN (SELECT id FROM documents WHERE namespace = '\(ns)')")
         exec("DELETE FROM doc_chunks WHERE document_id IN (SELECT id FROM documents WHERE namespace = '\(ns)')")
         exec("DELETE FROM documents WHERE namespace = '\(ns)'")
         refresh()
@@ -788,7 +804,7 @@ final class DocumentStore: ObservableObject {
     /// A document's chunk texts in order, one per line. The overlap between chunks is left in;
     /// both readers above count distinct lines, so a repeated one does no harm.
     private func storedText(documentId: String) -> String {
-        let sql = "SELECT text FROM doc_chunks WHERE document_id = ? ORDER BY chunk_index ASC"
+        let sql = "SELECT text FROM doc_chunks WHERE document_id = ? AND \(Self.notTableRow) ORDER BY chunk_index ASC"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return "" }
         defer { sqlite3_finalize(stmt) }
@@ -1043,8 +1059,10 @@ final class DocumentStore: ObservableObject {
     /// chunker keeps line breaks between sentences and chunks a clause-numbered document at its
     /// clause headings (Plan IV P3), so a stored document whose text now chunks differently is
     /// re-chunked under its own id by `PassageLocationMigration`, and one that chunks the same only
-    /// has its positions rewritten.
-    nonisolated static let locationVersion = 2
+    /// has its positions rewritten. 3: a stored vault document's tables are extracted from its PDF
+    /// and their row passages added (Plan JJ P0); its text chunks are only re-located, never
+    /// re-chunked, when their text is unchanged.
+    nonisolated static let locationVersion = 3
 
     /// One chunk's text and place, for the highlight. Its own query rather than `fetchChunks`,
     /// which decodes every embedding in the namespace to answer for one row.
@@ -1088,8 +1106,10 @@ final class DocumentStore: ObservableObject {
     /// document id, the text and the embedding stay exactly as they were, and everything keyed on
     /// them — a ledger entry, a citation, an evidence label — is untouched. Returns false (and
     /// writes nothing) when the texts disagree, which is the caller's cue to re-chunk instead.
+    /// A table's row passages are not the document's text and are left out of the comparison;
+    /// `replaceTables(_:documentId:)` rewrites them.
     func writeLocations(documentId: String, chunks: [DocumentChunker.Chunk]) -> Bool {
-        let sql = "SELECT chunk_index, text FROM doc_chunks WHERE document_id = ? ORDER BY chunk_index"
+        let sql = "SELECT chunk_index, text FROM doc_chunks WHERE document_id = ? AND \(Self.notTableRow) ORDER BY chunk_index"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
         sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
@@ -1177,6 +1197,110 @@ final class DocumentStore: ObservableObject {
         return PageLabelMap(labels)
     }
 
+    // MARK: - Tables (Plan JJ P0)
+
+    /// The kinds `query` and `passages(sharingTermsWith:)` search by default: prose and the row
+    /// passages of extracted tables. Drawings are reached by token and by figure.
+    nonisolated static let searchedKinds: Set<DocumentChunker.Kind> = [.prose, .tableRow]
+
+    /// SQL that leaves a table's row passages out of a document's own text.
+    private static let notTableRow = "(kind IS NULL OR kind != '\(DocumentChunker.Kind.tableRow.rawValue)')"
+
+    /// Row passages the last `ingest` left out at `TableRowPassage.rowCap`, for the caller's log.
+    private(set) var lastTableRowsDropped = 0
+
+    /// What a table write stored.
+    struct TableWrite: Equatable {
+        var tables = 0
+        var rowPassages = 0
+        /// Rows past `TableRowPassage.rowCap` in some table: kept in the table, given no passage.
+        var rowsDropped = 0
+    }
+
+    /// The tables extracted from a document, in the order they were stored.
+    func tables(documentId: String) -> [ManualTable] {
+        if documentId.hasPrefix("captured:"), !capturedNamespaceAllowed(documentId) { return [] }
+        let sql = "SELECT json FROM doc_tables WHERE document_id = ? ORDER BY table_index ASC"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        let decoder = JSONDecoder()
+        var tables: [ManualTable] = []
+        while sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0) {
+            if let table = try? decoder.decode(ManualTable.self, from: Data(String(cString: raw).utf8)) {
+                tables.append(table)
+            }
+        }
+        return tables
+    }
+
+    /// Replace the tables recorded for a document. The row passages are written by the caller.
+    private func setTables(_ tables: [ManualTable], documentId: String) {
+        exec("DELETE FROM doc_tables WHERE document_id = '\(escapedSQL(documentId))'")
+        let sql = "INSERT OR REPLACE INTO doc_tables (document_id, table_index, label, pages, json) VALUES (?, ?, ?, ?, ?)"
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        for (index, table) in tables.enumerated() {
+            guard let json = try? encoder.encode(table), let text = String(data: json, encoding: .utf8) else { continue }
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(stmt, 2, Int32(index))
+            sqlite3_bind_text(stmt, 3, table.label, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 4, table.pages.map { String($0.physical) }.joined(separator: ","), -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 5, text, -1, SQLITE_TRANSIENT)
+            _ = sqlite3_step(stmt)
+            sqlite3_finalize(stmt)
+        }
+    }
+
+    /// Replace a stored document's tables and their row passages, leaving every other chunk — its
+    /// id, text, embedding and place — exactly as it is. The row passages are numbered after the
+    /// document's last text chunk and embedded with the model the vault is served by. For the
+    /// location migration, which brings tables to documents indexed before there were any; an
+    /// empty list takes them away.
+    @discardableResult
+    func replaceTables(_ tables: [ManualTable], documentId: String) async -> TableWrite {
+        guard let namespace = storedNamespace(documentId: documentId) else { return TableWrite() }
+        let sql = "SELECT MAX(chunk_index) FROM doc_chunks WHERE document_id = ? AND \(Self.notTableRow)"
+        var stmt: OpaquePointer?
+        var next = 0
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+            if sqlite3_step(stmt) == SQLITE_ROW, sqlite3_column_type(stmt, 0) != SQLITE_NULL {
+                next = Int(sqlite3_column_int(stmt, 0)) + 1
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        let rows = TableRowPassage.chunks(for: tables, startingAt: next)
+        let chunkEmbedder = ingestEmbedder(namespace: namespace)
+        var vectors: [Data?] = []
+        for chunk in rows.chunks {
+            vectors.append(chunkEmbedder.embed(chunk.text).map(vecToData))
+            await Task.yield()
+        }
+        // The document may have been removed while the rows were embedded.
+        guard storedNamespace(documentId: documentId) == namespace, exec("BEGIN IMMEDIATE") else { return TableWrite() }
+        exec("DELETE FROM doc_chunks WHERE document_id = '\(escapedSQL(documentId))' "
+             + "AND kind = '\(DocumentChunker.Kind.tableRow.rawValue)'")
+        let now = Date().timeIntervalSince1970
+        for (index, chunk) in rows.chunks.enumerated() {
+            insertChunk(documentId: documentId, index: chunk.index, text: chunk.text, embedding: vectors[index],
+                        page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
+                        createdAt: now, version: vectors[index] == nil ? nil : chunkEmbedder.version.tag,
+                        location: chunk)
+        }
+        setTables(tables, documentId: documentId)
+        exec("UPDATE documents SET chunk_count = (SELECT COUNT(*) FROM doc_chunks WHERE document_id = "
+             + "'\(escapedSQL(documentId))') WHERE id = '\(escapedSQL(documentId))'")
+        guard exec("COMMIT") else { exec("ROLLBACK"); return TableWrite() }
+        refresh()
+        return TableWrite(tables: tables.count, rowPassages: rows.chunks.count, rowsDropped: rows.dropped)
+    }
+
+
     // MARK: - SQLite setup
 
     private func openDatabase() {
@@ -1251,6 +1375,19 @@ final class DocumentStore: ObservableObject {
             label TEXT NOT NULL,
             source TEXT NOT NULL,
             PRIMARY KEY (document_id, page)
+        )
+        """)
+        // The tables extracted from a vault document's PDF (Plan JJ P0): one row per table, the
+        // whole table as JSON. Derived from the organisation's own loaded copy and, like the
+        // document, never exported, packed or linked.
+        exec("""
+        CREATE TABLE IF NOT EXISTS doc_tables (
+            document_id TEXT NOT NULL,
+            table_index INTEGER NOT NULL,
+            label TEXT NOT NULL,
+            pages TEXT NOT NULL,
+            json TEXT NOT NULL,
+            PRIMARY KEY (document_id, table_index)
         )
         """)
         exec("CREATE INDEX IF NOT EXISTS idx_chunk_doc ON doc_chunks(document_id)")

@@ -93,11 +93,14 @@ struct VaultRetriever {
         /// prose, and citing it as "page 12, Figure 16" sends the reader to a picture that does not
         /// contain the sentence they were given — so prose cites its section even when it carries a
         /// figure. A drawing with no caption still says it is one, because "page 44" of a wiring
-        /// diagram and "page 44" of a procedure are read very differently.
+        /// diagram and "page 44" of a procedure are read very differently. A table's row passage
+        /// (Plan JJ P0) names its table: the row is in it, by construction.
         var citation: String {
             var parts = [documentName]
             if let page { parts.append("page \(page)" + (printedPage.map { " (printed \($0))" } ?? "")) }
-            if kind == .diagram {
+            if kind == .tableRow, let figure, !figure.isEmpty {
+                parts.append(figure)
+            } else if kind == .diagram {
                 guard let figure, !figure.isEmpty else {
                     return parts.joined(separator: ", ") + " (diagram)"
                 }
@@ -115,6 +118,14 @@ struct VaultRetriever {
         /// How a drawing is announced to the model before its text, so a bag of terminal labels is
         /// read as labels on a picture rather than as prose. Nil for an ordinary passage.
         var kindLabel: String? {
+            if kind == .tableRow {
+                // A sentence the app wrote from one row of an extracted table, not the page's own
+                // words: the model is told so, and which table and page it came from.
+                var parts = ["table row"]
+                if let figure, !figure.isEmpty { parts.append(figure) }
+                if let page { parts.append("page \(page)") }
+                return "(" + parts.joined(separator: ", ") + ")"
+            }
             guard kind == .diagram else { return nil }
             // A table page meets the same test as a drawing and is accepted there (its rows stay
             // token-searchable); calling it a wiring diagram would be a lie to the model.

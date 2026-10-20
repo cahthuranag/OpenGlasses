@@ -2,7 +2,8 @@ import Foundation
 
 /// The arithmetic `calculate` evaluates, and the evaluator a rule chain's `calc` and `check` steps
 /// run through (Plan JJ P2): numbers, named values, `+ - * /`, parentheses and a unary minus, in
-/// doubles.
+/// doubles, and `sqrt(…)` (Plan JJ P4) so a chain can write three-phase voltage drop as
+/// `sqrt(3) * current * length * resistance` and reach the number `domain_calc` gives.
 ///
 /// A small parser of its own rather than `NSExpression(format:)`, which raises an Objective-C
 /// exception Swift cannot catch on a malformed expression ("2 +"), and divides whole numbers as
@@ -15,7 +16,12 @@ enum ArithmeticExpression {
         case name(String)
         case negate(Node)
         case binary(Character, Node, Node)
+        /// A function of one argument; `sqrt` is the only one.
+        case function(String, Node)
     }
+
+    /// The functions an expression may call, by name.
+    static let functions: Set<String> = ["sqrt"]
 
     enum ParseError: Error, Equatable, CustomStringConvertible {
         case empty
@@ -59,6 +65,7 @@ enum ArithmeticExpression {
             case .name(let name): if !out.contains(name) { out.append(name) }
             case .negate(let inner): walk(inner)
             case .binary(_, let left, let right): walk(left); walk(right)
+            case .function(_, let argument): walk(argument)
             }
         }
         walk(node)
@@ -75,6 +82,10 @@ enum ArithmeticExpression {
                 guard let number = value(name) else { throw EvaluationError.unknownName(name) }
                 return number
             case .negate(let inner): return -(try run(inner))
+            case .function(_, let argument):
+                let value = try run(argument)
+                guard value >= 0 else { throw EvaluationError.notFinite }
+                return value.squareRoot()
             case .binary(let op, let left, let right):
                 let l = try run(left), r = try run(right)
                 switch op {
@@ -191,6 +202,12 @@ enum ArithmeticExpression {
                 return .number(value)
             case .name(let name):
                 position += 1
+                // A function name followed by its argument in brackets; any other name is a value.
+                if ArithmeticExpression.functions.contains(name.lowercased()), take("(") {
+                    let argument = try expression()
+                    guard take(")") else { throw ParseError.unbalanced }
+                    return .function(name.lowercased(), argument)
+                }
                 return .name(name)
             case .symbol("-"):
                 position += 1

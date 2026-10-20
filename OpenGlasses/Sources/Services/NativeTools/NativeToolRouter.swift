@@ -473,7 +473,11 @@ final class NativeToolRouter: ToolExecutionAuthority {
         // A tool of a trade the technician has not turned on is not declared (`FieldTradeGate`);
         // a call that reaches it anyway — a remembered name, a skill pack — gets the redirect,
         // never silence and never a guess.
-        if let redirect = FieldTradeGate.redirect(forTool: call.name, activeTrades: activeTrades()) {
+        // A tool split by operation (`domain_calc`) is redirected by the operation asked for.
+        var operation: String?
+        if case .string(let value)? = call.arguments["operation"] { operation = value }
+        if let redirect = FieldTradeGate.redirect(forTool: call.name, operation: operation,
+                                                  activeTrades: activeTrades()) {
             authorizationEvents.record(call: call, verdict: ToolRefusalReason.featureDisabled.rawValue)
             return .rejected(reason: redirect)
         }

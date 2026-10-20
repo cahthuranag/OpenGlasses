@@ -81,39 +81,11 @@ enum TableLookup {
     // MARK: - Resolving
 
     static func resolve(_ request: Request, in sources: [Source]) -> Outcome {
-        guard !sources.isEmpty else { return .noTables }
-        var pool = sources
-        if let document = request.document?.trimmingCharacters(in: .whitespacesAndNewlines), !document.isEmpty {
-            let exact = sources.filter { $0.documentName.localizedCaseInsensitiveContains(document) }
-            pool = exact.isEmpty ? sources.filter { ManualDocumentChoice.matches($0.documentName, requested: document) } : exact
-            guard !pool.isEmpty else {
-                return .notFound(.document, asked: document, available: orderedUnique(sources.map(\.documentName)))
-            }
+        let source: Source, unread: [ManualTable.Page]
+        switch resolveTable(request, in: sources) {
+        case .failure(let refusal): return refusal.outcome
+        case .success(let resolved): (source, unread) = resolved
         }
-
-        // The table: by label, then by title words.
-        let candidates: [Source]
-        if let label = TableReference.labels(in: request.table).first ?? bareLabel(request.table) {
-            candidates = pool.filter { $0.table.label.caseInsensitiveCompare(label) == .orderedSame }
-            guard !candidates.isEmpty else {
-                return .notFound(.table, asked: label, available: availableTables(pool))
-            }
-        } else {
-            candidates = byTitle(request.table, in: pool)
-            guard !candidates.isEmpty else {
-                return .notFound(.table, asked: request.table, available: availableTables(pool))
-            }
-        }
-        // One table per document: the grid that was read wins over a page of it that was not.
-        let documents = orderedUnique(candidates.map(\.documentId))
-        let tables = Set(candidates.map { "\($0.documentId)#\($0.table.label.lowercased())" })
-        guard documents.count == 1, tables.count == 1 else {
-            return .ambiguous(.table, asked: request.table,
-                              candidates: orderedUnique(candidates.map { "\($0.table.displayName) in \($0.documentName)" }))
-        }
-        let read = candidates.filter(\.table.isExtracted)
-        guard let source = read.first else { return .notExtracted(candidates[0]) }
-        let unread = candidates.filter { !$0.table.isExtracted }.map(\.table.page)
         let table = source.table
 
         // The column first, so a row that fails to resolve can still be reported for it.
@@ -137,6 +109,50 @@ enum TableLookup {
         case .none:
             return .notFound(.row, asked: request.row, available: Array(table.rows.prefix(12)).map(rowName))
         }
+    }
+
+    /// An outcome that ends a lookup before its row is read, as an error so it can travel in a
+    /// `Result`.
+    struct Refusal: Error { let outcome: Outcome }
+
+    /// The one table a request names — the read grid, with the pages of it that were not read —
+    /// or the outcome that says why there is not one.
+    static func resolveTable(_ request: Request, in sources: [Source])
+        -> Result<(source: Source, unread: [ManualTable.Page]), Refusal> {
+        guard !sources.isEmpty else { return .failure(Refusal(outcome: .noTables)) }
+        var pool = sources
+        if let document = request.document?.trimmingCharacters(in: .whitespacesAndNewlines), !document.isEmpty {
+            let exact = sources.filter { $0.documentName.localizedCaseInsensitiveContains(document) }
+            pool = exact.isEmpty ? sources.filter { ManualDocumentChoice.matches($0.documentName, requested: document) } : exact
+            guard !pool.isEmpty else {
+                return .failure(Refusal(outcome: .notFound(.document, asked: document,
+                                                           available: orderedUnique(sources.map(\.documentName)))))
+            }
+        }
+
+        // The table: by label, then by title words.
+        let candidates: [Source]
+        if let label = TableReference.labels(in: request.table).first ?? bareLabel(request.table) {
+            candidates = pool.filter { $0.table.label.caseInsensitiveCompare(label) == .orderedSame }
+            guard !candidates.isEmpty else {
+                return .failure(Refusal(outcome: .notFound(.table, asked: label, available: availableTables(pool))))
+            }
+        } else {
+            candidates = byTitle(request.table, in: pool)
+            guard !candidates.isEmpty else {
+                return .failure(Refusal(outcome: .notFound(.table, asked: request.table, available: availableTables(pool))))
+            }
+        }
+        // One table per document: the grid that was read wins over a page of it that was not.
+        let documents = orderedUnique(candidates.map(\.documentId))
+        let tables = Set(candidates.map { "\($0.documentId)#\($0.table.label.lowercased())" })
+        guard documents.count == 1, tables.count == 1 else {
+            return .failure(Refusal(outcome: .ambiguous(.table, asked: request.table, candidates: orderedUnique(
+                candidates.map { "\($0.table.displayName) in \($0.documentName)" }))))
+        }
+        let read = candidates.filter(\.table.isExtracted)
+        guard let source = read.first else { return .failure(Refusal(outcome: .notExtracted(candidates[0]))) }
+        return .success((source, candidates.filter { !$0.table.isExtracted }.map(\.table.page)))
     }
 
     /// "99" or "No. 99" asked for as the table.
@@ -526,5 +542,120 @@ enum TableLookup {
                      + "or move to another row.")
         lines.append(sourceLine(documentName: source.documentName, label: table.label, pages: pages(of: found)))
         return lines.joined(separator: "\n")
+    }
+}
+
+// MARK: - Row rules (Plan JJ P2)
+
+/// What a rule chain's `lookup` step asks of a table beyond P1's lookup: which row a rule wants
+/// when the asked number is not a row of its own, and the row whose cell in a column meets a
+/// number. The rule is the chain's, written by the organisation (decision 2): the lookup itself
+/// still never interpolates, rounds or picks a row on its own.
+extension TableLookup {
+
+    enum RowRule: String, CaseIterable, Equatable, Codable {
+        /// The row whose key is the number, or a printed range that holds it ("8" in "7-9").
+        case exact
+        /// That row, else the first row whose key is at or above the number.
+        case atLeast = "at_least"
+        /// That row, else the last row whose key is at or below the number.
+        case atMost = "at_most"
+    }
+
+    /// `resolve` with a row rule applied. `exact` is `resolve` unchanged — a number between two
+    /// rows comes back with both, and the chain stops on it. `at_least` takes the upper of the two
+    /// rows, `at_most` the lower; a number below every row is `at_least` the first, and one above
+    /// every row `at_most` the last. Anything else is what `resolve` said.
+    static func resolve(_ request: Request, rule: RowRule, in sources: [Source]) -> Outcome {
+        let outcome = resolve(request, in: sources)
+        guard rule != .exact else { return outcome }
+        switch outcome {
+        case .found(let found) where found.between != nil && found.rows.count == 2:
+            let row = rule == .atLeast ? found.rows[1] : found.rows[0]
+            return .found(Found(source: found.source, rows: [row], columns: found.columns, between: nil,
+                                unreadPages: found.unreadPages))
+        case .notFound(.row, _, _):
+            guard let value = number(in: request.row),
+                  case .success(let resolved) = resolveTable(request, in: sources),
+                  case .resolved(let columns) = resolveColumn(request.column, in: resolved.source.table) else {
+                return outcome
+            }
+            let keyed = resolved.source.table.rows.compactMap { row in
+                numericKey(of: row).map { (row: row, lower: $0.lower, upper: $0.upper) }
+            }
+            var pick: ManualTable.Row?
+            if rule == .atLeast, let lowest = keyed.map(\.lower).min(), value < lowest {
+                pick = keyed.first { $0.lower == lowest }?.row
+            } else if rule == .atMost, let highest = keyed.map(\.upper).max(), value > highest {
+                pick = keyed.last { $0.upper == highest }?.row
+            }
+            guard let pick else { return outcome }
+            return .found(Found(source: resolved.source, rows: [pick], columns: columns, between: nil,
+                                unreadPages: resolved.unread))
+        default:
+            return outcome
+        }
+    }
+
+    /// What searching one column for a number came to.
+    enum CellSearch: Equatable {
+        /// One row, one column: the cell that meets the rule.
+        case found(Found)
+        /// The table or the column did not resolve to one; the outcome says why.
+        case refused(Outcome)
+        /// No cell in the column meets the rule. `range` is what the column's numbers run over.
+        case none(Source, column: Int, range: ClosedRange<Double>?)
+        /// Under `exact`, more than one cell holds the number.
+        case several(Source, column: Int, rows: [ManualTable.Row])
+    }
+
+    /// The row whose cell in the named column meets `value` under `rule`: `exact` a cell holding
+    /// the number; `at_least` the smallest cell at or above it; `at_most` the largest at or below
+    /// it — the first printed of equal cells for `at_least`, the last for `at_most`. The column
+    /// must resolve to exactly one. `request.row` is not read.
+    static func search(_ request: Request, value: Double, rule: RowRule, in sources: [Source]) -> CellSearch {
+        let resolved: (source: Source, unread: [ManualTable.Page])
+        switch resolveTable(request, in: sources) {
+        case .failure(let refusal): return .refused(refusal.outcome)
+        case .success(let found): resolved = found
+        }
+        let table = resolved.source.table
+        let column: Int
+        switch resolveColumn(request.column, in: table) {
+        case .resolved(let found) where found.count == 1: column = found[0]
+        case .resolved(let found):
+            return .refused(.ambiguous(.column, asked: request.column ?? "",
+                                       candidates: found.map { columnName(table.columns[$0]) }))
+        case .ambiguous(let names): return .refused(.ambiguous(.column, asked: request.column ?? "", candidates: names))
+        case .none:
+            return .refused(.notFound(.column, asked: request.column ?? "", available: table.columns.map(columnName)))
+        }
+        let numbered = table.rows.compactMap { row -> (row: ManualTable.Row, value: Double)? in
+            guard column < row.cells.count, let number = row.cells[column].value else { return nil }
+            return (row, number)
+        }
+        let values = numbered.map(\.value)
+        let range = values.min().flatMap { low in values.max().map { low...$0 } }
+        let chosen: [ManualTable.Row]
+        switch rule {
+        case .exact:
+            chosen = numbered.filter { $0.value == value }.map(\.row)
+            if chosen.count > 1 { return .several(resolved.source, column: column, rows: chosen) }
+        case .atLeast:
+            let best = numbered.filter { $0.value >= value }.map(\.value).min()
+            chosen = best.map { best in numbered.filter { $0.value == best }.prefix(1).map(\.row) } ?? []
+        case .atMost:
+            let best = numbered.filter { $0.value <= value }.map(\.value).max()
+            chosen = best.map { best in numbered.filter { $0.value == best }.suffix(1).map(\.row) } ?? []
+        }
+        guard let row = chosen.first else { return .none(resolved.source, column: column, range: range) }
+        return .found(Found(source: resolved.source, rows: [row], columns: [column], between: nil,
+                            unreadPages: resolved.unread))
+    }
+
+    /// The row printed after `row`, for "the next row is …".
+    static func nextRow(after row: ManualTable.Row, in table: ManualTable) -> ManualTable.Row? {
+        guard let index = table.rows.firstIndex(of: row), index + 1 < table.rows.count else { return nil }
+        return table.rows[index + 1]
     }
 }

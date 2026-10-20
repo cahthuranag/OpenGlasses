@@ -61,9 +61,23 @@ struct UnitConversionTool: NativeTool {
         return "\(fromFormatted) is \(toFormatted)."
     }
 
+    /// `value` in `from` converted to `to`, or nil when either unit is unknown or the two measure
+    /// different things. What a rule chain's `convert` step runs through (Plan JJ P2).
+    nonisolated static func convert(_ value: Double, from: String, to: String) -> Double? {
+        guard let fromUnit = resolveUnit(from.lowercased().trimmingCharacters(in: .whitespaces)),
+              let toUnit = resolveUnit(to.lowercased().trimmingCharacters(in: .whitespaces)),
+              type(of: fromUnit) == type(of: toUnit) else { return nil }
+        return Measurement(value: value, unit: fromUnit).converted(to: toUnit).value
+    }
+
+    /// Whether the converter knows the unit at all.
+    nonisolated static func knowsUnit(_ name: String) -> Bool {
+        resolveUnit(name.lowercased().trimmingCharacters(in: .whitespaces)) != nil
+    }
+
     // MARK: - Unit Resolution
 
-    private static func resolveUnit(_ name: String) -> Dimension? {
+    nonisolated private static func resolveUnit(_ name: String) -> Dimension? {
         switch name {
         // Length
         case "miles", "mile", "mi": return UnitLength.miles

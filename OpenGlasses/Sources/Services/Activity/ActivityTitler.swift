@@ -281,5 +281,9 @@ enum ActivityTitler {
         "equipment_lookup": .init("Identified equipment with the camera"),
         "show_source": .init("Showed you where an answer came from"),
         "table_lookup": .init("Looked up a value in a manual's table"),
+        "rule_chain": .init("Worked through a rule chain", actions: [
+            "start": "Started a rule chain", "answer": "Answered a rule chain's question",
+            "stop": "Stopped a rule chain",
+        ], reads: ["list", "status"]),
     ]
 }

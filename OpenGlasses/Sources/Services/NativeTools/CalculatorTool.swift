@@ -1,6 +1,6 @@
 import Foundation
 
-/// Evaluates mathematical expressions using NSExpression with input sanitization.
+/// Evaluates mathematical expressions with input sanitization, through `ArithmeticExpression`.
 struct CalculatorTool: NativeTool {
     let name = "calculate"
     let description = "Evaluate a mathematical expression. Supports +, -, *, /, parentheses, and decimal numbers."
@@ -29,13 +29,13 @@ struct CalculatorTool: NativeTool {
             return "Invalid expression. Only numbers and basic operators (+, -, *, /) are supported."
         }
 
-        // Use NSExpression for safe evaluation
-        let nsExpr = NSExpression(format: cleanExpr)
-        guard let result = nsExpr.expressionValue(with: nil, context: nil) as? NSNumber else {
+        // The shared evaluator (`ArithmeticExpression`), which a rule chain's `calc` steps use too:
+        // a malformed expression is a refusal rather than an uncatchable NSExpression exception,
+        // and 7 / 2 is 3.5.
+        guard let doubleResult = ArithmeticExpression.evaluate(cleanExpr) else {
             return "Couldn't evaluate that expression."
         }
 
-        let doubleResult = result.doubleValue
         // Format nicely: show as integer if it's a whole number
         if doubleResult == doubleResult.rounded() && abs(doubleResult) < 1e15 {
             return "\(expression) = \(Int(doubleResult))"

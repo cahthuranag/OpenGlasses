@@ -35,7 +35,9 @@ enum VaultPromptBuilder {
 
     static func promptContext(for store: VaultStore, referenceByteLimit: Int? = nil, turn: String? = nil,
                               teamLearningsPublished: Bool = false) -> String? {
-        let files = store.readAll()
+        // A vault's chains.md is steps for the rule-chain runner, not reference text: the session
+        // offers its chains by name (Plan JJ P2), so it does not ride along on every turn.
+        let files = store.readAll().filter { !VaultChains.isChainsFile($0.filename) }
         guard !files.isEmpty else { return nil }
 
         var lines: [String] = []

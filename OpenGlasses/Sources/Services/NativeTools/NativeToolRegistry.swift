@@ -257,6 +257,10 @@ final class NativeToolRegistry {
             // table_lookup reads one cell of a table extracted from the vault's own manuals, with
             // its headers, notes and page (Plan JJ P1).
             register(TableLookupTool(documentStore: documentStore))
+            // rule_chain runs a chain the vault's chains.md offers — asks, table lookups,
+            // arithmetic, a check — one step at a time, read back with a citation per step (Plan JJ
+            // P2).
+            register(RuleChainTool(documentStore: documentStore))
             // Safety Assessment (HECA) — camera high-energy hazard assessment via SafetyAssessmentService.shared.
             register(SafetyAssessmentTool())
             if let camera = cameraService {

@@ -100,6 +100,23 @@ final class TableLookupTool: NativeTool {
         return stored.map { TableLookup.Source(documentId: $0.documentId, documentName: $0.documentName, table: $0.table) }
     }
 
+    /// The stored row passages of the rows a set of lookups read, for "show me the table" to mark —
+    /// a `rule_chain`'s lookups note theirs the same way (Plan JJ P2).
+    static func rowPassages(for founds: [TableLookup.Found], documentStore: DocumentStore) -> [AnswerSourceMemory.Retrieved] {
+        var out: [AnswerSourceMemory.Retrieved] = []
+        for found in founds {
+            let table = found.source.table
+            let wanted = Set(found.rows.compactMap { TableRowPassage.sentence(for: $0, in: table) })
+            out += documentStore.passages(figure: table.label, documentIds: [found.source.documentId], limit: Int.max)
+                .filter { $0.kind == .tableRow && wanted.contains($0.text) }
+                .map {
+                    AnswerSourceMemory.Retrieved(documentId: $0.documentId, documentName: $0.documentName,
+                                                 chunkIndex: $0.chunkIndex, page: $0.page, section: $0.section, text: $0.text)
+                }
+        }
+        return out
+    }
+
     /// What "show me the table" opens next: the cited pages, each marking the row it was read from.
     private func noteForShowing(_ outcome: TableLookup.Outcome, session: FieldSessionService,
                                 documentStore: DocumentStore) {
@@ -107,16 +124,8 @@ final class TableLookupTool: NativeTool {
         switch outcome {
         case .found(let found):
             let table = found.source.table
-            let rowPassages = documentStore.passages(figure: table.label, documentIds: [found.source.documentId],
-                                                     limit: Int.max)
-                .filter { $0.kind == .tableRow }
-            let wanted = Set(found.rows.compactMap { TableRowPassage.sentence(for: $0, in: table) })
-            let rows = rowPassages.filter { wanted.contains($0.text) }.map {
-                AnswerSourceMemory.Retrieved(documentId: $0.documentId, documentName: $0.documentName,
-                                             chunkIndex: $0.chunkIndex, page: $0.page, section: $0.section, text: $0.text)
-            }
             session.sourceCenter.noteTableLookup(
-                rows: rows,
+                rows: Self.rowPassages(for: [found], documentStore: documentStore),
                 citations: TableLookup.citations(documentName: found.source.documentName, label: table.label,
                                                  pages: TableLookup.pages(of: found)),
                 sessionId: sessionId)

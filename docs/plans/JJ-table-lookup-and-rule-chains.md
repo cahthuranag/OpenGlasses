@@ -11,7 +11,14 @@ when a number falls between them, and a question back when the words fit more th
 column, table or book; a question naming a table ranks that table first; "show me the table"
 opens the cited page with the row marked. Measured privately: row passages cost the code book one
 question (hit@1 / hit@4 0.39 / 0.56 → 0.38 / 0.55), all of it through the table route; cell
-correctness not yet measured (see "What shipped in P1"). P2–P4 not built.
+correctness not yet measured (see "What shipped in P1"). 🚧 P2 built 2026-10-20 (draft PR): an
+organisation writes rule chains in its vault's `chains.md` — `ask`, `lookup` (row or cell, rule
+`exact`, `at_least` or `at_most`), `calc`, `convert`, `check`, `cite`, `say` — checked line by line
+at import, with a chain naming a table the vault lacks warned of and kept; `rule_chain` runs one
+step at a time with the current question in the prompt, stops at a step it cannot complete with
+the page to show, and files the read-back, a citation per step, on the job as a reading; cable
+sizing both ways and voltage drop ship as the invented example (see "What shipped in P2"). P3–P4
+not built.
 Decisions confirmed 2026-10-20. Field Assist first; every phase is a headless core with the live
 edge last. Written for the partner's electricians, whose stated priority
 after the first round of code-book testing is **table lookup**: "those tables contain much of the
@@ -370,7 +377,7 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   the book for the partner's electrician to check, and is unchecked; P1 does not score against it,
   and the rate of single-cell questions answered from the right cell is owed once it is checked.
 
-### P2 — Rule chains, authored
+### P2 — Rule chains, authored 🚧 (built 2026-10-20, draft PR)
 
 - **`chains.md` in the vault.** Each chain is a heading with a short declarative body: `ask` steps
   (what to ask the technician, with units and plausible range), `lookup` steps (table by label,
@@ -397,6 +404,111 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   expected size and inverse to the expected verdict; `at_least` and `at_most` pick the right rows;
   a missing table stops the chain with the page shown; the read-back names every step with its
   citation; a chain that names a table the vault lacks is reported at import.
+
+#### What shipped in P2 (2026-10-20)
+
+- **`chains.md` (`ChainDefinition`, `ChainParser`, `VaultChains`, `Sources/Services/Vault/`).** A core
+  file the organisation writes by hand and lists in `files`. Each chain is a `##` heading (its
+  name), an `Answers:` line (else its first line of prose), and steps one per line in a fenced
+  block, as list items, or indented. The vocabulary, as the parser accepts it:
+
+  ```text
+  ask <name> (<unit>) range <a>..<b>: <what to ask>      a number; unit and range optional
+  ask <name> (text): <what to ask>                        words, no range
+  lookup <name> = <table> row <row> [column <column>] rule <exact|at_least|at_most>
+  lookup <name> = <table> column <column> cell <number> rule <exact|at_least|at_most>
+  calc <name> [(<unit>)] = <expression>                   + - * / ( ), names and numbers
+  convert <name> = <name, or a number with its unit> to <unit>
+  check <expression> <op> <expression> ? "<if true>" : "<if false>"   <, <=, >, >=, ==, !=
+  cite <the rule as printed>                              attaches to the step above
+  say "<sentence with {name}>"
+  ```
+
+  Names are identifiers, set once, used only after the step that sets them. `{name}` fills a
+  value into a row, a column, a cell number or a sentence; a lookup's value also has `{name.row}`,
+  `.column`, `.table`, `.page` and `.next` (the row printed after it, with its cell), and any value
+  `{name.unit}`. The table is named as printed, never from a value, so the import can check it.
+  `exact` takes the row whose key is the number or a printed range that holds it; `at_least` that
+  row, else the first above; `at_most` that row, else the last below; in the `cell` form the
+  smallest cell at or above, the largest at or below. Problems name their line and chain (unknown
+  step, a step that does not read, a range that runs backwards, a name used before it is set or set
+  twice, an attribute a value does not have, an unknown rule or unit, `cite` with nothing above
+  it, a chain that says nothing, an unclosed block); a chain with a problem is not offered.
+  `ChainParser.render` writes chains back, and a file round-trips. `chains.md` is left out of the
+  prompt's core text and of the model index: the session offers its chains by name instead.
+- **At import.** `VaultValidator.chainIssues`: a step that does not read is an issue
+  (`chains.md line N: <chain>: …`) and refuses the import, as a procedure that does not decode
+  does. A chain naming a table that no manual in the vault prints is a warning, and the chain is
+  kept; `rule_chain list` marks it "needs Table N", and it stops at that step. The labels are every
+  caption the PDF table reader finds, read or not (`PDFTableReader.Result.stored`), so a table
+  stored as a failure counts as present and the chain stops on it with its page. The validator
+  reads the PDFs' tables only when a chain names a table. The vault guide has a new section,
+  "Tables and chains (optional)", after Step 4, with the vocabulary, the row rules, what the import
+  says, the three example chains and a read-back. The import table in "If the import refuses"
+  gains its two messages. The section is unnumbered so the later steps other plans cite keep their
+  numbers; the site page and PDF are regenerated.
+- **`ChainRunner` (pure).** `advance(chain, state:, answer:, tables:) -> ChainStep` runs lookups,
+  arithmetic, conversions, checks and sentences as it reaches them and returns at every `ask`
+  (`.ask`, with why the last answer was not taken), at the end (`.finished`) or where it could not
+  go on (`.stopped(ChainStop)`: the reason, the step, and the table page as a `Source:` line and
+  citations when there is one). It stops on a table that is not there, one whose grid was not read
+  (with its page), a row or column that does not resolve, a number between two rows under `exact`,
+  an empty cell, a lookup whose column is not named on a table with several, arithmetic that fails,
+  and a value that is words where a number is needed. A stopped chain stays stopped. An answer that
+  is not a number, or is outside the range, is asked again and never taken; a unit the converter
+  knows said in place of the asked one (°F for °C) is converted, and the read-back says what was
+  said. `ChainState` holds each value with its number, text, unit, the step that made it and its
+  source (said, a lookup's cell with its row, column, notes, page and citation, a calculation with
+  the numbers it ran on, a conversion). `TableLookup` gained `resolveTable` (factored out of
+  `resolve`), `resolve(_:rule:in:)`, `search(_:value:rule:in:)` and `nextRow`. Arithmetic goes
+  through `ArithmeticExpression`, a small parser in doubles which `calculate` now uses too, in place
+  of `NSExpression`. That parser raised an uncatchable exception on "2 +" and divided whole numbers
+  as whole numbers (7 / 2 was 3). `convert` goes through `UnitConversionTool.convert`. Numbers are
+  said to two places and handed to a lookup to six. A cell is said as printed.
+- **`rule_chain` tool.** `list`, `start` (by name, or words of it, asking which when several
+  fit), `answer`, `status`, `stop`. It needs an open job. The current question, what it needs and
+  the values so far are in the system prompt (`ACTIVE RULE CHAIN — …`, beside the active
+  procedure). With no chain running, the prompt names the chains the vault offers and what each
+  answers. A chain that finishes or stops files its read-back on the job as a reading
+  (`chain: <name>`, method `rule_chain`, the steps with their citations as the value), attached
+  where a spoken reading is. One the technician stops files nothing. The work record prints these
+  under "Rule chains worked on this job:", every step, apart from the readings the technician
+  said. A spoken correction never lands on one, and the on-device prompt's last reading skips them.
+  Each lookup's citation is noted the way `table_lookup`'s is (`TableLookupTool.rowPassages`), so
+  "show me the table" opens the pages with the rows marked, and the tool's reply ends with the
+  `Source:` lines. Registered in `FieldToolProfile.names`, `.local()` in `ToolEffectClassification`,
+  `list` and `status` as reads in `ActivityTitler`, local in `OfflineToolPolicy`, and **not** in
+  `AppleOnDeviceToolSet` (decision 7).
+- **The shipped example** (`RuleChainFixtures`, the guide's example, held equal by a test): size a
+  conductor for a load (load, ambient, conductors in the run, rating group → Table 90 band
+  `exact` → Table 98 factor `at_least` on the ambient band → corrected load → Table 99 `cell`
+  `at_least` in the rating group's column → the size); check an installed conductor (its size and
+  the same inputs → its rating `exact` × the factor → "carries it", or "does not carry it, the next
+  row is …"); voltage drop (feet converted to metres, Table 97's drop, two `calc` steps, a `check`
+  against a limit the example sets). All over invented tables: P0's Tables 99, 98 and 97 and a new
+  invented Table 90 of grouping bands (`TableFixtureLayouts.groupingBands`). The rule numbers
+  (`Rule QR-12` and so on) are invented.
+- **Tests (invented fixtures).** `RuleChainTests` (18): the fixture tables extract; the schema
+  round-trips; a list reads as a fenced block; bad steps reported by line (unknown step, a range
+  backwards, used before set, an unknown rule, `cite` first, nothing said, set twice, an attribute
+  on an ask, an unclosed block); forward to QMX90 with two conductors; inverse to "does not carry
+  it, the next row is …" and to "carries it"; voltage drop with its conversion; `at_least` and
+  `at_most` on ranges, between rows, below and above every row, and in a column, and `exact`
+  stopping between rows with the page; an out-of-range or non-number answer asked again; °F
+  converted to °C; an unread table stopping with its page and an absent one without; a column the
+  table lacks stopping with its page; the read-back line by line with every citation and `Source:`
+  line; the evaluator and `calculate`; the on-device set offering `table_lookup` and not
+  `rule_chain`; the guide's example equal to the fixture. `RuleChainSessionTests` (4), over an
+  imported invented book: a chain naming a table the vault lacks is warned of at import, kept and
+  marked in `list`; a bad step refuses the import with its line; a chain run on the job by the tool
+  (the prompt carrying the current step and the asked-again note, `status`), its read-back filed as
+  a reading and printed in the work record, never corrected by a spoken correction, and its tables
+  opened by "show me"; a stopped chain filed with why, a stopped-by-the-technician chain filing
+  nothing; an unknown name, a second start, and no job.
+- **Not known yet.** How an electrician gets on writing a chain from the guide, and whether the
+  model asks the questions in its own words without supplying values. Both are device and partner
+  checks. A running chain is held in memory, so a relaunch mid-chain loses it (nothing is filed
+  until it ends). The partner's own chains are written outside the repo (decision 3).
 
 ### P3 — Chains the model proposes, the technician runs, the organisation keeps
 

@@ -104,6 +104,20 @@ enum TableFixtureLayouts {
         return items
     }
 
+    // MARK: - Words in the cells
+
+    /// Table 90 (Plan JJ P2): which band of Table 98 a number of conductors in a run falls in —
+    /// a range key and a cell of words, which a rule chain reads into Table 98's column.
+    static func groupingBands() -> Page {
+        var items = [caption("TABLE 90 Grouping bands")]
+        items += row(90, [("Conductors in run", 50), ("Band", 220)], bold: true)
+        let body: [[String]] = [["1-3", "Band A"], ["4-6", "Band B"], ["7-9", "Band C"]]
+        for (index, cells) in body.enumerated() {
+            items += row(106 + Double(index) * 14, zip(cells, [50, 220]).map { ($0, $1) })
+        }
+        return items
+    }
+
     // MARK: - A table continued over two pages
 
     /// Table 96 over two pages: the second page's caption reads "(Continued)" and repeats the

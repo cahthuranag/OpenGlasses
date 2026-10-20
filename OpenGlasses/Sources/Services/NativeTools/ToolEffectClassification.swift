@@ -110,6 +110,10 @@ extension FitnessCoachingTool { var executionSemantics: ToolExecutionSemantics {
 extension GolfModeTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 extension CaptureFlowTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 extension ProcedureRunnerTool { var executionSemantics: ToolExecutionSemantics { .local() } }
+/// Reads the vault's chains and tables; `start`, `answer` and `stop` move the job's running chain,
+/// and a finished or stopped chain files its read-back on the job as a reading (Plan JJ P2).
+/// `list` and `status` only read, but the row is the strongest action's.
+extension RuleChainTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 extension BadgeScanTool { var executionSemantics: ToolExecutionSemantics { .local() } }
 extension LiveCoachTool {
     var executionSemantics: ToolExecutionSemantics { .local(idempotency: .intrinsic) }

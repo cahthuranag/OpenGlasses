@@ -10,7 +10,7 @@
 <meta name="description" content="How to build a Field Assist vault from your own manuals, import it on the iPhone, test it and share it.">
 <!-- Converted from docs/field-assist-vault-guide.md by Scripts/build-vault-guide-page.py. That file
      is the source: change the guide there and run the script again, rather than editing this page.
-     source-sha256: 91ef12c8502afe0318c896e220226010c2760a10370f060b85086f6eeca19a05 -->
+     source-sha256: e1a8c9f7e0a8513a08f3b2dc92afff118b25fa7e7edf464235cfe5a09f39f19c -->
 <link rel="stylesheet" href="/assets/site.css">
 <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
 </head>
@@ -296,7 +296,7 @@ is the honest answer.</p>
 </tr>
 <tr>
 <td><code>trades</code></td>
-<td>Optional. The trades this vault is for: <code>refrigeration_hvac</code>, <code>electrical</code>. Each trade adds its own tiles to the Field Assist grid on phones whose default vault is this one — <code>refrigeration_hvac</code> adds <strong>Read Gauges</strong> and <strong>P-T Lookup</strong>; <code>electrical</code> adds none yet. The technician's own choice in Settings › Field Assist › Trade, then the organisation's, comes first; the vault's is used when neither has chosen. A value the app does not know is ignored, not refused, so you can list a trade a newer version will understand. Omit it to leave the choice to the technician.</td>
+<td>Optional. The trades this vault is for: <code>refrigeration_hvac</code>, <code>electrical</code>. Each trade adds its own tiles to the Field Assist grid on phones whose default vault is this one — <code>refrigeration_hvac</code> adds <strong>Read Gauges</strong> and <strong>P-T Lookup</strong>; <code>electrical</code> adds no tiles yet. A trade also decides which calculations the assistant offers: the refrigerant ones are refrigeration's and voltage drop is electrical's, so a phone set to one trade only does not offer the other's. The technician's own choice in Settings › Field Assist › Trade, then the organisation's, comes first; the vault's is used when neither has chosen. A value the app does not know is ignored, not refused, so you can list a trade a newer version will understand. Omit it to leave the choice to the technician.</td>
 </tr>
 </tbody>
 </table>
@@ -391,7 +391,7 @@ is the honest answer.</p>
 <tr>
 <td><code>calc</code></td>
 <td><code>calc corrected (A) = load / factor</code></td>
-<td>Arithmetic over earlier values: <code>+ - * /</code> and brackets, with the unit of the result.</td>
+<td>Arithmetic over earlier values: <code>+ - * /</code>, brackets and <code>sqrt( )</code>, with the unit of the result.</td>
 </tr>
 <tr>
 <td><code>convert</code></td>
@@ -492,6 +492,27 @@ check percent &lt;= 4.5 ? &quot;The drop is {volts} V, {percent} % of {supply} V
 Result: Use QMX90 › two conductors: rated 45 A in rating group 2, …
 </code></pre>
 <p>Each page in it opens from the answer's source chips, with the row marked where the page lets it be found.</p>
+<h3 id="voltage-drop-in-a-chain-and-on-its-own">Voltage drop, in a chain and on its own</h3>
+<p>Voltage drop is arithmetic, so a chain writes it out in a <code>calc</code> step over named values: the current and the one-way length as the technician says them, and the conductor's resistance per unit length, or a factor and the conductor's area, as your own book's table prints them. Nothing in the app supplies a resistance, a factor or a limit; the chain looks it up or asks for it.</p>
+<pre><code class="language-text">single-phase run         calc volts (V) = 2 * current * length * resistance
+three-phase run          calc volts (V) = sqrt(3) * current * length * resistance
+a factor over the area   calc volts (V) = 2 * factor * current * length / area
+as a share of the supply calc percent (%) = volts / supply * 100
+</code></pre>
+<p>Keep the length and the resistance in the same length unit: with the length in metres and a resistance per km, divide by 1000 (<code>2 * current * length * resistance / 1000</code>); the same for feet and a resistance per 1000 ft. <code>sqrt(3)</code> is for a three-phase run measured line to line. A factor and its area must be in matching units too: Ω·mm²/m over mm², or Ω·cmil/ft over circular mils. The resistance usually comes from a lookup just before:</p>
+<pre><code class="language-text">lookup resistance = Table 96 row {size} column Resistance rule exact
+cite Rule QR-30
+calc volts (V) = 2 * current * length * resistance / 1000
+</code></pre>
+<p>The same calculation without a chain is the assistant's voltage-drop calculator: <em>"what's the drop on a 30 m single-phase run at 20 A?"</em> It needs the phase, the current, the one-way length in metres or feet, and the conductor's resistance (per km, m, 1000 ft or ft) or a factor with the conductor's area, and it asks for whichever is missing rather than assuming one. It answers with the drop in volts and, given the supply voltage, as a percentage of it, says every input back, and says that it counts resistance only, not reactance or power factor. It is the same arithmetic as the <code>calc</code> lines above, so a chain and the calculator give the same number for the same inputs.</p>
+<h3 id="the-electrical-starter">The electrical starter</h3>
+<p>The app ships an <strong>Electrical Service</strong> vault, offered beside the refrigeration and IT vaults in Settings › Field Assist. It holds a <code>safety.md</code> (isolate, lock off, prove dead, never guess a rating), an <code>error_codes.md</code> and a <code>parts.md</code> with nothing in them yet, and a <code>chains.md</code> holding the step vocabulary and the worked example above, renamed "Example: …" and commented, so the first chain file an electrician opens already parses. It declares the <code>electrical</code> trade. It ships no standard's text, no table and no rule, and it lists its example chains as needing Tables 90, 98, 99 and 97 until a book that prints tables with those labels is loaded.</p>
+<p>To make it your organisation's vault with your own code books, start from its folder in the app's public repository, which also holds a <code>manifest.json</code> and a <code>documents/</code> folder with a note:</p>
+<pre><code>git clone --depth 1 https://github.com/straff2002/OpenGlasses.git
+cp -R OpenGlasses/OpenGlasses/Sources/Resources/Vaults/electrical my-electrical-vault
+</code></pre>
+<p>Give the manifest your own <code>id</code> and <code>name</code>, put your licensed code PDFs in <code>documents/</code> and list each under <code>documents</code> with the title your electricians use for it, replace the example chains with your own, and import the folder the usual way. Every table a chain reads is extracted on the phone from your copy, and none of it leaves the phone.</p>
+<p><strong>Check the chains before the vault travels.</strong> On a Mac, <code>Scripts/chains-validate/run.sh my-electrical-vault</code> reads your PDFs' tables as the import does and prints, by line, every step that does not read and every lookup whose table, row or column is not in the tables it found, and whether the manifest lists <code>chains.md</code>. Its README explains each line. It prints names only from your chains file, never from the book, so its output can go to whoever writes the chains.</p>
 <h3 id="when-no-chain-answers-a-proposed-chain">When no chain answers: a proposed chain</h3>
 <p>The technician does not need to know which rules apply. For a question about a table or a rule that none of your chains answers, the assistant first looks up the clauses in your loaded books, then proposes a chain in the same syntax, built only from what those passages say: a <code>cite</code> line on every lookup and every check, and the passage each lookup came from. The app checks the proposal before the technician hears it, and refuses one that cites nothing, a lookup or check with no <code>cite</code>, a lookup whose passage was not retrieved on the job, or a rule the retrieved passages do not contain, which is a rule the assistant brought from memory. A lookup naming a table your manuals do not print is kept and marked "needs Table N", as an authored chain's is.</p>
 <p>The technician hears the proposal read back step by step, each step with its rule and its passage, marked "proposed, unreviewed". Then they say go, change a step ("ask me the ambient instead"), or stop. Nothing runs before go. A proposed chain runs through the same runner as yours, and its read-back goes on the job record marked "proposed, unreviewed", with the passages it was built from.</p>

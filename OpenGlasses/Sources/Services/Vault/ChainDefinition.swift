@@ -380,6 +380,17 @@ enum ChainParser {
         return (problems.isEmpty ? chain : nil, problems)
     }
 
+    /// One `lookup` step line read on its own ("lookup band = Table 90 row {n} column Band rule
+    /// exact"), as `parse` reads it, or nil when it is not a lookup that reads. For a checker that
+    /// looks at every lookup in a file, those in a chain with a problem elsewhere included
+    /// (`Scripts/chains-validate`).
+    static func lookupStep(_ text: String) -> ChainDefinition.Lookup? {
+        guard case .success(.step(.lookup(let lookup))) = parseStep(text.trimmingCharacters(in: .whitespaces)) else {
+            return nil
+        }
+        return lookup
+    }
+
     private enum Parsed1 {
         case step(ChainDefinition.Kind)
         case cite(String)

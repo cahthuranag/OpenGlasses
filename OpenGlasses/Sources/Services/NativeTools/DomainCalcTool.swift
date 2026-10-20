@@ -18,6 +18,13 @@ import Foundation
 /// (`InstrumentPlausibility.refrigerantBand`), so an out-of-band value is asked again rather than
 /// answered, and with a job open the pressure and line temperature are recorded as spoken readings
 /// with the refrigerant and its source, once per call.
+///
+/// **Voltage drop** (Plan JJ P4) is its electrical domain: `voltage_drop` over [[VoltageDrop]], from
+/// the phase, the current, the one-way length and the conductor's resistance per unit length (or a
+/// factor and the conductor's area), in metric or imperial units, with every input said back. No
+/// resistance, factor or limit is built in; a missing one is refused. The trade gate takes the
+/// tool's operations by trade (`FieldTradeGate.operationTrades`): the saturation math is
+/// refrigeration's and voltage drop is electrical's.
 @MainActor
 final class DomainCalcTool: NativeTool {
     let name = "domain_calc"
@@ -30,14 +37,20 @@ final class DomainCalcTool: NativeTool {
     Gauge pressure assumes sea level unless altitude_ft or altitude_m is given. Never assume the \
     refrigerant: take it from the nameplate or ask. Use superheat/subcool for values the technician \
     says when refrigerant_gauges has no usable picture: a pressure implausible for the refrigerant is \
-    asked again, and with a job open the spoken pressure and line temperature are recorded.
+    asked again, and with a job open the spoken pressure and line temperature are recorded. \
+    'voltage_drop' (electrical): the drop along a run from 'phase' ('single' or 'three'), 'current_a', the \
+    one-way length ('length_m' or 'length_ft') and the conductor's resistance per unit length \
+    ('resistance_ohm_per_km', '_per_m', '_per_1000ft' or '_per_ft'), or a factor with the conductor's area \
+    ('k_factor_ohm_mm2_per_m' with 'area_mm2', or 'k_factor_ohm_cmil_per_ft' with 'area_cmil'); 'supply_v' \
+    adds the drop as a percentage. The resistance or factor comes from the technician or a table in the \
+    organisation's own book, never from memory; never assume the phase or a resistance.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
         "properties": [
             "operation": [
                 "type": "string",
-                "description": "'pt_lookup', 'superheat', or 'subcool'."
+                "description": "'pt_lookup', 'superheat', or 'subcool' (refrigerant); 'voltage_drop' (electrical)."
             ],
             "refrigerant": [
                 "type": "string",
@@ -125,9 +138,26 @@ final class DomainCalcTool: NativeTool {
                 "type": "string",
                 "enum": ["cooling", "heating", "refrigeration"],
                 "description": "For 'superheat'/'subcool', what the system is doing if the technician said: comfort cooling, heat pump heating, or refrigeration. Narrows the plausibility check."
-            ]
+            ],
+            "phase": [
+                "type": "string",
+                "enum": ["single", "three"],
+                "description": "For 'voltage_drop': a single-phase or a three-phase run. Never assumed."
+            ],
+            "current_a": ["type": "number", "description": "For 'voltage_drop': the current the run carries (A)."],
+            "length_m": ["type": "number", "description": "For 'voltage_drop': the run's one-way length (m)."],
+            "length_ft": ["type": "number", "description": "For 'voltage_drop': the run's one-way length (ft)."],
+            "resistance_ohm_per_km": ["type": "number", "description": "For 'voltage_drop': conductor resistance (Ω/km)."],
+            "resistance_ohm_per_m": ["type": "number", "description": "For 'voltage_drop': conductor resistance (Ω/m)."],
+            "resistance_ohm_per_1000ft": ["type": "number", "description": "For 'voltage_drop': conductor resistance (Ω per 1000 ft)."],
+            "resistance_ohm_per_ft": ["type": "number", "description": "For 'voltage_drop': conductor resistance (Ω/ft)."],
+            "k_factor_ohm_mm2_per_m": ["type": "number", "description": "For 'voltage_drop' instead of a resistance: the factor (Ω·mm²/m), with 'area_mm2'."],
+            "area_mm2": ["type": "number", "description": "For 'voltage_drop': the conductor's area (mm²), with 'k_factor_ohm_mm2_per_m'."],
+            "k_factor_ohm_cmil_per_ft": ["type": "number", "description": "For 'voltage_drop' instead of a resistance: the factor (Ω·cmil/ft), with 'area_cmil'."],
+            "area_cmil": ["type": "number", "description": "For 'voltage_drop': the conductor's area (circular mils), with 'k_factor_ohm_cmil_per_ft'."],
+            "supply_v": ["type": "number", "description": "For 'voltage_drop': the supply voltage, for the drop as a percentage."]
         ],
-        "required": ["operation", "refrigerant"]
+        "required": ["operation"]
     ]
 
     private let bundle: Bundle
@@ -145,8 +175,9 @@ final class DomainCalcTool: NativeTool {
 
     func execute(args: [String: Any]) async throws -> String {
         guard let operation = (args["operation"] as? String)?.lowercased() else {
-            return "Specify 'operation': 'pt_lookup', 'superheat', or 'subcool'."
+            return "Specify 'operation': 'pt_lookup', 'superheat', or 'subcool' (refrigerant), or 'voltage_drop' (electrical)."
         }
+        if operation == "voltage_drop" { return Self.voltageDrop(args) }
         guard let rawRefrigerant = (args["refrigerant"] as? String)?.trimmingCharacters(in: .whitespaces),
               !rawRefrigerant.isEmpty else {
             return "Specify 'refrigerant' (e.g. 'R-410A'), from the nameplate or the technician. It is never assumed."
@@ -186,7 +217,59 @@ final class DomainCalcTool: NativeTool {
                                    site: site, absolute: absolute, spoken: Self.spokenContext(args))
 
         default:
-            return "Unknown operation '\(operation)'. Use 'pt_lookup', 'superheat', or 'subcool'."
+            return "Unknown operation '\(operation)'. Use 'pt_lookup', 'superheat', 'subcool', or 'voltage_drop'."
+        }
+    }
+
+    // MARK: - Voltage drop (Plan JJ P4)
+
+    /// The drop along a run, or what is missing. Every input is the technician's or a table's in
+    /// the organisation's own book; none is assumed.
+    nonisolated static func voltageDrop(_ args: [String: Any]) -> String {
+        guard let phase = (args["phase"] as? String).flatMap(VoltageDrop.Phase.init(words:)) else {
+            return "Specify 'phase': 'single' or 'three'. The phase is never assumed: ask the technician."
+        }
+        guard let current = number(args["current_a"]) else {
+            return "Specify 'current_a', the current the run carries in amps."
+        }
+        let length: (Double, VoltageDrop.LengthUnit)
+        if let metres = number(args["length_m"]) { length = (metres, .metres) }
+        else if let feet = number(args["length_ft"]) { length = (feet, .feet) }
+        else { return "Specify the run's one-way length, 'length_m' or 'length_ft'." }
+
+        let resistances: [(String, VoltageDrop.ResistanceUnit)] = [
+            ("resistance_ohm_per_km", .ohmsPerKilometre), ("resistance_ohm_per_m", .ohmsPerMetre),
+            ("resistance_ohm_per_1000ft", .ohmsPerThousandFeet), ("resistance_ohm_per_ft", .ohmsPerFoot),
+        ]
+        var conductor: VoltageDrop.Conductor?
+        for (key, unit) in resistances {
+            if let value = number(args[key]) { conductor = .resistance(value, unit); break }
+        }
+        if conductor == nil {
+            if let k = number(args["k_factor_ohm_mm2_per_m"]) {
+                guard let area = number(args["area_mm2"]) else {
+                    return "A factor in Ω·mm²/m needs the conductor's area in mm² ('area_mm2'). It is never assumed."
+                }
+                conductor = .factor(k, .ohmSquareMillimetresPerMetre, area: area)
+            } else if let k = number(args["k_factor_ohm_cmil_per_ft"]) {
+                guard let area = number(args["area_cmil"]) else {
+                    return "A factor in Ω·cmil/ft needs the conductor's area in circular mils ('area_cmil'). It is never assumed."
+                }
+                conductor = .factor(k, .ohmCircularMilsPerFoot, area: area)
+            }
+        }
+        guard let conductor else {
+            return "Specify the conductor's resistance per unit length ('resistance_ohm_per_km', 'resistance_ohm_per_m', "
+                + "'resistance_ohm_per_1000ft' or 'resistance_ohm_per_ft'), or a factor with the conductor's area "
+                + "('k_factor_ohm_mm2_per_m' with 'area_mm2', or 'k_factor_ohm_cmil_per_ft' with 'area_cmil'), as the "
+                + "technician gives it or a table in the organisation's own book prints it. No resistance or factor is "
+                + "assumed: ask, or look it up with table_lookup."
+        }
+        let input = VoltageDrop.Input(phase: phase, current: current, length: length.0, lengthUnit: length.1,
+                                      conductor: conductor, supply: number(args["supply_v"]))
+        switch VoltageDrop.compute(input) {
+        case .success(let output): return VoltageDrop.render(output)
+        case .failure(.notPositive(let name)): return "The \(name) must be a number above zero."
         }
     }
 
@@ -488,7 +571,7 @@ final class DomainCalcTool: NativeTool {
     private static let altitudeRefusal =
         "The altitude is outside what the correction accepts (−500 m to 6,000 m, about −1,640 ft to 19,690 ft)."
 
-    private static func number(_ value: Any?) -> Double? {
+    nonisolated private static func number(_ value: Any?) -> Double? {
         let parsed: Double?
         if let d = value as? Double { parsed = d }
         else if let i = value as? Int { parsed = Double(i) }

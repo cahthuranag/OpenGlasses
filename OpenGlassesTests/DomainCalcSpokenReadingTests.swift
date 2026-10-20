@@ -135,7 +135,9 @@ final class DomainCalcSpokenReadingTests: XCTestCase {
         let properties = try XCTUnwrap(tool.parametersSchema["properties"] as? [String: Any])
         XCTAssertNotNil(properties["refrigerant_source"])
         XCTAssertNotNil(properties["application"])
-        XCTAssertEqual(tool.parametersSchema["required"] as? [String], ["operation", "refrigerant"],
+        // Only the operation is required since voltage drop (Plan JJ P4), which takes no refrigerant;
+        // the refrigerant operations still refuse without one.
+        XCTAssertEqual(tool.parametersSchema["required"] as? [String], ["operation"],
                        "the new arguments are optional")
     }
 }

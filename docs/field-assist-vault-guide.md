@@ -210,7 +210,7 @@ This is the whole file for the folder above.
 | `prompt_rules` | The rules the assistant follows while this vault is active. |
 | `source_attribution_*` | Forces a source line on every factual claim drawn from the core files. |
 | `sites` | Optional. The site documents, one JSON file per site under `sites/` — see **Describing a site system** below. Omit it if you have none; a vault without it imports exactly as before. |
-| `trades` | Optional. The trades this vault is for: `refrigeration_hvac`, `electrical`. Each trade adds its own tiles to the Field Assist grid on phones whose default vault is this one — `refrigeration_hvac` adds **Read Gauges** and **P-T Lookup**; `electrical` adds none yet. The technician's own choice in Settings › Field Assist › Trade, then the organisation's, comes first; the vault's is used when neither has chosen. A value the app does not know is ignored, not refused, so you can list a trade a newer version will understand. Omit it to leave the choice to the technician. |
+| `trades` | Optional. The trades this vault is for: `refrigeration_hvac`, `electrical`. Each trade adds its own tiles to the Field Assist grid on phones whose default vault is this one — `refrigeration_hvac` adds **Read Gauges** and **P-T Lookup**; `electrical` adds no tiles yet. A trade also decides which calculations the assistant offers: the refrigerant ones are refrigeration's and voltage drop is electrical's, so a phone set to one trade only does not offer the other's. The technician's own choice in Settings › Field Assist › Trade, then the organisation's, comes first; the vault's is used when neither has chosen. A value the app does not know is ignored, not refused, so you can list a trade a newer version will understand. Omit it to leave the choice to the technician. |
 
 > **The importer refuses a manifest whose rules do not mention fabrication and citation.** Your `prompt_rules` must include a rule containing the word *fabricate* and one containing *cite*. The rules above satisfy that; reword them freely as long as those two words survive.
 >
@@ -289,7 +289,7 @@ Add a core file called `chains.md` and list it in `files` like any other core fi
 | `ask` | `ask load (A) range 1..400: What load will the circuit carry, in amps?` | Asks the technician for a value, with its unit and the range you accept. An answer outside the range, or one that is not a number, is asked again; it is never taken. A temperature or a length said in another unit the app knows (°F for °C, feet for metres) is converted, and the read-back says what was said. `(text)` asks for words instead, such as a size as the table prints it, and takes no range. |
 | `lookup` … `row` | `lookup factor = Table 98 row {ambient} column Rating group {group} › {band} rule at_least` | Reads one cell: the table by its number as printed, the row by its heading or a number, and the column by its heading, or a path of headings joined with `›`. |
 | `lookup` … `cell` | `lookup size = Table 99 column Rating group {group} cell {corrected} rule at_least` | Searches one column for a number and takes the row whose cell meets it, which is how a table of ratings gives a size. |
-| `calc` | `calc corrected (A) = load / factor` | Arithmetic over earlier values: `+ - * /` and brackets, with the unit of the result. |
+| `calc` | `calc corrected (A) = load / factor` | Arithmetic over earlier values: `+ - * /`, brackets and `sqrt( )`, with the unit of the result. |
 | `convert` | `convert metres = length to m` | Converts an earlier value, which has to carry its unit, to another unit. |
 | `check` | `check capacity >= load ? "carries it" : "does not carry it"` | Compares two values (`<`, `<=`, `>`, `>=`, `==`, `!=`) and says one of two sentences. The verdict goes in the read-back. |
 | `cite` | `cite Rule QR-14` | The rule the step above follows, written as your book prints it. The app does not read or check it. It carries the text into the read-back. |
@@ -381,6 +381,42 @@ Result: Use QMX90 › two conductors: rated 45 A in rating group 2, …
 ```
 
 Each page in it opens from the answer's source chips, with the row marked where the page lets it be found.
+
+### Voltage drop, in a chain and on its own
+
+Voltage drop is arithmetic, so a chain writes it out in a `calc` step over named values: the current and the one-way length as the technician says them, and the conductor's resistance per unit length, or a factor and the conductor's area, as your own book's table prints them. Nothing in the app supplies a resistance, a factor or a limit; the chain looks it up or asks for it.
+
+```text
+single-phase run         calc volts (V) = 2 * current * length * resistance
+three-phase run          calc volts (V) = sqrt(3) * current * length * resistance
+a factor over the area   calc volts (V) = 2 * factor * current * length / area
+as a share of the supply calc percent (%) = volts / supply * 100
+```
+
+Keep the length and the resistance in the same length unit: with the length in metres and a resistance per km, divide by 1000 (`2 * current * length * resistance / 1000`); the same for feet and a resistance per 1000 ft. `sqrt(3)` is for a three-phase run measured line to line. A factor and its area must be in matching units too: Ω·mm²/m over mm², or Ω·cmil/ft over circular mils. The resistance usually comes from a lookup just before:
+
+```text
+lookup resistance = Table 96 row {size} column Resistance rule exact
+cite Rule QR-30
+calc volts (V) = 2 * current * length * resistance / 1000
+```
+
+The same calculation without a chain is the assistant's voltage-drop calculator: *"what's the drop on a 30 m single-phase run at 20 A?"* It needs the phase, the current, the one-way length in metres or feet, and the conductor's resistance (per km, m, 1000 ft or ft) or a factor with the conductor's area, and it asks for whichever is missing rather than assuming one. It answers with the drop in volts and, given the supply voltage, as a percentage of it, says every input back, and says that it counts resistance only, not reactance or power factor. It is the same arithmetic as the `calc` lines above, so a chain and the calculator give the same number for the same inputs.
+
+### The electrical starter
+
+The app ships an **Electrical Service** vault, offered beside the refrigeration and IT vaults in Settings › Field Assist. It holds a `safety.md` (isolate, lock off, prove dead, never guess a rating), an `error_codes.md` and a `parts.md` with nothing in them yet, and a `chains.md` holding the step vocabulary and the worked example above, renamed "Example: …" and commented, so the first chain file an electrician opens already parses. It declares the `electrical` trade. It ships no standard's text, no table and no rule, and it lists its example chains as needing Tables 90, 98, 99 and 97 until a book that prints tables with those labels is loaded.
+
+To make it your organisation's vault with your own code books, start from its folder in the app's public repository, which also holds a `manifest.json` and a `documents/` folder with a note:
+
+```
+git clone --depth 1 https://github.com/straff2002/OpenGlasses.git
+cp -R OpenGlasses/OpenGlasses/Sources/Resources/Vaults/electrical my-electrical-vault
+```
+
+Give the manifest your own `id` and `name`, put your licensed code PDFs in `documents/` and list each under `documents` with the title your electricians use for it, replace the example chains with your own, and import the folder the usual way. Every table a chain reads is extracted on the phone from your copy, and none of it leaves the phone.
+
+**Check the chains before the vault travels.** On a Mac, `Scripts/chains-validate/run.sh my-electrical-vault` reads your PDFs' tables as the import does and prints, by line, every step that does not read and every lookup whose table, row or column is not in the tables it found, and whether the manifest lists `chains.md`. Its README explains each line. It prints names only from your chains file, never from the book, so its output can go to whoever writes the chains.
 
 ### When no chain answers: a proposed chain
 

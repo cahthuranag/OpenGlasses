@@ -14,9 +14,10 @@ final class VaultRegistry {
 
     /// Manifests bundled with the app. Edit this list to add new vault packs.
     ///
-    /// None declares `trades` yet: the refrigeration vault is every Field Assist install's default,
-    /// so declaring a trade here would put that trade's tiles on nearly every technician's grid.
-    /// The technician, the organisation or an authored vault turns a trade on.
+    /// Only the electrical starter declares `trades`: the refrigeration vault is every Field Assist
+    /// install's default, so declaring a trade there would put that trade's tiles on nearly every
+    /// technician's grid. The technician, the organisation or an authored vault turns a trade on;
+    /// the electrical starter is chosen as a default only by an electrician, and says so.
     nonisolated private static let builtInManifests: [VaultManifest] = [
         VaultManifest(
             id: "refrigeration",
@@ -67,6 +68,34 @@ final class VaultRegistry {
             sourceAttributionFormat: "Source: {files}",
             sourceAttributionRequired: true
         ),
+        // The electrical starter (Plan JJ P4): safety rules, empty fault-code and parts files, and
+        // a `chains.md` holding the schema and the guide's invented example, so an electrician
+        // starts from a file that parses. No standard's text, no table and no rule ships in it
+        // (Plan JJ decision 1, Plan IN decision 6); its folder's `manifest.json` is the same vault
+        // as a template an organisation copies, adds its own code PDFs to and imports.
+        VaultManifest(
+            id: VaultRegistry.electricalStarterId,
+            name: "Electrical Service",
+            version: "1.0.0",
+            files: [
+                "safety.md",
+                "error_codes.md",
+                "parts.md",
+                "chains.md"
+            ],
+            proceduresDir: nil,
+            gating: .init(iap: "field_assist_electrical"),
+            promptRules: [
+                "Never fabricate a rating, a conductor size, a table value, a rule, a fault code or a procedure.",
+                "Use only the vault contents, the retrieved passages of the organisation's own code books and manuals, and the technician's stated observations.",
+                "Cite the rule, the table or the manual page on every factual claim; a value from a table names its table, row, column and page.",
+                "Never guess a rating, a size, a setting or a limit: if the loaded books do not give it, say so and recommend checking the printed book or escalating.",
+                "Before any step that opens a panel or an enclosure, remind the technician to isolate the supply, lock it off and prove it dead with a tester checked on a known source, and to follow the organisation's own safety rules."
+            ],
+            sourceAttributionFormat: "Source: {files}",
+            sourceAttributionRequired: true,
+            trades: ["electrical"]
+        ),
         VaultManifest(
             id: "health",
             name: "Personal Health Vault",
@@ -114,6 +143,9 @@ final class VaultRegistry {
         )
     ]
 
+    /// The bundled electrical starter's id; its resources are `Vaults/electrical/`.
+    nonisolated static let electricalStarterId = "electrical"
+
     /// User-installed (Plan H) manifests, loaded from the import registry. Cached; call
     /// `reloadUserManifests()` after an import/uninstall.
     private var userManifests: [VaultManifest] = VaultImporter.installedManifests()
@@ -153,7 +185,7 @@ final class VaultRegistry {
         switch iap {
         case "medical_compliance":
             return StoreKitService.shared.isMedicalComplianceActive
-        case "field_assist_refrigeration", "field_assist_it":
+        case "field_assist_refrigeration", "field_assist_it", "field_assist_electrical":
             return FieldAssistEntitlement.shared.isGranted
         case "enterprise":
             // A vault of the reader's own (Plan H). Gated on the capability, not a tier: a

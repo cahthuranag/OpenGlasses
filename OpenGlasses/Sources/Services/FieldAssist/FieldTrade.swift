@@ -136,13 +136,33 @@ enum FieldTradeSetting {
 /// - General job tools and tiles, and vault content, are never gated: only what `toolTrades`
 ///   names is.
 enum FieldTradeGate {
-    /// The tools that belong to one trade. `domain_calc` is here whole: every operation it has —
-    /// `pt_lookup`, `superheat`, `subcool` — is refrigerant saturation math, so there is no general
-    /// function to keep visible. General arithmetic is `calculate`/`convert_units`, never gated.
+    /// The tools that belong wholly to one trade. General arithmetic is `calculate`/`convert_units`,
+    /// never gated.
     static let toolTrades: [String: FieldTrade] = [
         "refrigerant_gauges": .refrigerationHVAC,
-        "domain_calc": .refrigerationHVAC,
     ]
+
+    /// Tools whose operations belong to different trades (Plan JJ P4): `domain_calc`'s saturation
+    /// math — `pt_lookup`, `superheat`, `subcool` — is refrigeration's, and its `voltage_drop` is
+    /// electrical's. Such a tool is offered while any of its trades is, and a call is redirected by
+    /// its operation, so an electrician has voltage drop without the refrigerant operations and a
+    /// refrigeration technician the other way round. An operation not listed is the tool's to
+    /// answer (it says it does not know it).
+    static let operationTrades: [String: [String: FieldTrade]] = [
+        "domain_calc": [
+            "pt_lookup": .refrigerationHVAC, "superheat": .refrigerationHVAC,
+            "subcool": .refrigerationHVAC, "subcooling": .refrigerationHVAC,
+            "voltage_drop": .electrical,
+        ],
+    ]
+
+    /// The trades a tool belongs to: one for a whole-trade tool, its operations' for a split one,
+    /// nil for a general tool.
+    static func trades(ofTool name: String) -> Set<FieldTrade>? {
+        if let trade = toolTrades[name] { return [trade] }
+        if let operations = operationTrades[name] { return Set(operations.values) }
+        return nil
+    }
 
     /// Whether `trade`'s surfaces are offered under `activeTrades`.
     static func isAvailable(_ trade: FieldTrade, activeTrades: [FieldTrade]) -> Bool {
@@ -154,16 +174,31 @@ enum FieldTradeGate {
         FieldTrade.allCases.filter { !isAvailable($0, activeTrades: activeTrades) }
     }
 
-    /// `names` without the tools of hidden trades, order kept.
+    /// `names` without the tools of hidden trades, order kept. A tool split by operation stays
+    /// while any of its trades is offered.
     static func allowedToolNames(_ names: [String], activeTrades: [FieldTrade]) -> [String] {
         guard !activeTrades.isEmpty else { return names }
-        return names.filter { name in toolTrades[name].map { isAvailable($0, activeTrades: activeTrades) } ?? true }
+        return names.filter { name in
+            trades(ofTool: name).map { $0.contains { isAvailable($0, activeTrades: activeTrades) } } ?? true
+        }
     }
 
-    /// The answer to a call that reaches a hidden trade's tool, or nil when the tool is offered.
-    static func redirect(forTool name: String, activeTrades: [FieldTrade]) -> String? {
-        guard let trade = toolTrades[name], !isAvailable(trade, activeTrades: activeTrades) else { return nil }
-        return redirectMessage(trade)
+    /// The answer to a call that reaches a hidden trade's tool — or, for a tool split by operation,
+    /// a hidden trade's operation — or nil when the call may run.
+    static func redirect(forTool name: String, operation: String? = nil, activeTrades: [FieldTrade]) -> String? {
+        if let trade = toolTrades[name] {
+            return isAvailable(trade, activeTrades: activeTrades) ? nil : redirectMessage(trade)
+        }
+        if let operations = operationTrades[name] {
+            if let trades = trades(ofTool: name), !trades.contains(where: { isAvailable($0, activeTrades: activeTrades) }) {
+                // No trade of the tool is on: the tool itself is off, whatever the operation.
+                return redirectMessage(trades.sorted { $0.rawValue < $1.rawValue }[0])
+            }
+            let key = operation?.lowercased().trimmingCharacters(in: .whitespaces) ?? ""
+            guard let trade = operations[key], !isAvailable(trade, activeTrades: activeTrades) else { return nil }
+            return redirectMessage(trade)
+        }
+        return nil
     }
 
     static func redirectMessage(_ trade: FieldTrade) -> String {
@@ -182,7 +217,7 @@ enum FieldTradeGate {
         case .refrigerationHVAC:
             return "superheat, subcooling, a pressure-temperature (P-T) lookup or reading refrigerant gauges"
         case .electrical:
-            return nil   // No electrical tool exists yet (Plans IN and IR).
+            return "a voltage drop calculation"
         }
     }
 

@@ -1054,7 +1054,7 @@ struct FieldAssistSettingsView: View {
     // MARK: - Entitlement UI
 
     /// IAP identifiers a Field Assist entitlement unlocks (mirror of VaultRegistry's gating cases).
-    private static let fieldAssistIAPs: Set<String> = ["field_assist_refrigeration", "field_assist_it", "enterprise"]
+    private static let fieldAssistIAPs: Set<String> = ["field_assist_refrigeration", "field_assist_it", "field_assist_electrical", "enterprise"]
 
     /// Field-Assist-gated vaults, for the locked preview surface.
     private var fieldAssistVaults: [VaultManifest] {

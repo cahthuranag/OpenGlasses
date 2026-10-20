@@ -367,3 +367,7 @@ generation ends. This plan was checked for an unbuilt phase that owns the fix an
 P5 are end-of-turn, local time-to-first-token, pre-roll and measurement), so the work is drafted as
 Plan [HZ](HZ-direct-mode-sentence-streamed-speech.md). Nothing here changes: HZ's acceptance test is
 this plan's signed `ttsLeadIn` going negative on streamed Direct turns, read through P1's cohorts.
+
+**2026-10-21:** HZ P0 + P1 are built behind a default-off flag; a streamed turn now stamps
+`ttsRequested` and `firstAudio` at its first sentence. HZ P2 (device numbers through this plan's
+cohorts) is owed.

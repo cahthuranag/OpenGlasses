@@ -1,7 +1,12 @@
 # Plan JJ — Table Lookup and Rule Chains (a cell from the book, and the rules that use it, chained)
 
-**Status:** 📝 Drafted 2026-10-20 — nothing implemented. Field Assist first; every phase is a
-headless core with the live edge last. Written for the partner's electricians, whose stated priority
+**Status:** 🚧 P0 shipped 2026-10-20: a captioned table in an organisation's own loaded PDF is
+extracted at import into rows, header paths, cells (number, unit, footnote markers) and notes,
+stored beside the document's passages, and each row is searchable as a passage; stored manuals get
+their tables by the location migration. The private measurement could not run: the loaded test
+copy is a text extraction with no PDF beside it (see "What shipped in P0"). P1–P4 not built.
+Decisions confirmed 2026-10-20. Field Assist first; every phase is a headless core with the live
+edge last. Written for the partner's electricians, whose stated priority
 after the first round of code-book testing is **table lookup**: "those tables contain much of the
 information electricians actually need", with cable sizing as the example — select a conductor for a
 load and an installation, or check whether an existing cable's size and type are right — which "can
@@ -68,7 +73,7 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   aggregates. Every fixture in this plan is invented, with invented table numbers, designations and
   values, and nothing in a test, comment or plan is a fact from a book.
 
-## Decisions proposed (owner to confirm)
+## Decisions (confirmed 2026-10-20)
 
 1. **Tables are extracted on the phone from the organisation's own loaded PDF, at import.** The app
    ships a table extractor and no tables. A vault pack, export, bundle or link never carries an
@@ -107,7 +112,7 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
 
 ## Phases (one PR each)
 
-### P0 — A table as data (headless core)
+### P0 — A table as data (headless core) ✅ (2026-10-20)
 
 - **Positioned text.** `VaultDocumentExtractor` gains, for each page, the words with their
   bounds (`PDFPage.characterBounds(at:)` over the page's attributed string, grouped into words and
@@ -144,6 +149,85 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   tables. Measured privately on the loaded test book and reported as aggregates: the share of
   captioned tables that extract to a consistent grid, by table, with the failures classified
   (merged cells, rotated headers, no text layer).
+
+#### What shipped in P0 (2026-10-20)
+
+- **Positioned words, only where a table is.** `PDFTableReader` reads a page's words with their
+  boxes from PDFKit (`PDFPage.selection(for:)` over each run of non-space characters in the page's
+  string, cut where the type size changes so a raised footnote digit stays apart from its number),
+  and only for a page whose text mentions a table. `characterBounds(at:)` was tried first and
+  dropped: its index does not count the newlines PDFKit's own string contains, so boxes drift a
+  character per line. Positions live only while the page is read. `VaultDocumentExtractor.extract`
+  is untouched, so chunk text, page separators and labels are byte-for-byte what they were. The
+  reader builds on macOS too, so a measurement reads a PDF exactly as an import does.
+- **`TableExtractor` (pure, `Sources/Services/Vault/`).** Positioned words and a page in, one
+  outcome per caption out: a `ManualTable` or a `Failure` (`no_text_layer`, `caption_not_found`,
+  `too_few_rows`, `varying_column_count`, `merged_cells`, `rotated_headers`). The caption is read
+  off the positioned lines with the rule `ManualStructure.caption` applies to typed lines (bold,
+  `TABLE N`), so the label and the chunk's `figure` agree (a test holds the two rules together);
+  this replaces the typed-lines input the bullet above names. The header is the leading run of
+  bold lines under the caption and its title, and the body runs until a note, a paragraph or a
+  wide gap. Columns are the union of the body cells' horizontal extents over the rows with the
+  modal cell count, and must come out as many as those rows have cells. More than 15 % of rows
+  off the grid refuses the page. A header phrase heads the columns whose centres fall in its
+  region (its extent widened symmetrically to the midpoint with its neighbours), which makes a
+  group heading a path level ("Rating group 2 › 75"). Leading text-only columns are row headers,
+  and a row header printed once is carried down to the rows that leave it blank. A single phrase
+  alone at the left heads a row group. Cells keep their printed text and parse a number (decimal
+  comma, thousands separator, typeset minus) and a unit, their own or their column's bracketed
+  one. Markers (`*`, daggers, raised digits, `(a)`) are kept on the cell, and notes under the
+  table are kept with their markers. A "(Continued)" caption merges into the previous page's table
+  of the same label when the column count agrees, each row keeping its own page. A continuation
+  with nothing before it stays marked `continues`.
+- **Storage.** `doc_tables` (document id, index, label, pages, the table as JSON) is written at
+  import beside the chunks. `forget`, the checked forget, `clear(namespace:)` and `clearAll` take
+  it. The tables come from the document when it is a PDF, else from the original a text import
+  was made from when the vault carries it; with neither, the import logs `tables_no_pdf` and goes
+  on. `locationVersion` 2 → 3: `PassageLocationMigration` reads the same PDF for stored vault
+  documents and adds their tables through `DocumentStore.replaceTables`. Text chunks are compared
+  without the row passages and only re-located when unchanged, so their ids, text and embeddings
+  stay as they were. A recognised manual is still left alone.
+- **Never leaves the phone.** Tables live only in the document store, which no export, pack,
+  bundle or link path reads. A test imports a vault with a table, exports it and finds none of its
+  values in any exported file, and a source scan holds the exporter and the pack, link, archive
+  and publisher files away from the table types.
+- **Row passages.** `TableRowPassage` renders each body row as one sentence ("Table 99 (Conductor
+  ratings), row QXRT, three conductors: 30 in Rating group 1, 35 in Rating group 2, 40 in Rating
+  group 3 — page 12", the printed page when known). Each is stored as a chunk of the new
+  `DocumentChunker.Kind.tableRow` (`table_row`) with `figure` set, numbered after the document's
+  own text and embedded the normal way, at most 400 per table, with what the cap left out logged
+  as a count. The rows are searched by the token route (as before, all kinds), and also by
+  `query` and `passages(sharingTermsWith:)`, whose default kinds are now prose and table rows.
+  They are left out of the document's own text (`fullText`, `pageTexts`, the stored text the
+  clause and back-of-book detectors read). They cite their table ("Manual, page 12, Table 99"),
+  and the model is told "(table row, Table 99, page 12)". `FigureAutoOpenPolicy` gains
+  `PassageKind.tableRow`: attached to the model on a question, opened only when the technician
+  asks for the page, never by a number. `ManualPassageLimit` is unchanged.
+- **Tests (32, invented fixtures).** `TableExtractorTests` (21): a simple grid, a two-level
+  header, units in the header and in a cell, footnotes and notes, a continued table merged (and a
+  lone continuation kept apart), a figure drawing, a drawing under a table caption, a caption over
+  prose, an empty page, merged cells refused, the caption rule agreeing with
+  `ManualStructure.caption`, cell parsing, row sentences and the cap, JSON round trip. The PDF
+  tests draw the same layouts into a real PDF and read them through PDFKit: printed page labels,
+  a merge across two PDF pages, raised footnote digits, and a scanned page counted as having no
+  text layer. `TableStorageTests` (11): stored at ingest after the text, found by token, figure,
+  terms and query, capped with the table kept whole, forgotten and cleared, migrated without
+  touching the text chunks (and a second launch idle), read from a text import's original, a
+  text-only import skipped, imported then exported with no value in the export, the source scan,
+  the auto-open policy, and the citation.
+- **Measured privately: not run.** The loaded test copy on the Mac is a text extraction of the
+  book with no PDF beside it, and a text file has no word positions. Nothing in it was opened.
+  `Scripts/table-extract-eval/` is the runner for when the PDF is there: it compiles
+  `PDFTableReader` and `TableExtractor` unchanged and prints only counts (captions, extracted,
+  failures by class, pages without text, and row and column distributions). The same limit holds
+  on the phone, and it matters for the partner's test: a vault that carries the code book only as
+  extracted text gets no tables until its original PDF is added beside it.
+- **Not known yet.** How many of a real book's tables come out as a grid, and whether the grids
+  are right. A consistent grid is not a correct one, and checking that needs an answer key of
+  cells, which P1's measurement adds. The row passages add candidates to every manual search in a
+  vault with tables; their effect on IV's code-book numbers is unmeasured until a PDF is loaded.
+  "Show me" on a row passage opens its page unmarked ("The passage couldn't be marked on this
+  page."), because the row sentence is the app's text, not the page's. Marking the row is P1.
 
 ### P1 — `table_lookup`, and "show me the table"
 

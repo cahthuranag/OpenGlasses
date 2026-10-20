@@ -1,7 +1,7 @@
 # Plan ID: Hardening Bundle from the October 2026 Ecosystem Review
 
-**Status:** 🚧 Item 1 shipped 2026-10-10 (PR #704); item 7 built 2026-10-19 as Plan FG's P1a (PR #788); items
-2 to 6 and 8 unbuilt. A checklist plan: each item is its own small,
+**Status:** 🚧 Item 1 shipped 2026-10-10 (PR #704); item 4 built 2026-10-21 ([#812](https://github.com/straff2002/OpenGlasses/pull/812)); item 7 built
+2026-10-19 as Plan FG's P1a (PR #788); items 2, 3, 5, 6 and 8 unbuilt. A checklist plan: each item is its own small,
 direct PR with a test, in any order, and is ticked here (with its PR number) when it merges. Item 7
 is tracked in Plan [FG](FG-workflow-vaults-and-enterprise-auth.md) and only referenced here.
 **Origin:** The [October 2026 ecosystem review](../ecosystem-review-2026-10.md), sections 3 and 4
@@ -25,7 +25,7 @@ string a user sees; this file's checklist and the index row updated in the same 
   done 2026-10-10, [#704](https://github.com/straff2002/OpenGlasses/pull/704).
 - [ ] **2. Broadcast frame pacing on a deadline** (S, Plan [CY](CY-broadcast-resilience-and-quality.md)'s surface).
 - [ ] **3. Web mirror page sized to the device and quiet while hidden** (XS, Plan [BP](BP-web-hud-mirror.md)).
-- [ ] **4. Gateway hosts typed without a scheme** (S).
+- [x] **4. Gateway hosts typed without a scheme** (S): done 2026-10-21, [#812](https://github.com/straff2002/OpenGlasses/pull/812).
 - [ ] **5. A second cloud voice from the OpenAI key** (S-M).
 - [ ] **6. `framegate-probe` replay script** (S).
 - [x] **7. OAuth single-flight refresh, failure classes and a forced refresh on 401** (S): tracked
@@ -119,6 +119,35 @@ The settings field shows the normalised form after editing so the wearer sees wh
 100.64 address, `.local`, `*.ts.net` with and without port, explicit `https://`, trailing slash,
 whitespace) and one `EndpointPolicy` case showing a normalised cleartext public host is still
 refused.
+
+**Built 2026-10-21 ([#812](https://github.com/straff2002/OpenGlasses/pull/812)).** As specified, with these details. The pure core is
+`GatewayAddress` (`Services/Security/GatewayAddress.swift`): `normalise(_:defaultPort:)` returns the
+URL or nil for empty or malformed input, `components(_:defaultPort:)` splits scheme, host, port and
+the rest, and `fieldValues(host:port:webSocket:)` gives what a host field with a port field beside
+it shows after editing. The ranges are not copied: `URLFetchGuard` now has one classifier,
+`hostClass(_:)` (loopback, link-local, private network, shared address space, `.local` name,
+reserved, public), and `isBlockedHost` is "anything but public", so its answers are unchanged. A
+port typed in the host wins over the port field, and the caller's default port counts as a port
+for the `*.ts.net` rule (a gateway's LAN host always has one, so `box.tailnet.ts.net` there is
+`http://box.tailnet.ts.net:18789`, and the same name as a tunnel host is `https://`). Applied at
+`GatewayConfig.lanURL`/`tunnelURL` (so the bridge, the connection test, the event stream's tunnel
+leg and the gateway list all see it), the legacy single-gateway path in `OpenClawBridge`,
+`Config.homeAssistantURL` (on save and on read, so a value saved earlier is covered; nothing else
+sets it) and `HermesBridgeProtocol.endpointURL`. The LAN, tunnel, Home Assistant and Hermes host
+fields show the normalised form on Return, and the gateway editor also on Save; a port typed in the
+LAN or Hermes host moves into the port field, and the scheme stays in the host field so a choice
+made because of the port survives. Something that is not an address is passed through unchanged, so
+`EndpointPolicy` still names what is wrong with it. Two deviations: port 443 is `https` wherever it
+is (a `*.ts.net` name with `:443` is `tailscale serve` itself, not the server behind it); and the
+Hermes host ignores a typed path and refuses an address carrying a user name, since the bridge is a
+socket on `/`. Known limit: in a release build `EndpointPolicy` still refuses cleartext to a name it
+cannot prove private, so a dot-less name (`nuc`) or a `*.ts.net` name with a port normalises to
+`http` and is then refused as cleartext (the error now names cleartext rather than a scheme the
+wearer did not type); an IP address, a `.local` name or an explicit `https://` works. Widening the
+policy to trust those names is a separate decision. Tests: `GatewayAddressTests` (the table, the
+Hermes split, the field values, the gateway and Home Assistant call sites, and the classifier),
+`EndpointPolicyTests.testANormalisedCleartextPublicHostIsStillRefusedInRelease` and
+`HermesBridgeProtocolTests.testEndpointURLAcceptsAPastedAddressAndChoosesWSS`.
 
 ## 5 · A second cloud voice from the OpenAI key
 

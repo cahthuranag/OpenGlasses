@@ -109,6 +109,28 @@ final class EndpointPolicyTests: XCTestCase {
         }
     }
 
+    /// Choosing a scheme for a typed host never widens the rule: a cleartext address to a host
+    /// the policy cannot prove private is refused in release exactly as if it had been typed in
+    /// full (Plan ID item 4).
+    func testANormalisedCleartextPublicHostIsStillRefusedInRelease() {
+        let typed = ["http://example.com:8123", "box.tailnet.ts.net:8443", "nuc"]
+        for raw in typed {
+            guard let normalised = GatewayAddress.normalise(raw, defaultPort: 8123) else {
+                return XCTFail("\(raw) did not normalise")
+            }
+            XCTAssertTrue(normalised.hasPrefix("http://"), normalised)
+            for route: NetworkRoute in [.homeAssistantCommand, .openClawBridgeRequest, .gatewayConnectionTest] {
+                guard case .cleartextHTTPNotPermitted? =
+                        EndpointPolicy.validate(normalised, for: route, build: .release).rejection else {
+                    return XCTFail("\(normalised) reached \(route.rawValue) in cleartext")
+                }
+            }
+        }
+        // …while a normalised private address is accepted on a local route, which is the point.
+        let lan = GatewayAddress.normalise("192.168.1.20", defaultPort: 8123) ?? ""
+        XCTAssertNil(EndpointPolicy.validate(lan, for: .homeAssistantCommand, build: .release).rejection)
+    }
+
     func testDebugBuildsKeepTheExistingDevelopmentLoop() {
         XCTAssertNil(EndpointPolicy.validate("http://example.com/x", for: .webSearch, build: .debug).rejection)
     }

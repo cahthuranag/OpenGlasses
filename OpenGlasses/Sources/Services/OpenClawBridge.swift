@@ -188,8 +188,10 @@ class OpenClawBridge: ObservableObject {
     private func resolveLegacyEndpoint() async -> String {
         let mode = Config.openClawConnectionMode
         let lanHost = Config.openClawLanHost.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let lanURL = "\(lanHost):\(Config.openClawPort)"
-        let tunnelURL = Config.openClawTunnelHost.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let lanURL = GatewayAddress.normalise(lanHost, defaultPort: Config.openClawPort)
+            ?? "\(lanHost):\(Config.openClawPort)"
+        let tunnelHost = Config.openClawTunnelHost.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let tunnelURL = GatewayAddress.normalise(tunnelHost) ?? tunnelHost
 
         switch mode {
         case .lan:

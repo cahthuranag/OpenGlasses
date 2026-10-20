@@ -383,6 +383,7 @@ struct EditGatewaySheet: View {
                             .textContentType(.URL)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
+                            .onSubmit(commitAddressFields)
                         TextField("Port", value: $gateway.port, format: .number)
                             .keyboardType(.numberPad)
                     }
@@ -392,6 +393,7 @@ struct EditGatewaySheet: View {
                             .textContentType(.URL)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
+                            .onSubmit(commitAddressFields)
                     }
                 } header: {
                     Text("Connection")
@@ -423,6 +425,7 @@ struct EditGatewaySheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        commitAddressFields()
                         onSave(gateway)
                         dismiss()
                     }
@@ -590,6 +593,18 @@ struct EditGatewaySheet: View {
         gateway.deviceToken = saved.deviceToken
         gateway.deviceId = saved.deviceId
         gateway.setupCode = saved.setupCode
+    }
+
+    /// Show the hosts as they will be used: a scheme added to a bare name, and a port typed in
+    /// the LAN host moved into the port field (`GatewayAddress`).
+    private func commitAddressFields() {
+        if let lan = GatewayAddress.fieldValues(host: gateway.lanHost, port: gateway.port) {
+            gateway.lanHost = lan.host
+            gateway.port = lan.port
+        }
+        if let tunnel = GatewayAddress.normalise(gateway.tunnelHost) {
+            gateway.tunnelHost = tunnel
+        }
     }
 
     private func testConnection() {

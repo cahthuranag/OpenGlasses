@@ -82,4 +82,29 @@ final class HermesBridgeProtocolTests: XCTestCase {
         )
         XCTAssertNil(HermesBridgeProtocol.endpointURL(host: "   ", port: 8765, token: nil))
     }
+
+    /// The host field takes a pasted address: a typed port wins over the port field, and the
+    /// scheme follows the gateway rule (`ws` on the wearer's network, `wss` for a public name), a
+    /// typed one mapped onto ws/wss.
+    func testEndpointURLAcceptsAPastedAddressAndChoosesWSS() {
+        let cases: [(host: String, port: Int, expected: String)] = [
+            ("nuc", 8765, "ws://nuc:8765/"),
+            ("nuc:9001", 8765, "ws://nuc:9001/"),
+            ("wss://box.tailnet.ts.net:443/", 8765, "wss://box.tailnet.ts.net:443/"),
+            ("https://bridge.example.com", 8765, "wss://bridge.example.com:8765/"),
+            ("http://10.0.0.4:7000", 8765, "ws://10.0.0.4:7000/"),
+            ("bridge.example.com", 8765, "wss://bridge.example.com:8765/"),
+            ("[fd12::5]:9000", 8765, "ws://[fd12::5]:9000/"),
+        ]
+        for testCase in cases {
+            XCTAssertEqual(
+                HermesBridgeProtocol.endpointURL(host: testCase.host, port: testCase.port, token: nil)?.absoluteString,
+                testCase.expected, testCase.host)
+        }
+        XCTAssertEqual(
+            HermesBridgeProtocol.endpointURL(host: "wss://box.tailnet.ts.net", port: 443, token: "t0k")?.absoluteString,
+            "wss://box.tailnet.ts.net:443/?token=t0k")
+        XCTAssertNil(HermesBridgeProtocol.endpointURL(host: "not a host", port: 8765, token: nil))
+        XCTAssertNil(HermesBridgeProtocol.endpointURL(host: "user@nuc", port: 8765, token: nil))
+    }
 }

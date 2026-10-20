@@ -767,6 +767,8 @@ struct ServicesSettingsView: View {
                     .onChange(of: haURL) { _, newValue in
                         Config.setHomeAssistantURL(newValue)
                     }
+                    // Show the address as it will be used, scheme included.
+                    .onSubmit { haURL = Config.homeAssistantURL }
 
                 SecretInputField(placeholder: "Long-Lived Access Token", text: $haToken)
                     .onChange(of: haToken) { _, newValue in

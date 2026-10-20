@@ -36,6 +36,7 @@ struct HermesBridgeSettingsView: View {
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
                     .onChange(of: host) { _, value in Config.setHermesBridgeHost(value) }
+                    .onSubmit(commitHost)
 
                 TextField("Port", text: $port)
                     .keyboardType(.numberPad)
@@ -80,5 +81,15 @@ struct HermesBridgeSettingsView: View {
         }
         .navigationTitle("Hermes Bridge")
         .ogFormStyle()
+    }
+
+    /// Show the host as it will be dialled: `ws://` or `wss://` in front, and a port pasted with
+    /// the host moved into the port field (`GatewayAddress`). Both fields save through their
+    /// `onChange`.
+    private func commitHost() {
+        let current = Int(port) ?? HermesBridgeProtocol.defaultPort
+        guard let values = GatewayAddress.fieldValues(host: host, port: current, webSocket: true) else { return }
+        host = values.host
+        port = String(values.port)
     }
 }

@@ -68,16 +68,22 @@ struct GatewayConfig: Codable, Identifiable, Equatable {
         OpenClawConnectionMode(rawValue: connectionMode) ?? .auto
     }
 
-    /// Build the LAN URL from host + port.
+    /// Build the LAN URL from host + port. A host typed without a scheme gets one from
+    /// `GatewayAddress` (`nuc` → `http://nuc:18789`), and a port typed in the host wins over
+    /// `port`. Something that is not an address at all is passed through as before, so
+    /// `EndpointPolicy` still names what is wrong with it.
     var lanURL: String {
         let host = lanHost.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !host.isEmpty else { return "" }
-        return "\(host):\(port)"
+        return GatewayAddress.normalise(host, defaultPort: port) ?? "\(host):\(port)"
     }
 
-    /// The tunnel URL (already includes port usually).
+    /// The tunnel URL (already includes port usually). A bare name gets a scheme the same way:
+    /// `box.tailnet.ts.net` → `https://box.tailnet.ts.net`.
     var tunnelURL: String {
-        tunnelHost.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let host = tunnelHost.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !host.isEmpty else { return "" }
+        return GatewayAddress.normalise(host) ?? host
     }
 
     /// True when there's a usable credential (shared token *or* a paired device token) and a

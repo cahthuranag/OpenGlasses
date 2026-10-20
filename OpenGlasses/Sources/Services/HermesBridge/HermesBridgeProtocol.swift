@@ -77,14 +77,18 @@ enum HermesBridgeProtocol {
     // MARK: - Endpoint
 
     /// ws://host:port/ with the bridge's optional `?token=` auth.
+    ///
+    /// The host field also takes a pasted `scheme://host:port`, `host:port` or bare host
+    /// (`GatewayAddress`): a port typed there wins over `port`, a typed `http(s)`/`ws(s)` scheme
+    /// is honoured as `ws`/`wss`, and otherwise the scheme follows the same rule as the gateway's:
+    /// `ws` on the wearer's own network, `wss` for a public name. A path typed after the host is
+    /// ignored (the bridge listens on `/`), and an address carrying a user name is refused.
     static func endpointURL(host: String, port: Int, token: String?) -> URL? {
-        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        var components = URLComponents()
-        components.scheme = "ws"
-        components.host = trimmed
-        components.port = port
-        components.path = "/"
+        guard let address = GatewayAddress.components(host, defaultPort: port),
+              address.userInfo == nil,
+              let resolvedPort = address.port,
+              var components = URLComponents(string: "\(address.webSocketScheme)://\(address.urlHost):\(resolvedPort)/")
+        else { return nil }
         if let token, !token.isEmpty {
             components.queryItems = [URLQueryItem(name: "token", value: token)]
         }

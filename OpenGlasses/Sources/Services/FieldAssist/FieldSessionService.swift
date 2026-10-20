@@ -46,6 +46,10 @@ final class FieldSessionService: ObservableObject {
     /// Id of the procedure currently running (nil when none). Published for UI.
     @Published private(set) var activeProcedureId: String?
 
+    /// The rule chain running on this job, if any (Plan JJ P2). Read through `activeChain`, which
+    /// holds it to the session it was started in.
+    var chainRun: ActiveChainRun?
+
     /// The drawing this turn points at, or nil when it points at none (Plan EK P2). Published so
     /// the phone can put the page in front of the technician while the model is still answering.
     @Published private(set) var stagedFigure: StagedFigure?
@@ -1633,6 +1637,10 @@ final class FieldSessionService: ObservableObject {
                 context = (context.map { $0 + "\n\n" } ?? "") + procedureContext
             }
         }
+        // The rule chain's current step, or the chains the vault offers (Plan JJ P2).
+        if let chains = chainPromptContext() {
+            context = (context.map { $0 + "\n\n" } ?? "") + chains
+        }
         if let continuity = continuityContext(turn: turn) {
             context = (context.map { $0 + "\n\n" } ?? "") + continuity
         }
@@ -2794,6 +2802,24 @@ final class FieldSessionService: ObservableObject {
         return reading
     }
 
+    /// Record a rule chain's read-back on the job as a reading (Plan JJ P2): "chain: <name>", the
+    /// steps with their citations as the value, worked by the chain rather than said. It attaches
+    /// where a spoken reading does — the task in progress, else the job.
+    @discardableResult
+    func recordChainReading(chain: String, readBack: String, at: Date = Date()) -> SpokenReading? {
+        let readBack = readBack.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let session = activeSession, !readBack.isEmpty else { return nil }
+        let reading = SpokenReading(quantity: "chain: \(chain)", value: readBack, unit: nil,
+                                    unitScope: session.continuityScope, taskId: session.activeTask?.id, at: at,
+                                    method: SpokenReading.ruleChainMethod)
+        mutateSession { $0.spokenReadings.append(reading) }
+        attachEvidence { evidence in
+            if !evidence.readings.contains(reading.id) { evidence.readings.append(reading.id) }
+        }
+        logReading(reading, kind: .readingRecorded)
+        return reading
+    }
+
     /// The refrigerant written down for the unit the job is on — from the nameplate, the
     /// technician or the unit's display — or nil. Never a default (Plan IS decision 3).
     var activeRefrigerant: DeviceIdentityField? {
@@ -2812,10 +2838,12 @@ final class FieldSessionService: ObservableObject {
                         page: String? = nil, at: Date = Date()) -> SpokenReading? {
         guard let session = activeSession else { return nil }
         let wanted = quantity?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let candidates = session.spokenReadings.filter { $0.unitScope == session.continuityScope }
-        let target = id.flatMap { id in session.spokenReadings.first { $0.id == id } }
+        // A chain's read-back is worked, not said: it is never what "no, 135" corrects.
+        let said = session.spokenReadings.filter { !$0.isRuleChain }
+        let candidates = said.filter { $0.unitScope == session.continuityScope }
+        let target = id.flatMap { id in said.first { $0.id == id } }
             ?? candidates.last { wanted == nil || wanted?.isEmpty == true || $0.quantity.lowercased() == wanted }
-            ?? session.spokenReadings.last
+            ?? said.last
         guard let target else { return nil }
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return nil }
@@ -2847,7 +2875,8 @@ final class FieldSessionService: ObservableObject {
             "unit": AnyCodable(reading.unit ?? ""),
             "equipment_scope": AnyCodable(reading.unitScope),
             "task_id": AnyCodable(reading.taskId ?? ""),
-            "reported_by": AnyCodable(reading.isInstrumentReading ? "instrument_reading" : "technician")
+            "reported_by": AnyCodable(reading.isInstrumentReading ? "instrument_reading"
+                                      : reading.isRuleChain ? SpokenReading.ruleChainMethod : "technician")
         ]
         if let method = reading.method { payload["method"] = AnyCodable(method) }
         if let photoId = reading.photoId { payload["photo_id"] = AnyCodable(photoId) }

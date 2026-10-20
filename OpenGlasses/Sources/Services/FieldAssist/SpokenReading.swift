@@ -65,8 +65,15 @@ struct SpokenReading: Codable, Equatable, Identifiable {
         case refrigerantSource = "refrigerant_source"
     }
 
+    /// The method recorded for a rule chain's read-back (Plan JJ P2): worked step by step from the
+    /// vault's tables and the technician's answers, not said as one value.
+    static let ruleChainMethod = "rule_chain"
+
     /// True when the value was read off a photographed instrument rather than said.
     var isInstrumentReading: Bool { method == Self.instrumentReadingMethod }
+
+    /// True when the value is a rule chain's read-back.
+    var isRuleChain: Bool { method == Self.ruleChainMethod }
 
     /// The same reading filed under another unit scope (a job split across two units).
     func movedToScope(_ scope: String) -> SpokenReading {

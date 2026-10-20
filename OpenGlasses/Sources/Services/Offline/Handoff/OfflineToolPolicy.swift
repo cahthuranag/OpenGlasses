@@ -82,6 +82,7 @@ enum OfflineToolPolicy {
         "reading_session": .local,
         "record_clip": .local,
         "reminder": .local,
+        "rule_chain": .local,             // runs over the phone's own tables and the job on it
         "save_location": .local,
         "save_note": .local,
         "scan_badge": .local,

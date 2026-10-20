@@ -381,10 +381,21 @@ struct WorkRecord: Codable, Equatable {
         }
 
         // As the technician reported them — each once, corrections folded in (Plan GB P3).
-        let chains = SpokenReadingLedger.chains(spokenReadings ?? [])
+        let reported = (spokenReadings ?? []).filter { !$0.isRuleChain }
+        let chains = SpokenReadingLedger.chains(reported)
         if !chains.isEmpty {
             lines.append("Readings reported by the technician:")
             lines.append(contentsOf: chains.map { "  " + SpokenReadingLedger.line(for: $0) })
+        }
+
+        // Rule chains worked on the job (Plan JJ P2): each read back step by step, with the table,
+        // row, column and page every lookup used and the rule each step follows.
+        let worked = (spokenReadings ?? []).filter(\.isRuleChain)
+        if !worked.isEmpty {
+            lines.append("Rule chains worked on this job:")
+            for reading in worked {
+                lines.append(contentsOf: reading.value.split(separator: "\n").map { "  " + $0 })
+            }
         }
 
         let used = partsUsed

@@ -139,7 +139,9 @@ struct VaultModelIndex: Equatable {
     // MARK: - Building
 
     init(store: VaultStore) {
-        self.init(vaultName: store.manifest.name, files: store.readAll())
+        // A chain's heading names what it answers, never a machine (Plan JJ P2).
+        self.init(vaultName: store.manifest.name,
+                  files: store.readAll().filter { !VaultChains.isChainsFile($0.filename) })
     }
 
     init(vaultName: String, files: [(filename: String, contents: String)]) {

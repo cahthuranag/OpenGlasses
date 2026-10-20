@@ -125,6 +125,14 @@ enum VaultValidator {
             }
         }
 
+        // Rule chains (Plan JJ P2). Only a vault that lists a chains.md reaches this.
+        let chainFiles = manifest.files.filter(VaultChains.isChainsFile)
+        if !chainFiles.isEmpty {
+            let chained = chainIssues(files: chainFiles, manifest: manifest, directory: directory)
+            issues.append(contentsOf: chained.issues)
+            warnings.append(contentsOf: chained.warnings)
+        }
+
         // Site documents (Plan HV). Only a manifest that lists them reaches this, so every vault
         // without them validates exactly as it did.
         if let sites = manifest.sites {
@@ -134,6 +142,51 @@ enum VaultValidator {
         }
 
         return Result(manifest: manifest, issues: issues, warnings: warnings)
+    }
+
+    /// A vault's rule chains: every step that does not read is an issue naming its line, as a
+    /// procedure that does not decode is; a chain that names a table none of the vault's manuals
+    /// prints is a warning — the chain is kept, `rule_chain list` marks it as needing the table,
+    /// and it stops at that step until a manual that prints it is loaded. A table whose caption was
+    /// found and whose grid could not be read counts as there: the chain stops on it with its page.
+    static func chainIssues(files: [String], manifest: VaultManifest,
+                            directory: URL) -> (issues: [String], warnings: [String]) {
+        var issues: [String] = []
+        var chains: [(file: String, chain: ChainDefinition)] = []
+        for file in files {
+            // A missing or empty file is already an issue above.
+            guard let contents = try? String(contentsOf: directory.appendingPathComponent(file), encoding: .utf8) else {
+                continue
+            }
+            let parsed = ChainParser.parse(contents)
+            issues.append(contentsOf: parsed.problems.map { "\(file) \($0.description)" })
+            chains += parsed.chains.map { (file, $0) }
+        }
+        let naming = chains.filter { !$0.chain.tableLabels.isEmpty }
+        guard !naming.isEmpty else { return (issues, []) }
+        let labels = tableLabels(manifest: manifest, directory: directory)
+        let warnings = naming.compactMap { entry -> String? in
+            let missing = entry.chain.missingTables(available: labels)
+            return missing.isEmpty ? nil : missingTablesWarning(file: entry.file, chain: entry.chain.name, missing: missing)
+        }
+        return (issues, warnings)
+    }
+
+    static func missingTablesWarning(file: String, chain: String, missing: [String]) -> String {
+        "\(file): the chain '\(chain)' needs \(missing.joined(separator: ", ")), which no manual in this vault prints "
+            + "as a table the app could find; the chain is kept, marked as needing it, and stops at that step"
+    }
+
+    /// The labels of every captioned table the vault's manuals print, read or not, as an import
+    /// stores them (`PDFTableReader.Result.stored`). Read only when a chain names a table.
+    static func tableLabels(manifest: VaultManifest, directory: URL) -> [String] {
+        manifest.documents.flatMap { document -> [String] in
+            let url = directory.appendingPathComponent(manifest.documentRelativePath(document))
+            let original = manifest.documentSourceRelativePath(document).map { directory.appendingPathComponent($0) }
+            guard let pdf = VaultDocumentExtractor.tablesSource(document: url, original: original),
+                  let result = VaultDocumentExtractor.tables(from: pdf) else { return [] }
+            return result.stored.map(\.label)
+        }
     }
 
     /// The `sites` list, each file on its own against the vault's own model index, then across the

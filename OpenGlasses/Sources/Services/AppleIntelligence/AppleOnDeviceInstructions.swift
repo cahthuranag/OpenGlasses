@@ -196,7 +196,8 @@ extension AppleOnDeviceInstructions.JobSummary {
                 }
             }
         let superseded = Set(session.spokenReadings.compactMap(\.supersedes))
-        lastReading = session.spokenReadings.last { !superseded.contains($0.id) }.map { reading in
+        // A rule chain's read-back is many lines with citations, not a reading to repeat here.
+        lastReading = session.spokenReadings.last { !superseded.contains($0.id) && !$0.isRuleChain }.map { reading in
             [reading.quantity, reading.value, reading.unit].compactMap { $0 }.filter { !$0.isEmpty }
                 .joined(separator: " ")
         }

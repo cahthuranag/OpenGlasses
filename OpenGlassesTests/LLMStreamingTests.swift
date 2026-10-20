@@ -429,6 +429,17 @@ final class GeminiTransientRetryAndPhotoFailureTests: XCTestCase {
         XCTAssertNil(LLMService.geminiRetryDelay(after: LLMError.invalidResponse("Gemini"), failures: 1))
     }
 
+    /// A tester's four 503 turns each waited the retry's whole timeout before the hop to ChatGPT,
+    /// which then answered in seconds. With another model in the chain, the hop is the retry.
+    func testNoInProviderRetryWhenTheCascadeHasAnotherModel() {
+        for status in [503, 429, 500] {
+            XCTAssertNil(LLMService.geminiRetryDelay(after: apiError(status), failures: 1, hasAlternative: true),
+                         "\(status) hops instead of retrying")
+            XCTAssertEqual(LLMService.geminiRetryDelay(after: apiError(status), failures: 1, hasAlternative: false), 1.0,
+                           "\(status) alone in the chain still gets its one retry")
+        }
+    }
+
     func testTheTurnTimeoutIsShorterThanTheSystemDefault() {
         XCTAssertEqual(LLMService.geminiTurnTimeout, 30)
         XCTAssertLessThan(LLMService.geminiTurnTimeout, URLRequest(url: URL(string: "https://test.invalid")!).timeoutInterval)

@@ -323,6 +323,12 @@ class LLMService: ObservableObject {
     private var onDeviceJobRouteSettled = false
     /// The sentence the cascade's routing owes the turn, for the configuration it routed to.
     private var pendingJobRouteNotice: (configId: String, notice: String)?
+    /// The lead the last cascade hopped away from and the model that answered, so the next turns
+    /// start there for a while instead of waiting out the same failure (`ModelCascadeMemory`).
+    var cascadeMemory = ModelCascadeMemory()
+    /// Set for the span of a cascading turn with more than one candidate: a provider's own
+    /// transient retry is skipped in favour of the hop (`geminiRetryDelay`).
+    private(set) var cascadeHasAlternative = false
 
     #if canImport(FoundationModels)
     /// The Apple `Tool` adapters for the tool names last offered, rebuilt when the names change
@@ -1426,13 +1432,24 @@ class LLMService: ObservableObject {
             }
         }
 
-        let candidates = ModelFallbackChain.candidates(
+        let chain = ModelFallbackChain.candidates(
             activeId: leadId, saved: Config.savedModels,
             fallbackOrder: Config.modelFallbackOrder, requiresVision: imageData != nil)
         // A photo needs a capable model even when the text-request fallback switch is off.
-        guard (Config.modelCascadeEnabled || imageData != nil), !candidates.isEmpty else {
+        guard (Config.modelCascadeEnabled || imageData != nil), !chain.isEmpty else {
             return try await send()
         }
+        // A lead the last turn hopped away from stays second for a while: the model that
+        // answered starts, so the wearer does not wait out the same failure every turn.
+        let now = Date()
+        let candidates = cascadeMemory.ordered(chain, lead: leadId, now: now)
+        if let first = candidates.first, first.id != chain.first?.id {
+            PrivacyLog.model(.cascadeLeadDeferred, configuration: PrivateIdentifier(first.id))
+        }
+        // With another model to hop to, a provider's own retry is a wait before the hop, so the
+        // hop is the retry (`geminiRetryDelay`).
+        cascadeHasAlternative = candidates.count > 1
+        defer { cascadeHasAlternative = false }
         if routeEvaluated {
             onDeviceJobRouteSettled = true
             pendingJobRouteNotice = routedNotice
@@ -1450,12 +1467,19 @@ class LLMService: ObservableObject {
             refreshActiveModel()
         }
 
-        return try await ModelCascade.run(
+        // How the chain left the lead (if it did) and which candidate's attempt returned, for
+        // the memory: a hop away from the lead followed by an answer elsewhere starts the hold.
+        var leadHop: ModelFallbackChain.FailureClass?
+        var attempting: String?
+        let response = try await ModelCascade.run(
             candidates: candidates,
             needs: .init(requiresVision: imageData != nil, isBackgrounded: backgrounded),
             maxAttempts: min(candidates.count, 4),
             isCancelled: { Task.isCancelled },
             onSwitch: { from, to, failure in
+                // Only a hop after the lead was actually tried counts; the driver's pre-attempt
+                // capability switch (a lead that cannot see the photo) is not the lead failing.
+                if from.id == leadId, attempting == leadId { leadHop = failure }
                 // Rewind the partial UI stream and log the hop; P2c narrates it out loud.
                 onStreamReset?()
                 PrivacyLog.model(.cascadeSwitched, configuration: PrivateIdentifier(to.id),
@@ -1464,6 +1488,7 @@ class LLMService: ObservableObject {
             },
             attempt: { [weak self] candidate in
                 guard let self else { throw LLMError.invalidConfiguration("LLM service released") }
+                attempting = candidate.id
                 // Start each attempt from the clean pre-turn history so a failed hop doesn't leave a
                 // dangling/duplicated turn, and point the active model at this candidate.
                 self.conversationHistory = historySnapshot
@@ -1472,6 +1497,8 @@ class LLMService: ObservableObject {
                 return try await send()
             }
         )
+        cascadeMemory.recordTurn(lead: leadId, answeredBy: attempting ?? leadId, hop: leadHop, now: Date())
+        return response
     }
 
     // MARK: - Plan-then-execute (Plan S)
@@ -3976,8 +4003,15 @@ class LLMService: ObservableObject {
     /// Only a service that said it was busy — 429, or a 5xx such as 503 UNAVAILABLE — and only
     /// once: a second failure goes to the cascade. A timeout is not retried here, since it has
     /// already spent the whole allowance; nor is a cancellation.
-    nonisolated static func geminiRetryDelay(after error: Error, failures: Int) -> Double? {
-        guard case LLMError.apiError(_, let status, _, _) = error,
+    ///
+    /// Not when the cascade has another model to go to either (`hasAlternative`): the retry gets
+    /// a fresh timeout on a service that just said it was unavailable, and a tester's 503 turns
+    /// each spent it in full before the hop — eight seconds to the 503, thirty more on the retry,
+    /// then ChatGPT answered in six. The hop to a different provider is the better retry.
+    nonisolated static func geminiRetryDelay(after error: Error, failures: Int,
+                                             hasAlternative: Bool = false) -> Double? {
+        guard !hasAlternative,
+              case LLMError.apiError(_, let status, _, _) = error,
               status == 429 || (500...599).contains(status) else { return nil }
         return RealtimeReconnect.Policy(maxAttempts: 1, maxBackoffSeconds: 2).delay(forAttempt: failures)
     }
@@ -3992,7 +4026,8 @@ class LLMService: ObservableObject {
                 return try await attempt()
             } catch {
                 failures += 1
-                guard let delay = Self.geminiRetryDelay(after: error, failures: failures) else { throw error }
+                guard let delay = Self.geminiRetryDelay(after: error, failures: failures,
+                                                        hasAlternative: cascadeHasAlternative) else { throw error }
                 PrivacyLog.model(.streamRetry, provider: PrivacyToken("gemini"), attempt: failures,
                                  seconds: delay, error: SafeErrorSummary(error))
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))

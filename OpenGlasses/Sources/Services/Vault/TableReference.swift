@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Recognised: "table 99", "Table 99", "tbl 99", "tbl. 99", "table no. 99", a number spoken as
 /// words ("table ninety-nine", "table one hundred and two"), and — only when the question says
-/// "table" — the words of one table's title ("the ratings table" for a table titled "Conductor
+/// "table" — every word of one table's title ("the conductor ratings table" for a table titled "Conductor
 /// ratings"). Not recognised: "table" with no number after it ("a table saw"), a table word
 /// inside another word ("timetable 9"), or a model number that happens to start with the letters
 /// ("TBL99X").
@@ -60,10 +60,14 @@ enum TableReference {
     ///
     /// The question must say "table" (or "tables"), so a question that merely uses a word some
     /// table's title uses ("what rating does this breaker need") is not sent to that table. Then a
-    /// title matches when the question holds at least half of the title's content words
-    /// ([[LexicalSupport]] terms, so "ratings" is "rating"), and at least one; the best match must
+    /// title matches when the question holds every one of the title's content words
+    /// ([[LexicalSupport]] terms, so "ratings" is "rating"), and at least two; the best match must
     /// be the only one, because two tables whose titles match equally well are a question to ask,
-    /// not one to route.
+    /// not one to route. Plan JJ P3 raised this from half the title and one word: a question that
+    /// shared half a table's title ranked the table's rows above the clause that answered it,
+    /// which cost the code book's answer key its one table-route question (measured privately:
+    /// hit@1 / hit@4 0.38 / 0.55 → 0.39 / 0.56, nothing else lost). A table named by its number
+    /// is unaffected.
     static func titled(in text: String, catalogue: [Entry]) -> String? {
         let words = text.lowercased().split { !$0.isLetter }.map(String.init)
         guard words.contains(where: { $0 == "table" || $0 == "tables" }) else { return nil }
@@ -74,7 +78,7 @@ enum TableReference {
             let title = LexicalSupport.contentTerms(entry.title)
             guard !title.isEmpty else { continue }
             let shared = asked.intersection(title).count
-            guard shared > 0, shared * 2 >= title.count else { continue }
+            guard shared >= 2, shared == title.count else { continue }
             if shared > best.score {
                 best = (shared, [entry.label])
             } else if shared == best.score {

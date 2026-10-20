@@ -235,8 +235,12 @@ final class TableLookupTests: XCTestCase {
         let catalogue = [TableReference.Entry(label: "Table 99", title: "Conductor ratings"),
                          TableReference.Entry(label: "Table 98", title: "Correction factors"),
                          TableReference.Entry(label: "Table 97", title: "Run lengths by size")]
-        XCTAssertEqual(TableReference.references(in: "what does the ratings table say for QXRT", catalogue: catalogue),
+        XCTAssertEqual(TableReference.references(in: "what does the conductor ratings table say for QXRT", catalogue: catalogue),
                        ["Table 99"])
+        // Plan JJ P3: every content word of the title, and at least two, or the question is not
+        // routed to the table — half a title ranked a table's rows over the clause that answered.
+        XCTAssertEqual(TableReference.references(in: "what does the ratings table say for QXRT", catalogue: catalogue), [],
+                       "half a title is not enough")
         XCTAssertEqual(TableReference.references(in: "check the correction factors table", catalogue: catalogue),
                        ["Table 98"])
         XCTAssertEqual(TableReference.references(in: "what rating does this conductor need", catalogue: catalogue), [],

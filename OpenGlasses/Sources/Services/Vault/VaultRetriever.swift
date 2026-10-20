@@ -262,7 +262,7 @@ struct VaultRetriever {
         // (Plan IN P3a); their pieces are kept out of the per-token boost, or "26-700" would boost
         // every passage that prints a 26.
         let clauses = ClauseReference.references(in: request.turn ?? "")
-        // A table the technician named ("table 99", "the ratings table") is found whole by its
+        // A table the technician named ("table 99", "the conductor ratings table") is found whole by its
         // label (Plan JJ P1), ahead of the clause route, and its number is kept out of the boost
         // as a clause's pieces are.
         let tables = tableSearch == nil ? []

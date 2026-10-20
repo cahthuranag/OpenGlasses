@@ -1,0 +1,3 @@
+# Your code books
+
+Your organisation's own code books, standards and manuals go in this folder, as PDFs with a text layer: put each file here, list it under `documents` in `manifest.json` with the title your electricians call it by, give the vault its own `id` and `name`, and import the folder on each phone. This starter ships no standard's text, no table and no rule: every table a chain in `chains.md` reads is extracted on the phone, at import, from your own licensed copy, and none of it leaves the phone in an export, a pack or a link. Until a book that prints a chain's tables is loaded, the chain is listed as needing them and stops at that step.

@@ -1,0 +1,19 @@
+{
+  "id": "electrical_starter",
+  "name": "Electrical Starter",
+  "version": "1.0.0",
+  "files": ["safety.md", "error_codes.md", "parts.md", "chains.md"],
+  "documents_dir": "documents",
+  "documents": [],
+  "gating": { "iap": "enterprise" },
+  "prompt_rules": [
+    "Never fabricate a rating, a conductor size, a table value, a rule, a fault code or a procedure.",
+    "Use only the vault contents, the retrieved passages of the organisation's own code books and manuals, and the technician's stated observations.",
+    "Cite the rule, the table or the manual page on every factual claim; a value from a table names its table, row, column and page.",
+    "Never guess a rating, a size, a setting or a limit: if the loaded books do not give it, say so and recommend checking the printed book or escalating.",
+    "Before any step that opens a panel or an enclosure, remind the technician to isolate the supply, lock it off and prove it dead with a tester checked on a known source, and to follow the organisation's own safety rules."
+  ],
+  "source_attribution_format": "Source: {files}",
+  "source_attribution_required": true,
+  "trades": ["electrical"]
+}

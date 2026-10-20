@@ -551,6 +551,14 @@ struct Config {
     @UserDefaultsBacked("directSentenceStreamingEnabled", default: false)
     static var directSentenceStreamingEnabled: Bool
 
+    /// Ask the phone's built-in mic for Apple's voice processing (noise suppression and echo
+    /// cancellation) during dictation, on the engine dictation builds for itself (Plan JM P0).
+    /// Never on a Bluetooth route and never on the wake-word listener's shared engine — see
+    /// `DictationCapturePolicy`. An experiment: it changes the input format and may add latency,
+    /// so it stays off until measured on the device. The switch is in Settings › Advanced › Developer.
+    @UserDefaultsBacked("dictationVoiceProcessingEnabled", default: false)
+    static var dictationVoiceProcessingEnabled: Bool
+
     /// "Keep talking without signal" (Plan GE): when the connection goes, the conversation carries
     /// on on the phone — on-device model, offline tool set — and moves back to the cloud on its own
     /// once a stable connection returns. Only takes effect when an on-device model is installed

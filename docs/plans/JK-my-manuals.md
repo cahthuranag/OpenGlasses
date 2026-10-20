@@ -44,6 +44,16 @@ Three things do that, and together they are the whole plan:
 3. **A quota.** Five manuals. There is no vault or document limit anywhere in the code today; this
    is the one genuinely new concept.
 
+**The test every restriction has to pass (owner, 2026-10-20):** a working technician must find
+My Manuals *not enough* — hard to stay inside while trying to build a library of their own — and
+a private owner must never notice the limits. A count alone does not do that: a technician can
+concatenate thirty short manuals into one PDF. What separates the two is *how a professional
+builds*: a manifest with scenarios, procedures, prompt rules, trades, sites, document kinds and
+editions, imported as a folder or an archive built off-phone, and a camera read of a nameplate at
+every unit. None of that is a private owner's. So the sharpest limit here is **no manifest**:
+My Manuals takes single PDFs, photographed pages and a signed publisher's set, and nothing else
+(§2). The count and the page caps are the fence; the missing manifest is the wall.
+
 The competitor review of 2026-10-17 recommended exactly this shape: a low-priced individual tier as
 the funnel, leading with what no rival has (a wake word on AirPods, CarPlay and the glasses), with
 the working technician's tier and then the team seat as the upgrades. The ladder holds only if the
@@ -106,6 +116,10 @@ tolerate the word *vault*, a "session", or a screen that asks which trade they a
 | Ask by voice, page cited, "show me" opens the page with the passage marked | ✅ | ✅ | ✅ |
 | Figures and table cells from your manuals | ✅ | ✅ | ✅ |
 | A paper manual by camera (local pages) | ✅ counts as a manual | ✅ | ✅ (+ reviewer route) |
+| Build a vault: manifest, scenarios, procedures, prompt rules, trades, sites, editions; folder import; off-phone archive | — | ✅ | ✅ |
+| Receive an unverified archive (your own build, by link) | — | ✅ with acknowledgement | ✅ |
+| Camera read of a nameplate or fault display into the lookup | — | ✅ | ✅ |
+| Page caps per manual and across the library | ✅ | — | — |
 | Receive a manual set by link or QR (FS) | ✅ counts its manuals | ✅ | ✅ |
 | Wake word on AirPods, CarPlay, the glasses | ✅ | ✅ | ✅ |
 | Field Assist mode: tabs, jobs, sessions, work records, procedures (`fieldWork`, new) | — | ✅ | ✅ |
@@ -165,13 +179,32 @@ A *manual* is one document in an own vault: a PDF, a text import's original, a p
 or one document of a received vault. The count is over every own vault on the phone. Nothing is
 counted by size or pages.
 
-- **`ManualQuota`** (new, pure): `decide(limit: Int?, held: Int, adding: Int) -> Verdict` with
-  `.allowed`, `.wouldExceed(held:, adding:, limit:)`. Called at the two doors a manual can enter:
+- **Only three doors, and none takes a manifest.** A manual enters My Manuals as (a) one PDF
+  chosen in the Files picker, (b) photographed pages (the IF local route), or (c) a signed set from
+  a publisher listed in the catalogue, by link or QR. The Plan H folder import (`manifest.json`,
+  markdown, `procedures/`, `trades`, `sites`, `prompt_rules`, `kind`, `edition`, `source_url`) is
+  **not offered** without `fieldWork`, and `VaultLinkService` refuses an **unverified** archive —
+  the output of the off-phone builder and the double-acknowledgement path FS built for a
+  technician's own work — with a message that names Field Assist. Each PDF becomes one
+  `VaultDocument` with its title taken from the file (editable on the screen) and nothing else set.
+  A professional therefore cannot bring scenarios, procedures, prompt rules, a trade, a site
+  system, a controlled edition or a code book's clause structure into My Manuals at all; the only
+  way to build a vault of their own is Field Assist, as today.
+- **Page caps.** A manual over the per-manual cap, or an addition that takes the library over its
+  total, is refused with the counts (proposal: 2,500 pages per manual, 6,000 across the library — a
+  factory service manual and a workshop manual fit; thirty concatenated unit manuals do not). The
+  caps are `ManualQuota` inputs beside the count, derived from the evidence like the limit (nil for
+  every other `ownVaults` holder), never stored.
+- **`ManualQuota`** (new, pure): `decide(limit: Limits?, held: Held, adding: Adding) -> Verdict`
+  over three measures — manuals, pages in this manual, pages across the library — with `.allowed`
+  and `.wouldExceed(measure:, held:, adding:, limit:)`. Called at the two doors a manual can enter:
   `VaultImporter` (the plan's `toIngest`, before the entitlement gate's existing position) and
   `VaultLinkService` (the offer, so the refusal is on the confirmation sheet with the counts, not
   after a download). A refusal names the counts: *"This set has 8 manuals. My Manuals holds 5, and
   you have 2. Remove some, or Field Assist has no limit."* A received set is refused whole, never
-  installed partially — a partial manual set would answer wrong by omission.
+  installed partially — a partial manual set would answer wrong by omission. A received set's
+  procedures, scenarios and prompt rules install with it only under `fieldWork`; for a personal
+  customer the set's manuals install and the rest is left out, and the review sheet says so.
 - **The photographed route counts.** `ManualCaptureTool` / `CapturedManualCatalog` ask the quota
   before a new capture begins, not when its pages are bound.
 - **Removal frees a slot** through Plan FN's removal, unchanged. Forgetting never needs the
@@ -201,6 +234,10 @@ The four manual tools stop asking for a session and ask **which manuals answer r
   several vaults is searched as one corpus (`DocumentStore` namespaces per vault, as today), and an
   answer names the manual when more than one is loaded (`manual_lookup`'s `manual` filter already
   exists). `equipment_lookup` keeps its field-session guard: site systems are an organisation's.
+  **`manual_lookup`'s `use_camera`** (read the nameplate or fault display and search on it) is
+  honoured only for `.session`: a private owner knows what is in the garage; reading a nameplate at
+  every unit is the technician's day, and it stays Field Assist's. From the library the tool
+  answers the spoken question and says a nameplate read needs Field Assist.
 - **Tool descriptions** say "the manuals you have loaded" rather than "the vault"; the system-prompt
   list is generated from them (`SystemPromptBuilder`), so no other list changes. The Field Assist
   wording stays for a field session, chosen by the resolver's case.
@@ -243,7 +280,11 @@ Because `fieldWork` is missing: Field Assist mode and both its tabs; `field_sess
 tool in `FieldToolProfile.names` that is not a manual tool; work records and the session log;
 procedures and `procedure_runner`; `domain_calc` and `refrigerant_gauges`; escalation and the
 expert transports; van stock, parts, deliveries; site systems; the apprentice logbook; team
-learnings; the office route and every connector. Because `bundledVaults` is missing: the two trade
+learnings; the office route and every connector. Because `fieldWork` is also what the vault doors ask for: the folder import and every manifest
+field (scenarios, procedures, prompt rules, trades, sites, document kinds, editions, source
+links), unverified archives and the off-phone builder's output, `use_camera` on a lookup, and the
+clause-and-rule machinery that reads a manifest's `standard` documents (IN, JJ P2 chains). Because
+`bundledVaults` is missing: the two trade
 vaults. Because `auditedExport` is missing: every export of a session (there is none). Because
 `capturedManualReview` is missing: pages never go to a reviewer. Each is a test, not a promise.
 
@@ -290,11 +331,17 @@ existing Field Assist gate test still green (nothing a solo or team holder has c
 
 ### P1 — The library and the answer (one PR)
 
-The quota at both doors and before a capture; the personal vault created on first addition; the
+The quota (count and both page caps) at both doors and before a capture; the single-PDF door
+(Files picker, one `VaultDocument`, title from the file); the folder import and unverified archives
+refused without `fieldWork`, with the message; a received set installing manuals only for a
+personal customer; `use_camera` refused from the library; the personal vault created on first addition; the
 four manual tools on the resolver; tool-description wording; the on-device set input; Settings ›
 My Manuals; the paywall; the first-run hint; the edition rule; the `AIFeatureRegistry` record and
-privacy copy. Tests: importer and link-offer refusals with the counts in the message; capture
-refused at the limit; forget and remove need neither grant nor quota; a lookup from the library with
+privacy copy. Tests: importer and link-offer refusals with the counts in the message for each of the
+three measures; a folder with a manifest refused for personal and accepted for solo; an unverified
+archive refused for personal with the Field Assist message; a signed set's procedures left out for
+personal and installed for solo; `use_camera` honoured from a session and refused from the library;
+capture refused at the limit; forget and remove need neither grant nor quota; a lookup from the library with
 Field Assist off, and from the session with it on, with the same vaults loaded; a two-manual answer
 names the manual; the on-device set ranks the manual tools with a library and no job; the settings
 entry present without `fieldWork`, hidden under an edition; the catalogue guard (strings, no plan
@@ -325,9 +372,10 @@ the upgrade path end to end. Release build before the PR, as always.
    if asked.
 2. A free trial, as Medical Compliance has? Proposal: yes, one week, since the first manual takes a
    few minutes to index and the value shows only after it.
-3. A page cap per manual? A 1,200-page factory service manual indexes slowly on an older phone.
-   Proposal: no cap; P1 measures indexing time and storage for a large PDF and the screen says both
-   before the import starts.
+3. The page caps: 2,500 per manual and 6,000 across the library are proposals. They exist to
+   make concatenating a trade's manuals into one file pointless, not to limit a private owner, so
+   they should be set to the largest single service manual we expect. P1 also measures indexing time
+   and storage for a large PDF and the screen says both before the import starts.
 4. Does a received publisher set count its manuals toward the five? Proposal: yes (this plan assumes
    it); a publisher selling to private owners sizes sets accordingly.
 5. Should the Field Assist paywall name the smaller option? Proposal: one line, since Apple shows
@@ -338,7 +386,8 @@ the upgrade path end to end. Release build before the PR, as always.
 
 `FieldAssistCapabilityTests`, `FieldAssistTierTests` (extended), `FieldAssistModeTests` (personal
 rows), `ManualQuotaTests`, `ManualSourceTests`, `VaultImporterQuotaTests`,
-`VaultLinkOfferQuotaTests`, `ManualCaptureQuotaTests`, `ManualToolsLibraryTests` (lookup, figure,
+`VaultLinkOfferQuotaTests`, `ManualCaptureQuotaTests`, `MyManualsDoorsTests` (manifest folder,
+unverified archive, set-without-procedures, `use_camera`), `ManualToolsLibraryTests` (lookup, figure,
 table, show-source from a library with Field Assist off), `AppleOnDeviceToolSetTests` (library
 input), `MyManualsSettingsPresenceTests`, `PaywallCopyGuardTests` (both copies), the existing
 `BrandNameGuardTests`, `OutboundFrameConsumerTests` and `TelemetryOptOutGuardTests` unchanged.

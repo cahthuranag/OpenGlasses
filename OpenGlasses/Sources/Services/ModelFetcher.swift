@@ -70,6 +70,12 @@ enum ModelFetcher {
     /// Fetch models for a provider. Returns an empty array on failure.
     static func fetchModels(provider: LLMProvider, apiKey: String, baseURL: String) async -> [RemoteModel] {
         guard MedicalEgressGuard.allows(.providerModelCatalog) else { return [] }
+        // An xAI model with no key lists what the signed-in account can use: its token carries
+        // `api:access`, so the public `/v1/models` takes it as a bearer like a key.
+        var apiKey = apiKey
+        if provider == .xai, XAIAuth.usesAccountSignIn(apiKey: apiKey) {
+            apiKey = await XAIAuth.resolveCredential(apiKey: apiKey, account: .shared)
+        }
         // Local OpenAI-compatible servers (Ollama, llama.cpp, LM Studio, vLLM…) usually
         // need no API key, so let the custom provider list models without one.
         guard !apiKey.isEmpty || provider == .custom || provider == .anthropic || provider == .chatgpt else { return [] }
@@ -85,7 +91,12 @@ enum ModelFetcher {
             return await fetchQwen(apiKey: apiKey, baseURL: baseURL)
         case .minimax:
             return await fetchMiniMax(apiKey: apiKey, baseURL: baseURL)
-        case .openai, .groq, .deepseek, .mistral, .zai, .xai, .openrouter, .custom:
+        case .xai:
+            // The list also carries image/video generators, voice and build models; only chat
+            // models answer the requests this app sends.
+            return await fetchOpenAICompatible(apiKey: apiKey, baseURL: baseURL)
+                .filter { XAIOAuth.isChatModel($0.id) }
+        case .openai, .groq, .deepseek, .mistral, .zai, .openrouter, .custom:
             return await fetchOpenAICompatible(apiKey: apiKey, baseURL: baseURL)
         case .geminiVertex:
             return []  // OAuth-only; no key-based listing endpoint (type the model ID)

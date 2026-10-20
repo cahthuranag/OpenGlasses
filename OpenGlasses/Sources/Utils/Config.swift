@@ -216,7 +216,7 @@ struct Config {
     /// Keychain items that outlive an app delete and stand in for "the user was signed in".
     /// Keys alone are not enough: the account-sign-in providers store no key at all.
     private static let accountCredentialKeychainKeys = [
-        "claudeOAuthCredentials", "chatgptOAuthCredentials",
+        "claudeOAuthCredentials", "chatgptOAuthCredentials", "xaiOAuthCredentials",
     ]
 
     /// At least one saved model carries a real provider key.

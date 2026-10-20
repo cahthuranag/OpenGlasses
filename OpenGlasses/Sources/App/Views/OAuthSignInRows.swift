@@ -48,6 +48,11 @@ extension ChatGPTOAuthService: OAuthSignInService {
     var signInRedirect: OAuthRedirect? { OAuthRedirect(ChatGPTOAuth.redirectURI) }
 }
 
+extension XAIOAuthService: OAuthSignInService {
+    /// A loopback redirect on `127.0.0.1:56121/callback` — zero-paste, like ChatGPT's.
+    var signInRedirect: OAuthRedirect? { OAuthRedirect(XAIOAuth.redirectURI) }
+}
+
 /// The onboarding flow's account sign-in section: same behaviour as `OAuthSignInRows`, shaped as
 /// a grouped `Section` so it sits in onboarding's list pages like any other iOS setting.
 /// Generalized from the original Claude-only onboarding section so ChatGPT reuses it (BW P4).

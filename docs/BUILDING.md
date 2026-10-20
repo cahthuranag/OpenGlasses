@@ -364,6 +364,14 @@ in memory and stores only the resulting account credentials in Keychain. See the
 The existing **OpenAI (GPT)** provider remains separate: it uses an API key, usage-based API
 billing, and is still required for OpenAI Realtime voice.
 
+### xAI subscription sign-in
+
+Choose **xAI (Grok)** in Settings → AI Models and tap **Sign in with xAI** to use Grok models on a
+SuperGrok subscription without an xAI API key. The sign-in token is accepted by the public xAI
+API, so the model works like a keyed one — photos and tools included — and **Fetch available
+models** lists the chat models the account can use. A key typed into the model is always used
+instead of the sign-in. The account credentials are stored in Keychain on this device only.
+
 ### Services (Settings → Services & Integrations)
 
 | Service | Settings |

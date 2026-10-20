@@ -1130,7 +1130,7 @@ enum SensitiveStore: String, CaseIterable {
                           deleteSubject: .notSubjectLinked,
                           owner: "KeychainService",
                           ownerPaths: ["OpenGlasses/Sources/Services/KeychainService.swift"],
-                          location: "Keychain: Google, Claude and ChatGPT OAuth credentials")
+                          location: "Keychain: Google, Claude, ChatGPT and xAI OAuth credentials")
 
         case .keychainServiceTokens:
             return Record(store: self, dataClass: .credential, subjectLinkage: .wearer,

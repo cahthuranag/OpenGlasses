@@ -6,6 +6,7 @@ struct AddModelView: View {
     @ObservedObject private var claudeOAuth = ClaudeOAuthService.shared
     @ObservedObject private var chatgptOAuth = ChatGPTOAuthService.shared
     @ObservedObject private var googleOAuth = GoogleOAuthService.shared
+    @ObservedObject private var xaiOAuth = XAIOAuthService.shared
 
     @State private var name: String = ""
     @State private var selectedProvider: LLMProvider = .anthropic
@@ -110,7 +111,8 @@ struct AddModelView: View {
             provider: selectedProvider, model: model, baseURL: baseURL, apiKey: apiKey,
             claudeConnected: claudeOAuth.isConnected,
             chatgptConnected: chatgptOAuth.isConnected,
-            googleConnected: googleOAuth.isConnected
+            googleConnected: googleOAuth.isConnected,
+            xaiConnected: xaiOAuth.isConnected
         )
     }
 

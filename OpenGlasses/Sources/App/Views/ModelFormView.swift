@@ -30,10 +30,11 @@ struct ModelFormView: View {
     @State private var discoveredServers: [LocalServerScanner.DiscoveredServer] = []
     @State private var scanMessage: String?
 
-    // Account sign-in state (Anthropic + ChatGPT — rendered via the shared OAuthSignInRows)
+    // Account sign-in state (Anthropic, ChatGPT and xAI — rendered via the shared OAuthSignInRows)
     @ObservedObject private var claudeOAuth = ClaudeOAuthService.shared
     @ObservedObject private var chatgptOAuth = ChatGPTOAuthService.shared
     @ObservedObject private var googleOAuth = GoogleOAuthService.shared
+    @ObservedObject private var xaiOAuth = XAIOAuthService.shared
 
     @Environment(\.appAccent) private var accent
     /// Row heights that have to grow with the type beside them, so every
@@ -143,6 +144,17 @@ struct ModelFormView: View {
                             onConnected: resetModelList
                         )
                     }
+                }
+
+                if selectedProvider == .xai {
+                    OAuthSignInRows(
+                        service: xaiOAuth,
+                        signInLabel: "Sign in with xAI",
+                        connectedLabel: xaiOAuth.accountLabel.map { "Signed in as \($0)" } ?? "Signed in",
+                        connectedCaption: "Requests use your xAI subscription (SuperGrok) unless an API key is set below.",
+                        pasteInstructions: "Sign in in the browser. When it ends on a 127.0.0.1 page that can't connect, copy the full URL from the address bar and paste it here.",
+                        onChange: resetModelList
+                    )
                 }
 
                 if selectedProvider == .geminiVertex {
@@ -278,7 +290,7 @@ struct ModelFormView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(OGTheme.okLabel)
                         .accessibilityHidden(true)
-                    Text(selectedProvider == .chatgpt
+                    Text(selectedProvider == .chatgpt || listsModelsWithXAIAccount
                          ? "\(availableModels.count) models available"
                          : "Key valid · \(availableModels.count) models")
                     Spacer()
@@ -487,7 +499,9 @@ struct ModelFormView: View {
         isFetchingModels = false
         if models.isEmpty {
             if fetchError == nil {
-                fetchError = "Couldn't find any models. Double-check your API key and try again."
+                fetchError = listsModelsWithXAIAccount
+                    ? "Couldn't load the models for your xAI account. Sign out and sign in again, or type a model ID below."
+                    : "Couldn't find any models. Double-check your API key and try again."
             }
             keyValidated = false
         } else {
@@ -511,8 +525,14 @@ struct ModelFormView: View {
         return "Always uses a compact prompt; ~\(window / 1024)k-token context (~\(prompt / 1024)k for the prompt)."
     }
 
+    /// An xAI model with no key lists the signed-in account's models instead of validating a key.
+    private var listsModelsWithXAIAccount: Bool {
+        selectedProvider == .xai && xaiOAuth.isConnected
+            && apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var validateButtonTitle: String {
-        if selectedProvider == .chatgpt { return "Fetch available models" }
+        if selectedProvider == .chatgpt || listsModelsWithXAIAccount { return "Fetch available models" }
         if selectedProvider == .custom { return "Fetch models" }
         return "Validate key & fetch models"
     }
@@ -530,7 +550,7 @@ struct ModelFormView: View {
         case .zai: return "Z.ai subscription — OpenAI-compatible API"
         case .qwen: return "Coding Plan subscription — coding-intl.dashscope.aliyuncs.com"
         case .minimax: return "MiniMax subscription — platform.minimaxi.com"
-        case .xai: return "Get your API key at console.x.ai"
+        case .xai: return "Sign in with your xAI account (SuperGrok) — no API key needed — or get an API key at console.x.ai. A key set here is used instead of the sign-in."
         case .openrouter: return "500+ models with one API key — openrouter.ai/keys"
         case .custom: return "Any OpenAI-compatible endpoint — a cloud API or a self-hosted Ollama / llama.cpp / LM Studio / vLLM / LocalAI server. For a local server, set the Base URL to e.g. http://your-mac.local:11434/v1 and leave the API Key blank. Use the host's .local name or a Tailscale address — a raw 192.168.x.x IP over http may be blocked by App Transport Security."
         case .local: return "On-device inference — no internet needed"
@@ -545,7 +565,8 @@ struct ModelFormView: View {
             provider: selectedProvider, apiKey: apiKey,
             claudeConnected: claudeOAuth.isConnected,
             chatgptConnected: chatgptOAuth.isConnected,
-            googleConnected: googleOAuth.isConnected
+            googleConnected: googleOAuth.isConnected,
+            xaiConnected: xaiOAuth.isConnected
         )
     }
 
@@ -553,6 +574,7 @@ struct ModelFormView: View {
         switch selectedProvider {
         case .custom: return "API Key (optional for local servers)"
         case .anthropic: return claudeOAuth.isConnected ? "API Key (optional — account connected)" : "API Key"
+        case .xai: return xaiOAuth.isConnected ? "API Key (optional — account connected)" : "API Key"
         default: return "API Key"
         }
     }

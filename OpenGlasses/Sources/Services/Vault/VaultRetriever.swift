@@ -76,6 +76,10 @@ struct VaultRetriever {
         /// How the passage relates to a clause number the request named (Plan IN P3a), when it
         /// does. Ranks the clause's own text ahead of passages that only cite it.
         var clauseMatch: ClauseReference.Match?
+        /// The passage belongs to a table the request named (Plan JJ P1): one of its rows, or a
+        /// passage of the page it is printed on. Ranks ahead of everything else, the clause's own
+        /// text included.
+        var tableMatch = false
 
         typealias Source = RetrievalSource
 
@@ -146,6 +150,13 @@ struct VaultRetriever {
     /// Search by the question's content words ([[LexicalSupport]]), most shared first — see
     /// `DocumentStore.passages(sharingTermsWith:)`. The lexical route beside the embedding one.
     typealias TermSearch = (_ query: String, _ limit: Int) -> [DocumentStore.Passage]
+    /// Every passage of one table by its label (Plan JJ P1) — its row passages, or its page's —
+    /// see `DocumentStore.passages(table:)`. The retriever keeps the ones sharing the most of the
+    /// question's words.
+    typealias TableSearch = (_ label: String) -> [DocumentStore.Passage]
+    /// The tables the searched manuals hold, by label and title, for recognising a table a
+    /// question names by its title words.
+    typealias TableCatalogue = () -> [TableReference.Entry]
 
     /// The searched corpus's term statistics (Plan IV P7), asked for once per retrieval — see
     /// `DocumentStore.termStatistics(namespaces:)`. Nil ranks by shared-word count, as before.
@@ -213,6 +224,8 @@ struct VaultRetriever {
     var tokenSearch: TokenSearch?
     var clauseSearch: ClauseSearch?
     var termSearch: TermSearch?
+    var tableSearch: TableSearch?
+    var tableCatalogue: TableCatalogue?
     var termStatistics: TermStatisticsSource?
     var provenance: Provenance?
     var availability: Availability?
@@ -221,6 +234,7 @@ struct VaultRetriever {
 
     init(query: @escaping QueryFunction, tokenSearch: TokenSearch? = nil,
          clauseSearch: ClauseSearch? = nil, termSearch: TermSearch? = nil,
+         tableSearch: TableSearch? = nil, tableCatalogue: TableCatalogue? = nil,
          termStatistics: TermStatisticsSource? = nil,
          provenance: Provenance? = nil, availability: Availability? = nil,
          policy: RetrievalEvidencePolicy = RetrievalEvidencePolicy(),
@@ -229,6 +243,8 @@ struct VaultRetriever {
         self.tokenSearch = tokenSearch
         self.clauseSearch = clauseSearch
         self.termSearch = termSearch
+        self.tableSearch = tableSearch
+        self.tableCatalogue = tableCatalogue
         self.termStatistics = termStatistics
         self.provenance = provenance
         self.availability = availability
@@ -246,11 +262,20 @@ struct VaultRetriever {
         // (Plan IN P3a); their pieces are kept out of the per-token boost, or "26-700" would boost
         // every passage that prints a 26.
         let clauses = ClauseReference.references(in: request.turn ?? "")
+        // A table the technician named ("table 99", "the ratings table") is found whole by its
+        // label (Plan JJ P1), ahead of the clause route, and its number is kept out of the boost
+        // as a clause's pieces are.
+        let tables = tableSearch == nil ? []
+            : TableReference.references(in: request.turn ?? "", catalogue: tableCatalogue?() ?? [])
         // Boost tokens: anything code-like the technician said or the camera read, and any word
         // they said in capitals ("QXRT"). A page they named is where to look, not something to
         // look for, so its number is not one of them.
-        let spokenTurn = PageReference.removingReferences(from: ClauseReference.removingReferences(from: request.turn ?? ""))
-        let designations = Set(CodeTokenizer.capitalisedDesignations(from: spokenTurn))
+        let spokenTurn = PageReference.removingReferences(from: TableReference.removingReferences(
+            from: ClauseReference.removingReferences(from: request.turn ?? "")))
+        // A row key printed as a range ("7-9") is a designation too: kept whole, and counted only
+        // when the manuals print it (Plan JJ P1).
+        let designations = Set(CodeTokenizer.capitalisedDesignations(from: spokenTurn)
+            + CodeTokenizer.rangeKeys(from: spokenTurn))
         let spokenTokens = Array(Set(
             CodeTokenizer.codeTokens(from: spokenTurn) + designations
                 + CodeTokenizer.codeTokens(from: request.ocrText ?? "")
@@ -308,7 +333,8 @@ struct VaultRetriever {
         }
 
         var merged: [String: Passage] = [:]
-        func consider(_ raw: DocumentStore.Passage, foundForClause searched: String? = nil) {
+        func consider(_ raw: DocumentStore.Passage, foundForClause searched: String? = nil,
+                      foundForTable table: String? = nil) {
             let key = "\(raw.documentId)#\(raw.chunkIndex)"
             var matched = boostTokens.filter { CodeTokenizer.contains(raw.text, token: $0) }
             var clauseMatch = raw.clauseMatch
@@ -320,14 +346,24 @@ struct VaultRetriever {
                 matched.append(clause)
                 clauseMatch = max(clauseMatch ?? match, match)
             }
+            // A passage of a named table: one its caption names, whatever route found it, or one
+            // the table route found on the page of a table whose grid was not read.
+            var tableMatch = false
+            for label in tables
+            where label == table || (raw.figure ?? "").caseInsensitiveCompare(label) == .orderedSame {
+                matched.append(label)
+                tableMatch = true
+            }
             var candidate = scored(raw, matched: matched)
             candidate.clauseMatch = clauseMatch
+            candidate.tableMatch = tableMatch
             if let existing = merged[key] {
                 // Two routes reached the same chunk: keep the better score, and everything either
                 // route knew about why it matched.
                 var kept = existing.rankScore >= candidate.rankScore ? existing : candidate
                 kept.matchedTokens = Array(Set(existing.matchedTokens + candidate.matchedTokens)).sorted()
                 kept.clauseMatch = [existing.clauseMatch, candidate.clauseMatch].compactMap { $0 }.max()
+                kept.tableMatch = existing.tableMatch || candidate.tableMatch
                 merged[key] = kept
                 return
             }
@@ -342,6 +378,15 @@ struct VaultRetriever {
         if let clauseSearch {
             for clause in clauses {
                 clauseSearch(clause, searchLimit).forEach { consider($0, foundForClause: clause) }
+            }
+        }
+        // The table route (Plan JJ P1): the named table's passages, the rows sharing the most of
+        // the question's words kept — "table 99, QXRT three conductors" keeps that row whichever
+        // page of a long table it is on.
+        if let tableSearch {
+            for label in tables {
+                Self.sharingMostWords(tableSearch(label), queryTerms: queryTerms, limit: searchLimit)
+                    .forEach { consider($0, foundForTable: label) }
             }
         }
         // The lexical route (field report, build 497). "How to test the flame sensor readings or
@@ -376,8 +421,10 @@ struct VaultRetriever {
         // passage that starts it, then its subclauses, then the text that carries it on, then the
         // passages that only cite it. Without a clause in the request every passage is in group 0
         // or 1, which is the ordering above unchanged.
+        // A table the request named ranks above all of them (Plan JJ P1), the way a clause does
+        // above the token groups.
         func group(_ p: Passage) -> Int {
-            (p.clauseMatch?.rawValue ?? 0) * 2 + (p.matchedTokens.isEmpty ? 0 : 1)
+            (p.tableMatch ? 100 : 0) + (p.clauseMatch?.rawValue ?? 0) * 2 + (p.matchedTokens.isEmpty ? 0 : 1)
         }
         // Inside a group, the passage that shares more of the question's content words leads, and
         // the score decides between passages that share as many (field report, build 497). On the
@@ -409,6 +456,9 @@ struct VaultRetriever {
         }, uniquingKeysWith: max)
         let ranked = candidates.sorted { a, b in
             if group(a) != group(b) { return group(a) > group(b) }
+            // Inside a named table, its rows before its page: a row is the data the question asks
+            // for, the page the picture it is printed in.
+            if a.tableMatch, b.tableMatch, (a.kind == .tableRow) != (b.kind == .tableRow) { return a.kind == .tableRow }
             if !clauses.isEmpty, a.clauseMatch != nil, b.clauseMatch != nil {
                 let offsets = (ClauseReference.offset(of: clauses, in: a.text),
                                ClauseReference.offset(of: clauses, in: b.text))

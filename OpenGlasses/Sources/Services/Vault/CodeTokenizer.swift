@@ -80,6 +80,27 @@ enum CodeTokenizer {
         }
     }
 
+    /// Ranges a table keys its rows by — "7-9", "10–12" — kept whole (Plan JJ P1). `words(in:)`
+    /// splits them at the dash into two one- or two-digit numbers, which are never searched, so a
+    /// question naming the row "7-9" reached it only by the words around it, shared by every row of
+    /// the table. Each range comes back in both printed spellings, hyphen and en dash, since a
+    /// table prints either; retrieval counts one only when the manuals print it. A rule number
+    /// ("26-700") is a clause and is taken out before this is asked (`ClauseReference`).
+    static func rangeKeys(from text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(?<![\p{L}\p{N}.,\-\x{2013}])(\d{1,4}(?:\.\d{1,2})?)\s?[-\x{2013}]\s?(\d{1,4}(?:\.\d{1,2})?)(?![\p{L}\p{N}]|[.,\-\x{2013}]\d)"#)
+        else { return [] }
+        let ns = text as NSString
+        var seen = Set<String>()
+        var out: [String] = []
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let low = ns.substring(with: match.range(at: 1)), high = ns.substring(with: match.range(at: 2))
+            guard let a = Double(low), let b = Double(high), a < b else { continue }
+            for key in ["\(low)-\(high)", "\(low)\u{2013}\(high)"] where seen.insert(key).inserted { out.append(key) }
+        }
+        return out
+    }
+
     /// Case-insensitive whole-token containment: "E5" matches "code E5 means" but not "E50".
     static func contains(_ haystack: String, token: String) -> Bool {
         guard !token.isEmpty else { return false }

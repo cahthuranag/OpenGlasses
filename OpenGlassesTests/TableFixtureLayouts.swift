@@ -50,16 +50,14 @@ enum TableFixtureLayouts {
                                                     ("Rating group 1", 250), ("Rating group 2", 350),
                                                     ("Rating group 3", 450)]
 
-    /// Table 99, a grid whose designation is printed once over the two rows under it.
-    static func simpleGrid(printed: String = "12") -> Page {
+    /// Table 99, a grid whose designation is printed once over the two rows under it. `offset` is
+    /// added to every value, so a second invented book can print the same table with other values.
+    static func simpleGrid(printed: String = "12", offset: Int = 0) -> Page {
         var items = [lead(), caption("TABLE 99 Conductor ratings")]
         items += row(90, ratingColumns, bold: true)
-        let body: [[String]] = [
-            ["QXRT", "two conductors", "25", "30", "35"],
-            ["", "three conductors", "30", "35", "40"],
-            ["QMX90", "two conductors", "40", "45", "50"],
-            ["", "three conductors", "45", "50", "55"],
-        ]
+        let values: [[Int]] = [[25, 30, 35], [30, 35, 40], [40, 45, 50], [45, 50, 55]]
+        let heads = [["QXRT", "two conductors"], ["", "three conductors"], ["QMX90", "two conductors"], ["", "three conductors"]]
+        let body: [[String]] = zip(heads, values).map { head, row in head + row.map { String($0 + offset) } }
         for (index, cells) in body.enumerated() {
             items += row(106 + Double(index) * 14, zip(cells, [50, 140, 270, 370, 470]).map { ($0, $1) })
         }
@@ -173,6 +171,21 @@ enum TableFixtureLayouts {
         let body: [[String]] = [["QB2", "11", "19"], ["QB3", "13", "22"], ["QB5", "16", "27"]]
         for (index, cells) in body.enumerated() {
             items += row(116 + Double(index) * 14, zip(cells, [50, 210, 330]).map { ($0, $1) })
+        }
+        return items
+    }
+
+    /// Table 96 on a page with no bold whose cells are all words: no row of numbers to find the
+    /// body by, so the first run of rows of cells starts the grid and its first line heads it.
+    static func singleFontTextGrid() -> Page {
+        var items = [Item(text: "Table 96 Invented mounting choices", x: 50, y: 60),
+                     Item(text: "for the invented designations of this example", x: 50, y: 71)]
+        let body: [[String]] = [["Designation", "Indoor", "Outdoor"],
+                                ["QXRT", "permitted", "not permitted"],
+                                ["QMX90", "permitted", "permitted"],
+                                ["QZ12", "not permitted", "permitted"]]
+        for (index, cells) in body.enumerated() {
+            items += row(90 + Double(index) * 14, zip(cells, [50, 200, 340]).map { ($0, $1) })
         }
         return items
     }

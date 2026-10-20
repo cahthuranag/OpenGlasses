@@ -16,6 +16,11 @@ import Foundation
 /// passage comes from a clause-numbered document, and is cut to the prose number otherwise. A vault
 /// with no clause-numbered manual is asked for four, exactly as before.
 ///
+/// **A table row counts as a clause** (Plan JJ P1). A row passage is one row of one table, as
+/// short and as self-contained as a rule, and a table question's answer is often the row beside the
+/// one ranked first; the retriever is asked for six whenever a searched manual has table rows, and
+/// an outcome whose best manual passage is a row keeps six.
+///
 /// Pure: whether a document is clause-numbered is the caller's to say (the store reads it from the
 /// document's stored text, `DocumentStore.isClauseNumbered(documentId:)`).
 struct ManualPassageLimit: Equatable {
@@ -24,19 +29,21 @@ struct ManualPassageLimit: Equatable {
     /// Passages when the best passage is from a clause-numbered document.
     var clauseNumbered = 6
 
-    /// What to ask the retriever for.
-    func requestLimit(searchesClauseNumbered: Bool) -> Int {
-        searchesClauseNumbered ? max(prose, clauseNumbered) : prose
+    /// What to ask the retriever for: the larger number when a searched manual is clause-numbered
+    /// or has table rows.
+    func requestLimit(searchesClauseNumbered: Bool, searchesTableRows: Bool = false) -> Int {
+        searchesClauseNumbered || searchesTableRows ? max(prose, clauseNumbered) : prose
     }
 
     /// The outcome as sent: kept whole when its first manual passage is from a clause-numbered
-    /// document, cut to `prose` passages otherwise. A cut `.sufficient` outcome still carries a
+    /// document or is a table row, cut to `prose` passages otherwise. A cut `.sufficient` outcome still carries a
     /// manual passage, as the gate promises: if team learnings filled the first slots, the last
     /// kept slot goes to the best manual passage.
     func shaped(_ outcome: RetrievalOutcome, isClauseNumbered: (String) -> Bool) -> RetrievalOutcome {
         let passages = outcome.passages
         guard passages.count > prose else { return outcome }
-        if let best = passages.first(where: { $0.source.isReference }), isClauseNumbered(best.documentId) { return outcome }
+        if let best = passages.first(where: { $0.source.isReference }),
+           best.kind == .tableRow || isClauseNumbered(best.documentId) { return outcome }
         var kept = Array(passages.prefix(max(prose, 1)))
         switch outcome {
         case .sufficient:
@@ -54,9 +61,9 @@ struct ManualPassageLimit: Equatable {
 
     /// Retrieve and shape in one step.
     func retrieve(_ request: VaultRetriever.Request, with retriever: VaultRetriever, searchesClauseNumbered: Bool,
-                  isClauseNumbered: (String) -> Bool) -> RetrievalOutcome {
+                  searchesTableRows: Bool = false, isClauseNumbered: (String) -> Bool) -> RetrievalOutcome {
         var request = request
-        request.limit = requestLimit(searchesClauseNumbered: searchesClauseNumbered)
+        request.limit = requestLimit(searchesClauseNumbered: searchesClauseNumbered, searchesTableRows: searchesTableRows)
         return shaped(retriever.retrieve(request), isClauseNumbered: isClauseNumbered)
     }
 }

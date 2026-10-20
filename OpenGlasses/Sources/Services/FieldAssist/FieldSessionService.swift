@@ -1578,19 +1578,20 @@ final class FieldSessionService: ObservableObject {
         return .default(for: documentStore.servingModelId(namespace: DocumentStore.vaultNamespace(vaultId)))
     }
     /// How many manual passages a turn or a lookup carries: four, or six when the best passage is
-    /// from a clause-numbered document (Plan IV P6).
+    /// from a clause-numbered document (Plan IV P6) or is a table row (Plan JJ P1).
     var passageLimit = ManualPassageLimit()
 
     /// Retrieve manual passages with the shape-dependent limit (Plan IV P6). The larger number is
     /// asked for only when a manual this retrieval may search (`documentIds`, or the whole vault)
-    /// is clause-numbered, so a vault of prose manuals retrieves exactly as before.
+    /// is clause-numbered or has table rows, so a vault of prose manuals retrieves exactly as before.
     func retrieveManualPassages(_ request: VaultRetriever.Request, with retriever: VaultRetriever,
                                 store: VaultStore, documentIds: [String]? = nil) -> RetrievalOutcome {
         guard let documentStore else { return retriever.retrieve(request) }
-        let searchesClauseNumbered = documentStore.list(namespace: DocumentStore.vaultNamespace(store.manifest.id))
+        let searched = documentStore.list(namespace: DocumentStore.vaultNamespace(store.manifest.id))
             .filter { documentIds?.contains($0.id) ?? true }
-            .contains { documentStore.isClauseNumbered(documentId: $0.id) }
+        let searchesClauseNumbered = searched.contains { documentStore.isClauseNumbered(documentId: $0.id) }
         return passageLimit.retrieve(request, with: retriever, searchesClauseNumbered: searchesClauseNumbered,
+                                     searchesTableRows: documentStore.hasTableRows(documentIds: searched.map(\.id)),
                                      isClauseNumbered: { documentStore.isClauseNumbered(documentId: $0) })
     }
 
@@ -1908,6 +1909,17 @@ final class FieldSessionService: ObservableObject {
             searched.flatMap { space in
                 tagged(documentStore?.passages(sharingTermsWith: query, limit: limit, namespace: space.namespace,
                                                documentIds: ids(for: space)) ?? [], space)
+            }
+        }, tableSearch: { label in
+            // Tables are extracted from the vault's own manuals only (Plan JJ P0).
+            searched.filter { $0.source == .manual }.flatMap { space in
+                tagged(documentStore?.passages(table: label, namespace: space.namespace,
+                                               documentIds: ids(for: space)) ?? [], space)
+            }
+        }, tableCatalogue: {
+            searched.filter { $0.source == .manual }.flatMap { space in
+                (documentStore?.storedTables(namespace: space.namespace, documentIds: ids(for: space)) ?? [])
+                    .map { TableReference.Entry(label: $0.table.label, title: $0.table.title) }
             }
         }, termStatistics: {
             documentStore?.termStatistics(namespaces: searched.map(\.namespace))

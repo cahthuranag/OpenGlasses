@@ -26,9 +26,14 @@ struct PassageAnchor: Equatable, Hashable {
     /// Offsets into `text` where each sentence starts. Empty for a row stored before the column
     /// existed; the locator then splits the text itself.
     let sentenceStarts: [Int]
+    /// For a table's row passage (Plan JJ P1), whose text is the app's sentence and not the page's:
+    /// the runs of the row as printed on its line, longest first. The locator marks the first run
+    /// that appears exactly once on the page, and nothing when none does. Empty for any other
+    /// chunk, which is located by its sentences.
+    let printedRuns: [String]
 
     init(documentId: String, chunkIndex: Int, text: String, page: Int?, pageStart: Int? = nil,
-         pageEnd: Int? = nil, sentenceStarts: [Int] = []) {
+         pageEnd: Int? = nil, sentenceStarts: [Int] = [], printedRuns: [String] = []) {
         self.documentId = documentId
         self.chunkIndex = chunkIndex
         self.text = text
@@ -36,6 +41,7 @@ struct PassageAnchor: Equatable, Hashable {
         self.pageStart = pageStart
         self.pageEnd = pageEnd
         self.sentenceStarts = sentenceStarts
+        self.printedRuns = printedRuns
     }
 
     /// The chunk's sentences, from the stored starts when there are any.
@@ -177,7 +183,59 @@ enum PassageLocator {
     static let neighbourGap = 40
 
     static func locate(_ anchor: PassageAnchor, onPageText pageText: String?) -> PassageLocation {
-        locate(sentences: anchor.sentences, onPageText: pageText, hint: anchor.pageStart)
+        guard anchor.printedRuns.isEmpty else { return locate(printedRuns: anchor.printedRuns, onPageText: pageText) }
+        return locate(sentences: anchor.sentences, onPageText: pageText, hint: anchor.pageStart)
+    }
+
+    /// A table row as printed (Plan JJ P1): the first of `runs` found exactly once on the page,
+    /// whole. A run found twice — two rows printing the same words and values — is never chosen
+    /// between, and a row none of whose runs is found opens its page unmarked (decision 3).
+    static func locate(printedRuns runs: [String], onPageText pageText: String?) -> PassageLocation {
+        guard let pageText else { return .notLocatable(.noTextLayer) }
+        let page = Folded(pageText)
+        guard !page.scalars.isEmpty else { return .notLocatable(.noTextLayer) }
+        let ns = pageText as NSString
+        for run in runs {
+            let needle = Folded(run).scalars
+            guard needle.count >= shortRun else { continue }
+            // Whole words only, the same words: "QX4 12.5" folds to what "QX41 2.5" folds to, and
+            // is not it.
+            let words = foldedWords(run)
+            let hits = occurrences(of: needle, in: page.scalars).filter { start in
+                let range = page.utf16Range(from: start, to: start + needle.count)
+                return !isWordCharacter(at: range.location - 1, in: ns) && !isWordCharacter(at: NSMaxRange(range), in: ns)
+                    && foldedWords(ns.substring(with: range)) == words
+            }
+            guard hits.count == 1 else { continue }
+            let range = page.utf16Range(from: hits[0], to: hits[0] + needle.count)
+            return .located(ranges: [closingPunctuation(range, in: ns)], dropped: 0)
+        }
+        return .notLocatable(.notFound)
+    }
+
+    /// Fewest folded characters a printed row run is matched on. Below it ("30 35") a run is too
+    /// likely to be part of another row to stand for one, however rarely it is printed.
+    static let shortRun = 6
+
+    /// The text's words as folding reads them, each a run of folded letters and digits.
+    private static func foldedWords(_ text: String) -> [String] {
+        var words: [String] = []
+        var current = ""
+        for character in text {
+            let folded = Folded.fold(character)
+            if folded.isEmpty {
+                if !current.isEmpty { words.append(current); current = "" }
+            } else {
+                current += String(String.UnicodeScalarView(folded.compactMap(Unicode.Scalar.init)))
+            }
+        }
+        if !current.isEmpty { words.append(current) }
+        return words
+    }
+
+    private static func isWordCharacter(at index: Int, in text: NSString) -> Bool {
+        guard index >= 0, index < text.length, let scalar = Unicode.Scalar(text.character(at: index)) else { return false }
+        return CharacterSet.alphanumerics.contains(scalar)
     }
 
     static func locate(sentences: [String], onPageText pageText: String?, hint: Int? = nil) -> PassageLocation {

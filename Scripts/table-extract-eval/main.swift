@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 
 // The table extractor over one PDF on a Mac, exactly as an import reads it on the phone
 // (`PDFTableReader` + `TableExtractor`). Prints counts only — never a table's label, title, row,
@@ -38,5 +39,30 @@ struct TableExtractEval {
               + "columns median=\(median(columns)) max=\(columns.last ?? 0) "
               + "over_pages=\(continued) with_notes=\(withNotes) "
               + String(format: "numeric_cells=%.2f", cells.isEmpty ? 0 : Double(numeric) / Double(cells.count)))
+        if environment["TABLE_EXTRACT_EVAL_DIAGNOSE"] != "0" { diagnose(path) }
+    }
+
+    /// Where the captions that gave too few rows lost them (Plan JJ P1), in counts: how many body
+    /// rows of two or more cells were read (0, 1, 2), where the first run of three such lines
+    /// starts under the caption, and whether that run is text-keyed — its first cell text in every
+    /// row — or text in every cell.
+    static func diagnose(_ path: String) {
+        guard let document = PDFDocument(url: URL(fileURLWithPath: path)) else { return }
+        let reach = TableExtractor.plainTitleMaximumLines + TableExtractor.plainHeaderMaximumLines
+        var readings: [TableExtractor.TooFewRows] = []
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index), let text = page.string,
+                  text.range(of: "table", options: .caseInsensitive) != nil else { continue }
+            readings += TableExtractor.diagnoseTooFewRows(words: PDFTableReader.positionedWords(on: page),
+                                                         page: ManualTable.Page(physical: index + 1))
+        }
+        let rows = (0...2).map { n in "\(n)=\(readings.filter { $0.bodyRows == n }.count)" }.joined(separator: " ")
+        let noRun = readings.filter { $0.gridStart == nil }.count
+        let far = readings.filter { ($0.gridStart ?? 0) > reach }.count
+        let near = readings.filter { $0.gridStart.map { $0 <= reach } ?? false }.count
+        let firstText = readings.filter { $0.gridStart != nil && $0.firstColumnText }.count
+        let allText = readings.filter { $0.gridStart != nil && $0.allCellsText }.count
+        print("[TABLES]   too_few_rows=\(readings.count): body_rows \(rows) · grid_run none=\(noRun) "
+              + "within_\(reach)_lines=\(near) beyond_\(reach)_lines=\(far) · first_column_text=\(firstText) all_cells_text=\(allText)")
     }
 }

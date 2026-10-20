@@ -34,3 +34,7 @@ Counts only (the numbers below are an example, not a measurement):
   spanning several columns. `rotated_headers` means the grid failed on a page that sets words
   on their side.
 - **pages_without_text**: pages with no text layer, where no caption can be read at all.
+- **too_few_rows breakdown** (`TABLE_EXTRACT_EVAL_DIAGNOSE=0` leaves it out): for the captions
+  that gave too few rows, how many body rows of two or more cells were read (0, 1, 2), whether a
+  run of three such lines starts within the header reach under the caption, further down, or
+  nowhere, and whether that run is text in its first cell in every row, or text in every cell.

@@ -37,6 +37,10 @@ struct AnswerSourceMemory: Equatable {
     private(set) var confirmed: [Citation] = []
     private(set) var provisional: [Citation]?
     private(set) var retrieved: [Retrieved] = []
+    /// The rows a table lookup read (Plan JJ P1), by the citation it answered with, so "show me
+    /// the table" marks the row the cell came from and not every row the turn retrieved. Kept
+    /// after the answer, which repeats the same citation.
+    private(set) var tableRows: [String: [Retrieved]] = [:]
 
     /// How many retrieved passages are kept. A few turns' worth: enough to mark what was cited a
     /// question or two ago, not a record of the job.
@@ -71,8 +75,25 @@ struct AnswerSourceMemory: Equatable {
         if !manual.isEmpty { confirmed = manual }
     }
 
-    /// The passages behind a citation: same manual, on a page the citation names.
+    /// `table_lookup` answered (Plan JJ P1): its citations stand for the answer until one that
+    /// cites replaces them, and the rows it read are what each citation marks.
+    mutating func noteTableLookup(rows: [Retrieved], citations: [Citation], sessionId: String?) {
+        adopt(sessionId)
+        guard !citations.isEmpty else { return }
+        provisional = Self.unique(citations)
+        for citation in citations {
+            tableRows[Self.tableKey(citation)] = rows.filter { $0.page == citation.page }
+        }
+    }
+
+    private static func tableKey(_ citation: Citation) -> String {
+        "\(citation.title.lowercased())#\(citation.page ?? 0)#\((citation.figure ?? "").lowercased())"
+    }
+
+    /// The passages behind a citation: same manual, on a page the citation names. A table's
+    /// citation that a lookup answered with marks the rows the lookup read.
     func retrieved(for citation: Citation) -> [Retrieved] {
+        if citation.figure != nil, let rows = tableRows[Self.tableKey(citation)] { return rows }
         guard let page = citation.page else { return [] }
         let last = citation.throughPage ?? page
         let title = citation.title.lowercased()
@@ -89,7 +110,7 @@ struct AnswerSourceMemory: Equatable {
     }
 
     /// One citation per manual page, first mention first.
-    private static func unique(_ citations: [Citation]) -> [Citation] {
+    static func unique(_ citations: [Citation]) -> [Citation] {
         var seen = Set<String>()
         return citations.filter { seen.insert("\($0.title.lowercased())#\($0.page ?? 0)").inserted }
     }
@@ -151,6 +172,22 @@ enum ShowSourceResolver {
         let which = (rawWhich ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let words = which.split(whereSeparator: { !($0.isLetter || $0.isNumber) }).map(String.init)
 
+        // A table (Plan JJ P1): "the table" is the cited source that names a table, "Table 99"
+        // the one that names that table, "the tables" every cited source that names one.
+        if let label = TableReference.labels(in: which).first {
+            let holding = pool.filter { ($0.citation.figure ?? "").caseInsensitiveCompare(label) == .orderedSame }
+            guard !holding.isEmpty else {
+                return .problem("The last answer did not cite \(label). It cited " + labels(pool) + ". Nothing was opened.")
+            }
+            return .sources(Array(holding.prefix(maximumPages)))
+        }
+        if words.contains("table") || words.contains("tables") {
+            let tables = pool.filter { $0.citation.figure?.lowercased().hasPrefix("table") == true }
+            guard let first = tables.first else {
+                return .problem("The last answer did not cite a table. It cited " + labels(pool) + ". Nothing was opened.")
+            }
+            return .sources(words.contains("tables") ? Array(tables.prefix(maximumPages)) : [first])
+        }
         // A clause number: the cited source that holds it.
         if let clause = ClauseReference.references(in: which).first {
             let holding = pool.filter { source in
@@ -241,6 +278,11 @@ final class ShowSourceCenter: ObservableObject {
 
     func noteLookup(_ passages: [VaultRetriever.Passage], sessionId: String?) {
         memory.noteLookup(passages.compactMap(Self.retrieved), sessionId: sessionId)
+    }
+
+    /// A table lookup answered (Plan JJ P1) with these citations, reading these row passages.
+    func noteTableLookup(rows: [AnswerSourceMemory.Retrieved], citations: [Citation], sessionId: String?) {
+        memory.noteTableLookup(rows: rows, citations: citations, sessionId: sessionId)
     }
 
     func noteAnswer(_ text: String, sessionId: String?) {

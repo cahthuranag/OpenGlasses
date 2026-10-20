@@ -74,6 +74,21 @@ enum PassageLocationMigration {
         guard store.needsLocation(documentId: entry.documentId) else { return .current }
         guard !entry.usedRecognition else { return .recognisedSkipped }
         let tablesPDF = VaultDocumentExtractor.tablesSource(document: fileURL, original: originalURL)
+        // Text already located by location version 3 (Plan JJ P0): only the tables changed since —
+        // version 4 keeps the captions whose page did not resolve to a grid (Plan JJ P1) — so the
+        // tables are read again and the document's text is left exactly as it is.
+        if let floor = store.textLocationVersion(documentId: entry.documentId), floor >= 3 {
+            let tables: PDFTableReader.Result? = await Task.detached(priority: .utility) {
+                tablesPDF.flatMap { VaultDocumentExtractor.tables(from: $0) }
+            }.value
+            var dropped = 0
+            if let tables {
+                dropped = await store.replaceTables(tables.stored, documentId: entry.documentId).rowsDropped
+            }
+            store.markLocated(documentId: entry.documentId)
+            VaultDocumentExtractor.logTables(tables, rowsDropped: dropped)
+            return .located
+        }
         let read: (chunks: [DocumentChunker.Chunk], labels: [PageLabel], tables: PDFTableReader.Result?)?
             = await Task.detached(priority: .utility) {
             guard let extracted = try? VaultDocumentExtractor.extract(from: fileURL) else { return nil }
@@ -93,7 +108,7 @@ enum PassageLocationMigration {
         }
         var dropped = 0
         if let tables = read.tables {
-            dropped = await store.replaceTables(tables.tables, documentId: entry.documentId).rowsDropped
+            dropped = await store.replaceTables(tables.stored, documentId: entry.documentId).rowsDropped
         }
         VaultDocumentExtractor.logTables(read.tables, rowsDropped: dropped)
         return outcome

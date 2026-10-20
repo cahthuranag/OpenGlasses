@@ -5,7 +5,13 @@ extracted at import into rows, header paths, cells (number, unit, footnote marke
 stored beside the document's passages, and each row is searchable as a passage; stored manuals get
 their tables by the location migration. Measured privately on the loaded test book's PDF: 94
 captioned tables found, 33 extracted to a grid (0.35), 51 with too few rows, 8 with varying
-column counts, 2 with merged cells (see "What shipped in P0"). P1–P4 not built.
+column counts, 2 with merged cells (see "What shipped in P0"). 🚧 P1 built 2026-10-20 (draft
+PR): `table_lookup` returns one cell with its headers, units, notes and printed page, both rows
+when a number falls between them, and a question back when the words fit more than one row,
+column, table or book; a question naming a table ranks that table first; "show me the table"
+opens the cited page with the row marked. Measured privately: row passages cost the code book one
+question (hit@1 / hit@4 0.39 / 0.56 → 0.38 / 0.55), all of it through the table route; cell
+correctness not yet measured (see "What shipped in P1"). P2–P4 not built.
 Decisions confirmed 2026-10-20. Field Assist first; every phase is a headless core with the live
 edge last. Written for the partner's electricians, whose stated priority
 after the first round of code-book testing is **table lookup**: "those tables contain much of the
@@ -255,7 +261,7 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   "Show me" on a row passage opens its page unmarked ("The passage couldn't be marked on this
   page."), because the row sentence is the app's text, not the page's. Marking the row is P1.
 
-### P1 — `table_lookup`, and "show me the table"
+### P1 — `table_lookup`, and "show me the table" 🚧 (built 2026-10-20, draft PR)
 
 - **`table_lookup` tool.** Arguments: `table` (label or title words), `row` (a header value or
   the words of one), `column` (a header path or words of one), and optionally `document`. It
@@ -276,6 +282,93 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   books are loaded; a question naming a table ranks the lookup first; an on-device profile offers
   `table_lookup` and not `rule_chain`. Measured privately: a set of single-cell questions on the
   loaded book, answered from the cell with the right citation, as a rate.
+
+#### What shipped in P1 (2026-10-20)
+
+- **`TableLookup` (pure, `Sources/Services/Vault/`).** The stored tables in, one outcome out:
+  `found` (the rows and columns read, with `between` set when an asked number fell between two
+  rows), `ambiguous` (document, table, row or column, with the candidates to say), `notFound` (with
+  what does exist), `notExtracted` (a caption whose grid could not be read, with its page) or
+  `noTables`. The table resolves by label ("Table 99", "tbl 99", "table ninety-nine", "No. 99"),
+  then by title words; the same label in two books asks which book. The column resolves by its
+  path or the end of it ("Band B" under one group), then by words, every number in the words
+  having to be in the heading. The row resolves by its header or a run of its headers ("QXRT three
+  conductors"), then by number (a numeric key equal to it, or a printed range holding it, "8" in
+  "7-9"; else the two rows either side, said as "between"; outside the rows, the range they run
+  over), then by its nearest words. Without a column the whole row is read, unless the table has
+  one value column. The notes are those a marker on the cell, its row's headers or its column's
+  headings keys, and the table's unmarked notes. Nothing is interpolated, rounded or moved to a
+  neighbouring row; the rendered text says so, and ends with a `Source:` line in the form
+  `VaultRetriever` writes ("Book, page 12 (printed 10), Table 99"), which `CitationLineParser`
+  reads into a chip for that table's page in that book. Pages are said by their printed number, else
+  as "PDF page N".
+- **Unreadable captions are kept.** `ManualTable.failure`: a caption whose page did not resolve
+  to a grid is stored by its label, title and page (`PDFTableReader.Result.unextracted`), so a
+  lookup says the table is there and could not be read, and names the page to show. Location
+  version 3 → 4: a document version 3 already located only has its tables read again; its text,
+  ids and embeddings are untouched.
+- **`table_lookup` tool** (`NativeTools/TableLookupTool.swift`): registered, in
+  `FieldToolProfile.names` and `AppleOnDeviceToolSet.fieldAssistPriority` (decision 7), a read in
+  `ToolEffectClassification`, local in `OfflineToolPolicy`, titled in `ActivityTitler`. It reads
+  the vault's manuals still in the vault, newest edition unless the words reach past it or a book is
+  named, and notes what it cited for "show me the table".
+- **Retrieval.** `TableReference` (pure) recognises a table a question names by number, printed,
+  abbreviated or spoken, or by its title words when the question says "table" and one title fits
+  best; "table saw", "timetable 9", "TBL99X" and "table 99X" are not references. `VaultRetriever`
+  has a table route (`DocumentStore.passages(table:)`: the table's row passages, else the page of a
+  caption that could not be read) and ranks a named table's passages above the clause groups, its
+  rows before its page. A row key printed as a range ("7-9") was split at the dash by the tokenizer
+  and never searched; `CodeTokenizer.rangeKeys` keeps it whole and it counts, like a designation,
+  only when the manuals print it. A designation ("QXRT") already reached its row. `ManualPassageLimit`
+  asks for six when a searched manual has table rows and keeps six when the best passage is a row.
+- **Showing it.** `show_source` takes "table", "the tables" and a table label against the last
+  answer's citations. A table row's anchor carries the row as printed (`TableRowPassage.printedRuns`),
+  and `PassageLocator` marks the first run found exactly once on the page, as the same words; a row
+  printed twice, or not found, opens its page unmarked with the existing plain line.
+  `FigureAutoOpenPolicy` is as P0 left it.
+- **Tests (invented fixtures; the exit tests committed before any run on licensed material, the table of words added after the counts-only breakdown below).** `TableLookupTests`
+  (21) and `TableLookupSessionTests` (5): lookup by label, spoken and abbreviated label, title words,
+  row number, a range holding the number, row words; between rows returns both and prints no other
+  value; ambiguity asks for the row, the column and the book; an unread table names its page;
+  `TableReference` recognition and non-matches; range keys; row marking (once, never twice, same
+  words); the passage limit; the on-device set offers `table_lookup` and not `rule_chain`, and its
+  definition fits beside `field_session`; and, over two invented books both printing a Table 99,
+  the citation opens the right table in the right book, "show me the table" marks that row and
+  not the one above, a question naming a table ranks it first (by number, by title words, spoken),
+  a row header reaches its row, and the migration keeps the unread caption without touching the
+  text.
+- **Measured privately** (aggregates only), the code book's newest-edition answer key (66 scorable
+  questions) on the contextual model, the PDF-backed vault indexed by the Mac runner, which now
+  reads a PDF's text and tables as an import does (`RETRIEVAL_EVAL_TABLE_ROWS` = `0`, `1`, `token`,
+  `table`):
+
+  | Row passages | hit@1 | hit@4 | as sent | in-scope refused |
+  |---|---|---|---|---|
+  | Excluded (as before P0) | 0.39 | 0.56 | 0.61 | 0 |
+  | Included, every route (shipped) | 0.38 | 0.55 | 0.59 | 0 |
+  | Token and table routes only | 0.38 | 0.55 | 0.59 | 0 |
+  | Table route only | 0.38 | 0.55 | 0.59 | 0 |
+  | Plan IV P7, for reference | 0.39 | 0.56 | 0.61 | 0 |
+
+  One question is lost, and it is the table route's: one question in the key names a table, by its
+  title words; it hits with the route off and misses with it on. Keeping the rows out of the
+  semantic default changes nothing, so they are not gated there. Ranking a title-word table with
+  the token hits rather than above them was tried and did not bring the question back, so it was
+  not kept. The cost is one question of 66 against a tool and a route a technician can now use by
+  table number.
+- **Too few rows, broken down** (`Scripts/table-extract-eval/`, counts only, on the 2024 PDF): of
+  51 captions with too few rows, 35 read no body row of two or more cells, 13 one and 3 two; 30
+  have no run of three such lines anywhere under the caption, 16 have one within seven lines and 5
+  further down; of the 21 runs, 18 are text in the first cell of every row and 13 text in every
+  cell. The general shape that was being refused, a table of words on a page set in one weight
+  (no row of numbers to find its body by), is now read: the first run of rows heads the grid with
+  its first line, and in a table of words only the first column heads the rows. Before → after:
+  extracted 33 → 35, too few rows 51 → 45, varying column count 8 → 12, merged cells 2 → 2. The 30
+  with no run of rows at all (cells that set close enough to read as one phrase, or rows that wrap)
+  are the next lever and are not addressed.
+- **Not known yet.** Whether the cells are right. A starter answer key of cells was written beside
+  the book for the partner's electrician to check, and is unchecked; P1 does not score against it,
+  and the rate of single-cell questions answered from the right cell is owed once it is checked.
 
 ### P2 — Rule chains, authored
 

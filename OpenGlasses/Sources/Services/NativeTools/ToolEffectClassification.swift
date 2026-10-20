@@ -56,6 +56,10 @@ extension ConversationSummaryTool { var executionSemantics: ToolExecutionSemanti
 extension HealthSafetyTool { var executionSemantics: ToolExecutionSemantics { .read() } }
 extension NetworkCalcTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 extension DomainCalcTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
+/// Reads one cell of a table the phone extracted from the vault's own manuals (Plan JJ P1). It
+/// notes what it cited so "show me the table" can open it — in-memory session state, as a manual
+/// lookup's passages are — and writes, opens and sends nothing.
+extension TableLookupTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 /// Reads the office history the open job (or the next job ahead) carried; writes and sends nothing.
 extension ServiceHistoryTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }
 extension FoodAnalysisTool { var executionSemantics: ToolExecutionSemantics { .read(.notCancellable) } }

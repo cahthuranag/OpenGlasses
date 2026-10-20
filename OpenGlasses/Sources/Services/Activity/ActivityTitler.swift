@@ -280,5 +280,6 @@ enum ActivityTitler {
         "manual_lookup": .init("Looked something up in a manual with the camera"),
         "equipment_lookup": .init("Identified equipment with the camera"),
         "show_source": .init("Showed you where an answer came from"),
+        "table_lookup": .init("Looked up a value in a manual's table"),
     ]
 }

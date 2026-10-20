@@ -95,6 +95,7 @@ enum OfflineToolPolicy {
         "social_context": .local,
         "step_count": .local,
         "study": .local,
+        "table_lookup": .local,           // reads a table extracted on the phone from its own manuals
         "task": .local,
         "team_learning": .local,           // filed in the phone's own store; sending is a later phase
         "teleprompter": .local,

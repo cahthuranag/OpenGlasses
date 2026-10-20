@@ -21,9 +21,12 @@ enum AppleOnDeviceToolSet {
     /// this window cannot hold beside its instructions and tools. A job turn goes to another model
     /// when one is configured (`OnDeviceJobRoutePolicy`); when none is, the instructions say that
     /// manual answers need a cloud model (`AppleOnDeviceInstructions`).
+    ///
+    /// `table_lookup` is (Plan JJ P1, decision 7): one cell with its headers, notes and page is a
+    /// few hundred characters, which the window holds.
     static let fieldAssistPriority: [String] = [
         "field_session", "reading", "evidence", "deliver_report",
-        "parts_request", "van_stock",
+        "parts_request", "van_stock", "table_lookup",
     ]
 
     /// The everyday tools after the field set: the local MLX path's safe set, which each resolve

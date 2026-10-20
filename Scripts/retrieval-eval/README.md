@@ -77,9 +77,10 @@ RETRIEVAL_EVAL_LABEL="my code book" \
 Scripts/retrieval-eval/run.sh
 ```
 
-- `RETRIEVAL_EVAL_VAULT` is a vault folder: `manifest.json` plus its documents. The Mac runner reads
-  extracted text, so turn a PDF into Markdown first with `Scripts/extract-manual-text.swift` and
-  list the `.md` in the manifest. To measure one edition of a book loaded on its own, write a
+- `RETRIEVAL_EVAL_VAULT` is a vault folder: `manifest.json` plus its documents. A PDF is indexed
+  as the phone indexes it: its text extracted once with `Scripts/extract-manual-text.swift` into the
+  work folder, and its tables read with the app's own `PDFTableReader` (a `.md` document gets the
+  tables of the PDF its manifest entry names as `source`). To measure one edition of a book loaded on its own, write a
   manifest that lists only that edition.
 - `RETRIEVAL_EVAL_WORKDIR` holds the index between runs, so a long book is embedded once. Delete it
   when you're done.
@@ -88,6 +89,9 @@ Scripts/retrieval-eval/run.sh
   evidence gate instead of the shipped one, to calibrate a gate against both sets. The output line
   names the gate.
 
+- `RETRIEVAL_EVAL_TABLE_ROWS` says which routes search a table's row passages: `1` every route (as
+  shipped), `0` none (as before tables), `token` the exact-token and table routes only, `table` the
+  table route only. One index serves all four. A line counts the questions that name a table.
 - `RETRIEVAL_EVAL_CHUNKER=spaces` or `linebreaks` indexes with an earlier chunking behaviour, to
   measure a chunking change against (in the simulator, `TEST_RUNNER_RETRIEVAL_EVAL_CHUNKER`). Give
   each variant its own `RETRIEVAL_EVAL_WORKDIR`: an index is built once and reused.

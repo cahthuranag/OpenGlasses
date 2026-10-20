@@ -1558,6 +1558,9 @@ enum PrivacyLog {
         case turnStarted, turnCompleted, requestSent, contextBudget, contextRecovery
         case historyLoaded, historyCleared, compressionFailed
         case planLoopEmpty, planLoopCompleted, cascadeSwitched
+        // The chain started on the model that answered the last turn, not the lead it hopped
+        // away from (`ModelCascadeMemory`): the configuration it started on, fingerprinted.
+        case cascadeLeadDeferred
         case apiError, streamError, streamRetry, requestFailed
         case toolCallsParsed, toolCallDropped, toolsPayloadRejected, yieldedToHuman
         case emptyCompletion, imageSkipped, reasoningProduced, reasoningResolved, reasoningRetried

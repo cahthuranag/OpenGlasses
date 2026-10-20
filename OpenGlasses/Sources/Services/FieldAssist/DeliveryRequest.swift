@@ -27,6 +27,9 @@ struct DeliveryRequest: Identifiable, Equatable {
         /// A job's parts requests on their own, as an order to the office. The requests it carries
         /// become `sent` when it is sent, exactly as a report's do, and stay `requested` when not.
         case partsOrder(PartsOrder)
+        /// A vault's kept rule chains as a `chains.md` fragment (Plan JJ P3), for an organisation to
+        /// review and paste into its vault by hand. Belongs to no job.
+        case ruleChains(RuleChainShare)
 
         /// The job session the delivery is audited against. A bundle belongs to no job, so it is
         /// filed under `LearningBundle.queueSessionID`, which no job's counts include.
@@ -36,6 +39,7 @@ struct DeliveryRequest: Identifiable, Equatable {
             case .learningBundle: return LearningBundle.queueSessionID
             case .capturedManual(let m): return m.sessionID
             case .partsOrder(let order): return order.sessionId
+            case .ruleChains: return RuleChainShare.queueSessionID
             }
         }
 
@@ -45,6 +49,7 @@ struct DeliveryRequest: Identifiable, Equatable {
             case .learningBundle: return nil
             case .capturedManual(let m): return m.jobReference.isEmpty ? nil : m.jobReference
             case .partsOrder(let order): return order.jobReference
+            case .ruleChains: return nil
             }
         }
 
@@ -56,12 +61,19 @@ struct DeliveryRequest: Identifiable, Equatable {
             case .learningBundle: return []
             case .capturedManual: return []
             case .partsOrder(let order): return order.partsRequestIds
+            case .ruleChains: return []
             }
         }
 
         /// The parts order, when this is one.
         var partsOrder: PartsOrder? {
             if case .partsOrder(let order) = self { return order }
+            return nil
+        }
+
+        /// The kept chains, when this is them.
+        var ruleChains: RuleChainShare? {
+            if case .ruleChains(let share) = self { return share }
             return nil
         }
 
@@ -82,6 +94,8 @@ struct DeliveryRequest: Identifiable, Equatable {
             case .learningBundle(let bundle, _): return QueuedOp.make(learningBundle: bundle)
             case .capturedManual(let m): return QueuedOp.make(capturedManual:m)
             case .partsOrder: return nil
+            // Kept chains go by the share sheet, by a person: never queued for an endpoint.
+            case .ruleChains: return nil
             }
         }
     }
@@ -100,11 +114,13 @@ struct DeliveryRequest: Identifiable, Equatable {
             case transcriptPDF = "transcript_pdf"
             case capturedManualPDF = "captured_manual_pdf"
             case capturedManualText = "captured_manual_text"
+            /// Kept rule chains as a `chains.md` fragment (Plan JJ P3).
+            case chainsMarkdown = "chains_markdown"
 
             var mimeType: String {
                 switch self {
                 case .pdf, .transcriptPDF, .capturedManualPDF: return "application/pdf"
-                case .capturedManualText: return "text/markdown"
+                case .capturedManualText, .chainsMarkdown: return "text/markdown"
                 case .json: return "application/json"
                 case .video: return "video/mp4"
                 }
@@ -114,7 +130,7 @@ struct DeliveryRequest: Identifiable, Equatable {
             var uti: String {
                 switch self {
                 case .pdf, .transcriptPDF, .capturedManualPDF: return "com.adobe.pdf"
-                case .capturedManualText: return "net.daringfireball.markdown"
+                case .capturedManualText, .chainsMarkdown: return "net.daringfireball.markdown"
                 case .json: return "public.json"
                 case .video: return "public.mpeg-4"
                 }
@@ -214,7 +230,7 @@ struct DeliveryRequest: Identifiable, Equatable {
     var record: WorkRecord? {
         switch payload {
         case .workRecord(let record, _): return record
-        case .learningBundle, .capturedManual, .partsOrder: return nil
+        case .learningBundle, .capturedManual, .partsOrder, .ruleChains: return nil
         }
     }
 
@@ -291,8 +307,25 @@ struct DeliveryRequest: Identifiable, Equatable {
                         body: order.body, shortBody: order.shortBody, payload: .partsOrder(order))
     }
 
+    /// Build the request for a vault's kept rule chains (Plan JJ P3): the fragment as a
+    /// `chains.md` attachment, and in the body too, so a channel that drops the file still carries
+    /// the text to paste.
+    static func make(ruleChains share: RuleChainShare, channel: DeliveryChannel, recipients: [String],
+                     attachment: Attachment?) -> DeliveryRequest {
+        DeliveryRequest(channel: channel, recipients: recipients, subject: share.subject, body: share.body,
+                        shortBody: share.shortBody,
+                        attachments: channel.carriesAttachments ? [attachment].compactMap { $0 } : [],
+                        payload: .ruleChains(share))
+    }
+
     /// What the technician is told is about to happen, before anybody taps anything.
     var confirmation: String {
+        if case .ruleChains(let share) = payload {
+            return "\(share.names.count == 1 ? "The kept chain is" : "The \(share.names.count) kept chains are") ready "
+                + "to share as a chains.md file: pick where it goes on the phone. Nobody has reviewed "
+                + (share.names.count == 1 ? "it" : "them") + "; whoever adds "
+                + (share.names.count == 1 ? "it" : "them") + " to the vault's chains.md should check every step first."
+        }
         if case .partsOrder(let order) = payload { return partsOrderConfirmation(order) }
         if case .capturedManual(let m) = payload {
             return "Photographed manual queued for the configured office: \(m.pageCount) pages. It stays pending until a compatible office accepts the manifest, PDF and recognised text. This does not submit it for pool review."

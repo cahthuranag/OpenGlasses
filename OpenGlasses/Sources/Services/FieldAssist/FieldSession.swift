@@ -113,6 +113,10 @@ struct FieldSession: Codable, Identifiable, Equatable {
     var appClosedPause: AppClosedPause?
     /// Values the technician read out, with their corrections (Plan GB P3).
     var spokenReadings: [SpokenReading] = []
+    /// The rule chain running on the job, kept with the job so a relaunch resumes it at the same
+    /// step (Plan JJ P3). Nil when none is running — a chain that ends files its read-back and
+    /// clears this — and on every session before it existed.
+    var ruleChainRun: PersistedChainRun?
     /// When the job's first identification landed on a unit that already had work recorded under
     /// it (Plan GD2). The work stays where it is — the machine just identified is usually the one it
     /// was done on — and the technician is told so, with a way back: `separate_earlier_work`. Cleared
@@ -257,7 +261,7 @@ struct FieldSession: Codable, Identifiable, Equatable {
         case continuityScope, taskEquipmentScopes, identityEquipmentScopes, procedureEquipmentScope
         case conversationThreadId, conversationThreadDetached, jobIntake, pendingUnitChange
         case visitedUnits
-        case billableCheckpointAt, appClosedPause, spokenReadings
+        case billableCheckpointAt, appClosedPause, spokenReadings, ruleChainRun
         case earlierWorkAttachedAt
         case teamLearnings
         case teamLearningAnswers
@@ -333,6 +337,8 @@ extension FieldSession {
         billableCheckpointAt = try c.decodeIfPresent(Date.self, forKey: .billableCheckpointAt)
         appClosedPause = try c.decodeIfPresent(AppClosedPause.self, forKey: .appClosedPause)
         spokenReadings = try c.decodeIfPresent([SpokenReading].self, forKey: .spokenReadings) ?? []
+        // A record that no longer decodes loses the running chain, never the job.
+        ruleChainRun = try? c.decodeIfPresent(PersistedChainRun.self, forKey: .ruleChainRun)
         earlierWorkAttachedAt = try c.decodeIfPresent(Date.self, forKey: .earlierWorkAttachedAt)
         teamLearnings = try c.decodeIfPresent([LearningCandidateReference].self, forKey: .teamLearnings)
         teamLearningAnswers = try c.decodeIfPresent([TeamLearningAnswer].self, forKey: .teamLearningAnswers)

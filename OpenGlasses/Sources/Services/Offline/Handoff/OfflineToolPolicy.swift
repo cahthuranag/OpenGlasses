@@ -76,6 +76,7 @@ enum OfflineToolPolicy {
         "procedure_runner": .local,
         "processing_summary": .local,
         "project_note": .local,
+        "propose_chain": .local,          // checks a proposal against the job's own retrieved passages and tables
         "propose_task": .local,
         "quick_action": .local,
         "reading": .local,

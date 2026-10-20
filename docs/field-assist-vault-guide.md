@@ -382,6 +382,25 @@ Result: Use QMX90 › two conductors: rated 45 A in rating group 2, …
 
 Each page in it opens from the answer's source chips, with the row marked where the page lets it be found.
 
+### When no chain answers: a proposed chain
+
+The technician does not need to know which rules apply. For a question about a table or a rule that none of your chains answers, the assistant first looks up the clauses in your loaded books, then proposes a chain in the same syntax, built only from what those passages say: a `cite` line on every lookup and every check, and the passage each lookup came from. The app checks the proposal before the technician hears it, and refuses one that cites nothing, a lookup or check with no `cite`, a lookup whose passage was not retrieved on the job, or a rule the retrieved passages do not contain, which is a rule the assistant brought from memory. A lookup naming a table your manuals do not print is kept and marked "needs Table N", as an authored chain's is.
+
+The technician hears the proposal read back step by step, each step with its rule and its passage, marked "proposed, unreviewed". Then they say go, change a step ("ask me the ambient instead"), or stop. Nothing runs before go. A proposed chain runs through the same runner as yours, and its read-back goes on the job record marked "proposed, unreviewed", with the passages it was built from.
+
+**Keeping one, on the phone.** A proposed chain that ran to a result can be kept: "keep that chain". It is saved on that phone in the vault's own folder, beside your `chains.md`, marked "unreviewed — kept on this phone". It is listed on that phone only and runs like any other chain. It is not one of the vault's files, so it never leaves in an export, a pack or a link, and a new version of the vault leaves it alone.
+
+**Getting it to your organisation.** "Share the kept chains" puts them on the share sheet as a `chains.md` file. Each chain carries a line saying when and on which job it was kept, and the passage each lookup was read from. Check every step against your own book, paste the chains you want into your vault's `chains.md`, and push the vault the usual way. None of this needs the office app. If your organisation has the office app, keeping a chain also files the same file for review with the next team-learning bundle.
+
+```text
+## Size a conductor, ambient assumed
+Answers: which conductor carries a load at an assumed ambient, once corrected for grouping.
+Unreviewed — kept on a phone on 2026-10-20, worked out on job 1042.
+Read from: band from Example Book, page 6, §QR-12; factor from Example Book, page 7, §QR-14; size from Example Book, page 8, §QR-17.
+```
+
+The lines under the heading are prose to `chains.md`, so the file imports as it is. **A reviewed chain replaces the kept one:** once the vault arrives with a chain of the same name in `chains.md`, the phone offers yours and no longer offers its kept copy.
+
 ## Describing a site system (optional)
 
 A manual describes one unit on its own. Nobody writes down how the units at one site work together, and that is where the hard faults live: the heat pump shows a communication fault because the furnace board dropped off the bus, and a technician who reads only the heat pump's manual replaces the wrong board. A **site document** is the overlay that joins them: which units are at the site, how they are connected, which controller commands which, the systems outside the site they talk to, the settings someone set on site, and the faults your crew has seen come from the link between two of them.

@@ -49,6 +49,17 @@ final class FieldSessionService: ObservableObject {
     /// The rule chain running on this job, if any (Plan JJ P2). Read through `activeChain`, which
     /// holds it to the session it was started in.
     var chainRun: ActiveChainRun?
+    /// The chain the model proposed on this job and read back, waiting for the technician's go
+    /// (Plan JJ P3). Read through `pendingProposal`, which holds it to its session.
+    var chainProposal: PendingChainProposal?
+    /// The last proposed chain that ran to a result on this job: what "keep that chain" keeps.
+    var lastProposedResult: PendingChainProposal?
+    /// Whether the organisation's office is this phone's destination. A kept chain also goes to
+    /// its review through the team-learning bundle then; without it, keeping and sharing work on
+    /// the phone alone (Plan JJ P3). Injectable for tests.
+    var chainOfficeConfigured: () -> Bool = { AppState.officeIsReportDestination }
+    /// Where a kept chain is filed for the office's review. Nil is the shared service.
+    var chainReviewCandidates: LearningCandidateService?
 
     /// The drawing this turn points at, or nil when it points at none (Plan EK P2). Published so
     /// the phone can put the page in front of the technician while the model is still answering.
@@ -1442,7 +1453,8 @@ final class FieldSessionService: ObservableObject {
     /// has been sent when this returns.
     func stageDelivery(_ request: DeliveryRequest) {
         // A parts order is not the report: staging one says nothing about whether the report went.
-        if request.payload.partsOrder == nil { lastDeliveryCancelled = false }
+        // Nor do kept rule chains, which belong to no job (Plan JJ P3).
+        if request.payload.partsOrder == nil, request.payload.ruleChains == nil { lastDeliveryCancelled = false }
         stagedDelivery = request
     }
 
@@ -2800,6 +2812,13 @@ final class FieldSessionService: ObservableObject {
         }
         logReading(reading, kind: .readingRecorded)
         return reading
+    }
+
+    /// Keep the running rule chain with the job record, or clear it (Plan JJ P3), through the one
+    /// update path, so a relaunch resumes the chain at the step it was on.
+    func persistChainRun(_ record: PersistedChainRun?) {
+        guard activeSession != nil, activeSession?.ruleChainRun != record else { return }
+        mutateSession { $0.ruleChainRun = record }
     }
 
     /// Record a rule chain's read-back on the job as a reading (Plan JJ P2): "chain: <name>", the

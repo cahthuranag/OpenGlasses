@@ -1,7 +1,7 @@
 # Plan ID: Hardening Bundle from the October 2026 Ecosystem Review
 
-**Status:** 🚧 Item 1 shipped 2026-10-10 (PR #704); item 4 built 2026-10-21 ([#812](https://github.com/straff2002/OpenGlasses/pull/812)); item 7 built
-2026-10-19 as Plan FG's P1a (PR #788); items 2, 3, 5, 6 and 8 unbuilt. A checklist plan: each item is its own small,
+**Status:** 🚧 Item 1 shipped 2026-10-10 (PR #704); item 4 built 2026-10-21 ([#812](https://github.com/straff2002/OpenGlasses/pull/812)); item 5 built
+2026-10-21 (PR pending); item 7 built 2026-10-19 as Plan FG's P1a (PR #788); items 2, 3, 6 and 8 unbuilt. A checklist plan: each item is its own small,
 direct PR with a test, in any order, and is ticked here (with its PR number) when it merges. Item 7
 is tracked in Plan [FG](FG-workflow-vaults-and-enterprise-auth.md) and only referenced here.
 **Origin:** The [October 2026 ecosystem review](../ecosystem-review-2026-10.md), sections 3 and 4
@@ -26,7 +26,7 @@ string a user sees; this file's checklist and the index row updated in the same 
 - [ ] **2. Broadcast frame pacing on a deadline** (S, Plan [CY](CY-broadcast-resilience-and-quality.md)'s surface).
 - [ ] **3. Web mirror page sized to the device and quiet while hidden** (XS, Plan [BP](BP-web-hud-mirror.md)).
 - [x] **4. Gateway hosts typed without a scheme** (S): done 2026-10-21, [#812](https://github.com/straff2002/OpenGlasses/pull/812).
-- [ ] **5. A second cloud voice from the OpenAI key** (S-M).
+- [x] **5. A second and third cloud voice: OpenAI and xAI** (S-M): done 2026-10-21, PR pending (live-key device check owed).
 - [ ] **6. `framegate-probe` replay script** (S).
 - [x] **7. OAuth single-flight refresh, failure classes and a forced refresh on 401** (S): tracked
   as Plan FG's 2026-10-10 amendment; built 2026-10-19 as FG P1a ([#788](https://github.com/straff2002/OpenGlasses/pull/788); device sign-in pass owed).
@@ -149,25 +149,62 @@ Hermes split, the field values, the gateway and Home Assistant call sites, and t
 `EndpointPolicyTests.testANormalisedCleartextPublicHostIsStillRefusedInRelease` and
 `HermesBridgeProtocolTests.testEndpointURLAcceptsAPastedAddressAndChoosesWSS`.
 
-## 5 · A second cloud voice from the OpenAI key
+## 5 · A second and third cloud voice: OpenAI and xAI
 
 **Gap.** The engines are ElevenLabs, Kokoro and the system voice
-(`Services/TTS/TTSEngineSelector.swift:5-11`). A wearer with only an OpenAI key, which many have for
-the LLM, gets no cloud voice. The privacy manifest names ElevenLabs only
+(`Services/TTS/TTSEngineSelector.swift:5-11`). A wearer with only an OpenAI key or an xAI key or
+sign-in, which many have for the LLM, gets no cloud voice. The privacy manifest names ElevenLabs only
 (`Resources/PrivacyInfo.xcprivacy:57`).
 
-**Fix.** `TTSEngine.openAI`: posts text to the OpenAI speech endpoint (`/v1/audio/speech`) with the
-Keychain key the LLM already uses, a fixed model and voice chosen in Settings, and audio returned as
-AAC or MP3 into the existing player. It sits after ElevenLabs in the fallback chain and before
-Kokoro, and reuses `CloudVoiceRejection` handling. Egress rules in the same PR:
-`MedicalEgressGuard` blocks it under Medical Local Only and HIPAA mode; a new `EndpointPolicy`
-route; the network route registry entry; `PrivacyInfo.xcprivacy` and the in-app privacy copy name
-the new recipient (`TelemetryOptOutGuardTests` and the privacy-manifest pairing enforce the
-same-PR rule).
+**Fix.** `TTSEngine.openAI` and `TTSEngine.xai`. The OpenAI voice posts text to the OpenAI speech
+endpoint (`/v1/audio/speech`) with the Keychain key the LLM already uses (API credit only: the
+endpoint refuses a ChatGPT subscription token), a fixed model and a voice chosen in Settings from
+OpenAI's fixed list. The xAI voice posts text to xAI's speech endpoint (`/v1/tts`) with the saved
+xAI model's key or, without one, the connected xAI account's token, and a voice chosen in Settings
+from xAI's voice catalog (`/v1/tts/voices`) or typed. Both return MP3 into the existing player. Auto
+tries ElevenLabs, then OpenAI, then xAI, then Kokoro; a chosen cloud voice falls back to Kokoro and
+the system voice, never to another paid cloud. Both reuse `CloudVoiceRejection` handling, with the
+spoken line and banner naming the vendor. Egress rules in the same PR: `MedicalEgressGuard` blocks
+them under Medical Local Only and HIPAA mode; the network route registry entries (which are the
+`EndpointPolicy` routes); `PrivacyInfo.xcprivacy` and the privacy copy name the new recipients
+(`TelemetryOptOutGuardTests` and the privacy-manifest pairing enforce the same-PR rule).
 
 **Test.** `TTSEngineSelectorTests` (chain order with and without each key; Medical mode removes
-it); a request-shape test through the `URLProtocol` stub (headers, body, no key in the URL); the
-manifest test. A live-key check is owed after merge.
+them); a request-shape test through a `URLProtocol` stub for each (method, address, bearer, body,
+no credential in the URL), refusals and the credit latch; the xAI catalog parser; the credential
+lookup; the medical canary; the manifest test. A live-key check of both voices is owed after merge.
+
+**Built 2026-10-21 (PR pending).** As specified, with these details. The engine enum gains
+`cloudVoices` (the Auto order), `isCloud`, `vendorName` and `speechRoute`; one pure readiness rule,
+`TTSEngineSelector.cloudVoiceReady`, covers all three cloud voices (credential, not latched out of
+credit, online, not an on-device-only utterance, and `MedicalEgressGuard.decide` on the voice's own
+route). Requests are built as values in `CloudVoiceRequests` (`Services/TTS/CloudVoiceRequests.swift`)
+and sent by `TextToSpeechService`, so the scrape still finds one owner for every speech route. Each
+goes to the vendor's fixed address: a custom base URL saved on an LLM model is never followed.
+`CloudVoiceCredentials` picks the credential: for OpenAI, the first saved OpenAI model with a key whose
+address is `api.openai.com` (a key saved for another server is never sent to OpenAI), else the legacy
+key; for xAI, the first saved xAI model with a key on an `x.ai` host, else the connected account's
+refreshed token through `XAIAuth.resolveCredential`. New routes `openAISpeechSynthesis`,
+`xaiSpeechSynthesis` and `xaiVoiceCatalog` (OpenAI has no voice list), all blocked under Medical Local
+Only. The credit latch is now one per cloud voice, reset per voice; `CloudVoiceRejection.classify`
+also reads OpenAI's `insufficient_quota` (sent as a 429) and xAI's spent-credit wording as out of
+credit. Settings gains the two preferences, an OpenAI voice picker when an OpenAI key exists, and an
+xAI picker with Fetch xAI Voices and a voice-id field when an xAI key or sign-in exists; the footnote
+says the OpenAI voice needs API credit. Deviations: (1) the announcer keeps one episode per cloud
+voice, and the ElevenLabs token keeps its old stored form so an episode already announced is not
+announced again: with Auto and two cloud voices, the second speaking would otherwise have made the
+first's refusal news on every reply; (2) when another cloud voice takes over, the notice says
+"another voice" rather than "the built-in voice", and one notice at most is added to an utterance;
+the ElevenLabs strings are unchanged otherwise, kept as their own keys so their translations still
+apply, and the new strings need a catalog sync; (3) streamed-reply demotion counts and demotes each
+cloud voice on its own (`StreamedReplySchedule.demotedEngines`), which leaves a single cloud voice's
+behaviour exactly as before; (4) xAI's speech endpoint and catalog shapes are as published at the
+time of writing and are unverified against a live key. Known limits: with Auto, a wearer who has an
+OpenAI or xAI model saved and no ElevenLabs key now hears that cloud voice where they heard Kokoro or
+the iOS voice before, paid from that account; the privacy notice says so, and a live-key check of
+both voices on the device is owed. Tests: `TTSEngineSelectorTests`, `CloudVoiceRequestsTests`,
+`CloudVoiceFallbackTests`, `StreamedReplyScheduleTests`, `ProcessingSummaryTests` and
+`MedicalEgressCanaryTests`.
 
 ## 6 · `framegate-probe` replay script
 

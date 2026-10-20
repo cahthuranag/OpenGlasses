@@ -1,6 +1,6 @@
 # Plan JJ — Table Lookup and Rule Chains (a cell from the book, and the rules that use it, chained)
 
-**Status:** 🚧 P0 shipped 2026-10-20: a captioned table in an organisation's own loaded PDF is
+**Status:** ✅ every phase built; the device checks owed are named under P4. P0 shipped 2026-10-20: a captioned table in an organisation's own loaded PDF is
 extracted at import into rows, header paths, cells (number, unit, footnote markers) and notes,
 stored beside the document's passages, and each row is searchable as a passage; stored manuals get
 their tables by the location migration. Measured privately on the loaded test book's PDF: 94
@@ -27,7 +27,16 @@ result is kept **on the phone** first, offered there only, shared by the share s
 `chains.md` fragment with no office needed, and also filed for review through the team-learning
 bundle when the organisation has the office app; a running chain survives a relaunch; a table named by title words now needs the
 whole title, which brings the code book's key back to hit@1 / hit@4 0.39 / 0.56 (see "What
-shipped in P3"). P4 not built.
+shipped in P3"). ✅ P4 built 2026-10-21 (draft PR): an electrical starter vault, bundled and offered
+like the other starters and importable as a template once an organisation adds its own code PDFs,
+ships safety rules, empty fault-code and parts files and a `chains.md` holding the schema and the
+guide's invented example, and no standard's text, table or rule; voltage drop is `domain_calc`'s
+electrical domain (single- and three-phase, metric and imperial, resistance or factor supplied,
+never assumed) and a chain `calc` with `sqrt( )` reaches the same number; `Scripts/chains-validate/`
+checks a vault's chains against its own PDFs' tables. Run on the partner's test vault: 11 chains,
+0 problems, 43 lookups of which 4 reach a read table (see "What shipped in P4"). Owed on a device:
+the starter offered and chosen, voltage drop by voice in both unit systems, the trade split, and
+the partner's chains imported and run to a read-back.
 Decisions confirmed 2026-10-20. Field Assist first; every phase is a headless core with the live
 edge last. Written for the partner's electricians, whose stated priority
 after the first round of code-book testing is **table lookup**: "those tables contain much of the
@@ -639,7 +648,7 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   running them: a device and partner check. Whether a reviewer wants the kept chains in the
   office's own review surface (Plan FP P4) rather than as a pasted file: open question 4.
 
-### P4 — The electrical starter vault
+### P4 — The electrical starter vault ✅ (built 2026-10-21, draft PR)
 
 - A vault template for the trade `electrical` with no standard's text: a slot for the
   organisation's code PDFs (`standard` kind when IN P3 lands; a manual otherwise), an empty
@@ -648,6 +657,92 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   and chains". The partner's chains are not in it.
 - **Exit tests:** the template validates; the guide's example chain validates against the
   template's fixture tables.
+
+#### What shipped in P4 (2026-10-21)
+
+- **The electrical starter** (`Resources/Vaults/electrical/`, `VaultRegistry`): a bundled vault
+  "Electrical Service", offered wherever the refrigeration and IT vaults are (the default-vault
+  list, reference-file editing, the manuals shelf, the mode tab), gated like them on Field Assist
+  (`field_assist_electrical`), and the first bundled vault to declare a trade (`electrical`). Its
+  prompt rules are the house style: never fabricate a rating, size, table value or rule; cite the
+  rule, table or page; never guess a rating, size, setting or limit; before opening a panel,
+  isolate, lock off and prove dead with a tester checked on a known source. `safety.md` says the
+  same at more length and states no distances or PPE levels (the organisation's and the
+  jurisdiction's). `error_codes.md` and `parts.md` hold a heading and a line saying what goes
+  there. `chains.md` holds the step vocabulary as an indented reference before the first chain, a
+  paragraph on the voltage-drop expression form, and the guide's three worked chains, renamed
+  "Example: …", their `Answers:` lines saying they are invented, with `//` comments in the
+  blocks; it parses with zero problems and its steps are the guide's (held equal by a test). The
+  folder also carries `manifest.json` — the same files, rules and trade under the id
+  `electrical_starter` with `enterprise` gating, so an imported copy never shadows the bundled
+  vault — and `documents/README.md`, one paragraph on putting the organisation's own code PDFs
+  there. No standard's text, table or rule ships (decision 1, IN decision 6): a test holds that no
+  PDF is in the folder, that every table label in it is one of the invented 90, 97, 98 and 99, and
+  that every `cite` is an invented `Rule QR-`. The bundled vault, having no book, lists the
+  example chains as needing their tables.
+- **Voltage drop** (`FieldAssist/Electrical/VoltageDrop.swift`, pure; `domain_calc` operation
+  `voltage_drop`): 2 × I × L × R single-phase, √3 × I × L × R three-phase line to line, from the
+  phase (never assumed), the current, the one-way length in m or ft, and the resistance per km,
+  m, 1000 ft or ft, or a factor over the conductor's area (Ω·mm²/m over mm², Ω·cmil/ft over cmil).
+  The answer gives the drop in volts and, with the supply, as a percentage, echoes every input,
+  and says it is resistance only. Nothing in it is a constant from a code: a missing phase,
+  resistance, factor or area is asked for, and a value at or below zero refused. `domain_calc` no
+  longer requires a refrigerant for every operation. The trade gate now splits a tool by
+  operation (`FieldTradeGate.operationTrades`): `domain_calc` is offered while either trade is on,
+  its saturation math is redirected on an electrical-only phone and its voltage drop on a
+  refrigeration-only one (the router passes the operation), and the prompt's routing rule for a
+  hidden electrical trade names voltage drop. The arithmetic evaluator gained `sqrt( )`, so a
+  chain writes the same calculation over named values (`calc volts (V) = sqrt(3) * current *
+  length * resistance / 1000`), and the guide documents the forms. Not on the on-device set,
+  which is unchanged.
+- **`Scripts/chains-validate/`**: `run.sh <vault folder> [chains.md]` compiles `ChainParser`,
+  `TableLookup`, `TableReference`, `TableExtractor`, `PDFTableReader` and the evaluator unchanged
+  with `swiftc` and PDFKit, reads the tables of every PDF the manifest lists (or the original of a
+  text document) as an import does, and prints counts and line-numbered findings through the pure
+  core `OpenGlassesTests/ChainsValidate/ChainsValidateCore.swift`: the chains parsed and with
+  problems, steps and lookups per chain, every parse problem with its line and kind, and for every
+  lookup — in a chain with a problem too, found by `ChainParser.lookupStep` — whether its table is
+  read, unread or missing, and whether its row, column and cell number resolve (resolved,
+  ambiguous, between rows, unresolved, a pattern a heading fits, a value only a run can check, no
+  column on a wide table), and whether the manifest lists the chains file. Names are printed only
+  from the chains file; `CHAINS_VALIDATE_NAMES=0` prints none. The build directory must be outside
+  the repository. The guide gains "The electrical starter" and "Voltage drop, in a chain and on its
+  own"; the site page and PDF are regenerated.
+- **Tests (invented fixtures, committed before the private run).** `ElectricalStarterVaultTests`
+  (6): bundled and offered with its trade and gating, the template manifest agreeing; the prompt
+  rules; the template validating at import with the three missing-table warnings and its chains
+  parsing clean, equal in steps to the guide's; no book, label or rule beyond the invented ones;
+  `rule_chain list` on the starter naming the example chains as needing their tables; and the
+  template with an invented book of the fixture tables in `documents/` validating with no chain
+  warning and running the example to QMX90 on a job. `VoltageDropTests` (10): single- and
+  three-phase in both unit systems and both forms, a value at or below zero refused, the phase
+  read from words, the tool's answer with its inputs echoed, a missing resistance, factor, area,
+  phase or length refused, no refrigerant needed, a chain `calc` reaching the tool's number
+  through named values, a chain looking a resistance up in an invented Table 96 then computing
+  it, `sqrt` and nothing else new, and the on-device set unchanged. `ChainsValidateCoreTests`
+  (5): on the P2 fixture tables, a missing table, an unresolved row, an unresolved column, an
+  unread table, a parse problem by its line and kind, and a manifest not listing the file; names
+  only from the chains file and none in counts mode; the guide's example resolving throughout
+  with the parser's own lookups; a column not named and a number between rows; every parser
+  problem having a kind. `FieldTradeGateTests` updated for the split tool.
+- **Run on the partner's test vault** (after every fixture and test was committed; counts only,
+  the full output kept off-repo for the electrician): two PDFs read in 69 s,
+  189 captions stored (70 read to a grid, 119 not); 11 chains, all 11 parsed, **0 problems**, so
+  the hand-written file's four assumptions (several `check` steps in one chain, a `cite` straight
+  after an `ask`, a decimal in an `ask` range, `{name.row}` inside a `row`) are all accepted by
+  the parser as written, and none needed a parser change; steps per chain 8, 14, 13, 16, 8, 9, 17,
+  15, 8, 11 and 12. Of 43 lookups, 4 name a table that was read, 25 one whose caption was found and
+  grid not read, and 14 a label no caption carries. On the 4 read tables, rows: 1 resolved, 3 from
+  a value; columns: 3 ambiguous, 1 unresolved. 0 of 43 resolve throughout. The vault's manifest
+  does not list `chains.md` (the file is kept apart from the vault), so it has to be copied in and
+  listed before the import reads it. The unread tables are P0's extraction limit (the "too few
+  rows" captions), not the chains; the missing labels and the ambiguous columns are the
+  electrician's to check against the book, with the named output
+- **Owed on a device:** the starter offered and chosen as the default vault, its chains listed as
+  needing their tables; voltage drop asked by voice in both unit systems, the assistant asking
+  for the phase and the resistance rather than supplying them; a refrigeration-only phone
+  redirecting voltage drop and an electrical-only one the refrigerant operations; the partner's
+  vault imported with its chains and a chain run to its read-back.
 
 ## Acceptance
 

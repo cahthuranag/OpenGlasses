@@ -18,6 +18,7 @@ swiftc -O -parse-as-library -o "$build/retrieval-eval" \
   "$src/RAG/Embedder.swift" "$src/RAG/EmbeddingBackend.swift" "$src/RAG/EmbeddingVersion.swift" \
   "$src/RAG/PassageLocation.swift" \
   "$src/Vault/VaultRetriever.swift" "$src/Vault/ClauseReference.swift" "$src/Vault/CodeTokenizer.swift" \
-  "$src/Vault/LexicalSupport.swift" "$src/Vault/PageReference.swift" "$src/Vault/DocumentEditions.swift" "$src/Vault/BackOfBookIndex.swift" "$src/Vault/ManualPassageLimit.swift"
+  "$src/Vault/LexicalSupport.swift" "$src/Vault/PageReference.swift" "$src/Vault/DocumentEditions.swift" "$src/Vault/BackOfBookIndex.swift" "$src/Vault/ManualPassageLimit.swift" \
+  "$src/Vault/TableExtractor.swift" "$src/Vault/TableRowPassage.swift"
 
 exec "$build/retrieval-eval"

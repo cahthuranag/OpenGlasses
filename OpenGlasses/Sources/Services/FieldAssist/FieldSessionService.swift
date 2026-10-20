@@ -1699,7 +1699,7 @@ final class FieldSessionService: ObservableObject {
         let candidate = Self.bestFigure(in: outcome.passages)
         let decision = FigureAutoOpenPolicy.decide(
             turnKind: kind,
-            passageKind: candidate.map { $0.kind == .diagram ? .diagram : .captioned },
+            passageKind: candidate.map { FigureAutoOpenPolicy.PassageKind($0.kind) },
             tokenHits: candidate?.matchedTokens ?? [],
             namedPages: PageReference.pages(in: searchTurn),
             passagePage: candidate?.page)

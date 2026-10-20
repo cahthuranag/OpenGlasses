@@ -104,7 +104,9 @@ struct DocumentRAGTool: NativeTool {
     private func locator(for p: DocumentStore.Passage) -> String {
         var parts: [String] = []
         if let page = p.page { parts.append("page \(page)") }
-        if p.kind == .diagram {
+        if p.kind == .tableRow, let figure = p.figure, !figure.isEmpty {
+            parts.append(figure)
+        } else if p.kind == .diagram {
             parts.append(p.figure.flatMap { $0.isEmpty ? nil : $0 } ?? "diagram")
         } else if let section = p.section, !section.isEmpty {
             parts.append(section)

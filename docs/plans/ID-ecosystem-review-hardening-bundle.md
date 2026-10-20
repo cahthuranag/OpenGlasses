@@ -1,7 +1,7 @@
 # Plan ID: Hardening Bundle from the October 2026 Ecosystem Review
 
 **Status:** 🚧 Item 1 shipped 2026-10-10 (PR #704); item 4 built 2026-10-21 ([#812](https://github.com/straff2002/OpenGlasses/pull/812)); item 5 built
-2026-10-21 (PR pending); item 7 built 2026-10-19 as Plan FG's P1a (PR #788); items 2, 3, 6 and 8 unbuilt. A checklist plan: each item is its own small,
+2026-10-21 ([#814](https://github.com/straff2002/OpenGlasses/pull/814)); item 7 built 2026-10-19 as Plan FG's P1a (PR #788); items 2, 3, 6 and 8 unbuilt. A checklist plan: each item is its own small,
 direct PR with a test, in any order, and is ticked here (with its PR number) when it merges. Item 7
 is tracked in Plan [FG](FG-workflow-vaults-and-enterprise-auth.md) and only referenced here.
 **Origin:** The [October 2026 ecosystem review](../ecosystem-review-2026-10.md), sections 3 and 4
@@ -26,7 +26,7 @@ string a user sees; this file's checklist and the index row updated in the same 
 - [ ] **2. Broadcast frame pacing on a deadline** (S, Plan [CY](CY-broadcast-resilience-and-quality.md)'s surface).
 - [ ] **3. Web mirror page sized to the device and quiet while hidden** (XS, Plan [BP](BP-web-hud-mirror.md)).
 - [x] **4. Gateway hosts typed without a scheme** (S): done 2026-10-21, [#812](https://github.com/straff2002/OpenGlasses/pull/812).
-- [x] **5. A second and third cloud voice: OpenAI and xAI** (S-M): done 2026-10-21, PR pending (live-key device check owed).
+- [x] **5. A second and third cloud voice: OpenAI and xAI** (S-M): done 2026-10-21, [#814](https://github.com/straff2002/OpenGlasses/pull/814) (live-key device check owed).
 - [ ] **6. `framegate-probe` replay script** (S).
 - [x] **7. OAuth single-flight refresh, failure classes and a forced refresh on 401** (S): tracked
   as Plan FG's 2026-10-10 amendment; built 2026-10-19 as FG P1a ([#788](https://github.com/straff2002/OpenGlasses/pull/788); device sign-in pass owed).
@@ -174,7 +174,7 @@ them); a request-shape test through a `URLProtocol` stub for each (method, addre
 no credential in the URL), refusals and the credit latch; the xAI catalog parser; the credential
 lookup; the medical canary; the manifest test. A live-key check of both voices is owed after merge.
 
-**Built 2026-10-21 (PR pending).** As specified, with these details. The engine enum gains
+**Built 2026-10-21 ([#814](https://github.com/straff2002/OpenGlasses/pull/814)).** As specified, with these details. The engine enum gains
 `cloudVoices` (the Auto order), `isCloud`, `vendorName` and `speechRoute`; one pure readiness rule,
 `TTSEngineSelector.cloudVoiceReady`, covers all three cloud voices (credential, not latched out of
 credit, online, not an on-device-only utterance, and `MedicalEgressGuard.decide` on the voice's own

@@ -544,6 +544,13 @@ struct Config {
 
     static func setNarrateModelSwitchesEnabled(_ enabled: Bool) { narrateModelSwitchesEnabled = enabled }
 
+    /// Speak a Direct-mode reply a sentence at a time while the model is still writing it, instead
+    /// of after its last token (Plan HZ P1). What is said does not change, only when. Default off
+    /// until the device measurement (Plan HZ P2) shows it is better on the glasses route; the switch
+    /// is in Settings › Advanced › Developer.
+    @UserDefaultsBacked("directSentenceStreamingEnabled", default: false)
+    static var directSentenceStreamingEnabled: Bool
+
     /// "Keep talking without signal" (Plan GE): when the connection goes, the conversation carries
     /// on on the phone — on-device model, offline tool set — and moves back to the cloud on its own
     /// once a stable connection returns. Only takes effect when an on-device model is installed

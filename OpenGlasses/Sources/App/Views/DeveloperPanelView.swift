@@ -12,6 +12,9 @@ struct DeveloperPanelView: View {
     @AppStorage("fieldToolProfileEnabled") private var fieldToolProfileEnabled = true
     /// Plan GU §5 — `Config.wakeSpeechGateEnabled`, the same key and default (off until tuned).
     @AppStorage("wakeSpeechGateEnabled") private var wakeSpeechGateEnabled = false
+    /// Plan HZ P1 — `Config.directSentenceStreamingEnabled`, the same key and default (off until
+    /// measured on device).
+    @AppStorage("directSentenceStreamingEnabled") private var directSentenceStreamingEnabled = false
 
     init(appState: AppState) {
         self.appState = appState
@@ -90,6 +93,14 @@ struct DeveloperPanelView: View {
                     .onChange(of: wakeSpeechGateEnabled) { _, _ in
                         appState.restartWakeWordIfDirect()
                     }
+            }
+
+            OGSection(
+                header: "Reply Speech",
+                footer: "Starts speaking a reply at its first sentence while the rest is still being written, instead of waiting for the whole answer. The words are the same; only the timing changes. Off until it has been measured on the glasses."
+            ) {
+                OGRow("Speak as it writes", isOn: $directSentenceStreamingEnabled,
+                      icon: "text.bubble")
             }
 
             OGSection(header: "Turn Latency") {

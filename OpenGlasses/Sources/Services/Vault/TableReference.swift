@@ -4,14 +4,19 @@ import Foundation
 /// route (Plan JJ P1), the way [[ClauseReference]] does for a clause number.
 ///
 /// Recognised: "table 99", "Table 99", "tbl 99", "tbl. 99", "table no. 99", a number spoken as
-/// words ("table ninety-nine", "table one hundred and two"), and — only when the question says
-/// "table" — every word of one table's title ("the conductor ratings table" for a table titled "Conductor
-/// ratings"). Not recognised: "table" with no number after it ("a table saw"), a table word
-/// inside another word ("timetable 9"), or a model number that happens to start with the letters
-/// ("TBL99X").
+/// words ("table ninety-nine", "table one hundred and two"), a letter beside the number (Plan JJ
+/// P5: "table 95A", "table 95 B", "table five A", "table Q7", "table Q seven"), and — only when the
+/// question says "table" — every word of one table's title ("the conductor ratings table" for a
+/// table titled "Conductor ratings"). Not recognised: "table" with no number after it ("a table
+/// saw"), a table word inside another word ("timetable 9"), or a model number that happens to
+/// start with the letters ("TBL99X").
+///
+/// A lower-case "a" or "i" standing after the number is read as a word ("is table 5 a good
+/// source"), not as the label's letter, unless the vault prints a table of that label
+/// (`references(in:catalogue:)`, `labels(in:among:)`).
 ///
 /// The label is spelled as the extractor writes a caption's (`TableExtractor.caption`):
-/// "Table 99". Pure and deterministic.
+/// "Table 99", "Table 95A", "Table Q7". Pure and deterministic.
 enum TableReference {
 
     /// One table a vault holds, by label and title — what title words are matched against.
@@ -28,12 +33,30 @@ enum TableReference {
     /// "Table 99".
     static func label(number: Int) -> String { "Table \(number)" }
 
+    /// "Table 95A", "Table Q7": a number with the letters printed before or after it.
+    static func label(number: Int, prefix: String, suffix: String) -> String {
+        "Table \(prefix.uppercased())\(number)\(suffix.uppercased())"
+    }
+
     // MARK: - By number
 
     /// The tables a question names by number, in order of first appearance, de-duplicated.
     static func labels(in text: String) -> [String] {
+        labels(in: text, among: [])
+    }
+
+    /// The tables a question names by number, reading a lower-case "a" or "i" after the number as
+    /// the label's letter only when `available` holds that label ("table five a" where the vault
+    /// prints a Table 5A). Labels are compared without case.
+    static func labels(in text: String, among available: [String]) -> [String] {
         var seen = Set<String>()
-        return spans(in: text).map(\.label).filter { seen.insert($0).inserted }
+        return spans(in: text).map { span in
+            if let lettered = span.lettered,
+               available.contains(where: { $0.caseInsensitiveCompare(lettered) == .orderedSame }) {
+                return lettered
+            }
+            return span.label
+        }.filter { seen.insert($0.lowercased()).inserted }
     }
 
     /// The question with every numbered table reference blanked out, so the per-token boost does
@@ -49,7 +72,7 @@ enum TableReference {
     /// The tables a question names: by number when it gives one, else the one table whose title
     /// its words match closely (`titled(in:catalogue:)`), else none.
     static func references(in text: String, catalogue: [Entry]) -> [String] {
-        let numbered = labels(in: text)
+        let numbered = labels(in: text, among: catalogue.map(\.label))
         guard numbered.isEmpty else { return numbered }
         return titled(in: text, catalogue: catalogue).map { [$0] } ?? []
     }
@@ -93,6 +116,9 @@ enum TableReference {
     private struct Span {
         let range: Range<String.Index>
         let label: String
+        /// The label with a lower-case "a" or "i" after the number read as its letter, when one
+        /// stands there: taken only where the vault prints that table.
+        var lettered: String?
     }
 
     /// "table", "tbl" or "tbl." standing as a word.
@@ -101,32 +127,78 @@ enum TableReference {
     /// What may stand between the keyword and its number: "no.", "number", "#".
     private static let filler = try! NSRegularExpression(
         pattern: #"^\s*(?:(?:no\.?|number|#)\s*)?"#, options: [.caseInsensitive])
-    /// A printed number, whole: not followed by a letter, a digit or a decimal part.
-    private static let digits = try! NSRegularExpression(pattern: #"^(\d{1,4})(?![\p{L}\p{N}]|[.,]\d)"#)
+    /// A printed number, whole, with the letters a label may carry against it ("95A", "Q7"): not
+    /// followed by another letter, a digit or a decimal part.
+    private static let digits = try! NSRegularExpression(
+        pattern: #"^([A-Za-z]{1,2})?(\d{1,4})([A-Za-z])?(?![\p{L}\p{N}]|[.,]\d)"#)
+    /// One letter standing as a word after the number ("95 B", "five A").
+    private static let letterAfter = try! NSRegularExpression(pattern: #"^[ \t]+([A-Za-z])(?![\p{L}\p{N}])"#)
+    /// One letter standing as a word before the number ("Q seven", "Q 7").
+    private static let letterBefore = try! NSRegularExpression(pattern: #"^([A-Za-z])[ \t]+"#)
 
     private static func spans(in text: String) -> [Span] {
         let ns = text as NSString
         var found: [Span] = []
+        func tail(_ from: Int) -> NSRange { NSRange(location: from, length: ns.length - from) }
+        func group(_ match: NSTextCheckingResult, _ index: Int) -> String {
+            match.range(at: index).location == NSNotFound ? "" : ns.substring(with: match.range(at: index))
+        }
         for match in keyword.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
             var cursor = NSMaxRange(match.range)
-            let rest = NSRange(location: cursor, length: ns.length - cursor)
-            if let gap = filler.firstMatch(in: text, range: rest) { cursor += gap.range.length }
-            let tail = NSRange(location: cursor, length: ns.length - cursor)
+            if let gap = filler.firstMatch(in: text, range: tail(cursor)) { cursor += gap.range.length }
             var number: Int?
+            var prefix = ""
+            var suffix = ""
             var end = cursor
-            if let printed = digits.firstMatch(in: text, options: [.anchored], range: tail) {
-                number = Int(ns.substring(with: printed.range(at: 1)))
+            if let printed = digits.firstMatch(in: text, options: [.anchored], range: tail(cursor)) {
+                number = Int(group(printed, 2))
+                prefix = group(printed, 1)
+                suffix = group(printed, 3)
                 end = NSMaxRange(printed.range)
             } else if let spoken = spokenNumber(in: ns, from: cursor) {
                 number = spoken.value
                 end = spoken.end
+            } else if let letter = letterBefore.firstMatch(in: text, options: [.anchored], range: tail(cursor)),
+                      isLabelLetter(group(letter, 1)) {
+                // "Q seven", "Q 7": one letter, then the number.
+                let after = NSMaxRange(letter.range)
+                if let printed = digits.firstMatch(in: text, options: [.anchored], range: tail(after)),
+                   group(printed, 1).isEmpty {
+                    number = Int(group(printed, 2))
+                    suffix = group(printed, 3)
+                    end = NSMaxRange(printed.range)
+                } else if let spoken = spokenNumber(in: ns, from: after) {
+                    number = spoken.value
+                    end = spoken.end
+                }
+                if number != nil { prefix = group(letter, 1) }
             }
-            guard let number, number > 0,
-                  let range = Range(NSRange(location: match.range.location, length: end - match.range.location), in: text)
+            guard let number, number > 0 else { continue }
+            // A letter standing after the number is the label's when it is a capital or any small
+            // letter but "a" and "i", which are words; those only where the vault prints the table.
+            var lettered: String?
+            if suffix.isEmpty, let letter = letterAfter.firstMatch(in: text, options: [.anchored], range: tail(end)) {
+                let word = group(letter, 1)
+                if isLabelLetter(word) {
+                    suffix = word
+                    end = NSMaxRange(letter.range)
+                } else {
+                    lettered = label(number: number, prefix: prefix, suffix: word)
+                }
+            }
+            guard let range = Range(NSRange(location: match.range.location, length: end - match.range.location), in: text)
             else { continue }
-            found.append(Span(range: range, label: label(number: number)))
+            found.append(Span(range: range, label: label(number: number, prefix: prefix, suffix: suffix),
+                              lettered: lettered))
         }
         return found
+    }
+
+    /// A letter standing on its own that belongs to a label rather than the sentence: a capital,
+    /// or a small letter other than the words "a" and "i".
+    private static func isLabelLetter(_ letter: String) -> Bool {
+        guard letter.count == 1, let first = letter.first else { return false }
+        return first.isUppercase || !["a", "i"].contains(letter)
     }
 
     // MARK: - Spoken numbers

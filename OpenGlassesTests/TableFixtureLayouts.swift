@@ -213,6 +213,204 @@ enum TableFixtureLayouts {
          Item(text: "Nothing on this page is set out in rows or columns of any kind, and every line is prose.", x: 50, y: 116)]
     }
 
+    // MARK: - Labels with a letter (Plan JJ P5)
+
+    /// A two-column bold grid under `caption`, its first values starting at `first`.
+    private static func smallGrid(_ caption: String, names: [String], first: Int, printed: String? = nil) -> Page {
+        var items = [Self.caption(caption)]
+        items += row(90, [("Designation", 50), ("Limit (A)", 200)], bold: true)
+        for (index, name) in names.enumerated() {
+            items += row(106 + Double(index) * 14, [(name, 50), (String(first + 2 * index), 210)])
+        }
+        if let printed { items.append(footer(printed)) }
+        return items
+    }
+
+    /// Four pages: Table 95, then Table 95A, then Table 95A continued, then Table 95B — four
+    /// captions that share a number and differ by a letter or by none.
+    static func letteredLabels() -> [Page] {
+        [smallGrid("TABLE 95 Invented limits", names: ["QA1", "QA2", "QA3"], first: 10),
+         smallGrid("TABLE 95A Invented clearances", names: ["QB1", "QB2", "QB3"], first: 30),
+         smallGrid("TABLE 95A (Continued)", names: ["QB4", "QB5", "QB6"], first: 36),
+         smallGrid("TABLE 95B Invented spacings", names: ["QC1", "QC2", "QC3"], first: 50)]
+    }
+
+    // MARK: - A table continued onto a page with no caption (Plan JJ P5)
+
+    /// Table 96 on a page set in one weight, its rows running to the foot of the page and on over
+    /// the next, which prints no caption of its own: a running head, optionally the column headings
+    /// again, then more rows at the same column positions. `sameColumns: false` sets the second
+    /// page's rows at other positions, as a different table's would be.
+    static func captionlessContinuation(sameColumns: Bool = true, repeatHeader: Bool = false) -> [Page] {
+        let heads: [(String, Double)] = [("Designation", 50), ("Indoor (mm)", 200), ("Outdoor (mm)", 330)]
+        let xs: [Double] = sameColumns ? [50, 210, 340] : [50, 120, 450]
+        var first: Page = [lead(), Item(text: "Table 96 Invented clearances", x: 50, y: 60)]
+        first += row(90, heads)
+        for (index, cells) in [["QA1", "10", "20"], ["QA2", "12", "24"], ["QA3", "14", "28"]].enumerated() {
+            first += row(106 + Double(index) * 14, zip(cells, [50, 210, 340]).map { ($0, $1) })
+        }
+        first.append(footer("40"))
+        var second: Page = [Item(text: "Invented manual, chapter nine", x: 50, y: 30)]
+        var y = 60.0
+        if repeatHeader {
+            second += row(y, heads)
+            y += 16
+        }
+        for (index, cells) in [["QA4", "16", "32"], ["QA5", "18", "36"], ["QA6", "20", "40"]].enumerated() {
+            second += row(y + Double(index) * 14, zip(cells, xs).map { ($0, $1) })
+        }
+        second.append(footer("41"))
+        return [first, second]
+    }
+
+    // MARK: - Marks in the cells (Plan JJ P5)
+
+    /// Table 98 on a page set in one weight, its cells marks rather than numbers — a cross, a tick,
+    /// a dash — and some left blank, so no two rows need print the same columns.
+    static func tickMarks() -> Page {
+        var items = [Item(text: "Table 98 Invented locations", x: 50, y: 60)]
+        items += row(90, [("Designation", 50), ("North", 200), ("South", 260), ("East", 320), ("West", 380)])
+        let marks = [205.0, 265, 325, 385]
+        let body: [(String, [String])] = [
+            ("QXRT", ["X", "X", "", ""]),
+            ("QMX90", ["X", "", "X", ""]),
+            ("QZ12", ["", "\u{2713}", "\u{2713}", "\u{2713}"]),
+            ("QA7", ["X", "X", "X", "X"]),
+            ("QB2", ["\u{2014}", "X", "", "X"]),
+        ]
+        for (index, entry) in body.enumerated() {
+            let y = 106 + Double(index) * 14
+            items += row(y, [(entry.0, 50)] + zip(entry.1, marks).map { ($0, $1) })
+        }
+        return items
+    }
+
+    // MARK: - Two groups side by side under one caption (Plan JJ P5)
+
+    /// Table Q7 on a page set in one weight: two designation / limit pairs side by side, the right
+    /// one a row shorter. `groupHeadings` prints a heading over each pair.
+    static func sideBySide(groupHeadings: Bool = false) -> Page {
+        var items = [Item(text: "Table Q7 Invented band limits", x: 50, y: 60)]
+        var y = 90.0
+        if groupHeadings {
+            items += row(y, [("Rating group 1", 60), ("Rating group 2", 330)])
+            y += 14
+        }
+        items += row(y, [("Designation", 50), ("Limit (A)", 150), ("Designation", 320), ("Limit (A)", 420)])
+        let left = [["QA1", "10"], ["QA2", "12"], ["QA3", "14"], ["QA4", "16"]]
+        let right = [["QB1", "20"], ["QB2", "22"], ["QB3", "24"]]
+        for index in left.indices {
+            var cells = [(left[index][0], 50.0), (left[index][1], 160.0)]
+            if index < right.count { cells += [(right[index][0], 320), (right[index][1], 430)] }
+            items += row(y + 16 + Double(index) * 14, cells)
+        }
+        return items
+    }
+
+    // MARK: - Headings stacked deep (Plan JJ P5)
+
+    /// Table 95B on a page set in one weight, its column headings wrapped over six lines, so its
+    /// first row of numbers sits further under the caption than a short header reaches.
+    static func deepHeadings() -> Page {
+        var items = [Item(text: "Table 95B Invented ratings by band", x: 50, y: 60)]
+        let stacks: [[String]] = [["Rating", "group 1", "at the", "invented", "ambient", "(A)"],
+                                  ["Rating", "group 2", "at the", "invented", "ambient", "(A)"],
+                                  ["Rating", "group 3", "at the", "invented", "ambient", "(A)"]]
+        for level in 0..<6 {
+            let y = 80 + Double(level) * 11
+            var cells = stacks.enumerated().map { ($0.element[level], 200 + Double($0.offset) * 90) }
+            if level == 5 { cells.insert(("Designation", 50), at: 0) }
+            items += row(y, cells)
+        }
+        let body: [[String]] = [["QA1", "11", "12", "13"], ["QA2", "21", "22", "23"],
+                                ["QA3", "31", "32", "33"], ["QA4", "41", "42", "43"]]
+        for (index, cells) in body.enumerated() {
+            items += row(150 + Double(index) * 14, zip(cells, [50, 210, 300, 390]).map { ($0, $1) })
+        }
+        return items
+    }
+
+    // MARK: - Headings printed as numbers (Plan JJ P5)
+
+    /// Table 99 on a page set in one weight: a heading over the three value columns, and under it
+    /// the columns' own headings printed as numbers on the same line as the row-header heading.
+    static func numberedHeadings() -> Page {
+        var items = [Item(text: "Table 99 Invented ratings by conductors", x: 50, y: 60)]
+        items += row(84, [("Conductors in the run", 262)])
+        items += row(98, [("Designation", 50), ("2", 212), ("3", 302), ("4 or more", 392)])
+        let body: [[String]] = [["QXRT", "25", "30", "35"], ["QMX90", "30", "35", "40"], ["QZ12", "40", "45", "50"]]
+        for (index, cells) in body.enumerated() {
+            items += row(114 + Double(index) * 14, zip(cells, [50, 210, 300, 390]).map { ($0, $1) })
+        }
+        return items
+    }
+
+    // MARK: - A list of tables (Plan JJ P5)
+
+    /// A page that lists two tables by caption, then the two tables on their own pages.
+    static func listOfTables() -> [Page] {
+        let list: Page = [Item(text: "Invented list of tables", x: 50, y: 40),
+                          Item(text: "Table 95A Invented clearances 2", x: 50, y: 60),
+                          Item(text: "Table 95B Invented spacings 3", x: 50, y: 72)]
+        func grid(_ caption: String, _ names: [String], first: Int) -> Page {
+            var items = [Item(text: caption, x: 50, y: 60)]
+            items += row(90, [("Designation", 50), ("Limit (A)", 200)])
+            for (index, name) in names.enumerated() {
+                items += row(106 + Double(index) * 14, [(name, 50), (String(first + 2 * index), 210)])
+            }
+            return items
+        }
+        return [list, grid("Table 95A Invented clearances", ["QB1", "QB2", "QB3"], first: 30),
+                grid("Table 95B Invented spacings", ["QC1", "QC2", "QC3"], first: 50)]
+    }
+
+    // MARK: - A caption at the foot of a page (Plan JJ P5)
+
+    /// Table 96 captioned at the foot of a page of prose, its headings and rows on the next page
+    /// under a running head.
+    static func captionAtFoot() -> [Page] {
+        var first: Page = (0..<12).map { index in
+            Item(text: "Paragraph line \(index + 1) of an invented manual describes general care of the unit.",
+                 x: 50, y: 80 + Double(index) * 14)
+        }
+        first.append(Item(text: "Table 96 Invented clearances", x: 50, y: 700))
+        first.append(footer("40"))
+        var second: Page = [Item(text: "Invented manual, chapter nine", x: 50, y: 30)]
+        second += row(60, [("Designation", 50), ("Indoor (mm)", 200), ("Outdoor (mm)", 330)])
+        for (index, cells) in [["QA1", "10", "20"], ["QA2", "12", "24"], ["QA3", "14", "28"], ["QA4", "16", "32"]].enumerated() {
+            second += row(76 + Double(index) * 14, zip(cells, [50, 210, 340]).map { ($0, $1) })
+        }
+        second.append(footer("41"))
+        return [first, second]
+    }
+
+    // MARK: - A table printed with no text (Plan JJ P5)
+
+    /// Table 97 on a page set in one weight: its caption and a paragraph under it, then nothing
+    /// until the footer — where a book prints the table as a picture, the text layer has no grid.
+    static func tableWithoutText() -> Page {
+        [Item(text: "Table 97 Invented resistances", x: 50, y: 60),
+         Item(text: "The invented values below apply to every invented designation in this example and to", x: 50, y: 80),
+         Item(text: "nothing else, and they are given here only so that a test has a paragraph to read.", x: 50, y: 92),
+         footer("44")]
+    }
+
+    /// Table Q7 again, side by side, with a word over each pair's value column set on a line of its
+    /// own — the left one wide enough that, stretched to the gap, it also reaches the right pair's
+    /// key column, so the two pairs' headings come out as different paths that read alike.
+    static func sideBySideSplitHeadings() -> Page {
+        var items = [Item(text: "Table Q7 Invented band limits", x: 50, y: 60)]
+        items += row(90, [("Maximum", 220), ("Maximum", 400)])
+        items += row(102, [("Designation", 130), ("limit (A)", 220), ("Designation", 310), ("limit (A)", 400)])
+        let left = [["QA1", "10"], ["QA2", "12"], ["QA3", "14"]]
+        let right = [["QB1", "20"], ["QB2", "22"], ["QB3", "24"]]
+        for index in left.indices {
+            items += row(118 + Double(index) * 14, [(left[index][0], 130), (left[index][1], 222),
+                                                    (right[index][0], 310), (right[index][1], 402)])
+        }
+        return items
+    }
+
     // MARK: - Pages that are not tables
 
     /// A drawing with numbers on it, captioned as a figure: no table caption, nothing to extract.

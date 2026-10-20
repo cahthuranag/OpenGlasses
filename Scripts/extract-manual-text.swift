@@ -189,10 +189,12 @@ func isStructuralHeading(_ line: TypedLine, bodySize: Int) -> Bool {
 /// line, else nil. Captions are bold; the number is what separates a caption from a cross-reference.
 func captionLabel(_ line: TypedLine) -> (label: String, inlineTitle: String)? {
     guard line.bold else { return nil }
-    guard let match = line.text.range(of: "^(FIGURE|TABLE)\\s+(\\d+)", options: [.regularExpression, .caseInsensitive]) else { return nil }
+    // The label as printed, a letter beside the number included (the app's `TableExtractor.labelPattern`).
+    let labelPattern = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:[A-Za-z](?![\p{L}\p{N}]))?"#
+    guard let match = line.text.range(of: #"^(?i:FIGURE|TABLE)\s+"# + labelPattern, options: .regularExpression) else { return nil }
     let head = String(line.text[match])
     let word = head.range(of: "^FIGURE", options: [.regularExpression, .caseInsensitive]) != nil ? "Figure" : "Table"
-    let number = head.range(of: "\\d+", options: .regularExpression).map { String(head[$0]) } ?? ""
+    let number = head.range(of: labelPattern + "$", options: .regularExpression).map { String(head[$0]) } ?? ""
     let rest = String(line.text[match.upperBound...])
         .trimmingCharacters(in: CharacterSet(charactersIn: " \t.:—–-"))
     return ("\(word) \(number)", rest)
@@ -502,6 +504,9 @@ func runSelfCheck() -> Never {
     check("caption not bold", caption("FIGURE 58", false), "nil")
     check("cross reference", caption("See FIGURE 58 on page 44"), "nil")
     check("no number", caption("FIGURE"), "nil")
+    check("letter after the number", caption("TABLE 95A Invented limits"), "Table 95A/Invented limits")
+    check("letters before the number", caption("TABLE Q7"), "Table Q7")
+    check("letter run into a word", caption("TABLE 16Wiring"), "Table 16/Wiring")
 
     // A caption takes the bold line under it as its title; a parenthetical line merges upward.
     let figurePage = page([line("FIGURE 58", 10, true),

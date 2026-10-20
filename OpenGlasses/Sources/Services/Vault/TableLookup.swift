@@ -132,7 +132,8 @@ enum TableLookup {
 
         // The table: by label, then by title words.
         let candidates: [Source]
-        if let label = TableReference.labels(in: request.table).first ?? bareLabel(request.table) {
+        let printed = pool.map(\.table.label)
+        if let label = TableReference.labels(in: request.table, among: printed).first ?? bareLabel(request.table) {
             candidates = pool.filter { $0.table.label.caseInsensitiveCompare(label) == .orderedSame }
             guard !candidates.isEmpty else {
                 return .failure(Refusal(outcome: .notFound(.table, asked: label, available: availableTables(pool))))
@@ -155,12 +156,12 @@ enum TableLookup {
         return .success((source, candidates.filter { !$0.table.isExtracted }.map(\.table.page)))
     }
 
-    /// "99" or "No. 99" asked for as the table.
+    /// "99", "No. 99", "95A" or "Q7" asked for as the table.
     private static func bareLabel(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let match = trimmed.range(of: #"^(?:no\.?\s*|#)?(\d{1,4})$"#, options: [.regularExpression, .caseInsensitive]),
-              let number = Int(trimmed[match].filter(\.isNumber)) else { return nil }
-        return TableReference.label(number: number)
+        guard trimmed.range(of: #"^(?:no\.?\s*|#)?[A-Za-z]{0,2}\d{1,4}[A-Za-z]?$"#,
+                            options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
+        return TableReference.labels(in: "table " + trimmed).first
     }
 
     /// The tables whose titles share the most of the asked words — all of them on a tie.
@@ -186,22 +187,55 @@ enum TableLookup {
             return .resolved(all)
         }
         guard !all.isEmpty else { return .none }
-        let key = normalised(asked)
-        // By path: the whole path, or the end of it ("Band B" under one group only).
-        let byPath = all.filter { index in
-            suffixes(table.columns[index].path).contains(key)
+        // By path: the whole path, or the end of it ("Band B" under one group only) — as printed,
+        // then with the units in brackets left out on both sides (Plan JJ P5: a chain writes
+        // "Band A" for a heading printed "Band A (A)").
+        for strip in [false, true] {
+            let key = normalised(strip ? withoutUnits(asked) : asked)
+            guard !key.isEmpty else { continue }
+            let byPath = all.filter { index in
+                suffixes(table.columns[index].path.map { strip ? withoutUnits($0) : $0 }).contains(key)
+            }
+            if byPath.count == 1 { return .resolved(byPath) }
+            if byPath.count > 1 {
+                let whole = byPath.filter {
+                    normalised(table.columns[$0].path.map { strip ? withoutUnits($0) : $0 }.joined(separator: " ")) == key
+                }
+                return whole.count == 1 ? .resolved(whole) : .ambiguous(byPath.map { columnName(table.columns[$0]) })
+            }
         }
-        if byPath.count == 1 { return .resolved(byPath) }
-        if byPath.count > 1 {
-            let whole = byPath.filter { normalised(table.columns[$0].path.joined(separator: " ")) == key }
-            return whole.count == 1 ? .resolved(whole) : .ambiguous(byPath.map { columnName(table.columns[$0]) })
+        // By words, in any order: with the units, then — when they fit no column, or several —
+        // without them, so a unit said another way ("amps" for "A") or left out decides nothing.
+        let paths = all.map { table.columns[$0].path }
+        var match = bestByWords(asked, among: paths)
+        if case .one = match {} else {
+            let bare = bestByWords(withoutUnits(asked), among: paths.map { $0.map(withoutUnits) })
+            switch (match, bare) {
+            case (_, .one): match = bare
+            case (.none, .several): match = bare
+            default: break
+            }
         }
-        // By words.
-        switch bestByWords(asked, among: all.map { table.columns[$0].path }) {
+        switch match {
         case .one(let index): return .resolved([all[index]])
         case .several(let indexes): return .ambiguous(indexes.map { columnName(table.columns[all[$0]]) })
         case .none: return .none
         }
+    }
+
+    /// A heading or asked words with every bracketed unit taken out: "(A)", "[mm²]", "(°C)",
+    /// "(amps)" — a bracket of one short word. Words in brackets ("(see note)") stay.
+    static func withoutUnits(_ text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"\s*[\(\[]\s*[^()\[\]\s]{1,10}\s*[\)\]]"#) else { return text }
+        let ns = text as NSString
+        var out = text
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
+            let inner = ns.substring(with: match.range).trimmingCharacters(in: CharacterSet(charactersIn: " ()[]"))
+            guard inner.contains(where: { $0.isLetter || "%\u{00B0}\u{00B5}\u{03A9}".contains($0) }),
+                  let range = Range(match.range, in: out) else { continue }
+            out.replaceSubrange(range, with: "")
+        }
+        return out.trimmingCharacters(in: .whitespaces)
     }
 
     // MARK: Rows
@@ -267,19 +301,42 @@ enum TableLookup {
     private static func numericKey(of row: ManualTable.Row) -> (lower: Double, upper: Double, contains: (Double) -> Bool)? {
         for header in row.path {
             let text = header.trimmingCharacters(in: .whitespaces)
-            if let range = text.range(of: #"^(\d+(?:[.,]\d+)?)\s*[-\x{2013}\x{2014}]\s*(\d+(?:[.,]\d+)?)$"#,
-                                      options: .regularExpression) {
-                let parts = text[range].split(whereSeparator: { "-\u{2013}\u{2014}".contains($0) })
-                    .compactMap { Double($0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")) }
-                if parts.count == 2, parts[0] <= parts[1] {
-                    let low = parts[0], high = parts[1]
-                    return (low, high, { $0 >= low && $0 <= high })
-                }
-            }
+            if let range = printedRange(text) { return range }
             let cell = TableExtractor.parseCell(text, markers: [], columnUnit: nil)
             if let value = cell.value, text.range(of: #"^[-+\u{2212}]?[\d.,]+"#, options: .regularExpression) != nil {
                 return (value, value, { $0 == value })
             }
+        }
+        return nil
+    }
+
+    private static let rangeNumber = #"(\d+(?:[.,]\d+)?)"#
+    private static let rangeUnit = #"(?:\s*[^\s\d.,]{1,6})?"#
+    /// "7-9", "7 – 9", "7 to 9", "7 through 9", "from 7 to 9", "7 A to 9 A": both ends included.
+    private static let closedRange = try! NSRegularExpression(
+        pattern: #"^(?:from\s+)?"# + rangeNumber + rangeUnit + #"\s*(?:-|\x{2013}|\x{2014}|to|through|thru)\s*"#
+            + rangeNumber + rangeUnit + #"(?:\s*(?:incl\.?|inclusive))?$"#, options: [.caseInsensitive])
+    /// "over 15 up to 18", "above 15 to 18", "more than 15 but not more than 18": above the first
+    /// number, up to and including the second.
+    private static let openLowRange = try! NSRegularExpression(
+        pattern: #"^(?:over|above|more\s+than|greater\s+than|exceeding)\s+"# + rangeNumber + rangeUnit
+            + #"\s+(?:(?:and\s+)?up\s+to|to|but\s+not\s+(?:over|more\s+than|exceeding))\s+"# + rangeNumber + rangeUnit + "$",
+        options: [.caseInsensitive])
+
+    /// A row key printed as a range (Plan JJ P1, widened in P5 to the ranges a book prints in
+    /// words), as the interval it covers.
+    private static func printedRange(_ text: String) -> (lower: Double, upper: Double, contains: (Double) -> Bool)? {
+        let ns = text as NSString
+        let whole = NSRange(location: 0, length: ns.length)
+        func bounds(_ match: NSTextCheckingResult) -> (Double, Double)? {
+            let parts = [1, 2].compactMap { Double(ns.substring(with: match.range(at: $0)).replacingOccurrences(of: ",", with: ".")) }
+            return parts.count == 2 && parts[0] <= parts[1] ? (parts[0], parts[1]) : nil
+        }
+        if let match = closedRange.firstMatch(in: text, range: whole), let (low, high) = bounds(match) {
+            return (low, high, { $0 >= low && $0 <= high })
+        }
+        if let match = openLowRange.firstMatch(in: text, range: whole), let (low, high) = bounds(match) {
+            return (low, high, { $0 > low && $0 <= high })
         }
         return nil
     }
@@ -495,6 +552,7 @@ enum TableLookup {
         case .varyingColumnCount: return "its rows do not agree on their columns"
         case .mergedCells: return "it has cells spanning several columns"
         case .rotatedHeaders: return "its headings are set on their side"
+        case .noTextInTable: return "the table is printed with no text the PDF can give, most likely as a picture"
         case nil: return "unknown"
         }
     }

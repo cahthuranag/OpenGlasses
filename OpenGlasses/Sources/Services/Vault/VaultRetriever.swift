@@ -347,10 +347,14 @@ struct VaultRetriever {
                 clauseMatch = max(clauseMatch ?? match, match)
             }
             // A passage of a named table: one its caption names, whatever route found it, or one
-            // the table route found on the page of a table whose grid was not read.
+            // the table route found on the page of a table whose grid was not read and that prints
+            // the table's label — the page's other passages are about something else, and ranked
+            // above the clauses they would take the first place from the passage that answers
+            // (Plan JJ P5, measured on the code book's key).
             var tableMatch = false
             for label in tables
-            where label == table || (raw.figure ?? "").caseInsensitiveCompare(label) == .orderedSame {
+            where (label == table && (raw.kind == .tableRow || Self.prints(label, in: raw.text)))
+                || (raw.figure ?? "").caseInsensitiveCompare(label) == .orderedSame {
                 matched.append(label)
                 tableMatch = true
             }
@@ -473,6 +477,15 @@ struct VaultRetriever {
     }
 
     private static func key(_ p: Passage) -> String { "\(p.documentId)#\(p.chunkIndex)" }
+
+    /// The text prints the table's label as a whole ("Table 92", any case, any spacing; not
+    /// "Table 921" or "Table 92A").
+    static func prints(_ label: String, in text: String) -> Bool {
+        let parts = label.split(whereSeparator: \.isWhitespace).map { NSRegularExpression.escapedPattern(for: String($0)) }
+        guard !parts.isEmpty else { return false }
+        let pattern = #"(?<![\p{L}\p{N}])"# + parts.joined(separator: #"\s+"#) + #"(?![\p{L}\p{N}])"#
+        return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
 
     /// The `limit` passages sharing the most of the question's content terms, ties in the order
     /// given (document order, from the token search).

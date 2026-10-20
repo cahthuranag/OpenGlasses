@@ -177,7 +177,8 @@ struct ManualTable: Codable, Equatable {
 enum TableExtractor {
 
     struct Caption: Equatable {
-        /// "Table 99" — the same spelling `ManualStructure.caption` gives the chunk's `figure`.
+        /// "Table 99", "Table 95A", "Table Q7" — the word, then the label as printed; the same
+        /// spelling `ManualStructure.caption` gives the chunk's `figure`.
         var label: String
         var title: String
         /// The caption read "(Continued)".
@@ -198,6 +199,10 @@ enum TableExtractor {
         case mergedCells = "merged_cells"
         /// The grid failed and the table sets words on their side, most likely its headings.
         case rotatedHeaders = "rotated_headers"
+        /// Under the caption the page's text stops for a long stretch with no grid above it: the
+        /// table is printed there with no text the PDF gives — a picture, or type drawn as shapes
+        /// (Plan JJ P5). Only a recogniser could read it.
+        case noTextInTable = "no_text_in_table"
     }
 
     enum Outcome: Equatable {
@@ -342,8 +347,15 @@ enum TableExtractor {
 
     // MARK: - Captions
 
-    private static let captionPattern = #"^TABLE\s+(\d+)"#
-    private static let figurePattern = #"^FIGURE\s+\d+"#
+    /// What follows the word `TABLE` in a caption, and is kept as printed in its label (Plan JJ
+    /// P5): a number, with one letter after it ("95A", "12b") or one or two capitals before it
+    /// ("Q7", "DB3"). A letter run straight into a word ("16Wiring", a text layer that lost its
+    /// space) is not part of the label. Several tables share a number and differ by the letter, so
+    /// a label read as its digits alone would merge them, and "(Continued)" would join the wrong
+    /// pages.
+    static let labelPattern = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:[A-Za-z](?![\p{L}\p{N}]))?"#
+    private static let captionPattern = #"^(?i:TABLE)\s+("# + labelPattern + ")"
+    private static let figurePattern = #"^(?i:FIGURE)\s+"# + labelPattern
     private static let continuedPattern = #"[\(\[]?\s*\b(?:continued|cont'd|cont\.)\s*[\)\]]?"#
 
     /// Longest line read as a caption on a page set in one weight.
@@ -370,11 +382,11 @@ enum TableExtractor {
         } else {
             guard standsAlone(text) else { return nil }
         }
-        guard let match = text.range(of: captionPattern, options: [.regularExpression, .caseInsensitive]) else {
+        guard let match = text.range(of: captionPattern, options: .regularExpression) else {
             return nil
         }
         let head = String(text[match])
-        let number = head.range(of: #"\d+"#, options: .regularExpression).map { String(head[$0]) } ?? ""
+        let number = head.range(of: labelPattern + "$", options: .regularExpression).map { String(head[$0]) } ?? ""
         var title = String(text[match.upperBound...])
         var continues = false
         if let range = title.range(of: continuedPattern, options: [.regularExpression, .caseInsensitive]) {
@@ -406,7 +418,7 @@ enum TableExtractor {
         captionLines(in: lines(of: words), pageHasBold: hasBold(words)).map(\.caption)
     }
 
-    private static func captionLines(in lines: [Line], pageHasBold: Bool)
+    static func captionLines(in lines: [Line], pageHasBold: Bool)
         -> [(caption: Caption, index: Int, titleLines: Int)] {
         var found: [(Caption, Int, Int)] = []
         for (index, line) in lines.enumerated() {
@@ -436,14 +448,7 @@ enum TableExtractor {
 
     /// Every captioned table on a page, each with its outcome.
     static func extractAll(words: [PositionedWord], page: ManualTable.Page) -> [(caption: Caption, outcome: Outcome)] {
-        let all = lines(of: words)
-        let rotated = words.contains(where: \.isRotated)
-        let bold = hasBold(words)
-        return captionLines(in: all, pageHasBold: bold).map { found in
-            (found.caption, extract(lines: all, at: found.index, titleLines: found.titleLines,
-                                    caption: found.caption, page: page, hasRotatedWords: rotated,
-                                    pageHasBold: bold))
-        }
+        extractGrids(words: words, page: page).map { ($0.caption, $0.outcome) }
     }
 
     /// Where a caption that gave too few rows lost them, in counts only (Plan JJ P1's diagnosis,
@@ -522,6 +527,20 @@ enum TableExtractor {
     /// Most lines a plain page's caption title is read as wrapping onto.
     static let plainTitleMaximumLines = 3
 
+    /// Most heading lines a plain page's table is read with when its first rows of numbers sit
+    /// further down than a short header reaches (Plan JJ P5), and how far down they are looked for.
+    static let plainLongHeaderMaximumLines = 12
+    static let plainLongHeaderReach = 18
+
+    /// The first of `minimumBodyRows` consecutive rows of numbers within `plainLongHeaderReach`
+    /// lines of the caption, or nil.
+    private static func numericRunStart(in region: [Line]) -> Int? {
+        guard region.count >= minimumBodyRows else { return nil }
+        let last = min(plainLongHeaderReach, region.count - minimumBodyRows)
+        guard last >= 0 else { return nil }
+        return (0...last).first { index in (index..<(index + minimumBodyRows)).allSatisfy { isNumericRow(region[$0]) } }
+    }
+
     /// A row of two or more cells whose cells after the first are at least half numbers.
     private static func isNumericRow(_ line: Line) -> Bool {
         let phrases = line.phrases
@@ -577,7 +596,7 @@ enum TableExtractor {
             let line = all[index]
             if Self.caption(of: line, pageHasBold: pageHasBold) != nil
                 || ((pageHasBold ? line.words.first?.bold == true : standsAlone(line.text))
-                    && line.text.range(of: figurePattern, options: [.regularExpression, .caseInsensitive]) != nil) {
+                    && line.text.range(of: figurePattern, options: .regularExpression) != nil) {
                 end = index
                 break
             }
@@ -603,21 +622,36 @@ enum TableExtractor {
             }
         } else {
             let reach = plainTitleMaximumLines + plainHeaderMaximumLines
-            if let firstRow = region.prefix(reach + 1).firstIndex(where: isNumericRow) {
+            let run = numericRunStart(in: region)
+            // A run of rows of numbers under headings stacked deeper than a short header (Plan JJ
+            // P5): at most `plainLongHeaderMaximumLines` lines of headings that are neither prose
+            // nor a note, after the title's wrapped lines.
+            func deepHeader(_ run: Int) -> Bool {
+                run - headerStart <= plainLongHeaderMaximumLines && region[headerStart..<run].allSatisfy(isHeaderLine)
+            }
+            func wrapTitle(before first: Int) {
                 var previous = captionIndex
-                while headerStart < min(firstRow, plainTitleMaximumLines),
+                while headerStart < min(first, plainTitleMaximumLines),
                       region[headerStart].phrases.count == 1, !isNoteLine(region[headerStart]),
                       region[headerStart].top - all[previous].bottom < region[headerStart].size {
                     title += (title.isEmpty ? "" : " ") + region[headerStart].text
                     previous = start + headerStart
                     headerStart += 1
                 }
+            }
+            if let firstRow = region.prefix(reach + 1).firstIndex(where: isNumericRow) {
+                wrapTitle(before: firstRow)
                 if firstRow - headerStart <= plainHeaderMaximumLines,
                    region[headerStart..<firstRow].allSatisfy(isHeaderLine) {
+                    headerCount = firstRow
+                } else if run == firstRow, deepHeader(firstRow) {
                     headerCount = firstRow
                 } else {
                     headerCount = headerStart
                 }
+            } else if let run {
+                wrapTitle(before: run)
+                headerCount = deepHeader(run) ? run : headerStart
             } else if let run = textGridStart(in: region, reach: reach) {
                 // A table whose rows are text in every column (Plan JJ P1): no row of numbers to
                 // find the body by. The first run of rows of two or more cells starts the grid;
@@ -666,97 +700,333 @@ enum TableExtractor {
 
     private static func extract(lines all: [Line], at captionIndex: Int, titleLines: Int, caption: Caption,
                                 page: ManualTable.Page, hasRotatedWords: Bool, pageHasBold: Bool) -> Outcome {
+        read(lines: all, at: captionIndex, titleLines: titleLines, caption: caption, page: page,
+             hasRotatedWords: hasRotatedWords, pageHasBold: pageHasBold).outcome
+    }
+
+    /// The grid a read table was laid on (Plan JJ P5), kept while the next page is read so a page
+    /// that carries the table on with no caption of its own is read onto the same columns. Never
+    /// stored.
+    struct Grid: Equatable {
+        /// What a run of rows carries down: the group heading over them, and the row headers
+        /// printed once for the rows that leave them blank.
+        struct Carry: Equatable {
+            var group: String?
+            var stubs: [String] = []
+        }
+
+        /// One set of columns under the caption: the whole grid, or one of the groups printed side
+        /// by side. `columns` index the grid's columns; the first `stubs` of them head the rows;
+        /// `prefix` heads every row of the group when the groups are told apart by a heading.
+        struct Group: Equatable {
+            var columns: [Int]
+            var stubs: Int
+            var prefix: [String]
+            var carry = Carry()
+        }
+
+        var label: String
+        /// The columns' horizontal extents, left to right.
+        var lows: [Double]
+        var highs: [Double]
+        var groups: [Group]
+        /// The value columns' units, in the table's column order.
+        var units: [String?]
+        /// The heading lines, as `headingKey` compares them.
+        var headings: Set<String>
+        /// The usual gap between two body rows.
+        var gap: Double
+        /// Nothing but a few lines follow the table on its page: the next page may carry it on.
+        var runsToFoot: Bool
+
+        var segments: [(Double, Double)] { Array(zip(lows, highs)) }
+    }
+
+    /// A body line laid on the grid: one phrase or none per column.
+    struct Placed {
+        var line: Line
+        var cells: [Phrase?]
+    }
+
+    /// The table `caption` heads, and the grid it was read onto.
+    static func read(lines all: [Line], at captionIndex: Int, titleLines: Int, caption: Caption,
+                     page: ManualTable.Page, hasRotatedWords: Bool, pageHasBold: Bool) -> (outcome: Outcome, grid: Grid?) {
         let layout = layout(lines: all, at: captionIndex, titleLines: titleLines, caption: caption,
                             pageHasBold: pageHasBold)
         let region = layout.region
-        func fail(_ failure: Failure) -> Outcome {
-            .failed(hasRotatedWords && failure != .tooFewRows ? .rotatedHeaders : failure)
+        func fail(_ failure: Failure) -> (outcome: Outcome, grid: Grid?) {
+            (.failed(hasRotatedWords && failure != .tooFewRows ? .rotatedHeaders : failure), nil)
         }
-        guard !region.isEmpty else { return .failed(.tooFewRows) }
-        let title = layout.title
-        let header = layout.header
+        guard !region.isEmpty else { return (.failed(.tooFewRows), nil) }
+        var header = layout.header
         let body = layout.body
         let bodyEnd = layout.bodyEnd
 
         let multi = body.filter { $0.phrases.count >= 2 }
-        guard multi.count >= minimumBodyRows else { return .failed(.tooFewRows) }
+        guard multi.count >= minimumBodyRows else {
+            return (.failed(textStopsBelowCaption(region: region) ? .noTextInTable : .tooFewRows), nil)
+        }
 
-        // Columns: where the rows with the most common cell count print something.
-        let counts = multi.map { $0.phrases.count }
-        let histogram = counts.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
-        guard let modal = histogram.max(by: { ($0.value, $0.key) < ($1.value, $1.key) })?.key else {
+        // Columns: where the rows with the most common cell count print something — or, for a
+        // grid whose rows leave cells blank (marks in some columns only), wherever any row prints
+        // something, when the headings stand one over each such column.
+        guard let segments = modalSegments(multi) ?? sparseSegments(multi, header: header) else {
             return fail(.varyingColumnCount)
         }
-        let modalRows = multi.filter { $0.phrases.count == modal }
-        guard modalRows.count >= 2, Double(modalRows.count) >= 0.5 * Double(multi.count) else {
-            return fail(.varyingColumnCount)
-        }
-        let segments = unionSegments(modalRows.flatMap { $0.phrases.map { ($0.minX, $0.maxX) } })
-        guard segments.count == modal else { return fail(.varyingColumnCount) }
 
         // Every body row onto the grid.
         var misfits = 0
         var merged = 0
-        var placed: [(line: Line, cells: [Phrase?])] = []
+        var placed: [Placed] = []
         for line in body {
-            let phrases = line.phrases
-            var cells = [Phrase?](repeating: nil, count: segments.count)
-            var fits = true
-            var spans = false
-            for phrase in phrases {
-                let covered = segments.indices.filter { overlap(phrase, segments[$0]) > 0 }
-                let column: Int
-                if covered.count > 1 {
-                    spans = true
-                    fits = false
-                    column = covered[0]
-                } else if let only = covered.first {
-                    column = only
-                } else {
-                    column = nearest(phrase.center, segments)
-                }
-                if cells[column] != nil { fits = false; cells[column]?.text += " " + phrase.text }
-                else { cells[column] = phrase }
-            }
-            if phrases.count >= 2, !fits {
+            let fit = place(line, on: segments)
+            if line.phrases.count >= 2, !fit.fits {
                 misfits += 1
-                if spans { merged += 1 }
+                if fit.spans { merged += 1 }
             }
-            placed.append((line, cells))
+            placed.append(Placed(line: line, cells: fit.cells))
         }
         if Double(misfits) > misfitTolerance * Double(multi.count) {
             return fail(merged * 2 >= misfits ? .mergedCells : .varyingColumnCount)
         }
 
-        // Row-header columns: the first, and any after it that never hold a number.
-        func isNumeric(_ phrase: Phrase?) -> Bool {
-            guard let phrase else { return false }
-            return parseCell(phrase.text, markers: phrase.markers, columnUnit: nil).value != nil
-        }
-        // A table of words throughout has no numbers to tell its row headers by: only its first
-        // column heads the rows (Plan JJ P1).
-        let holdsNumbers = placed.contains { $0.cells.dropFirst().contains(where: isNumeric) }
-        var stubs = 1
-        while holdsNumbers, stubs < segments.count - 1 {
-            let column = placed.compactMap { $0.cells[stubs] }
-            guard !column.isEmpty, !placed.contains(where: { isNumeric($0.cells[stubs]) }) else { break }
-            stubs += 1
+        // A heading row of numbers (Plan JJ P5): under a heading that spans several columns, the
+        // columns' own headings printed as numbers, which read as the first row. When most value
+        // columns have no heading of their own and the first row fills every one of them with a
+        // number, that row heads them.
+        var paths = columnPaths(header: header, segments: segments)
+        if numberedHeadingRow(placed.first, paths: paths, header: header),
+           placed.dropFirst().filter({ $0.line.phrases.count >= 2 }).count >= minimumBodyRows {
+            header.append(placed[0].line)
+            placed.removeFirst()
+            paths = columnPaths(header: header, segments: segments)
         }
 
-        // Column paths from the header lines.
-        let paths = columnPaths(header: header, segments: segments)
-        let columns = (stubs..<segments.count).map { index -> ManualTable.Column in
-            ManualTable.Column(path: paths[index], unit: unit(in: paths[index]))
-        }
-        let rowHeaders = (0..<stubs).map { paths[$0].joined(separator: " ") }
+        // Two or three groups printed side by side under the one caption read as one table, the
+        // right group's rows after the left's.
+        guard let laid = sideBySideGroups(paths: paths, placed: placed).flatMap({ lay(placed, groups: $0, paths: paths) })
+            ?? lay(placed, groups: [Array(segments.indices)], paths: paths) else { return fail(.varyingColumnCount) }
+        let units = laid.columns.map(\.unit)
 
         // Rows.
         var rows: [ManualTable.Row] = []
-        var group: String?
-        var previousStubs: [String] = []
+        var groups = laid.groups
+        for index in groups.indices {
+            let read = self.rows(placed, group: groups[index], units: units, page: page)
+            rows += read.rows
+            groups[index].carry = read.carry
+        }
+
+        // Notes: marked lines under the body, each with its wrapped lines.
+        let notes = self.notes(in: Array(region[bodyEnd...]))
+
+        let gaps = zip(body, body.dropFirst()).map { max(0, $1.top - $0.bottom) }.sorted()
+        let regionStart = captionIndex + 1 + titleLines
+        let trailing = region.count - bodyEnd - notes.lines
+        let grid = Grid(label: caption.label, lows: segments.map(\.0), highs: segments.map(\.1), groups: groups,
+                        units: units, headings: Set(header.map { headingKey($0.text) }),
+                        gap: gaps.isEmpty ? body[0].size : gaps[gaps.count / 2],
+                        runsToFoot: regionStart + region.count == all.count && trailing <= trailingAllowance)
+        return (.table(ManualTable(label: caption.label, title: layout.title, page: page, rowHeaders: laid.rowHeaders,
+                                   columns: laid.columns, rows: rows, notes: notes.notes, continues: caption.continues)),
+                grid)
+    }
+
+    /// How many lines' height of empty page under a caption, with no grid above it, says the table
+    /// is printed there with no text to read.
+    static let blankTableLines = 15.0
+
+    /// Under the caption, the text stops for at least `blankTableLines` lines' height before the
+    /// next line (most often the footer), and the lines above that stretch hold no run of rows: the
+    /// table is printed in the stretch with no text the PDF gives (Plan JJ P5). A caption over a
+    /// short paragraph on a page otherwise empty reads the same way; it reads no grid either way,
+    /// and only the reason it is given differs.
+    static func textStopsBelowCaption(region: [Line]) -> Bool {
+        for (index, pair) in zip(region, region.dropFirst()).enumerated() {
+            let gap = pair.1.top - pair.0.bottom
+            guard gap >= blankTableLines * max(pair.0.size, 1) else { continue }
+            return region[...index].filter { $0.phrases.count >= 2 }.count < minimumBodyRows
+        }
+        return false
+    }
+
+    /// Lines a table may leave under itself on its page (a footer, a page number) and still run
+    /// on to the next.
+    static let trailingAllowance = 3
+
+    /// The columns the rows with the most common number of cells make, when they make as many as
+    /// those rows have cells.
+    private static func modalSegments(_ multi: [Line]) -> [(Double, Double)]? {
+        let counts = multi.map { $0.phrases.count }
+        let histogram = counts.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
+        guard let modal = histogram.max(by: { ($0.value, $0.key) < ($1.value, $1.key) })?.key else { return nil }
+        let modalRows = multi.filter { $0.phrases.count == modal }
+        guard modalRows.count >= 2, Double(modalRows.count) >= 0.5 * Double(multi.count) else { return nil }
+        let segments = unionSegments(modalRows.flatMap { $0.phrases.map { ($0.minX, $0.maxX) } })
+        return segments.count == modal ? segments : nil
+    }
+
+    /// The columns of a grid whose rows leave cells blank (Plan JJ P5): every place any body row
+    /// prints something, accepted only when the lowest heading line stands one phrase over each of
+    /// them — the row-header column's own heading may be left out — and over no other. Without
+    /// headings to agree, a sparse grid is not told from a drawing, and nothing is read.
+    private static func sparseSegments(_ multi: [Line], header: [Line]) -> [(Double, Double)]? {
+        guard let lowest = header.last else { return nil }
+        let headings = lowest.phrases.filter { !$0.text.isEmpty }
+        let segments = unionSegments(multi.flatMap { $0.phrases.map { ($0.minX, $0.maxX) } })
+        guard segments.count >= 3, headings.count >= 2 else { return nil }
+        let offset: Int
+        if headings.count == segments.count {
+            offset = 0
+        } else if headings.count == segments.count - 1 {
+            offset = 1
+        } else {
+            return nil
+        }
+        for (index, heading) in headings.enumerated() {
+            let over = segments.indices.filter { overlap(heading, segments[$0]) > 0 }
+            guard over == [index + offset] else { return nil }
+        }
+        return segments
+    }
+
+    /// A line's phrases laid on the columns. `strictly`, a phrase over no column does not fit (a
+    /// continuation page's rows must sit on the grid they continue); otherwise it takes the
+    /// nearest. A phrase over two columns spans them and does not fit.
+    static func place(_ line: Line, on segments: [(Double, Double)], strictly: Bool = false)
+        -> (cells: [Phrase?], fits: Bool, spans: Bool) {
+        var cells = [Phrase?](repeating: nil, count: segments.count)
+        var fits = true
+        var spans = false
+        for phrase in line.phrases {
+            let covered = segments.indices.filter { overlap(phrase, segments[$0]) > 0 }
+            let column: Int
+            if covered.count > 1 {
+                spans = true
+                fits = false
+                column = covered[0]
+            } else if let only = covered.first {
+                column = only
+            } else {
+                if strictly { fits = false }
+                column = nearest(phrase.center, segments)
+            }
+            if cells[column] != nil { fits = false; cells[column]?.text += " " + phrase.text }
+            else { cells[column] = phrase }
+        }
+        return (cells, fits, spans)
+    }
+
+    private static func isNumeric(_ phrase: Phrase?) -> Bool {
+        guard let phrase else { return false }
+        return parseCell(phrase.text, markers: phrase.markers, columnUnit: nil).value != nil
+    }
+
+    /// The first body line is the value columns' headings printed as numbers: the header has a
+    /// heading spanning two or more value columns, at least half the value columns have no heading
+    /// of their own (none, or only the one they share with a neighbour), and the line prints in
+    /// every value column, a number in all of them but perhaps the last ("5 or more").
+    private static func numberedHeadingRow(_ first: Placed?, paths: [[String]], header: [Line]) -> Bool {
+        guard let first, !header.isEmpty, paths.count >= 3 else { return false }
+        let values = Array(1..<paths.count)
+        guard values.allSatisfy({ first.cells[$0] != nil }),
+              values.dropLast().allSatisfy({ isNumeric(first.cells[$0]) }),
+              values.count >= 3 || isNumeric(first.cells[values[values.count - 1]]) else { return false }
+        let spans = values.contains { index in
+            !paths[index].isEmpty && values.contains { $0 != index && paths[$0].first == paths[index].first }
+        }
+        let bare = values.filter { index in
+            paths[index].isEmpty || values.contains { $0 != index && paths[$0] == paths[index] }
+        }
+        return spans && bare.count * 2 >= values.count
+    }
+
+    /// How many of a group's columns head its rows: the first, and any after it that never hold a
+    /// number. A table of words throughout has no numbers to tell its row headers by: only its
+    /// first column heads the rows (Plan JJ P1).
+    private static func stubCount(_ placed: [Placed], columns: [Int]) -> Int {
+        let holdsNumbers = placed.contains { line in columns.dropFirst().contains { isNumeric(line.cells[$0]) } }
+        var stubs = 1
+        while holdsNumbers, stubs < columns.count - 1 {
+            let column = columns[stubs]
+            guard placed.contains(where: { $0.cells[column] != nil }),
+                  !placed.contains(where: { isNumeric($0.cells[column]) }) else { break }
+            stubs += 1
+        }
+        return stubs
+    }
+
+    /// The groups of columns printed side by side under one caption (Plan JJ P5): the columns split
+    /// into two or three runs of equal width whose headings read alike column for column
+    /// ("Designation", "Limit (A)" twice over) — by the heading under which nothing else is
+    /// printed, or by all of a column's heading words, since a heading stretched over a gap can
+    /// land on a neighbour's path — each run's first column printing rows. Nil for one grid.
+    private static func sideBySideGroups(paths: [[String]], placed: [Placed]) -> [[Int]]? {
+        let count = paths.count
+        let leaves = paths.map { headingKey($0.last ?? "") }
+        let wholes = paths.map { headingKey($0.joined(separator: " ")) }
+        for runs in [2, 3] where count % runs == 0 && count / runs >= 2 {
+            let width = count / runs
+            let chunks = (0..<runs).map { Array(($0 * width)..<(($0 + 1) * width)) }
+            let alike = (0..<width).allSatisfy { position in
+                let column = chunks.map { $0[position] }
+                let first = column[0]
+                return !wholes[first].isEmpty && column.allSatisfy { leaves[$0] == leaves[first] || wholes[$0] == wholes[first] }
+            }
+            guard alike else { continue }
+            guard chunks.allSatisfy({ chunk in placed.filter { $0.cells[chunk[0]] != nil }.count >= 2 }) else { continue }
+            return chunks
+        }
+        return nil
+    }
+
+    /// A table's row-header headings, value columns and groups, from the groups its columns make.
+    /// Nil when the groups do not agree on how many value columns they have.
+    private static func lay(_ placed: [Placed], groups: [[Int]], paths: [[String]])
+        -> (rowHeaders: [String], columns: [ManualTable.Column], groups: [Grid.Group])? {
+        let stubs = groups.map { stubCount(placed, columns: $0) }
+        let values = zip(groups, stubs).map { $0.count - $1 }
+        guard let width = values.first, values.allSatisfy({ $0 == width }), stubs.allSatisfy({ $0 == stubs[0] }) else {
+            return nil
+        }
+        // Groups told apart by a heading over each ("Rating group 1", "Rating group 2"): that
+        // heading heads the group's rows, and the columns are named below it.
+        var prefixes = groups.map { _ in [String]() }
+        var drop = 0
+        if groups.count > 1 {
+            let outers = groups.map { group -> String? in
+                let firsts = Set(group.map { paths[$0].count >= 2 ? paths[$0][0] : "" })
+                return firsts.count == 1 ? firsts.first.flatMap { $0.isEmpty ? nil : $0 } : nil
+            }
+            if outers.allSatisfy({ $0 != nil }), Set(outers.compactMap { $0 }).count == groups.count {
+                prefixes = outers.map { [$0!] }
+                drop = 1
+            }
+        }
+        let first = groups[0]
+        let columns = first[stubs[0]...].map { index -> ManualTable.Column in
+            let path = Array(paths[index].dropFirst(drop))
+            return ManualTable.Column(path: path, unit: unit(in: path))
+        }
+        let rowHeaders = first.prefix(stubs[0]).map { paths[$0].dropFirst(drop).joined(separator: " ") }
+        let laid = zip(groups, zip(stubs, prefixes)).map { Grid.Group(columns: $0, stubs: $1.0, prefix: $1.1) }
+        return (rowHeaders, columns, laid)
+    }
+
+    /// One group's rows off the laid lines, starting from what the rows above carried down.
+    private static func rows(_ placed: [Placed], group: Grid.Group, units: [String?], page: ManualTable.Page)
+        -> (rows: [ManualTable.Row], carry: Grid.Carry) {
+        var rows: [ManualTable.Row] = []
+        var heading = group.carry.group
+        var previousStubs = group.carry.stubs
         var previousLine: Line?
-        for (line, cells) in placed {
+        let stubs = group.stubs
+        for laid in placed {
+            let cells = group.columns.map { laid.cells[$0] }
+            let line = laid.line
             let filled = cells.compactMap { $0 }
+            // Nothing of this group on the line: the group beside it runs a row longer.
+            if filled.isEmpty { continue }
             if filled.count == 1, let only = cells.firstIndex(where: { $0 != nil }), only < stubs {
                 let text = cells[only]!.printed
                 // A short line under a row, close to it and not bold, is that row's header
@@ -766,7 +1036,7 @@ enum TableExtractor {
                     rows[last].path[rows[last].path.count - 1] += " " + text
                     previousStubs[previousStubs.count - 1] += " " + text
                 } else {
-                    group = text
+                    heading = text
                     previousStubs = []
                 }
                 previousLine = line
@@ -780,20 +1050,26 @@ enum TableExtractor {
             } else {
                 stubTexts = previousStubs.count == stubs ? previousStubs : stubTexts
             }
-            let values = (stubs..<segments.count).map { index -> ManualTable.Cell in
+            let values = (stubs..<cells.count).map { index -> ManualTable.Cell in
                 guard let phrase = cells[index] else { return ManualTable.Cell(text: "") }
-                return parseCell(phrase.text, markers: phrase.markers, columnUnit: columns[index - stubs].unit)
+                let column = index - stubs
+                return parseCell(phrase.text, markers: phrase.markers, columnUnit: column < units.count ? units[column] : nil)
             }
-            let path = (group.map { [$0] } ?? []) + stubTexts.filter { !$0.isEmpty }
+            let path = group.prefix + (heading.map { [$0] } ?? []) + stubTexts.filter { !$0.isEmpty }
             rows.append(ManualTable.Row(path: path, cells: values, page: page))
             previousStubs = stubTexts
             previousLine = line
         }
+        return (rows, Grid.Carry(group: heading, stubs: previousStubs))
+    }
 
-        // Notes: marked lines under the body, each with its wrapped lines.
+    /// Notes: the marked lines at the head of `lines`, each with its wrapped lines, and how many
+    /// lines they took.
+    private static func notes(in lines: [Line]) -> (notes: [ManualTable.Note], lines: Int) {
         var notes: [ManualTable.Note] = []
         var lastNoteLine: Line?
-        for line in region[bodyEnd...] {
+        var used = 0
+        for line in lines {
             if isNoteLine(line) {
                 notes.append(note(from: line))
                 lastNoteLine = line
@@ -803,11 +1079,189 @@ enum TableExtractor {
             } else {
                 break
             }
+            used += 1
         }
         notes.removeAll { $0.text.isEmpty }
+        return (notes, used)
+    }
 
-        return .table(ManualTable(label: caption.label, title: title, page: page, rowHeaders: rowHeaders,
-                                  columns: columns, rows: rows, notes: notes, continues: caption.continues))
+    /// A heading line as a continuation page's lines are compared to it: lower case, letters and
+    /// digits only, single spaces.
+    static func headingKey(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: { !($0.isLetter || $0.isNumber) }).joined(separator: " ")
+    }
+
+    // MARK: - A table carried on with no caption (Plan JJ P5)
+
+    /// Lines a continuation page may print above the table's rows — a running head, a section
+    /// title — besides the table's own headings printed again.
+    static let continuationLeadAllowance = 3
+
+    /// Where a caption that read no table sits (Plan JJ P5).
+    enum Placement: Equatable {
+        /// Lines enough under it for a table.
+        case onPage
+        /// Another caption follows within two lines: an entry in a list of tables, not a table.
+        case listed
+        /// Fewer than `footMaximumLines` lines under it before the foot of the page: its table may
+        /// start on the next page.
+        case atFoot
+    }
+
+    /// Most lines under a caption at the foot of a page whose table starts on the next.
+    static let footMaximumLines = 4
+
+    /// Every captioned table on a page with the grid each read table was laid on, and where each
+    /// caption that read nothing sits.
+    static func extractGrids(words: [PositionedWord], page: ManualTable.Page)
+        -> [(caption: Caption, outcome: Outcome, grid: Grid?, placement: Placement)] {
+        let all = lines(of: words)
+        let rotated = words.contains(where: \.isRotated)
+        let bold = hasBold(words)
+        let captions = captionLines(in: all, pageHasBold: bold)
+        return captions.enumerated().map { position, found in
+            let read = read(lines: all, at: found.index, titleLines: found.titleLines, caption: found.caption,
+                            page: page, hasRotatedWords: rotated, pageHasBold: bold)
+            var placement = Placement.onPage
+            if read.outcome.failure != nil {
+                let region = layout(lines: all, at: found.index, titleLines: found.titleLines, caption: found.caption,
+                                    pageHasBold: bold).region
+                let start = found.index + 1 + found.titleLines
+                let toFoot = start + region.count >= all.count
+                // A run of captions a line or two apart is a list of tables, the last entry too.
+                let afterAnother = position > 0 && found.index - captions[position - 1].index <= 3
+                if region.count <= 2, !toFoot || afterAnother {
+                    placement = .listed
+                } else if toFoot, region.count <= footMaximumLines {
+                    placement = .atFoot
+                }
+            }
+            return (found.caption, read.outcome, read.grid, placement)
+        }
+    }
+
+    /// The table a caption at the foot of a page heads when its rows start on the next page (Plan
+    /// JJ P5): the caption and the few lines under it, then the next page's lines above any caption
+    /// of its own, after at most `continuationLeadAllowance` single-phrase lines of page furniture,
+    /// read as one region. Its rows keep the next page; the table starts on the caption's.
+    static func startingOnNextPage(words: [PositionedWord], caption: Caption, page: ManualTable.Page,
+                                   next: [PositionedWord], nextPage: ManualTable.Page) -> (table: ManualTable, grid: Grid?)? {
+        let all = lines(of: words)
+        let bold = hasBold(words)
+        guard let found = captionLines(in: all, pageHasBold: bold).last(where: {
+            $0.caption.label.caseInsensitiveCompare(caption.label) == .orderedSame
+        }) else { return nil }
+        // The caption and the lines set close under it; a footer further down is left behind.
+        var head = [all[found.index]]
+        for line in all[(found.index + 1)...] {
+            guard let previous = head.last, line.top - previous.bottom < 1.5 * line.size else { break }
+            head.append(line)
+        }
+        guard let last = head.last else { return nil }
+        let following = lines(of: next)
+        let end = captionLines(in: following, pageHasBold: hasBold(next)).first?.index ?? following.count
+        var top = Array(following[..<end])
+        var furniture = 0
+        while let first = top.first, first.phrases.count < 2, furniture < continuationLeadAllowance {
+            top.removeFirst()
+            furniture += 1
+        }
+        guard let first = top.first, first.phrases.count >= 2 else { return nil }
+        // The next page's lines set straight under the caption page's last line.
+        let shift = last.bottom + 0.4 * last.size - first.top
+        let moved = top.map { line -> Line in
+            var line = line
+            line.top += shift
+            line.bottom += shift
+            line.words = line.words.map { word in
+                var word = word
+                word.rect.origin.y += CGFloat(shift)
+                return word
+            }
+            return line
+        }
+        let joined = head + moved
+        let read = read(lines: joined, at: 0, titleLines: found.titleLines, caption: found.caption, page: nextPage,
+                        hasRotatedWords: (words + next).contains(where: \.isRotated), pageHasBold: bold)
+        guard var table = read.outcome.table else { return nil }
+        table.page = page
+        return (table, read.grid)
+    }
+
+    /// The rows a page carries on from the table read onto `grid` on the page before: the lines at
+    /// the top of the page, above any caption of its own, that sit on the same columns, after at
+    /// most `continuationLeadAllowance` lines of page furniture and the table's headings printed
+    /// again. With `under`, the lines under that caption instead — a "(Continued)" caption whose
+    /// page did not read on its own. Each row keeps this page; a row header or group heading
+    /// carried down from the page before carries on. Nil when the page does not begin with at
+    /// least two rows that sit on the grid, every phrase over exactly one of its columns.
+    static func continuation(words: [PositionedWord], page: ManualTable.Page, grid: Grid, under caption: Caption? = nil)
+        -> (rows: [ManualTable.Row], notes: [ManualTable.Note], grid: Grid)? {
+        let all = lines(of: words)
+        guard !all.isEmpty else { return nil }
+        let captions = captionLines(in: all, pageHasBold: hasBold(words))
+        let start: Int
+        let end: Int
+        if let caption {
+            guard let at = captions.firstIndex(where: { $0.caption.label.caseInsensitiveCompare(caption.label) == .orderedSame })
+            else { return nil }
+            start = captions[at].index + 1 + captions[at].titleLines
+            end = at + 1 < captions.count ? captions[at + 1].index : all.count
+        } else {
+            start = 0
+            end = captions.first?.index ?? all.count
+        }
+        guard start < end else { return nil }
+        let lines = Array(all[start..<end])
+        let segments = grid.segments
+
+        // Furniture and the headings again, before the first line that sits on the grid.
+        var first: Int?
+        var furniture = 0
+        for (index, line) in lines.enumerated() {
+            if grid.headings.contains(headingKey(line.text)) { continue }
+            if line.phrases.count >= 2, place(line, on: segments, strictly: true).fits {
+                first = index
+                break
+            }
+            furniture += 1
+            if furniture > continuationLeadAllowance { return nil }
+        }
+        guard let first else { return nil }
+
+        // The rows: until a line that does not sit on the grid, a note, a paragraph or a wide gap.
+        let stubColumns = Set(grid.groups.flatMap { $0.columns.prefix($0.stubs) })
+        var placed: [Placed] = []
+        var used = first
+        for line in lines[first...] {
+            if isNoteLine(line) || isProse(line, phrases: line.phrases) { break }
+            if let previous = placed.last?.line, line.top - previous.bottom > max(3 * grid.gap, 1.5 * line.size) { break }
+            let fit = place(line, on: segments, strictly: true)
+            guard fit.fits else { break }
+            // A phrase alone heads a group only in a row-header column.
+            if line.phrases.count == 1, !fit.cells.indices.contains(where: { fit.cells[$0] != nil && stubColumns.contains($0) }) {
+                break
+            }
+            placed.append(Placed(line: line, cells: fit.cells))
+            used += 1
+        }
+        let rows = placed.filter { $0.line.phrases.count >= 2 }
+        guard rows.count >= 2 else { return nil }
+        // Rows of a table carry their keys: the first column is printed on most of them.
+        let keyColumn = grid.groups[0].columns[0]
+        guard rows.filter({ $0.cells[keyColumn] != nil }).count * 2 >= rows.count else { return nil }
+
+        var out: [ManualTable.Row] = []
+        var next = grid
+        for index in next.groups.indices {
+            let read = self.rows(placed, group: next.groups[index], units: grid.units, page: page)
+            out += read.rows
+            next.groups[index].carry = read.carry
+        }
+        let notes = self.notes(in: Array(lines[used...]))
+        next.runsToFoot = end == all.count && lines.count - used - notes.lines <= trailingAllowance
+        return (out, notes.notes, next)
     }
 
     // MARK: - Geometry
@@ -989,7 +1443,8 @@ enum TableExtractor {
     static func merge(_ tables: [ManualTable]) -> [ManualTable] {
         var out: [ManualTable] = []
         for piece in tables {
-            if piece.continues, let index = out.lastIndex(where: { $0.label == piece.label }),
+            if piece.continues,
+               let index = out.lastIndex(where: { $0.label.caseInsensitiveCompare(piece.label) == .orderedSame }),
                let lastPage = out[index].pages.last, piece.page.physical == lastPage.physical + 1,
                out[index].columns.count == piece.columns.count {
                 out[index].rows.append(contentsOf: piece.rows)

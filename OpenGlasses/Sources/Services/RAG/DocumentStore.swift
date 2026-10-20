@@ -1063,8 +1063,10 @@ final class DocumentStore: ObservableObject {
     /// and their row passages added (Plan JJ P0); its text chunks are only re-located, never
     /// re-chunked, when their text is unchanged. 4: a caption whose page did not resolve to a grid
     /// is kept too, by its label and page (Plan JJ P1); a document whose text version 3 already
-    /// located only has its tables read again.
-    nonisolated static let locationVersion = 4
+    /// located only has its tables read again. 5: tables are read again for the labels a letter
+    /// belongs to, the pages a table carries on to with no caption, cells that are marks and groups
+    /// printed side by side (Plan JJ P5) — again the tables only.
+    nonisolated static let locationVersion = 5
 
     /// The oldest location version among a document's own text chunks (its table rows left out),
     /// or nil when it has none. A never-located row counts as 0.

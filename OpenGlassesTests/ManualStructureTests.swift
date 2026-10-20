@@ -236,6 +236,14 @@ final class ManualStructureTests: XCTestCase {
         XCTAssertNil(ManualStructure.caption(line("FIGURE 58", 10, false)), "a caption is set in bold")
         XCTAssertNil(ManualStructure.caption(line("See FIGURE 58 on page 44")))
         XCTAssertNil(ManualStructure.caption(line("FIGURE")))
+        // Plan JJ P5: the label as printed, a letter beside the number included.
+        let lettered = ManualStructure.caption(line("TABLE 95A Invented limits"))
+        XCTAssertEqual(lettered?.label, "Table 95A")
+        XCTAssertEqual(lettered?.inlineTitle, "Invented limits")
+        XCTAssertEqual(ManualStructure.caption(line("TABLE Q7"))?.label, "Table Q7")
+        let runOn = ManualStructure.caption(line("TABLE 16Wiring"))
+        XCTAssertEqual(runOn?.label, "Table 16", "a letter run into a word is not the label's")
+        XCTAssertEqual(runOn?.inlineTitle, "Wiring")
     }
 
     func testABoldParagraphYieldsNoHeadingsButAnIsolatedLineDoes() {

@@ -87,6 +87,19 @@ enum ChainsValidate {
         var column: Part
         /// The number searched for, in the `cell` form.
         var cell: Part?
+        /// Why an unread table's grid was not read, as the extractor names it (Plan JJ P5).
+        var unreadBecause: TableExtractor.Failure? = nil
+        /// Columns of the read table printed with no heading over them.
+        var unnamedColumns = 0
+        /// The read table's rows and value columns, as counts.
+        var readSize: (rows: Int, columns: Int)? = nil
+
+        static func == (a: LookupCheck, b: LookupCheck) -> Bool {
+            a.chain == b.chain && a.line == b.line && a.table == b.table && a.tableState == b.tableState
+                && a.row == b.row && a.column == b.column && a.cell == b.cell && a.unreadBecause == b.unreadBecause
+                && a.unnamedColumns == b.unnamedColumns && a.readSize?.rows == b.readSize?.rows
+                && a.readSize?.columns == b.readSize?.columns
+        }
     }
 
     struct ChainSummary: Equatable {
@@ -274,7 +287,10 @@ enum ChainsValidate {
             }, headings: { table in table.rows.flatMap { suffixPaths($0.path) } })
         }
         return LookupCheck(chain: chain, line: line, table: lookup.table, tableState: state,
-                           row: row, column: column, cell: cell)
+                           row: row, column: column, cell: cell,
+                           unreadBecause: state == .unread ? labelled.first?.failure : nil,
+                           unnamedColumns: read.first.map { $0.columns.filter { $0.path.isEmpty }.count } ?? 0,
+                           readSize: read.first.map { ($0.rows.count, $0.columns.count) })
     }
 
     /// The best of several documents' answers: one that resolves wins.
@@ -385,6 +401,11 @@ enum ChainsValidate {
         let tableTally = TableState.allCases.map { s in "\(s.rawValue)=\(lookups.filter { $0.tableState == s }.count)" }
             .joined(separator: " ")
         lines.append("[CHAINS] lookups=\(lookups.count) · tables \(tableTally)")
+        let because = TableExtractor.Failure.allCases.compactMap { failure -> String? in
+            let n = lookups.filter { $0.unreadBecause == failure }.count
+            return n == 0 ? nil : "\(failure.rawValue)=\(n)"
+        }
+        if !because.isEmpty { lines.append("[CHAINS]   unread because: " + because.joined(separator: " ")) }
         lines.append("[CHAINS]   rows: \(tally(lookups.compactMap(\.row?.resolution)))")
         lines.append("[CHAINS]   columns: \(tally(lookups.map(\.column.resolution)))")
         let cells = lookups.compactMap(\.cell?.resolution)
@@ -408,6 +429,9 @@ enum ChainsValidate {
             }
             line += " column=\(check.column.resolution.rawValue)"
             if Self.isTrouble(check.column.resolution) { line += quoted(check.column.written) }
+            if let because = check.unreadBecause { line += " unread_because=\(because.rawValue)" }
+            if check.unnamedColumns > 0 { line += " unnamed_columns=\(check.unnamedColumns)" }
+            if let size = check.readSize { line += " grid=\(size.rows)x\(size.columns)" }
             lines.append(line)
         }
         return lines

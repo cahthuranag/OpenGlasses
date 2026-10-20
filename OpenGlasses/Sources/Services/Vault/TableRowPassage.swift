@@ -29,6 +29,31 @@ enum TableRowPassage {
         return "\(table.displayName)\(rowName): \(values.joined(separator: ", ")) \u{2014} page \(row.page.spoken)"
     }
 
+    /// What the row looks like on its printed line, for marking it on the page (Plan JJ P1): its
+    /// header path's trailing parts then its filled cells, longest first. A row header printed once
+    /// over several rows, or a group heading on a line of its own, is not on the row's line, so the
+    /// shorter runs leave it out; the locator takes the first run that is on the page exactly once.
+    static func printedRuns(of row: ManualTable.Row) -> [String] {
+        let values = row.cells.map(\.text).filter { !$0.isEmpty }
+        guard !values.isEmpty else { return [] }
+        var runs: [String] = []
+        for start in row.path.indices {
+            runs.append((Array(row.path[start...]) + values).joined(separator: " "))
+        }
+        return runs
+    }
+
+    /// The row a stored row passage was written from: the table named by its `figure` whose row
+    /// renders to exactly its text. Nil when none does.
+    static func row(forPassage text: String, figure: String?, in tables: [ManualTable])
+        -> (table: ManualTable, row: ManualTable.Row)? {
+        guard let figure else { return nil }
+        for table in tables where table.isExtracted && table.label.caseInsensitiveCompare(figure) == .orderedSame {
+            if let row = table.rows.first(where: { sentence(for: $0, in: table) == text }) { return (table, row) }
+        }
+        return nil
+    }
+
     /// The row passages of `tables` as chunks numbered from `index`, at most `cap` per table, and
     /// how many rows the cap left out.
     static func chunks(for tables: [ManualTable], startingAt index: Int,

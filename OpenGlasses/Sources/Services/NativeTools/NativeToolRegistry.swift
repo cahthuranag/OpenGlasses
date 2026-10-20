@@ -254,6 +254,9 @@ final class NativeToolRegistry {
             register(ManualFigureTool(documentStore: documentStore))
             // show_source opens the page the last answer cited, its passage highlighted (Plan IN P2).
             register(ShowSourceTool(documentStore: documentStore))
+            // table_lookup reads one cell of a table extracted from the vault's own manuals, with
+            // its headers, notes and page (Plan JJ P1).
+            register(TableLookupTool(documentStore: documentStore))
             // Safety Assessment (HECA) — camera high-energy hazard assessment via SafetyAssessmentService.shared.
             register(SafetyAssessmentTool())
             if let camera = cameraService {

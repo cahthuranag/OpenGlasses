@@ -27,8 +27,14 @@ enum PDFTableReader {
         var failures: [TableExtractor.Failure: Int] = [:]
         /// Pages with no text layer, where no caption can be read at all.
         var pagesWithoutText = 0
+        /// Captions whose page did not resolve to a grid, each kept by its label, title, page and
+        /// failure (Plan JJ P1), so a lookup can name the page of a table it cannot read.
+        var unextracted: [ManualTable] = []
 
         var extracted: Int { tables.count }
+
+        /// What a document stores: the tables read, then the captions that could not be.
+        var stored: [ManualTable] { tables + unextracted }
     }
 
     /// The tables of the PDF at `url`, or nil when it is not a PDF PDFKit can open.
@@ -50,10 +56,9 @@ enum PDFTableReader {
             }
             guard text.range(of: "table", options: .caseInsensitive) != nil else { continue }
             let physical = index + 1
+            let place = ManualTable.Page(physical: physical, printed: printedLabels[physical])
             let words = positionedWords(on: page)
-            for found in TableExtractor.extractAll(words: words,
-                                                   page: ManualTable.Page(physical: physical,
-                                                                          printed: printedLabels[physical])) {
+            for found in TableExtractor.extractAll(words: words, page: place) {
                 switch found.outcome {
                 case .table(let table):
                     pieces.append(table)
@@ -61,6 +66,7 @@ enum PDFTableReader {
                 case .failed(let failure):
                     result.captioned += 1
                     result.failures[failure, default: 0] += 1
+                    result.unextracted.append(.unextracted(found.caption, page: place, failure: failure))
                 }
             }
         }

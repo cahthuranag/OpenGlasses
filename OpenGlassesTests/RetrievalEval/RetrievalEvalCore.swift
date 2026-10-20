@@ -66,18 +66,42 @@ enum RetrievalEval {
 
     // MARK: - The retriever under test
 
+    /// Which routes a table's row passages are searched by (Plan JJ P1), to measure what they do
+    /// to a book's numbers: `all` as shipped (every route, and the table route), `none` as before
+    /// P0 (no route, no table route), `tokenAndTable` with them out of the semantic and lexical
+    /// defaults but still reached by an exact token and by a table the question names, and
+    /// `tableOnly` reached only by a table the question names.
+    /// `RETRIEVAL_EVAL_TABLE_ROWS` = `1`, `0`, `token` or `table` on the Mac runner.
+    enum TableRows: String { case all = "1", none = "0", tokenAndTable = "token", tableOnly = "table" }
+    nonisolated(unsafe) static var tableRows: TableRows = .all
+
     /// The shipped retrieval routes over one store, with the given gate — the routes
     /// `FieldSessionService.makeRetriever` builds, without the session's namespaces, availability
     /// check or model scope. For a runner that has no session (the Mac script, the calibration
     /// test). `LocalManualEvalTests` checks it ranks exactly as the session's factory does.
     @MainActor
     static func retriever(over store: DocumentStore, policy: RetrievalEvidencePolicy) -> VaultRetriever {
-        VaultRetriever(query: { query, limit in store.query(query, limit: limit) },
-                       tokenSearch: { token, limit in store.passages(containingToken: token, limit: limit) },
-                       clauseSearch: { clause, limit in store.passages(clause: clause, limit: limit) },
-                       termSearch: { query, limit in store.passages(sharingTermsWith: query, limit: limit) },
-                       termStatistics: { store.termStatistics(namespaces: nil) },
-                       policy: policy)
+        retriever(over: store, policy: policy, documentIds: nil)
+    }
+
+    @MainActor
+    private static func retriever(over store: DocumentStore, policy: RetrievalEvidencePolicy,
+                                  documentIds ids: [String]?) -> VaultRetriever {
+        let rows = tableRows
+        let searched: Set<DocumentChunker.Kind> = rows == .all ? DocumentStore.searchedKinds : [.prose]
+        let tokenKinds = Set(DocumentChunker.Kind.allCases)
+            .subtracting(rows == .none || rows == .tableOnly ? [.tableRow] : [])
+        return VaultRetriever(
+            query: { query, limit in store.query(query, limit: limit, documentIds: ids, kinds: searched) },
+            tokenSearch: { token, limit in store.passages(containingToken: token, documentIds: ids, limit: limit, kinds: tokenKinds) },
+            clauseSearch: { clause, limit in store.passages(clause: clause, documentIds: ids, limit: limit) },
+            termSearch: { query, limit in store.passages(sharingTermsWith: query, limit: limit, documentIds: ids, kinds: searched) },
+            tableSearch: rows == .none ? nil : { label in store.passages(table: label, namespace: nil, documentIds: ids) },
+            tableCatalogue: { store.storedTables(namespace: nil, documentIds: ids).map {
+                TableReference.Entry(label: $0.table.label, title: $0.table.title)
+            } },
+            termStatistics: { store.termStatistics(namespaces: nil) },
+            policy: policy)
     }
 
     /// The same routes, searching only what the newest-edition default (or the question's own
@@ -91,12 +115,7 @@ enum RetrievalEval {
             return retriever(over: store, policy: policy)
         }
         let ids = store.documents.filter { titles.contains($0.name) }.map(\.id)
-        return VaultRetriever(query: { query, limit in store.query(query, limit: limit, documentIds: ids) },
-                              tokenSearch: { token, limit in store.passages(containingToken: token, documentIds: ids, limit: limit) },
-                              clauseSearch: { clause, limit in store.passages(clause: clause, documentIds: ids, limit: limit) },
-                              termSearch: { query, limit in store.passages(sharingTermsWith: query, limit: limit, documentIds: ids) },
-                              termStatistics: { store.termStatistics(namespaces: nil) },
-                              policy: policy)
+        return retriever(over: store, policy: policy, documentIds: ids)
     }
 
     /// What a model would retry with after a miss, simulated deterministically (Plan IV P5): the
@@ -163,6 +182,9 @@ enum RetrievalEval {
         var sentMeasured = false
         var hitSent = 0, passagesSent = 0, charactersSent = 0, inScopeRefusedSent = 0, refusedSent = 0
         var doubtQuestions = 0, doubtMisses = 0
+        /// Scored questions that name a table (Plan JJ P1) by number or by title words, how many of
+        /// them expect a table label, and their hit@4.
+        var tableNamed = 0, tableNamedByTitle = 0, tableNamedExpectingTable = 0, tableNamedHit4 = 0
 
         var missCount: Int { scored - hit4 }
 
@@ -190,6 +212,10 @@ enum RetrievalEval {
             }
             if let retry = RetrievalEval.retry {
                 out.append("[EVAL]   estimate, one guided retry (\(retry.rawValue)): \(retryHits) of \(missCount) misses found")
+            }
+            if tableNamed > 0 {
+                out.append("[EVAL]   naming a table: \(tableNamed) (\(tableNamedByTitle) by title words), "
+                           + "\(tableNamedExpectingTable) expecting a table, hit@4 \(tableNamedHit4)")
             }
             if multiQuestions + doubtQuestions > 0 {
                 out.append("[EVAL]   overlays: multi-rule or calculation \(multiQuestions) (\(multiMisses) missed) · "
@@ -233,8 +259,10 @@ enum RetrievalEval {
         var report = Report()
         report.sentMeasured = passageLimit != nil
         let searchesClauseNumbered = store.documents.contains { store.isClauseNumbered(documentId: $0.id) }
+        let searchesTableRows = tableRows != .none && store.hasTableRows(documentIds: store.documents.map(\.id))
         func sent(_ gated: VaultRetriever, _ q: Question) -> RetrievalOutcome? {
             passageLimit?.retrieve(.init(turn: q.q), with: gated, searchesClauseNumbered: searchesClauseNumbered,
+                                   searchesTableRows: searchesTableRows,
                                    isClauseNumbered: { store.isClauseNumbered(documentId: $0) })
         }
         for q in questions {
@@ -259,6 +287,13 @@ enum RetrievalEval {
                 report.charactersSent += sent.passages.reduce(0) { $0 + $1.text.count }
             }
             let top4 = Array(outcome.passages.prefix(4))
+            let catalogue = store.storedTables(namespace: nil).map { TableReference.Entry(label: $0.table.label, title: $0.table.title) }
+            if !TableReference.references(in: q.q, catalogue: catalogue).isEmpty {
+                report.tableNamed += 1
+                if TableReference.labels(in: q.q).isEmpty { report.tableNamedByTitle += 1 }
+                if !(q.tables ?? []).isEmpty { report.tableNamedExpectingTable += 1 }
+                if top4.contains(where: { holds($0, q) }) { report.tableNamedHit4 += 1 }
+            }
             if top4.first.map({ holds($0, q) }) == true { report.hit1 += 1 }
             if top4.contains(where: { holds($0, q) }) { report.hit4 += 1; continue }
 

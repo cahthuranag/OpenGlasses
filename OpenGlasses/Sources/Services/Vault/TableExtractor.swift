@@ -117,9 +117,14 @@ struct ManualTable: Codable, Equatable {
     var notes: [Note]
     /// The caption read "(Continued)" and no earlier page of the table was found to join it to.
     var continues: Bool
+    /// Set when the caption was found and its page did not resolve to a grid (Plan JJ P1). Such a
+    /// table is kept by its label, title and page only, with no columns and no rows, so a lookup
+    /// can say the table is there and could not be read, and name the page to show, rather than
+    /// say the book has no such table.
+    var failure: TableExtractor.Failure?
 
     init(label: String, title: String, page: Page, rowHeaders: [String] = [], columns: [Column],
-         rows: [Row], notes: [Note] = [], continues: Bool = false) {
+         rows: [Row], notes: [Note] = [], continues: Bool = false, failure: TableExtractor.Failure? = nil) {
         self.label = label
         self.title = title
         self.page = page
@@ -128,7 +133,18 @@ struct ManualTable: Codable, Equatable {
         self.rows = rows
         self.notes = notes
         self.continues = continues
+        self.failure = failure
     }
+
+    /// A caption whose page extracted nothing, kept as a pointer to its page.
+    static func unextracted(_ caption: TableExtractor.Caption, page: Page,
+                            failure: TableExtractor.Failure) -> ManualTable {
+        ManualTable(label: caption.label, title: caption.title, page: page, columns: [], rows: [],
+                    continues: caption.continues, failure: failure)
+    }
+
+    /// The table's grid was read. False for a caption kept only as a pointer to its page.
+    var isExtracted: Bool { failure == nil }
 
     /// Every page the table is printed on, in order.
     var pages: [Page] {
@@ -430,6 +446,45 @@ enum TableExtractor {
         }
     }
 
+    /// Where a caption that gave too few rows lost them, in counts only (Plan JJ P1's diagnosis,
+    /// for the private measurement runner): never a word from the page.
+    struct TooFewRows: Equatable {
+        /// Body rows of two or more cells the reading found before it stopped.
+        var bodyRows: Int
+        /// How many lines under the caption (and a title read with it) the first run of three
+        /// lines of two or more cells starts, or nil when the region holds no such run.
+        var gridStart: Int?
+        /// That run's first cell is text, not a number, in every row.
+        var firstColumnText = false
+        /// Every cell of that run is text.
+        var allCellsText = false
+    }
+
+    /// The `TooFewRows` reading of every caption on the page that failed for too few rows.
+    static func diagnoseTooFewRows(words: [PositionedWord], page: ManualTable.Page) -> [TooFewRows] {
+        let all = lines(of: words)
+        let bold = hasBold(words)
+        let rotated = words.contains(where: \.isRotated)
+        return captionLines(in: all, pageHasBold: bold).compactMap { found -> TooFewRows? in
+            let outcome = extract(lines: all, at: found.index, titleLines: found.titleLines, caption: found.caption,
+                                  page: page, hasRotatedWords: rotated, pageHasBold: bold)
+            guard outcome.failure == .tooFewRows else { return nil }
+            let layout = layout(lines: all, at: found.index, titleLines: found.titleLines, caption: found.caption,
+                                pageHasBold: bold)
+            var reading = TooFewRows(bodyRows: layout.body.filter { $0.phrases.count >= 2 }.count)
+            let region = layout.region
+            guard let start = region.indices.first(where: { index in
+                index + 2 < region.count && (index...(index + 2)).allSatisfy { region[$0].phrases.count >= 2 }
+            }) else { return reading }
+            reading.gridStart = start
+            let run = region[start...].prefix { $0.phrases.count >= 2 }
+            func isText(_ phrase: Phrase) -> Bool { parseCell(phrase.text, markers: phrase.markers, columnUnit: nil).value == nil }
+            reading.firstColumnText = run.allSatisfy { $0.phrases.first.map(isText) ?? false }
+            reading.allCellsText = run.allSatisfy { $0.phrases.allSatisfy(isText) }
+            return reading
+        }
+    }
+
     /// The table `caption` names on this page.
     static func extract(words: [PositionedWord], caption: Caption, page: ManualTable.Page) -> Outcome {
         let all = lines(of: words)
@@ -476,6 +531,23 @@ enum TableExtractor {
         return numbers * 2 >= rest.count
     }
 
+    /// Where a plain page's text-only grid starts: the first of `minimumBodyRows + 1` consecutive
+    /// lines of two or more cells (a heading line and three rows), within `reach` lines of the
+    /// caption, whose cells after the first are all text. Nil when there is none.
+    private static func textGridStart(in region: [Line], reach: Int) -> Int? {
+        let needed = minimumBodyRows + 1
+        guard region.count >= needed else { return nil }
+        for index in 0...min(reach, region.count - needed) {
+            let run = region[index..<(index + needed)]
+            guard run.allSatisfy({ $0.phrases.count >= 2 }) else { continue }
+            let text = run.allSatisfy { line in
+                line.phrases.dropFirst().allSatisfy { parseCell($0.text, markers: $0.markers, columnUnit: nil).value == nil }
+            }
+            return text ? index : nil
+        }
+        return nil
+    }
+
     /// A line of running prose rather than a row: one long phrase, or a sentence.
     private static func isProse(_ line: Line, phrases: [Phrase]) -> Bool {
         guard phrases.count == 1 else { return false }
@@ -483,8 +555,21 @@ enum TableExtractor {
         return text.count >= 60 || (text.hasSuffix(".") && text.split(separator: " ").count >= 8)
     }
 
-    private static func extract(lines all: [Line], at captionIndex: Int, titleLines: Int, caption: Caption,
-                                page: ManualTable.Page, hasRotatedWords: Bool, pageHasBold: Bool) -> Outcome {
+    /// Where a caption's table sits among the page's lines: the region under it, its title as
+    /// read (a wrapped title included), its header lines and its body lines, as `extract` reads
+    /// them. Shared with the too-few-rows diagnosis, so the counts it gives are of the same reading.
+    struct Layout {
+        var region: [Line]
+        var title: String
+        var headerStart: Int
+        var headerCount: Int
+        var header: [Line]
+        var body: [Line]
+        var bodyEnd: Int
+    }
+
+    static func layout(lines all: [Line], at captionIndex: Int, titleLines: Int, caption: Caption,
+                       pageHasBold: Bool) -> Layout {
         // The table's region: under the caption and its title, up to the next caption or the end.
         let start = captionIndex + 1 + titleLines
         var end = all.count
@@ -498,10 +583,9 @@ enum TableExtractor {
             }
         }
         let region = start < end ? Array(all[start..<end]) : []
-        func fail(_ failure: Failure) -> Outcome {
-            .failed(hasRotatedWords && failure != .tooFewRows ? .rotatedHeaders : failure)
+        guard !region.isEmpty else {
+            return Layout(region: [], title: caption.title, headerStart: 0, headerCount: 0, header: [], body: [], bodyEnd: 0)
         }
-        guard !region.isEmpty else { return .failed(.tooFewRows) }
 
         // Header: the leading run of bold lines that are not prose. On a page with no bold at all,
         // the lines before the first row whose cells after the first are mostly numbers — after
@@ -534,6 +618,24 @@ enum TableExtractor {
                 } else {
                     headerCount = headerStart
                 }
+            } else if let run = textGridStart(in: region, reach: reach) {
+                // A table whose rows are text in every column (Plan JJ P1): no row of numbers to
+                // find the body by. The first run of rows of two or more cells starts the grid;
+                // its first line is the column headings, and one-phrase lines above it are the
+                // title wrapping, as for a table of numbers.
+                var previous = captionIndex
+                while headerStart < min(run, plainTitleMaximumLines), region[headerStart].phrases.count == 1,
+                      !isNoteLine(region[headerStart]),
+                      region[headerStart].top - all[previous].bottom < region[headerStart].size {
+                    title += (title.isEmpty ? "" : " ") + region[headerStart].text
+                    previous = start + headerStart
+                    headerStart += 1
+                }
+                if run - headerStart < plainHeaderMaximumLines, region[headerStart...run].allSatisfy(isHeaderLine) {
+                    headerCount = run + 1
+                } else {
+                    headerCount = headerStart
+                }
             }
         }
         // A bold run that swallows the whole region is a table with bold rows, not all header.
@@ -557,6 +659,24 @@ enum TableExtractor {
             body.append(line)
             bodyEnd = index + 1
         }
+
+        return Layout(region: region, title: title, headerStart: headerStart, headerCount: headerCount,
+                      header: header, body: body, bodyEnd: bodyEnd)
+    }
+
+    private static func extract(lines all: [Line], at captionIndex: Int, titleLines: Int, caption: Caption,
+                                page: ManualTable.Page, hasRotatedWords: Bool, pageHasBold: Bool) -> Outcome {
+        let layout = layout(lines: all, at: captionIndex, titleLines: titleLines, caption: caption,
+                            pageHasBold: pageHasBold)
+        let region = layout.region
+        func fail(_ failure: Failure) -> Outcome {
+            .failed(hasRotatedWords && failure != .tooFewRows ? .rotatedHeaders : failure)
+        }
+        guard !region.isEmpty else { return .failed(.tooFewRows) }
+        let title = layout.title
+        let header = layout.header
+        let body = layout.body
+        let bodyEnd = layout.bodyEnd
 
         let multi = body.filter { $0.phrases.count >= 2 }
         guard multi.count >= minimumBodyRows else { return .failed(.tooFewRows) }
@@ -613,8 +733,11 @@ enum TableExtractor {
             guard let phrase else { return false }
             return parseCell(phrase.text, markers: phrase.markers, columnUnit: nil).value != nil
         }
+        // A table of words throughout has no numbers to tell its row headers by: only its first
+        // column heads the rows (Plan JJ P1).
+        let holdsNumbers = placed.contains { $0.cells.dropFirst().contains(where: isNumeric) }
         var stubs = 1
-        while stubs < segments.count - 1 {
+        while holdsNumbers, stubs < segments.count - 1 {
             let column = placed.compactMap { $0.cells[stubs] }
             guard !column.isEmpty, !placed.contains(where: { isNumeric($0.cells[stubs]) }) else { break }
             stubs += 1

@@ -337,7 +337,7 @@ enum VaultImporter {
             let ref = await store.ingest(name: want.title, text: extracted.text,
                                          sourceType: sourceType, namespace: namespace,
                                          pageLabels: extracted.pageLabels,
-                                         tables: tables?.tables ?? []) { done, total in
+                                         tables: tables?.stored ?? []) { done, total in
                 progress?(want.title, done, total)
             }
             VaultDocumentExtractor.logTables(tables, rowsDropped: store.lastTableRowsDropped)

@@ -13,11 +13,12 @@ final class ShowSourceTool: NativeTool {
     let description = """
     Open the manual or code-book page your last answer cited, on the technician's phone, with the \
     cited passage highlighted. Call it when the technician says "show me the page", "show me the \
-    relevant pages", "show me clause 3.9.4", "show me the second one" or "where does it say \
-    that". Pass 'which': "first" (the default), "second", "last", "all" for every cited page as \
-    one paged sheet, or a clause number as printed. Pass 'document' when the technician names the \
-    book. It opens only what the last answer cited, so search with manual_lookup and answer \
-    first. If it reports that the phone is locked, tell the technician "It's on your phone." and \
+    relevant pages", "show me clause 3.9.4", "show me the table", "show me the second one" or \
+    "where does it say that". Pass 'which': "first" (the default), "second", "last", "all" for \
+    every cited page as one paged sheet, a clause number as printed, "table" for the table the \
+    answer cited (its row highlighted), or a table number such as "Table 99". Pass 'document' \
+    when the technician names the book. It opens only what the last answer cited, so search with \
+    manual_lookup or table_lookup and answer first. If it reports that the phone is locked, tell the technician "It's on your phone." and \
     do not say the page is showing. Requires an active session in a vault that has manuals.
     """
     let parametersSchema: [String: Any] = [
@@ -25,7 +26,7 @@ final class ShowSourceTool: NativeTool {
         "properties": [
             "which": [
                 "type": "string",
-                "description": "Which cited source: \"first\", \"second\", \"third\", \"last\", \"all\", or a clause number such as \"3.9.4\"."
+                "description": "Which cited source: \"first\", \"second\", \"third\", \"last\", \"all\", a clause number such as \"3.9.4\", \"table\", or a table number such as \"Table 99\"."
             ],
             "document": [
                 "type": "string",

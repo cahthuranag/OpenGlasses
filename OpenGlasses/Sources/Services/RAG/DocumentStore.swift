@@ -1061,15 +1061,43 @@ final class DocumentStore: ObservableObject {
     /// re-chunked under its own id by `PassageLocationMigration`, and one that chunks the same only
     /// has its positions rewritten. 3: a stored vault document's tables are extracted from its PDF
     /// and their row passages added (Plan JJ P0); its text chunks are only re-located, never
-    /// re-chunked, when their text is unchanged.
-    nonisolated static let locationVersion = 3
+    /// re-chunked, when their text is unchanged. 4: a caption whose page did not resolve to a grid
+    /// is kept too, by its label and page (Plan JJ P1); a document whose text version 3 already
+    /// located only has its tables read again.
+    nonisolated static let locationVersion = 4
+
+    /// The oldest location version among a document's own text chunks (its table rows left out),
+    /// or nil when it has none. A never-located row counts as 0.
+    func textLocationVersion(documentId: String) -> Int? {
+        let sql = """
+        SELECT COUNT(*), MIN(COALESCE(location_version, 0)) FROM doc_chunks
+        WHERE document_id = ? AND \(Self.notTableRow)
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, documentId, -1, SQLITE_TRANSIENT)
+        guard sqlite3_step(stmt) == SQLITE_ROW, sqlite3_column_int(stmt, 0) > 0 else { return nil }
+        return Int(sqlite3_column_int(stmt, 1))
+    }
+
+    /// Stamp every chunk of a document with the current location version, its places unchanged:
+    /// what a location bump that changed nothing about the text leaves behind.
+    func markLocated(documentId: String) {
+        exec("UPDATE doc_chunks SET location_version = \(Self.locationVersion) "
+             + "WHERE document_id = '\(escapedSQL(documentId))'")
+    }
 
     /// One chunk's text and place, for the highlight. Its own query rather than `fetchChunks`,
     /// which decodes every embedding in the namespace to answer for one row.
+    ///
+    /// A table's row passage (Plan JJ P1) is the app's sentence, not the page's words, so its
+    /// anchor carries the row as printed (`TableRowPassage.printedRuns`), read from the stored
+    /// table, and the locator marks the row's own line.
     func anchor(documentId: String, chunkIndex: Int) -> PassageAnchor? {
         if documentId.hasPrefix("captured:"), !capturedNamespaceAllowed(documentId) { return nil }
         let sql = """
-        SELECT text, page, page_start, page_end, sentences FROM doc_chunks
+        SELECT text, page, page_start, page_end, sentences, kind, figure FROM doc_chunks
         WHERE document_id = ? AND chunk_index = ? LIMIT 1
         """
         var stmt: OpaquePointer?
@@ -1081,11 +1109,24 @@ final class DocumentStore: ObservableObject {
         func optionalInt(_ column: Int32) -> Int? {
             sqlite3_column_type(stmt, column) == SQLITE_NULL ? nil : Int(sqlite3_column_int(stmt, column))
         }
-        let sentences = sqlite3_column_type(stmt, 4) == SQLITE_NULL ? nil
-            : String(cString: sqlite3_column_text(stmt, 4))
-        return PassageAnchor(documentId: documentId, chunkIndex: chunkIndex, text: String(cString: raw),
-                             page: optionalInt(1), pageStart: optionalInt(2), pageEnd: optionalInt(3),
-                             sentenceStarts: PassageAnchor.decode(sentences))
+        func optionalText(_ column: Int32) -> String? {
+            sqlite3_column_type(stmt, column) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, column))
+        }
+        let text = String(cString: raw)
+        let page = optionalInt(1), pageStart = optionalInt(2), pageEnd = optionalInt(3)
+        let sentences = optionalText(4)
+        var runs: [String] = []
+        if optionalText(5) == DocumentChunker.Kind.tableRow.rawValue {
+            let figure = optionalText(6)
+            runs = TableRowPassage.row(forPassage: text, figure: figure, in: tables(documentId: documentId))
+                .map { TableRowPassage.printedRuns(of: $0.row) } ?? []
+            // A row that cannot be read back is matched only as its own sentence, which no page
+            // prints: the page opens unmarked rather than marked by a piece of the sentence.
+            if runs.isEmpty { runs = [text] }
+        }
+        return PassageAnchor(documentId: documentId, chunkIndex: chunkIndex, text: text,
+                             page: page, pageStart: pageStart, pageEnd: pageEnd,
+                             sentenceStarts: PassageAnchor.decode(sentences), printedRuns: runs)
     }
 
     /// Whether any of a document's chunks were stored before the current location version.
@@ -1233,6 +1274,64 @@ final class DocumentStore: ObservableObject {
             }
         }
         return tables
+    }
+
+    /// A stored table and the document it came from (Plan JJ P1).
+    struct StoredTable: Equatable {
+        let documentId: String
+        let documentName: String
+        let table: ManualTable
+    }
+
+    /// Every table stored for the documents of `namespace` (or of `documentIds` within it), the
+    /// captions that could not be read included, by document title then storage order — what
+    /// `table_lookup` resolves against and what a question naming a table is recognised by.
+    func storedTables(namespace: String?, documentIds: [String]? = nil) -> [StoredTable] {
+        if let namespace, namespace.hasPrefix("captured:"), !capturedNamespaceAllowed(namespace) { return [] }
+        let scope = namespace.map { "d.namespace = '\(escapedSQL($0))'" } ?? "d.namespace NOT LIKE 'captured:%'"
+        var sql = "SELECT t.document_id, d.name, t.json FROM doc_tables t JOIN documents d ON t.document_id = d.id "
+            + "WHERE \(scope)"
+        if let ids = documentIds {
+            guard !ids.isEmpty else { return [] }
+            sql += " AND t.document_id IN (" + ids.map { "'\(escapedSQL($0))'" }.joined(separator: ", ") + ")"
+        }
+        sql += " ORDER BY d.name ASC, t.table_index ASC"
+        let decoder = JSONDecoder()
+        return rows(sql) { stmt -> StoredTable? in
+            guard let id = sqlite3_column_text(stmt, 0), let name = sqlite3_column_text(stmt, 1),
+                  let json = sqlite3_column_text(stmt, 2),
+                  let table = try? decoder.decode(ManualTable.self, from: Data(String(cString: json).utf8)) else {
+                return nil
+            }
+            return StoredTable(documentId: String(cString: id), documentName: String(cString: name), table: table)
+        }.compactMap { $0 }
+    }
+
+    /// Whether any document of `documentIds` has a table row passage — what asks the retriever
+    /// for the larger passage limit (`ManualPassageLimit`, Plan JJ P1).
+    func hasTableRows(documentIds: [String]) -> Bool {
+        guard !documentIds.isEmpty else { return false }
+        let list = documentIds.map { "'\(escapedSQL($0))'" }.joined(separator: ", ")
+        return !rows("SELECT 1 FROM doc_chunks WHERE document_id IN (\(list)) "
+                     + "AND kind = '\(DocumentChunker.Kind.tableRow.rawValue)' LIMIT 1") { _ in true }.isEmpty
+    }
+
+    /// The passages of one table by its label (Plan JJ P1): the chunks its caption names — its row
+    /// passages, and a drawing or prose chunk of its page when the caption named one — or, for a
+    /// table whose grid could not be read and whose caption names no chunk, the chunks of the page
+    /// it is printed on, so the route still reaches the page the technician can be shown.
+    func passages(table label: String, namespace: String?, documentIds: [String]? = nil) -> [Passage] {
+        let named = passages(figure: label, namespace: namespace, documentIds: documentIds, limit: Int.max)
+        guard named.isEmpty else { return named }
+        var out: [Passage] = []
+        for stored in storedTables(namespace: namespace, documentIds: documentIds)
+        where stored.table.label.caseInsensitiveCompare(label) == .orderedSame {
+            for page in stored.table.pages.map(\.physical) {
+                out += passages(onPage: page, namespace: namespace, documentIds: [stored.documentId], limit: Int.max)
+                    .filter { $0.kind != .tableRow }
+            }
+        }
+        return out
     }
 
     /// Replace the tables recorded for a document. The row passages are written by the caller.

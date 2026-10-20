@@ -55,13 +55,13 @@ final class TableExtractorTests: XCTestCase {
     func testATwoLevelHeaderGivesEachColumnItsPath() throws {
         let table = try only(TableFixtureLayouts.twoLevelHeader())
         XCTAssertEqual(table.columns.map(\.path), [
-            ["Rating group 1", "60"], ["Rating group 1", "75"], ["Rating group 1", "90"],
-            ["Rating group 2", "60"], ["Rating group 2", "75"], ["Rating group 2", "90"],
+            ["Rating group 1", "Band A"], ["Rating group 1", "Band B"], ["Rating group 1", "Band C"],
+            ["Rating group 2", "Band A"], ["Rating group 2", "Band B"], ["Rating group 2", "Band C"],
         ])
-        XCTAssertEqual(table.columns[4].name, "Rating group 2 › 75")
-        XCTAssertEqual(table.rowHeaders, ["Ambient (°C)"], "a range like 21-25 is a row header, not a number")
-        XCTAssertEqual(table.rows.map(\.path), [["21-25"], ["26-30"], ["31-35"], ["36-40"]])
-        XCTAssertEqual(table.rows[2].cells[4].value, 0.95)
+        XCTAssertEqual(table.columns[4].name, "Rating group 2 › Band B")
+        XCTAssertEqual(table.rowHeaders, ["Ambient (°C)"], "a range like 7-9 is a row header, not a number")
+        XCTAssertEqual(table.rows.map(\.path), [["7-9"], ["10-12"], ["13-15"], ["16-18"]])
+        XCTAssertEqual(table.rows[2].cells[4].value, 0.86)
     }
 
     func testUnitsInTheHeaderAndInACellParse() throws {
@@ -166,24 +166,79 @@ final class TableExtractorTests: XCTestCase {
 
     // MARK: - Captions and cells
 
-    func testTheCaptionRuleAgreesWithTheChunkersFigureLabel() {
-        let cases: [(String, Bool)] = [("TABLE 99 Conductor ratings", true), ("Table 7", true),
+    /// One direction only: every table caption `ManualStructure` names a chunk by is a caption
+    /// here, with the same label. The extractor also reads plain captions on a page with no bold,
+    /// which the chunker never names.
+    func testEveryChunkerTableCaptionIsAnExtractorCaption() {
+        let cases: [(String, Bool)] = [("TABLE 99 Conductor ratings", true), ("Table 96", true),
                                        ("TABLE 96 (Continued)", true), ("See Table 99 for values", false),
                                        ("TABLE 99 Conductor ratings", false), ("FIGURE 94 Terminal block", true)]
         for (text, bold) in cases {
             let typed = ManualStructure.caption(ManualStructure.TypedLine(raw: text, size: 10, bold: bold))
             let words = TableFixtureLayouts.words([TableFixtureLayouts.Item(text: text, x: 50, y: 60, size: 10, bold: bold)])
-            let positioned = TableExtractor.lines(of: words).first.flatMap(TableExtractor.caption(of:))
+            let positioned = TableExtractor.lines(of: words).first.flatMap { TableExtractor.caption(of: $0) }
             if let typed, typed.label.hasPrefix("Table") {
                 XCTAssertEqual(positioned?.label, typed.label, text)
-            } else {
-                XCTAssertNil(positioned, text)
+            }
+            if !bold {
+                XCTAssertNil(positioned, "on a page that sets anything in bold, a plain line is not a caption: \(text)")
             }
         }
         let continued = TableExtractor.lines(of: TableFixtureLayouts.words(
             [TableFixtureLayouts.Item(text: "TABLE 96 (Continued)", x: 50, y: 60, size: 10, bold: true)]))
-        XCTAssertEqual(continued.first.flatMap(TableExtractor.caption(of:)),
+        XCTAssertEqual(continued.first.flatMap { TableExtractor.caption(of: $0) },
                        TableExtractor.Caption(label: "Table 96", title: "", continues: true))
+    }
+
+    // MARK: - A text layer with no bold
+
+    func testAPlainCaptionOverAGridExtractsOnAPageWithNoBold() throws {
+        let table = try only(TableFixtureLayouts.singleFontGrid())
+        XCTAssertEqual(table.label, "Table 95")
+        XCTAssertEqual(table.title, "Spacing limits")
+        XCTAssertEqual(table.rowHeaders, ["Designation"], "the header is read without weight")
+        XCTAssertEqual(table.columns.map(\.name), ["Limit (A)", "Spacing (mm)"])
+        XCTAssertEqual(table.columns.map(\.unit), ["A", "mm"])
+        XCTAssertEqual(table.rows.map(\.path), [["QA7"], ["QA8"], ["QA9"], ["QA11"]])
+        XCTAssertEqual(table.rows[2].cells.map(\.value), [23, 38])
+    }
+
+    func testAWrappedTitleOnAPageWithNoBoldIsReadAsTheTitle() throws {
+        let table = try only(TableFixtureLayouts.singleFontWrappedTitle())
+        XCTAssertEqual(table.title, "Invented spacing limits for the invented designations set out in this example, "
+                       + "arranged for a test of a title that wraps")
+        XCTAssertEqual(table.columns.map(\.name), ["Limit (A)", "Spacing (mm)"])
+        XCTAssertEqual(table.rows.map(\.path), [["QB2"], ["QB3"], ["QB5"]])
+    }
+
+    func testThePlainCaptionLineIsNotACaptionWhereThePageCarriesBold() {
+        let words = TableFixtureLayouts.words(TableFixtureLayouts.singleFontGrid(boldElsewhere: true))
+        XCTAssertTrue(TableExtractor.captions(in: words).isEmpty)
+        XCTAssertTrue(TableExtractor.extractAll(words: words, page: .init(physical: 1)).isEmpty)
+    }
+
+    func testProseThatBeginsWithATableReferenceExtractsNothing() {
+        let found = TableExtractor.extractAll(words: TableFixtureLayouts.words(TableFixtureLayouts.proseTableReference()),
+                                              page: .init(physical: 1))
+        XCTAssertEqual(found.map(\.caption.label), ["Table 95"],
+                       "the long line is a sentence; only the short line stands alone")
+        XCTAssertEqual(found.map(\.outcome.failure), [.tooFewRows], "and no grid follows it")
+        let line = { (text: String) in
+            TableExtractor.lines(of: TableFixtureLayouts.words([.init(text: text, x: 50, y: 60)])).first
+                .flatMap { TableExtractor.caption(of: $0, pageHasBold: false) }
+        }
+        XCTAssertNil(line("Table 95 lists the limits. The rows below are invented."), "a sentence ends before the line does")
+        XCTAssertNil(line("See Table 95"), "a reference that does not begin the line")
+        XCTAssertEqual(line("TABLE 95 (Continued)"), TableExtractor.Caption(label: "Table 95", title: "", continues: true))
+    }
+
+    func testAPlainCaptionExtractsFromAPDFWithNoBoldInItsTextLayer() throws {
+        let result = try readPDF([TableFixtures.prosePage(), TableFixtureLayouts.singleFontGrid(),
+                                  TableFixtureLayouts.proseTableReference()])
+        XCTAssertEqual(result.captioned, 2, "the table and the short prose line")
+        XCTAssertEqual(result.extracted, 1)
+        XCTAssertEqual(result.failures, [.tooFewRows: 1])
+        XCTAssertEqual(result.tables.first?.rows.compactMap { $0.cells.first?.value }, [14, 17, 23, 29])
     }
 
     func testCellsParseNumbersUnitsAndMarkers() {
@@ -193,7 +248,7 @@ final class TableExtractorTests: XCTestCase {
         XCTAssertEqual(cell("1,5").value, 1.5, "a decimal comma")
         XCTAssertEqual(cell("12,000").value, 12_000, "a thousands separator")
         XCTAssertNil(cell("1/0").value, "a designation, not a number")
-        XCTAssertNil(cell("21-25").value, "a range is a row header")
+        XCTAssertNil(cell("7-9").value, "a range is a row header")
         XCTAssertEqual(cell("\u{2212}3").value, -3, "a typeset minus")
         XCTAssertEqual(cell("2.5 mm\u{00B2}"), ManualTable.Cell(text: "2.5 mm\u{00B2}", value: 2.5, unit: "mm\u{00B2}"),
                        "a squared unit is a unit, not a footnote")

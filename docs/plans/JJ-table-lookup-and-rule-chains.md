@@ -3,8 +3,9 @@
 **Status:** 🚧 P0 shipped 2026-10-20: a captioned table in an organisation's own loaded PDF is
 extracted at import into rows, header paths, cells (number, unit, footnote markers) and notes,
 stored beside the document's passages, and each row is searchable as a passage; stored manuals get
-their tables by the location migration. The private measurement could not run: the loaded test
-copy is a text extraction with no PDF beside it (see "What shipped in P0"). P1–P4 not built.
+their tables by the location migration. Measured privately on the loaded test book's PDF: 94
+captioned tables found, 33 extracted to a grid (0.35), 51 with too few rows, 8 with varying
+column counts, 2 with merged cells (see "What shipped in P0"). P1–P4 not built.
 Decisions confirmed 2026-10-20. Field Assist first; every phase is a headless core with the live
 edge last. Written for the partner's electricians, whose stated priority
 after the first round of code-book testing is **table lookup**: "those tables contain much of the
@@ -163,15 +164,23 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
 - **`TableExtractor` (pure, `Sources/Services/Vault/`).** Positioned words and a page in, one
   outcome per caption out: a `ManualTable` or a `Failure` (`no_text_layer`, `caption_not_found`,
   `too_few_rows`, `varying_column_count`, `merged_cells`, `rotated_headers`). The caption is read
-  off the positioned lines with the rule `ManualStructure.caption` applies to typed lines (bold,
-  `TABLE N`), so the label and the chunk's `figure` agree (a test holds the two rules together);
-  this replaces the typed-lines input the bullet above names. The header is the leading run of
-  bold lines under the caption and its title, and the body runs until a note, a paragraph or a
-  wide gap. Columns are the union of the body cells' horizontal extents over the rows with the
+  off the positioned lines, which replaces the typed-lines input the bullet above names. On a
+  page that sets anything in bold it is the rule `ManualStructure.caption` applies to typed lines
+  (bold, `TABLE N`), so every caption that names a chunk's `figure` is a caption here with the
+  same label (a test holds that one direction). On a page whose text layer carries no bold at all
+  — the loaded code book is set in one font, with no weight anywhere in its text layer — the
+  caption is a line that begins `Table N` in any case and stands on its own: at most twelve
+  words, no sentence ended before the last. The grid that must follow keeps a short prose line
+  beginning with a table reference from extracting anything. `ManualStructure.caption` is
+  unchanged: it names passages and decides which pages open, as Plan IV measured. The header is
+  the leading run of bold lines under the caption and its title. On a plain page it is the lines
+  before the first row whose cells after the first are mostly numbers (at most four), after up to
+  three single-phrase lines of a long title that wrapped under the caption. The body runs until a
+  note, a paragraph or a wide gap. Columns are the union of the body cells' horizontal extents over the rows with the
   modal cell count, and must come out as many as those rows have cells. More than 15 % of rows
   off the grid refuses the page. A header phrase heads the columns whose centres fall in its
   region (its extent widened symmetrically to the midpoint with its neighbours), which makes a
-  group heading a path level ("Rating group 2 › 75"). Leading text-only columns are row headers,
+  group heading a path level ("Rating group 2 › Band B"). Leading text-only columns are row headers,
   and a row header printed once is carried down to the rows that leave it blank. A single phrase
   alone at the left heads a row group. Cells keep their printed text and parse a number (decimal
   comma, thousands separator, typeset minus) and a unit, their own or their column's bracketed
@@ -203,29 +212,46 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   and the model is told "(table row, Table 99, page 12)". `FigureAutoOpenPolicy` gains
   `PassageKind.tableRow`: attached to the model on a question, opened only when the technician
   asks for the page, never by a number. `ManualPassageLimit` is unchanged.
-- **Tests (32, invented fixtures).** `TableExtractorTests` (21): a simple grid, a two-level
+- **Tests (37, invented fixtures).** `TableExtractorTests` (26): a simple grid, a two-level
   header, units in the header and in a cell, footnotes and notes, a continued table merged (and a
   lone continuation kept apart), a figure drawing, a drawing under a table caption, a caption over
-  prose, an empty page, merged cells refused, the caption rule agreeing with
-  `ManualStructure.caption`, cell parsing, row sentences and the cap, JSON round trip. The PDF
+  prose, an empty page, merged cells refused, every `ManualStructure` table caption being an
+  extractor caption, cell parsing, row sentences and the cap, JSON round trip. On a page with no
+  bold: a plain caption over a grid extracts, a wrapped title is read as the title, the same
+  caption line on a page with bold elsewhere is not a caption, and prose beginning "Table 95
+  shows …" extracts nothing. The PDF
   tests draw the same layouts into a real PDF and read them through PDFKit: printed page labels,
-  a merge across two PDF pages, raised footnote digits, and a scanned page counted as having no
-  text layer. `TableStorageTests` (11): stored at ingest after the text, found by token, figure,
+  a merge across two PDF pages, raised footnote digits, a scanned page counted as having no
+  text layer, and a PDF whose text layer has no bold. `TableStorageTests` (11): stored at ingest after the text, found by token, figure,
   terms and query, capped with the table kept whole, forgotten and cleared, migrated without
   touching the text chunks (and a second launch idle), read from a text import's original, a
   text-only import skipped, imported then exported with no value in the export, the source scan,
   the auto-open policy, and the citation.
-- **Measured privately: not run.** The loaded test copy on the Mac is a text extraction of the
-  book with no PDF beside it, and a text file has no word positions. Nothing in it was opened.
-  `Scripts/table-extract-eval/` is the runner for when the PDF is there: it compiles
-  `PDFTableReader` and `TableExtractor` unchanged and prints only counts (captions, extracted,
-  failures by class, pages without text, and row and column distributions). The same limit holds
-  on the phone, and it matters for the partner's test: a vault that carries the code book only as
-  extracted text gets no tables until its original PDF is added beside it.
-- **Not known yet.** How many of a real book's tables come out as a grid, and whether the grids
-  are right. A consistent grid is not a correct one, and checking that needs an answer key of
-  cells, which P1's measurement adds. The row passages add candidates to every manual search in a
-  vault with tables; their effect on IV's code-book numbers is unmeasured until a PDF is loaded.
+- **Measured privately** with `Scripts/table-extract-eval/` on the loaded test book's PDF
+  (aggregates only; the runner compiles `PDFTableReader` and `TableExtractor` unchanged and prints
+  nothing from inside a table):
+
+  | | bold caption rule only | plain captions | plain captions + wrapped titles (shipped) |
+  |---|---|---|---|
+  | Captioned tables found | 0 | 94 | 94 |
+  | Extracted to a consistent grid | 0 | 7 (0.07) | **33 (0.35)** |
+  | Too few rows | — | 79 | 51 |
+  | Varying column count | — | 7 | 8 |
+  | Merged cells | — | 1 | 2 |
+  | Rotated headers / no text layer | — | 0 / 0 | 0 / 0 |
+  | Pages without a text layer | 0 | 0 | 0 |
+
+  Of the 33: median 7 rows (max 23), median 2 value columns (max 9), 15 with notes, none
+  continued over pages, 0.83 of filled cells numeric, about 14 s for the whole book on a Mac.
+  The book's text layer is set in one font and carries no bold, so the bold rule alone found
+  nothing. The remaining failures are mostly "too few rows". The runner does not say why a body
+  ended early, so the next lever is a counts-only breakdown of where each body stopped. A vault
+  that carries the code book only as extracted text (the test copy first measured was one) gets
+  no tables until its original PDF is beside it.
+- **Not known yet.** Whether the 33 grids are right. A consistent grid is not a correct one, and
+  checking that needs an answer key of cells, which P1's measurement adds. The row passages add
+  candidates to every manual search in a vault with tables; their effect on IV's code-book
+  numbers is not yet measured.
   "Show me" on a row passage opens its page unmarked ("The passage couldn't be marked on this
   page."), because the row sentence is the app's text, not the page's. Marking the row is P1.
 

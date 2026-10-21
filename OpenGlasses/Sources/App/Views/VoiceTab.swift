@@ -80,7 +80,8 @@ struct VoiceTab: View {
                 // control is the last thing that should need scrolling to, and the zone takes
                 // whatever height is left over.
                 Group {
-                    if showChatInput && !isRealtime {
+                    // A transcript under review (Plan JM P1) opens the bar by itself.
+                    if (showChatInput || appState.pendingTranscript != nil) && !isRealtime {
                         ChatInputBar(showChatInput: $showChatInput)
                     } else {
                         VoiceTabControls(
@@ -230,6 +231,13 @@ struct VoiceTab: View {
 
                 if captionsActive {
                     AmbientCaptionOverlay(captionService: appState.ambientCaptions)
+                }
+
+                // Plan JM P1: speech has failed twice running — the typed bar, one tap away.
+                if appState.showTypeInstead && !isRealtime && !showChatInput
+                    && appState.pendingTranscript == nil {
+                    TypeInsteadChip { showChatInput = true }
+                        .transition(.opacity)
                 }
             }
 
@@ -416,9 +424,51 @@ struct ChatInputBar: View {
     @Binding var showChatInput: Bool
 
     var body: some View {
-        ChatComposer(autoFocus: true, voiceAction: { showChatInput = false }) { text, image in
-            Task { await appState.sendTextMessage(text, imageData: image) }
+        if let review = appState.pendingTranscript {
+            // "Check what I said before sending" (Plan JM P1): the transcript, seeded and counting
+            // down. Not focused — the keyboard would cover the moment to read it; touching the text
+            // holds the countdown, and the leading button cancels the turn.
+            ChatComposer(
+                voiceAction: { Task { await appState.cancelPendingTranscript() } },
+                voiceActionSymbol: "xmark",
+                voiceActionLabel: "Cancel, don't send",
+                initialText: review.text,
+                onEdit: { appState.holdPendingTranscript() },
+                review: review
+            ) { text, image in
+                Task { await appState.sendReviewedTranscript(text, imageData: image) }
+            }
+            .id(review.id)
+        } else {
+            ChatComposer(autoFocus: true, voiceAction: { showChatInput = false }) { text, image in
+                Task { await appState.sendTextMessage(text, imageData: image) }
+            }
         }
+    }
+}
+
+/// "Type instead" — offered above the dock after speech has failed twice running (Plan JM P1).
+/// Opens the same typed bar as the dock's Type button.
+private struct TypeInsteadChip: View {
+    let action: () -> Void
+    @Environment(\.appAccent) private var accent
+    @ScaledMetric(relativeTo: .body) private var tapTarget: CGFloat = 44
+
+    var body: some View {
+        Button(action: action) {
+            Label("Type instead", systemImage: "keyboard")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(OGTheme.tintedAccentLabel(accent))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(accent.opacity(OGTheme.Opacity.accentPillFill), in: Capsule())
+                .frame(minHeight: tapTarget)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Type instead")
+        .accessibilityHint("Opens the text bar to type your message")
     }
 }
 

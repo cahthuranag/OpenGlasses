@@ -106,4 +106,54 @@ final class TranscriptOriginTests: XCTestCase {
         XCTAssertFalse(recall.contains("do not call field_session start"), recall)
         XCTAssertTrue(recall.contains("Supply air is 140"), recall)
     }
+    // MARK: - An edited transcript (Plan JM P1)
+
+    func testACorrectedTranscriptIsTheTechniciansLineMarkedEdited() throws {
+        let service = FieldSessionService(sessionsRoot: tempRoot)
+        let session = try service.startSession(vaultId: "refrigeration", assetId: nil)
+        service.recordConversationTurn("Supply air is 140", sourceID: "turn-1")
+        service.expectEditedTranscript("  Return air is 74\n")
+        service.recordConversationTurn("Return air is 74", sourceID: "turn-2")
+        service.recordConversationTurn("Return air is 74", sourceID: "turn-3")
+        _ = try service.endSession()
+
+        let dir = tempRoot.appendingPathComponent(session.id, isDirectory: true)
+        let lines = SessionLogger.readEvents(at: dir).filter { $0.kind == .userMessage }
+        XCTAssertEqual(lines.map(\.text), ["Supply air is 140", "Return air is 74", "Return air is 74"])
+        XCTAssertEqual(lines.map(TranscriptOriginClassifier.wasEdited), [false, true, false],
+                       "only the line that carried the correction, once")
+        XCTAssertTrue(lines.allSatisfy(TranscriptOriginClassifier.isTechnicianLine),
+                      "an edited line is still the technician's")
+        XCTAssertEqual(lines.map { TranscriptOriginClassifier.origin(of: $0) }, [.technician, .technician, .technician])
+
+        let export = try XCTUnwrap(SessionExporter.buildExport(sessionDir: dir))
+        XCTAssertTrue(export.transcript.contains { $0.text == "Return air is 74" },
+                      "the corrected words are the record")
+    }
+
+    func testAnEditExpectationDoesNotMarkADifferentLine() throws {
+        let service = FieldSessionService(sessionsRoot: tempRoot)
+        let session = try service.startSession(vaultId: "refrigeration", assetId: nil)
+        service.expectEditedTranscript("Return air is 74")
+        service.recordConversationTurn("Something else entirely", sourceID: "turn-1")
+        service.recordConversationTurn("Return air is 74", sourceID: "turn-2")
+        _ = try service.endSession()
+
+        let dir = tempRoot.appendingPathComponent(session.id, isDirectory: true)
+        let lines = SessionLogger.readEvents(at: dir).filter { $0.kind == .userMessage }
+        XCTAssertEqual(lines.map(TranscriptOriginClassifier.wasEdited), [false, false],
+                       "a different line in between drops the expectation")
+    }
+
+    func testTheAppsOwnInstructionIsNeverMarkedEdited() throws {
+        let service = FieldSessionService(sessionsRoot: tempRoot)
+        let session = try service.startSession(vaultId: "refrigeration", assetId: nil)
+        service.expectEditedTranscript(kickoff)
+        service.recordConversationTurn(kickoff, sourceID: "turn-0")
+        _ = try service.endSession()
+
+        let dir = tempRoot.appendingPathComponent(session.id, isDirectory: true)
+        let events = SessionLogger.readEvents(at: dir)
+        XCTAssertFalse(events.contains(where: TranscriptOriginClassifier.wasEdited))
+    }
 }

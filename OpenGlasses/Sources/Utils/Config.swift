@@ -559,6 +559,22 @@ struct Config {
     @UserDefaultsBacked("dictationVoiceProcessingEnabled", default: false)
     static var dictationVoiceProcessingEnabled: Bool
 
+    /// "Check what I said before sending" (Plan JM P1): a finished transcript waits in the chat bar
+    /// for a short countdown before it goes, so the wearer can correct it. Off by default; only on
+    /// the phone's screen in Direct mode — see `SendReviewPolicy`. In Settings › Voice & Triggers.
+    @UserDefaultsBacked("checkBeforeSendingEnabled", default: false)
+    static var checkBeforeSendingEnabled: Bool
+
+    /// The raw stored countdown. Private because nothing should read it without the clamp.
+    @UserDefaultsBacked("checkBeforeSendingSeconds", default: SendReviewPolicy.Countdown.defaultSeconds)
+    private static var storedCheckBeforeSendingSeconds: Double
+
+    /// Seconds the transcript waits before sending itself, bounded to 2…10.
+    static var checkBeforeSendingSeconds: TimeInterval {
+        get { SendReviewPolicy.Countdown.clamp(storedCheckBeforeSendingSeconds) }
+        set { storedCheckBeforeSendingSeconds = SendReviewPolicy.Countdown.clamp(newValue) }
+    }
+
     /// "Keep talking without signal" (Plan GE): when the connection goes, the conversation carries
     /// on on the phone — on-device model, offline tool set — and moves back to the cloud on its own
     /// once a stable connection returns. Only takes effect when an on-device model is installed

@@ -70,6 +70,17 @@ The numbers below are an example, not a measurement:
   - `not_named`: no column on a table with several, so the chain would stop;
   - `not_checked`: the table is missing or unread.
 
+  An unread table's lookup line ends with `unread_because=` and the extractor's reason
+  (`too_few_rows`, `no_text_in_table` for a table printed with no text to read, and the rest
+  `Scripts/table-extract-eval/README.md` lists), and the `unread because:` line counts them. A
+  read table's line ends with `grid=<rows>x<columns>` and, when some of its columns were printed
+  with no heading over them, `unnamed_columns=`: counts only.
+- **Names, said the way a chain says them.** A column is matched by its whole heading path, by
+  its last heading when only one column ends that way, or by its words in any order, ignoring
+  case, punctuation and a unit in brackets ("Band A" for a heading printed "Band A (A)"); a row
+  by its key, a number inside a range the book prints ("7-9", "10 to 12", "over 15 up to 18"),
+  or its words. Words that fit more than one are reported `ambiguous`, as the chain would ask.
+
 **Names come only from the chains file.** A chain's name, a table label and the row or column
 words printed beside an unresolved, ambiguous or unnamed lookup are what the chain wrote. A
 table's title, a heading, a cell, a candidate row and a document's name are never printed, so a

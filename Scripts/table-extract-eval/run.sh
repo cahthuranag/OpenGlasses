@@ -14,6 +14,7 @@ esac
 mkdir -p "$build"
 
 swiftc -O -parse-as-library -o "$build/table-extract-eval" \
-  "$here/main.swift" "$src/Vault/TableExtractor.swift" "$src/Vault/PDFTableReader.swift"
+  "$here/main.swift" "$root/OpenGlassesTests/TableExtractEval/TableShapeReport.swift" \
+  "$src/Vault/TableExtractor.swift" "$src/Vault/PDFTableReader.swift"
 
 exec "$build/table-extract-eval" "$@"

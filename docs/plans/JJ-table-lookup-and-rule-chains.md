@@ -1,6 +1,6 @@
 # Plan JJ — Table Lookup and Rule Chains (a cell from the book, and the rules that use it, chained)
 
-**Status:** ✅ every phase built; the device checks owed are named under P4. P0 shipped 2026-10-20: a captioned table in an organisation's own loaded PDF is
+**Status:** ✅ every phase built, P5 added and built 2026-10-21 (draft PR); the device checks owed are named under P4. P0 shipped 2026-10-20: a captioned table in an organisation's own loaded PDF is
 extracted at import into rows, header paths, cells (number, unit, footnote markers) and notes,
 stored beside the document's passages, and each row is searchable as a passage; stored manuals get
 their tables by the location migration. Measured privately on the loaded test book's PDF: 94
@@ -36,7 +36,15 @@ never assumed) and a chain `calc` with `sqrt( )` reaches the same number; `Scrip
 checks a vault's chains against its own PDFs' tables. Run on the partner's test vault: 11 chains,
 0 problems, 43 lookups of which 4 reach a read table (see "What shipped in P4"). Owed on a device:
 the starter offered and chosen, voltage drop by voice in both unit systems, the trade split, and
-the partner's chains imported and run to a read-back.
+the partner's chains imported and run to a read-back. ✅ P5 built 2026-10-21 (draft PR): labels
+keep a letter beside the number ("Table 95A", "Table Q7") in the extractor, the passages and the
+lookup; a table carried onto a page with no caption, cells that are marks, groups side by side,
+headings stacked deep or printed as numbers, a list of tables and a caption at a page's foot are
+read; a table printed with no text is said to be one; a chain's column or row is matched by its
+words, units aside, or a printed range. Designed from an anonymised shape report and measured
+privately: 70 → 133 captions read to a grid on the partner's two PDFs, and of the chains' 43
+lookups 4 → 16 on a read table and 0 → 15 resolving throughout; the code book's key at hit@1 /
+hit@4 0.39 / 0.56 → 0.39 / 0.58 (see "What shipped in P5").
 Decisions confirmed 2026-10-20. Field Assist first; every phase is a headless core with the live
 edge last. Written for the partner's electricians, whose stated priority
 after the first round of code-book testing is **table lookup**: "those tables contain much of the
@@ -743,6 +751,151 @@ reason Plan IN decision 6 ships no standard: the organisation loads its own lice
   for the phase and the resistance rather than supplying them; a refrigeration-only phone
   redirecting voltage drop and an electrical-only one the refrigerant operations; the partner's
   vault imported with its chains and a chain run to its read-back.
+
+### P5 — Extraction coverage ✅ (built 2026-10-21, draft PR)
+
+P4's validator, run on the partner's test vault, found 189 captions across its two PDFs, 70 read
+to a grid, and of the chains' 43 lookups 4 on a read table, 25 on a caption whose grid was not
+read and 14 on a label no caption carries: none resolved to a cell. Three causes: labels with a
+letter, layouts the extractor did not read, and names a chain gives a row or column that did not
+match the headings as extracted.
+
+- **Labels as printed.** A caption's label keeps a letter beside its number ("Table 95A", "Table
+  Q7"), in the extractor, in the chunker's caption rule for passages and in the Mac text
+  extractor it mirrors, so two tables that share a number are two tables and "(Continued)"
+  joins only its own label. `TableReference` and `TableLookup` read the same labels printed,
+  spaced ("table 95 B") and spoken ("table five A", "table Q seven"); a lower-case "a" or "i"
+  after the number is a word unless the vault prints that table.
+- **Layouts, designed from counts only.** `Scripts/table-extract-eval/` gains an anonymised shape
+  report of every caption that read no grid — by index, counts only — and the fixes are the
+  shapes it showed, each with an invented fixture and kept only when the runner's count rose:
+  a table continued onto a page with no caption, cells that are marks, groups side by side under
+  one caption, plus what the shapes made obvious (below).
+- **Names said the way a chain says them.** A column by its full path, its last heading when
+  unique, or its words in any order, ignoring case, punctuation and bracketed units; a row by its
+  key, a number inside a printed range, or its words; ambiguity still asks.
+- **Measured last**, after every fixture and test was committed: extraction on each PDF, the
+  validator on the partner's chains, a new cell-key scorer, and the retrieval key.
+- **Exit tests (invented fixtures only):** "Table 95A" and "Table 95B" never merge, "Table Q7" is
+  a label, a continuation of 95A joins 95A and not 95; a caption-less continuation on the same
+  columns merges and one on other columns does not; mark cells extract as text; side-by-side
+  groups read; columns by last part, by words in any order, ignoring units and case; rows by range
+  and by words; ambiguity asks; the shape report runs on fixture PDFs and prints counts only; the
+  cell-key scorer scores an invented key over invented tables; P0–P4 tests pass unchanged but one.
+
+#### What shipped in P5 (2026-10-21)
+
+- **Labels** (`TableExtractor.labelPattern`): a number with one letter after it or one or two
+  capitals before it, kept as printed; a letter run into a word ("16Wiring") is not the label's.
+  `ManualStructure.caption` and `Scripts/extract-manual-text.swift` read the same label (mirrored
+  self-check cases). `TableExtractor.merge` compares labels without case. `TableReference` reads
+  "95A", "95 B", "five A", "Q7", "Q seven"; `labels(in:among:)` takes "a" or "i" after the number
+  as the letter only when the vault holds that label, and `references(in:catalogue:)` and the
+  lookup's table resolution pass the vault's labels. "table 99X" is now the label Table 99X, never
+  Table 99 (the P1 test that held it was no reference is changed to say so). A bare "95A" or "Q7"
+  asked as the table resolves.
+- **A table carried on with no caption** (`TableExtractor.Grid`, `continuation`): a read table
+  keeps the grid it was laid on while the next page is read; a page whose first lines, after at
+  most three lines of furniture and the headings printed again, sit on the same columns (every
+  phrase over exactly one) carries the table on, each row keeping its page, a row header or group
+  carried across. The same reads a "(Continued)" page that did not read on its own. The reader now
+  also reads positions on the page after a table, and on the page after a caption at a page's foot.
+- **Marks in the cells** (`sparseSegments`): a grid whose rows leave cells blank (a cross, a tick
+  or a dash in some columns only) takes its columns from every row, accepted only when the lowest
+  heading line stands one phrase over each column and no other; marks stay text with no number.
+- **Groups side by side** (`sideBySideGroups`, `lay`): two or three runs of columns of equal width
+  whose headings read alike column for column — by the heading under which nothing else is
+  printed, or by all of a column's heading words, since a heading stretched to a gap can land on a
+  neighbour's path (the shape the partner's book showed) — read as one table, the right group's
+  rows after the left's; groups told apart by a heading over each keep it on their rows.
+- **What else the shapes showed**, each with its invented fixture: headings stacked deeper than a
+  short header (rows of numbers up to 18 lines under the caption, under at most 12 heading
+  lines); a heading row of numbers under a heading spanning several columns, read as the columns'
+  headings when most columns have none of their own (the last may be words, "4 or more"); an entry
+  in a list of tables, not counted as a caption where the document captions the label elsewhere
+  (`PDFTableReader.Result.listedEntries`); a caption at the foot of a page heading the grid at the
+  top of the next (`startingOnNextPage`); and a new failure, `no_text_in_table`, for a caption
+  whose page's text stops under it for at least 15 lines' height with no grid above — the table is
+  printed with no text the PDF gives, most likely as a picture — which `table_lookup` says in those
+  words, with the page to show. Location version 4 → 5: stored documents have their tables read
+  again, their text untouched.
+- **Names** (`TableLookup`): columns matched by path or its end with bracketed units left out on
+  both sides when they do not decide, then by words with units, then without
+  (`TableLookup.withoutUnits`); rows keyed by printed ranges with "to", "through", "from … to",
+  units on either end, and "over A up to B" (above A, up to and including B). The validator prints
+  why an unread table was not read (`unread_because=`) and a read one's size (`grid=RxC`,
+  `unnamed_columns=`), counts only.
+- **Runners.** The shape report (`OpenGlassesTests/TableExtractEval/TableShapeReport.swift`, in
+  `Scripts/table-extract-eval/`); `Scripts/table-lookup-eval/`, a cell-key scorer
+  (`OpenGlassesTests/TableLookupEval/TableLookupEvalCore.swift`) that prints questions, tables
+  read / unread / missing / ambiguous, rows and columns resolved, cells, between-rows and asks
+  matched, and why a key line was not read, all as counts, and says "against the unchecked key"
+  until told the key is checked.
+- **Tests (invented fixtures, committed before each run against licensed material).**
+  `TableCoverageTests` (26): every exit test above, the table route lifting only the unread
+  caption's passage that prints the label, and deep headings, numbered headings, a list
+  of tables, a caption at the foot, split side-by-side headings and a table with no text.
+  `ManualStructureTests` gains the lettered labels, `TableLookupTests` its changed "99X" case.
+  Full suite: 12,269 tests, 0 failures (16 skipped).
+- **Measured privately** (counts only; both PDFs; the runners compile the app's sources):
+
+  | | before (P4) | after (P5) |
+  |---|---|---|
+  | Captions (older + newer edition) | 189 (95 + 94) | 300 (161 + 139), 6 list entries left out |
+  | Read to a grid | 70 (0.37) | **133 (0.44)** |
+  | Too few rows / varying columns / merged | 83 / 22 / 2 | 110 / 30 / 3 |
+  | Rotated headings / no text in the table | 12 / — | 16 / 8 |
+  | Pages with a read table | 52 | 114 (none read before is lost) |
+
+  The new captions are the letter labels the digits-only rule missed (letters before the number)
+  or recorded under their digits: of the captions read, 60 are digits only, 20 have a letter after
+  and 57 letters before. Of the 167 still unread, most are tables of words whose rows wrap over
+  several lines (the shape report's largest class: one cell on most lines, text in nearly every
+  cell), the next lever and not addressed; the shape report marks 31 failed captions as entries in
+  a list of tables, 6 of them left out because the label is captioned elsewhere.
+
+  The partner's chains (`Scripts/chains-validate/`, 11 chains, 43 lookups; the named output kept
+  off-repo for the electrician):
+
+  | | before | after |
+  |---|---|---|
+  | Lookups on a read table | 4 | **16** |
+  | … on a caption not read | 25 | 25 (24 `no_text_in_table`, 1 too few rows) |
+  | … on a label no caption carries | 14 | 2 (both a letter label) |
+  | Rows: resolved / from a value | 1 / 3 | 1 / 14 |
+  | Columns: resolved / pattern / ambiguous / unresolved | 0 / 0 / 3 / 1 | 9 / 6 / 0 / 1 |
+  | Lookups resolving throughout | 0 of 43 | **15 of 43** |
+
+  Of the 16 lookups on a read table, 15 resolve throughout. The 24 on a table with no text name
+  two tables (one of them by 19 lookups), each printed so in both editions: the caption page
+  prints a paragraph and nothing more until the footer, so the grid is most likely a picture and
+  only a recogniser (Plan IF) could read it.
+
+  The cell key (`Scripts/table-lookup-eval/`, against the unchecked key: 30 questions, 3 more
+  lines naming no row and not scored): tables read 9 → 12, unread 11 → 13, missing 3 → 5,
+  ambiguous 7 → 0; on a read table rows resolved 5 → 12, columns 0 → 9; **cells matching the key
+  0 → 9 of 29**; the one ask in the key is not asked (0 → 0).
+
+  Retrieval (`Scripts/retrieval-eval/`, the code book's answer key, 66 scorable questions, on the
+  PDF-backed vault, contextual model):
+
+  | | hit@1 | hit@4 | as sent | in-scope refused | misses |
+  |---|---|---|---|---|---|
+  | Before (P4 as merged) | 0.39 | 0.56 | 0.61 | 0 | 29 |
+  | P5 extraction only (P4's table names) | 0.39 | 0.58 | 0.61 | 0 | 28 |
+  | P5 with lettered table names, first cut | 0.38 | 0.58 | 0.61 | 0 | 28 |
+  | P5 as shipped | **0.39** | **0.58** | **0.61** | 0 | 28 |
+
+  The extra row passages bring one question into the four. Reading lettered labels in questions
+  makes one question name a table by number for the first time (a table its edition does not
+  read), and the table route then ranked every passage of that caption's page above the clauses,
+  taking the first place from the one that answered. The route now lifts only a page passage that
+  prints the table's label (`VaultRetriever.prints`); the page's other passages are ranked as
+  any other. That brings the first place back with nothing lost.
+- **Not known yet.** Whether the cells now read are right: the cell key is unchecked, and a cell
+  matching it is agreement, not proof. The pictured tables are outside text extraction (open
+  question 3). The two missing labels and the one unresolved column are the electrician's to
+  check against the book with the named output.
 
 ## Acceptance
 

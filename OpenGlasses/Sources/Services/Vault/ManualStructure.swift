@@ -128,16 +128,19 @@ enum ManualStructure {
             && line.text.hasPrefix("(") && line.text.count <= 80
     }
 
-    /// The caption a line carries ("Figure 58", "Table 16") and whatever title follows it on the
+    /// The caption a line carries ("Figure 58", "Table 16", "Table 95A") and whatever title follows it on the
     /// same line, else nil. Captions are bold; the number is what separates a caption from a
     /// cross-reference ("See FIGURE 58 on page 44").
     static func caption(_ line: TypedLine) -> (label: String, inlineTitle: String)? {
         guard line.bold else { return nil }
-        guard let match = line.text.range(of: "^(FIGURE|TABLE)\\s+(\\d+)",
-                                          options: [.regularExpression, .caseInsensitive]) else { return nil }
+        // The label as printed, a letter beside the number included ("TABLE 95A", "FIGURE Q7"):
+        // the rule the table extractor reads captions by (Plan JJ P5), so a passage's figure and
+        // its table carry the same label.
+        guard let match = line.text.range(of: #"^(?i:FIGURE|TABLE)\s+"# + TableExtractor.labelPattern,
+                                          options: .regularExpression) else { return nil }
         let head = String(line.text[match])
         let word = head.range(of: "^FIGURE", options: [.regularExpression, .caseInsensitive]) != nil ? "Figure" : "Table"
-        let number = head.range(of: "\\d+", options: .regularExpression).map { String(head[$0]) } ?? ""
+        let number = head.range(of: TableExtractor.labelPattern + "$", options: .regularExpression).map { String(head[$0]) } ?? ""
         let rest = String(line.text[match.upperBound...])
             .trimmingCharacters(in: CharacterSet(charactersIn: " \t.:\u{2014}\u{2013}-"))
         return ("\(word) \(number)", rest)

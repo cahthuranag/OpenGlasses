@@ -30,6 +30,9 @@ enum PDFTableReader {
         /// Captions whose page did not resolve to a grid, each kept by its label, title, page and
         /// failure (Plan JJ P1), so a lookup can name the page of a table it cannot read.
         var unextracted: [ManualTable] = []
+        /// Lines that read as a caption and are an entry in a list of tables, left out because the
+        /// document captions the same label elsewhere (Plan JJ P5). Not counted in `captioned`.
+        var listedEntries = 0
 
         var extracted: Int { tables.count }
 
@@ -47,28 +50,97 @@ enum PDFTableReader {
     static func read(document: PDFDocument, printedLabels: [Int: String] = [:]) -> Result {
         var result = Result()
         var pieces: [ManualTable] = []
+        // The table the next page may carry on with no caption of its own (Plan JJ P5): which
+        // piece, the grid it was read onto, and the page it was last read on.
+        var open: (piece: Int, grid: TableExtractor.Grid, physical: Int)?
+        // A caption at the foot of a page whose rows may start on the next (Plan JJ P5).
+        var foot: (caption: TableExtractor.Caption, failure: TableExtractor.Failure, place: ManualTable.Page,
+                   words: [PositionedWord])?
+        // Captions that read nothing, each with whether it is an entry in a list of tables.
+        var failed: [(table: ManualTable, listed: Bool)] = []
+        func fail(_ caption: TableExtractor.Caption, _ failure: TableExtractor.Failure, at place: ManualTable.Page, listed: Bool) {
+            failed.append((.unextracted(caption, page: place, failure: failure), listed))
+        }
         for index in 0..<document.pageCount {
-            guard let page = document.page(at: index) else { continue }
-            let text = page.string ?? ""
-            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                result.pagesWithoutText += 1
+            let physical = index + 1
+            let waiting = foot
+            foot = nil
+            guard let page = document.page(at: index) else {
+                if let waiting { fail(waiting.caption, waiting.failure, at: waiting.place, listed: false) }
+                open = nil
                 continue
             }
-            guard text.range(of: "table", options: .caseInsensitive) != nil else { continue }
-            let physical = index + 1
+            let text = page.string ?? ""
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if let waiting { fail(waiting.caption, waiting.failure, at: waiting.place, listed: false) }
+                result.pagesWithoutText += 1
+                open = nil
+                continue
+            }
+            let carried = open.flatMap { $0.physical == physical - 1 ? $0 : nil }
+            guard carried != nil || waiting != nil || text.range(of: "table", options: .caseInsensitive) != nil else {
+                open = nil
+                continue
+            }
             let place = ManualTable.Page(physical: physical, printed: printedLabels[physical])
             let words = positionedWords(on: page)
-            for found in TableExtractor.extractAll(words: words, page: place) {
+            var next: (piece: Int, grid: TableExtractor.Grid, physical: Int)?
+            func carry(_ more: (rows: [ManualTable.Row], notes: [ManualTable.Note], grid: TableExtractor.Grid), into piece: Int) {
+                pieces[piece].rows += more.rows
+                for note in more.notes where !pieces[piece].notes.contains(note) { pieces[piece].notes.append(note) }
+                next = (piece, more.grid, physical)
+            }
+            if let waiting {
+                if let started = TableExtractor.startingOnNextPage(words: waiting.words, caption: waiting.caption,
+                                                                   page: waiting.place, next: words, nextPage: place) {
+                    pieces.append(started.table)
+                    if !started.table.continues { result.captioned += 1 }
+                    next = started.grid.map { (pieces.count - 1, $0, physical) }
+                } else {
+                    fail(waiting.caption, waiting.failure, at: waiting.place, listed: false)
+                }
+            } else if let carried, carried.grid.runsToFoot,
+                      let more = TableExtractor.continuation(words: words, page: place, grid: carried.grid) {
+                carry(more, into: carried.piece)
+            }
+            for found in TableExtractor.extractGrids(words: words, page: place) {
                 switch found.outcome {
                 case .table(let table):
                     pieces.append(table)
                     if !table.continues { result.captioned += 1 }
+                    next = found.grid.map { (pieces.count - 1, $0, physical) }
                 case .failed(let failure):
-                    result.captioned += 1
-                    result.failures[failure, default: 0] += 1
-                    result.unextracted.append(.unextracted(found.caption, page: place, failure: failure))
+                    // A "(Continued)" caption whose page does not read on its own: its rows on the
+                    // grid of the page before, when they sit on it.
+                    if found.caption.continues, let carried,
+                       pieces[carried.piece].label.caseInsensitiveCompare(found.caption.label) == .orderedSame,
+                       let more = TableExtractor.continuation(words: words, page: place, grid: carried.grid,
+                                                              under: found.caption) {
+                        carry(more, into: carried.piece)
+                        continue
+                    }
+                    if found.placement == .atFoot {
+                        foot = (found.caption, failure, place, words)
+                        continue
+                    }
+                    fail(found.caption, failure, at: place, listed: found.placement == .listed)
                 }
             }
+            open = next
+        }
+        if let waiting = foot { fail(waiting.caption, waiting.failure, at: waiting.place, listed: false) }
+
+        // An entry in a list of tables is not a table: dropped where the document captions the
+        // same label anywhere else, and kept, pointing at the list, where it does not.
+        let elsewhere = Set(pieces.map { $0.label.lowercased() } + failed.filter { !$0.listed }.map { $0.table.label.lowercased() })
+        for entry in failed {
+            if entry.listed, elsewhere.contains(entry.table.label.lowercased()) {
+                result.listedEntries += 1
+                continue
+            }
+            result.captioned += 1
+            if let failure = entry.table.failure { result.failures[failure, default: 0] += 1 }
+            result.unextracted.append(entry.table)
         }
         result.tables = TableExtractor.merge(pieces)
         // A continuation whose start did not extract is still a table someone captioned.

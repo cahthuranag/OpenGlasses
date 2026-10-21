@@ -226,9 +226,12 @@ final class TableLookupTests: XCTestCase {
 
     func testThingsThatAreNotATableReference() {
         for text in ["can I use the table saw here", "the timetable 9 says", "what is a TBL99X controller",
-                     "table 99X is the model", "the QX99 table", "table and chairs", "a 99 table top"] {
+                     "the QX99 table", "table and chairs", "a 99 table top"] {
             XCTAssertEqual(TableReference.labels(in: text), [], text)
         }
+        // Plan JJ P5: a letter against the number is the label's, so "table 99X" names a Table 99X
+        // (which a vault may not print) and never Table 99.
+        XCTAssertEqual(TableReference.labels(in: "table 99X is the model"), ["Table 99X"])
     }
 
     func testATableIsRecognisedByItsTitleWordsOnlyWhenTheQuestionSaysTable() {

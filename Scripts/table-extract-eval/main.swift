@@ -21,8 +21,8 @@ struct TableExtractEval {
         }
         let seconds = Date().timeIntervalSince(started)
         let share = result.captioned > 0 ? Double(result.extracted) / Double(result.captioned) : 0
-        print(String(format: "[TABLES] %@ captioned=%d extracted=%d (%.2f) pages_without_text=%d seconds=%.1f",
-                     label, result.captioned, result.extracted, share, result.pagesWithoutText, seconds))
+        print(String(format: "[TABLES] %@ captioned=%d extracted=%d (%.2f) pages_without_text=%d list_entries=%d seconds=%.1f",
+                     label, result.captioned, result.extracted, share, result.pagesWithoutText, result.listedEntries, seconds))
         let failures = TableExtractor.Failure.allCases
             .map { "\($0.rawValue)=\(result.failures[$0] ?? 0)" }
             .joined(separator: " ")
@@ -40,6 +40,20 @@ struct TableExtractEval {
               + "over_pages=\(continued) with_notes=\(withNotes) "
               + String(format: "numeric_cells=%.2f", cells.isEmpty ? 0 : Double(numeric) / Double(cells.count)))
         if environment["TABLE_EXTRACT_EVAL_DIAGNOSE"] != "0" { diagnose(path) }
+        if environment["TABLE_EXTRACT_EVAL_SHAPES"] != "0" { shapes(path) }
+    }
+
+    /// The shape of every caption that did not read (Plan JJ P5), by index and in counts only
+    /// (`OpenGlassesTests/TableExtractEval/TableShapeReport.swift`).
+    static func shapes(_ path: String) {
+        guard let document = PDFDocument(url: URL(fileURLWithPath: path)) else { return }
+        let report = TableShapeReport.report(
+            pageCount: document.pageCount,
+            mentionsTable: { index in
+                document.page(at: index)?.string?.range(of: "table", options: .caseInsensitive) != nil
+            },
+            words: { index in document.page(at: index).map(PDFTableReader.positionedWords(on:)) ?? [] })
+        for line in TableShapeReport.render(report) { print(line) }
     }
 
     /// Where the captions that gave too few rows lost them (Plan JJ P1), in counts: how many body

@@ -75,8 +75,9 @@ enum PassageLocationMigration {
         guard !entry.usedRecognition else { return .recognisedSkipped }
         let tablesPDF = VaultDocumentExtractor.tablesSource(document: fileURL, original: originalURL)
         // Text already located by location version 3 (Plan JJ P0): only the tables changed since —
-        // version 4 keeps the captions whose page did not resolve to a grid (Plan JJ P1) — so the
-        // tables are read again and the document's text is left exactly as it is.
+        // version 4 keeps the captions whose page did not resolve to a grid (Plan JJ P1), and 5
+        // reads more of the layouts a code book prints (Plan JJ P5) — so the tables are read again
+        // and the document's text is left exactly as it is.
         if let floor = store.textLocationVersion(documentId: entry.documentId), floor >= 3 {
             let tables: PDFTableReader.Result? = await Task.detached(priority: .utility) {
                 tablesPDF.flatMap { VaultDocumentExtractor.tables(from: $0) }

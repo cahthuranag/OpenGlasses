@@ -13,6 +13,16 @@ struct ChatComposer: View {
     var autoFocus: Bool = false
     /// When set, a mic button is shown leading; tapping it runs this (e.g. switch back to voice).
     var voiceAction: (() -> Void)? = nil
+    /// The leading button's glyph and spoken label — the mic by default; the transcript review
+    /// shows a cancel instead (Plan JM P1).
+    var voiceActionSymbol: String = "mic.fill"
+    var voiceActionLabel: LocalizedStringKey = "Switch to voice input"
+    /// Text the field starts with — a transcript under review (Plan JM P1).
+    var initialText: String? = nil
+    /// Called once, the first time the wearer touches or changes the seeded text.
+    var onEdit: (() -> Void)? = nil
+    /// The auto-send countdown drawn round the send button, while a transcript is under review.
+    var review: PendingTranscript? = nil
     /// When set, a paperclip button is shown; tapping it runs this (e.g. open a file importer).
     var onAttachDocument: (() -> Void)? = nil
     /// Called with the trimmed text and optional image data when the user sends.
@@ -22,6 +32,8 @@ struct ChatComposer: View {
     @State private var attachedImage: UIImage?
     @State private var attachedImageData: Data?
     @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var didSeedText = false
+    @State private var didReportEdit = false
     @FocusState private var isTextFieldFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -39,11 +51,73 @@ struct ChatComposer: View {
     var body: some View {
         VStack(spacing: 8) {
             if let image = attachedImage { attachmentPreview(image) }
+            if let review, reduceMotion { countdownCaption(review) }
             inputRow
         }
         .padding(.top, 8)
         .padding(.bottom, 8)
-        .onAppear { if autoFocus { isTextFieldFocused = true } }
+        .onAppear {
+            if let initialText, !didSeedText {
+                didSeedText = true
+                messageText = initialText
+            }
+            if autoFocus { isTextFieldFocused = true }
+        }
+        .onChange(of: messageText) { _, newValue in
+            guard didSeedText, let initialText, newValue != initialText else { return }
+            reportEdit()
+        }
+        .onChange(of: isTextFieldFocused) { _, focused in
+            if focused, initialText != nil { reportEdit() }
+        }
+    }
+
+    private func reportEdit() {
+        guard !didReportEdit else { return }
+        didReportEdit = true
+        onEdit?()
+    }
+
+    /// Reduce Motion: a plain caption instead of the moving ring.
+    private func countdownCaption(_ review: PendingTranscript) -> some View {
+        TimelineView(.periodic(from: review.startedAt, by: 1)) { context in
+            Group {
+                if case .counting(let remaining) = review.state(at: context.date) {
+                    Text("Sending in \(Int(remaining.rounded(.up))) s")
+                } else if review.isHeld {
+                    Text("Tap send when it's right")
+                }
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+        }
+    }
+
+    /// The countdown ring round the send button: a thin accent stroke that fills as the send nears.
+    @ViewBuilder
+    private var countdownRing: some View {
+        if let review, !reduceMotion, !review.isHeld {
+            TimelineView(.animation) { context in
+                Circle()
+                    .trim(from: 0, to: review.countdown.progress(
+                        at: context.date.timeIntervalSince(review.startedAt)))
+                    .stroke(accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: sendGlyph + 6, height: sendGlyph + 6)
+            }
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// What VoiceOver hears on the send button while a transcript waits.
+    private func sendAccessibilityValue(at date: Date) -> String {
+        guard let review else { return "" }
+        if case .counting(let remaining) = review.state(at: date) {
+            return String(localized: "Sends by itself in \(Int(remaining.rounded(.up))) seconds")
+        }
+        return ""
     }
 
     private func attachmentPreview(_ image: UIImage) -> some View {
@@ -100,7 +174,7 @@ struct ChatComposer: View {
                 Button {
                     voiceAction()
                 } label: {
-                    Image(systemName: "mic.fill")
+                    Image(systemName: voiceActionSymbol)
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Color(.label))
                         .frame(width: glassCircle, height: glassCircle)
@@ -108,7 +182,7 @@ struct ChatComposer: View {
                         .frame(width: tapTarget, height: tapTarget)
                         .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Switch to voice input")
+                .accessibilityLabel(voiceActionLabel)
             }
 
             // Document attach (Chat tab only).
@@ -162,11 +236,13 @@ struct ChatComposer: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: sendGlyph))
                     .foregroundStyle(canSend ? accent : Color(.tertiaryLabel))
+                    .overlay { countdownRing }
                     .frame(minWidth: tapTarget, minHeight: tapTarget)
                     .contentShape(Rectangle())
             }
             .disabled(!canSend)
             .accessibilityLabel("Send message")
+            .accessibilityValue(sendAccessibilityValue(at: Date()))
         }
         .padding(.horizontal, 16)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isTextFieldFocused)
@@ -176,6 +252,7 @@ struct ChatComposer: View {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !appState.isProcessing else { return }
         let image = attachedImageData
+        didReportEdit = true   // clearing the field after a send is not an edit
         messageText = ""
         attachedImage = nil
         attachedImageData = nil

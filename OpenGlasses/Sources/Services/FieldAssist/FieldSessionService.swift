@@ -2565,6 +2565,16 @@ final class FieldSessionService: ObservableObject {
 
     private var pendingAppInstruction: String?
 
+    /// The next technician line is a transcript the wearer corrected before it went (Plan JM P1,
+    /// "Check what I said before sending"). Set by the caller that sends the corrected text,
+    /// immediately before it goes, and consumed by the turn that carries exactly this text; a
+    /// different line in between drops it, so it can never mark a later turn.
+    func expectEditedTranscript(_ text: String) {
+        pendingEditedTranscript = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var pendingEditedTranscript: String?
+
     /// Preserve exact reports without interpreting questions as performed work.
     ///
     /// An app instruction is logged as what it is — `appInstruction`, never `userMessage` — so no
@@ -2575,6 +2585,12 @@ final class FieldSessionService: ObservableObject {
         if let pending = pendingAppInstruction, pending == trimmed {
             origin = .appInstruction
             pendingAppInstruction = nil
+        }
+        // Plan JM P1: an edited transcript is still the technician's — more so — so the origin
+        // stays `.technician` and the line carries an `edited` flag beside it.
+        var edited = false
+        if let pendingEdit = pendingEditedTranscript {
+            if pendingEdit == trimmed { edited = origin == .technician } else { pendingEditedTranscript = nil }
         }
         guard let session = activeSession, let logger, !text.isEmpty else { return }
         // A paused job's record is not the transcript of whatever the wearer says meanwhile
@@ -2589,6 +2605,10 @@ final class FieldSessionService: ObservableObject {
             "equipment_scope": AnyCodable(session.continuityScope),
             "task_id": AnyCodable(session.activeTask?.id ?? "")
         ]
+        if edited {
+            payload[TranscriptOriginClassifier.editedKey] = AnyCodable(true)
+            pendingEditedTranscript = nil
+        }
         let now = Date()
         if origin == .technician {
             // A live-mode transcript that lands just after a team learning was filed is the turn

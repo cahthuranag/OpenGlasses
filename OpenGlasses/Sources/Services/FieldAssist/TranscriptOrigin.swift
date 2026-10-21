@@ -52,6 +52,18 @@ enum TranscriptOriginClassifier {
         return origin(of: event.text ?? "")
     }
 
+    /// The payload key on a technician line the wearer corrected in the chat bar before it went
+    /// (Plan JM P1). The origin stays `.technician`: who said it has not changed, only that the
+    /// record now holds what they meant rather than what the recogniser heard.
+    static let editedKey = "edited"
+
+    /// Whether a logged technician line was a transcript the wearer edited before sending, so a
+    /// work record can say the wearer corrected what was heard. False for every other event and
+    /// for every record written before the flag existed.
+    static func wasEdited(_ event: SessionLogger.Event) -> Bool {
+        isTechnicianLine(event) && (event.payload?[editedKey]?.value as? Bool) == true
+    }
+
     /// Whether a logged event is something the technician said. Every transcript reader asks this
     /// rather than testing the event kind, so none of them can quote the app as the technician.
     static func isTechnicianLine(_ event: SessionLogger.Event) -> Bool {

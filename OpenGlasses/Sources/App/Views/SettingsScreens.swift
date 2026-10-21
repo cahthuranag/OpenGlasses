@@ -11,6 +11,9 @@ struct VoiceTriggersSettingsScreen: View {
     // the clamp and the defaulting stay in one place rather than being re-implemented per control.
     @State private var pauseWindow = SpeechContinuationPolicy.nearestPreset(to: Config.speechPauseWindow)
     @State private var bargeInEnabled = Config.speechBargeInEnabled
+    // Plan JM P1 — "Check what I said before sending", read back through `Config` for the clamp.
+    @State private var checkBeforeSending = Config.checkBeforeSendingEnabled
+    @State private var checkBeforeSendingSeconds = Config.checkBeforeSendingSeconds
 
     // Plan FE P6. The typed name, written straight back through `Config` so the validation lives
     // in one place; `nameRefused` carries the one reason a keystroke can be turned away.
@@ -209,6 +212,40 @@ struct VoiceTriggersSettingsScreen: View {
                 Text("Pause & Interruptions")
             } footer: {
                 Text("How long the assistant waits after you stop speaking before it answers. Choose a longer pause if it cuts you off mid-sentence, or Dictation to speak a paragraph a sentence at a time. Changes apply from your next turn — a turn already under way keeps the pause it started with. These apply to wake-word conversations; live sessions use the provider's own timing.")
+            }
+
+            // MARK: Conversation (Plan JM P1)
+            Section {
+                Toggle("Check what I said before sending", isOn: Binding(
+                    get: { checkBeforeSending },
+                    set: { newValue in
+                        checkBeforeSending = newValue
+                        Config.checkBeforeSendingEnabled = newValue
+                    }
+                ))
+                if checkBeforeSending {
+                    Stepper(value: Binding(
+                        get: { checkBeforeSendingSeconds },
+                        set: { newValue in
+                            Config.checkBeforeSendingSeconds = newValue
+                            checkBeforeSendingSeconds = Config.checkBeforeSendingSeconds
+                        }
+                    ), in: SendReviewPolicy.Countdown.minimumSeconds...SendReviewPolicy.Countdown.maximumSeconds,
+                       step: 1) {
+                        HStack {
+                            Text("Seconds before sending")
+                            Spacer()
+                            Text("\(Int(checkBeforeSendingSeconds)) s")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    .accessibilityValue("\(Int(checkBeforeSendingSeconds)) seconds")
+                }
+            } header: {
+                Text("Conversation")
+            } footer: {
+                Text("Your words appear in the text bar for a moment before they go. Leave them and they send themselves; touch them to edit. Only while this screen is in front of you — a turn with the screen off, in CarPlay or from the Watch sends as usual.")
             }
 
             // MARK: Hands-Free Triggers

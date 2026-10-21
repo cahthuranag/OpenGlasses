@@ -621,6 +621,8 @@ struct OpenGlassesApp: App {
             appState.cameraService.notePresence(scenePhase: .init(newPhase))
             switch newPhase {
             case .background:
+                // Plan JM P1: a transcript under review has nothing left to be read on.
+                appState.pendingTranscriptAppDidEnterBackground()
                 appState.skillPackSideload.handleBackground()
                 appState.orgEnrolment.handleBackground()
                 appState.officeCommissioning.handleBackground()
@@ -3710,9 +3712,130 @@ class AppState: ObservableObject, AppStateProtocol {
     private func noteDictationHeardNothing() {
         let outcome: MicRouteHintPolicy.TurnOutcome = dictationIsFollowUp ? .followUpUnanswered : .noSpeech
         dictationIsFollowUp = false
+        // Plan JM P1: a turn the wearer opened that heard nothing counts toward "Type instead";
+        // a follow-up nobody answered is the end of a conversation and counts for nothing.
+        if outcome == .noSpeech { noteTypeInstead(.noSpeech) }
         guard micRouteHint.shouldHint(route: Config.micRoute, outcome: outcome, mode: currentMode) else { return }
         PrivacyLog.speech(.dictation, .micRouteHinted)
         NoticeCenter.shared.post(MicRouteHintPolicy.message, severity: .advisory, source: .app)
+    }
+
+    // MARK: Type instead and check before sending (Plan JM P1)
+
+    /// The Voice tab offers a "Type instead" chip: speech has failed twice running, or the
+    /// assistant said it did not understand. Driven only by `typeInstead`.
+    @Published var showTypeInstead = false
+    private var typeInstead = TypeInsteadPolicy()
+
+    func noteTypeInstead(_ event: TypeInsteadPolicy.Event) {
+        let showing = typeInstead.note(event, mode: currentMode)
+        if showTypeInstead != showing { showTypeInstead = showing }
+    }
+
+    /// A finished transcript waiting in the chat bar for its countdown ("Check what I said before
+    /// sending"). Nil whenever the option is off — a wearer who never turns it on sees no change.
+    @Published private(set) var pendingTranscript: PendingTranscript?
+    private var pendingTranscriptTask: Task<Void, Never>?
+
+    /// Where this spoken turn is being watched from. CarPlay is known; a Watch-started turn does
+    /// not come through dictation's completion, so everything else is the phone.
+    private var sendReviewSurface: SendReviewPolicy.Surface {
+        carPlayConnected ? .carPlay : .phone
+    }
+
+    /// Put a finished transcript in the chat bar instead of starting the turn, when the option is on
+    /// and somebody can read it. Returns whether it did; the mic is not reopened meanwhile.
+    private func beginSendReviewIfWanted(_ text: String) -> Bool {
+        guard Config.checkBeforeSendingEnabled else { return false }
+        // Nothing to check: an empty transcript, a turn that would be held behind the one in
+        // flight, or a spoken yes/no answering a confirmation prompt.
+        guard !TypeInsteadPolicy.isShorterThanAWord(text), !isProcessing,
+              toolConfirmationCoordinator.pending == nil else { return false }
+        guard SendReviewPolicy.shouldReview(
+            enabled: true, mode: currentMode, foreground: isForegroundActive,
+            screenOn: UIApplication.shared.applicationState == .active,
+            surface: sendReviewSurface) else { return false }
+        pendingTranscriptTask?.cancel()
+        let pending = PendingTranscript(text: text, seconds: Config.checkBeforeSendingSeconds)
+        pendingTranscript = pending
+        isListening = false
+        pendingTranscriptTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(pending.countdown.seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.completeSendReviewCountdown(id: pending.id)
+        }
+        return true
+    }
+
+    /// The ring completed untouched: the transcript goes exactly as the spoken turn it is.
+    private func completeSendReviewCountdown(id: UUID) async {
+        guard let pending = pendingTranscript, pending.id == id, !pending.isHeld else { return }
+        // This runs on the countdown's own task: let go of it rather than cancel it, or the turn
+        // below would start already cancelled.
+        pendingTranscriptTask = nil
+        await sendPendingTranscriptAsSpoken()
+    }
+
+    private func sendPendingTranscriptAsSpoken() async {
+        guard let pending = pendingTranscript else { return }
+        pendingTranscriptTask?.cancel()
+        pendingTranscriptTask = nil
+        pendingTranscript = nil
+        await runSpokenTurn(pending.text)
+    }
+
+    /// The wearer touched the text: the countdown stops and the send is theirs.
+    func holdPendingTranscript() {
+        guard var pending = pendingTranscript, !pending.isHeld else { return }
+        pendingTranscriptTask?.cancel()
+        pendingTranscriptTask = nil
+        pending.isHeld = true
+        pendingTranscript = pending
+    }
+
+    /// The wearer tapped send on a transcript under review. Unchanged, it is the spoken turn it
+    /// was; changed, it is a typed turn, and a job's record marks the line as edited.
+    func sendReviewedTranscript(_ text: String, imageData: Data? = nil) async {
+        guard let pending = pendingTranscript else {
+            await sendTextMessage(text, imageData: imageData)
+            return
+        }
+        pendingTranscriptTask?.cancel()
+        pendingTranscriptTask = nil
+        pendingTranscript = nil
+        let sent = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let heard = pending.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if sent == heard && imageData == nil {
+            await runSpokenTurn(pending.text)
+            return
+        }
+        if sent != heard { FieldSessionService.shared.expectEditedTranscript(sent) }
+        await sendTextMessage(sent, imageData: imageData)
+        // A typed turn does not reopen the mic, so the conversation the wake word opened ends here.
+        if !pending.listenerHandedBack { await returnToWakeWord() }
+    }
+
+    /// Cancel: the transcript is dropped and the wake word listens again.
+    func cancelPendingTranscript() async {
+        guard let pending = pendingTranscript else { return }
+        pendingTranscriptTask?.cancel()
+        pendingTranscriptTask = nil
+        pendingTranscript = nil
+        if !pending.listenerHandedBack { await returnToWakeWord() }
+    }
+
+    /// The app left the screen mid-review: still counting, it sends now as spoken — there is
+    /// nothing to read it on; held, the draft stays for the wearer and the listener is handed back.
+    func pendingTranscriptAppDidEnterBackground() {
+        guard let pending = pendingTranscript else { return }
+        switch SendReviewPolicy.resolutionOnBackground(edited: pending.isHeld) {
+        case .sendAsSpoken:
+            Task { await sendPendingTranscriptAsSpoken() }
+        case .keepDraft:
+            guard !pending.listenerHandedBack else { return }
+            pendingTranscript?.listenerHandedBack = true
+            Task { await returnToWakeWord() }
+        }
     }
 
     /// The active model id before a Field Assist session swapped in the vault's model.
@@ -3734,6 +3857,38 @@ class AppState: ObservableObject, AppStateProtocol {
             llmService.refreshActiveModel()
             PrivacyLog.app(.fieldSessionEnded, model: PrivacyToken(prev))
             modelBeforeFieldSession = nil
+        }
+    }
+
+    /// A spoken transcript becomes a turn — straight from dictation, or after the review's
+    /// countdown (Plan JM P1), so a reviewed transcript is answered exactly as a voice turn is.
+    private func runSpokenTurn(_ text: String) async {
+        // The wearer's answer owns the floor from here — a scene description cutting into a
+        // reply is worse than no description at all. Perception keeps running; only the ear
+        // is taken, so grounding continues accumulating through the turn.
+        SceneNarrationService.shared.noteInterruption(.userTurn, active: true)
+        defer { SceneNarrationService.shared.noteInterruption(.userTurn, active: false) }
+        // CO Item 3: a turn already in flight used to mean the utterance was dropped behind
+        // a debug print — no tone, no HUD, nothing the wearer could perceive. Now it is
+        // either held for the turn that is finishing or refused audibly.
+        switch TurnAdmissionPolicy.decide(isProcessing: isProcessing,
+                                          turnElapsed: turnElapsedSeconds(),
+                                          utterance: text) {
+        case .accept:
+            await handleTranscription(text)
+
+        case .deferToQueue:
+            heldUtterance = (text: text, heldAt: Date())
+            speechService.playTone(frequency: 660, duration: 0.06)
+            glassesDisplay.flash("⏳ Got it — one sec")
+            PrivacyLog.app(.utteranceHeld, characters: text.count)
+
+        case .rejectWithCue(let reason):
+            guard reason != .emptyUtterance else { return }
+            speechService.playTone(frequency: 330, duration: 0.12)
+            glassesDisplay.flash("⚠️ Didn't catch that — say it again")
+            PrivacyLog.app(.utteranceRejected, detail: PrivacyToken.caseName(of: reason),
+                           characters: text.count)
         }
     }
 
@@ -4359,6 +4514,7 @@ class AppState: ObservableObject, AppStateProtocol {
             Task { @MainActor in
                 guard let self = self else { return }
                 self.dictationIsFollowUp = false   // Plan JM P0: this turn heard something
+                self.noteTypeInstead(TypeInsteadPolicy.event(forTranscript: text))   // Plan JM P1
                 self.noteUserInteraction()   // Plan W: a spoken command is an explicit engagement
                 // While Assistive Mode (A3) is active it owns the loop — feed the transcript to bias
                 // Scene vs Social routing instead of starting a normal turn.
@@ -4369,33 +4525,10 @@ class AppState: ObservableObject, AppStateProtocol {
                 // Plan CV P2: "start narrating" / "stop narrating" drive the narration mode rather
                 // than becoming a turn of their own.
                 if self.handleNarrationCommand(text) { return }
-                // The wearer's answer owns the floor from here — a scene description cutting into a
-                // reply is worse than no description at all. Perception keeps running; only the ear
-                // is taken, so grounding continues accumulating through the turn.
-                SceneNarrationService.shared.noteInterruption(.userTurn, active: true)
-                defer { SceneNarrationService.shared.noteInterruption(.userTurn, active: false) }
-                // CO Item 3: a turn already in flight used to mean the utterance was dropped behind
-                // a debug print — no tone, no HUD, nothing the wearer could perceive. Now it is
-                // either held for the turn that is finishing or refused audibly.
-                switch TurnAdmissionPolicy.decide(isProcessing: self.isProcessing,
-                                                  turnElapsed: self.turnElapsedSeconds(),
-                                                  utterance: text) {
-                case .accept:
-                    await self.handleTranscription(text)
-
-                case .deferToQueue:
-                    self.heldUtterance = (text: text, heldAt: Date())
-                    self.speechService.playTone(frequency: 660, duration: 0.06)
-                    self.glassesDisplay.flash("⏳ Got it — one sec")
-                    PrivacyLog.app(.utteranceHeld, characters: text.count)
-
-                case .rejectWithCue(let reason):
-                    guard reason != .emptyUtterance else { return }
-                    self.speechService.playTone(frequency: 330, duration: 0.12)
-                    self.glassesDisplay.flash("⚠️ Didn't catch that — say it again")
-                    PrivacyLog.app(.utteranceRejected, detail: PrivacyToken.caseName(of: reason),
-                                   characters: text.count)
-                }
+                // Plan JM P1: "Check what I said before sending" — the transcript waits in the chat
+                // bar, and its countdown (or the wearer) runs the turn below.
+                if self.beginSendReviewIfWanted(text) { return }
+                await self.runSpokenTurn(text)
             }
         }
 
@@ -7489,6 +7622,7 @@ class AppState: ObservableObject, AppStateProtocol {
         guard !isProcessing else { return }
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
+        noteTypeInstead(.typedTurn)   // Plan JM P1: a typed turn clears the "Type instead" chip
 
         currentTranscription = query
         turnUtterance = query

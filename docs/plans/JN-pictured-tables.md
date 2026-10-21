@@ -1,12 +1,14 @@
 # Plan JN — Pictured Tables (a table printed as a picture, read on the phone, and said to be)
 
-**Status:** 📝 Drafted 2026-10-21 — nothing implemented. Takes up Plan JJ's open question 3 (tables
+**Status:** 📝 Drafted 2026-10-21 — nothing implemented. Four owner decisions confirmed the same
+day (see "Owner decisions"). Takes up Plan JJ's open question 3 (tables
 with no text layer) and the gap Plan IF leaves: IF recognises a photographed page's text, not its
 grid.
 **Track:** Field Assist first (the partner's code book), app-wide underneath: any vault PDF, any
-photographed manual. **Phone only:** recognition, the tables, the lookup and the check all live on
-the phone. Nothing here needs, waits for or sends to the office, and no page image leaves the
-phone.
+photographed manual. **Phone first:** the partner's owner sets all of it up and checks the
+tables on the phone, with no office. An organisation with the office can also check tables
+there, as an addition and never a prerequisite. Recognition is on device and no page image leaves
+the phone.
 **Related:** Plan [JJ](JJ-table-lookup-and-rule-chains.md) (`TableExtractor`, `PDFTableReader`,
 `ManualTable`, `table_lookup`, `rule_chain`, the cell key and `Scripts/table-lookup-eval/`),
 Plan [IF](IF-photographed-manuals.md) (captured pages, their recognition, redaction before
@@ -63,9 +65,11 @@ a picture.
 4. **Text first, recognition only where text failed.** Recognition runs for a caption that came
    out `no_text_in_table`, and for a scanned page whose recognised text names a table. It never
    re-reads a table the text layer gave. Chunk text and stored passages do not change.
-5. **Phone only.** Both recognisers are Apple Vision, on the phone. No page image, recognised
-   word or table leaves the phone for this. Checking a table (P3) is done on the phone, by the
-   person who manages the vault there. No phase has an office step, and none is planned.
+5. **Phone first, office as well.** Both recognisers are Apple Vision, on the phone, and no page
+   image leaves it. Everything (import, recognition, checking, correcting, sharing the checks) can
+   be done on the phone by whoever manages the vault, with no office. The office can do the same
+   check against its own copy of the PDF, and its result reaches the phone through the vault like
+   any other vault file. No phase waits for the office.
 6. **Measured, not assumed.** Which recogniser feeds the grid, the floor, and whether the two
    tables read at all are settled on the private book with the cell key, in counts only, before
    anything is switched on by default.
@@ -160,19 +164,31 @@ a picture.
 - **Prompt and description.** The `table_lookup` description gains one sentence on recognised
   cells, so the Direct and Live prompts carry it through `SystemPromptBuilder`. No hand-kept list.
 
-## P3 — Check a pictured table on the phone
+## P3 — Check a pictured table (on the phone, or in the office)
 
 - **Where.** The manual's page in the vault viewer lists its tables. A recognised table shows
   "Read from a picture: not checked" and opens a check view: the picture's region above, the grid
   below, uncertain cells marked.
-- **What checking does.** The person who manages the vault, on the phone, can mark the table checked, or correct a
-  cell by typing what the page prints. A correction is stored beside the table as the
-  organisation's, with who and when, and a corrected or confirmed cell stops being uncertain. A
-  checked table's cells are still said to be from a picture (principle 1), and the read-back drops
-  "check it against the page". A new import of a different PDF (a new hash) starts unchecked.
+- **What checking does.** Whoever manages the vault on the phone can mark the table checked, or
+  correct a cell by typing what the page prints. A correction is kept with who and when, and a
+  corrected or confirmed cell stops being uncertain. A checked table's cells are still said to be
+  from a picture (principle 1), and the read-back drops "check it against the page". A new import
+  of a different PDF (a new hash) starts unchecked.
+- **Checks are a vault file.** The checks are written to `table-checks.json` in the vault, keyed by
+  document hash, table label, row path and column path (no cell is keyed by position alone), and
+  imported and validated like `chains.md`. A check for a hash the vault does not hold is warned
+  of and kept. So:
+  - **Phone only:** the file lives in the phone's vault, and the share sheet exports it so a
+    second phone can import it (the JJ P3 pattern for chains). No office needed.
+  - **With the office:** the office checks the same table against its own copy and writes the same
+    file into the managed vault, which reaches the phone the way the approved set does (Plan JL).
+    The office side is a private office plan, not drafted.
+  - **Both:** a cell checked on the phone and in the office to the same value is checked. One
+    checked to two different values goes back to uncertain, with both values and who checked each
+    shown in the check view, until someone checks it again. Neither silently wins.
 - **Who may.** Whoever may manage the vault on this phone. An organisation profile can require
-  checking before recognised cells are given at all (P2's outcome until checked). Off by default
-  for now, owner decision 2.
+  checking before recognised cells are given at all (P2's outcome until checked). Optional by
+  default (decision 2).
 
 ## P4 — Photographed manuals (IF pages)
 
@@ -184,8 +200,9 @@ a picture.
   checkpoints do. A redacted cell is uncertain, never given.
 - A photographed table is a picture of a picture: skew, glare and curl. Its floor is measured
   separately (the IF device guide's binder pages), not inherited from the PDF case.
-- A recognised grid stays on the phone. The captured manual's existing delivery is unchanged,
-  and nothing in this plan adds to what it sends.
+- The captured manual's existing delivery is unchanged. A recognised grid is not added to what
+  it sends. Checks of a captured table go in the same `table-checks.json`, keyed by the captured
+  revision.
 
 ## Not in this plan
 
@@ -194,19 +211,20 @@ a picture.
 - Diagrams, charts and curves read for values. A wiring diagram with numbers on it is still never
   a table.
 - Correcting the text layer of a PDF, or the passages' text.
-- Any office surface for tables. This plan is phone only.
+- The office's check surface. It is a private office plan, and nothing here waits for it.
 
-## Owner decisions owed
+## Owner decisions (confirmed 2026-10-21)
 
-1. **Do recognised cells feed a chain's result?** Recommended: yes, marked in the read-back with
-   the page offered, and uncertain cells never. The alternative is lookups only, with every chain
-   step on a pictured table stopping at the page.
-2. **Is checking required before use?** Recommended: optional, with the "not checked" mark until
-   someone checks. An organisation profile can make it required.
-3. **Which reader.** Settled by P1's measurement (document request vs words into the extractor),
-   with no prior preference, recorded here with the counts.
-4. **P4 order.** Recommended: after the partner's PDF case (P0–P3), since the 24 lookups are
-   there and IF's device qualification is still owed.
+1. **Recognised cells feed a chain's result: yes.** They are marked in the read-back with the page
+   offered, and an uncertain cell never feeds one.
+2. **Checking is optional.** A recognised table carries "not checked" until someone checks it, on
+   the phone or in the office. An organisation profile can make checking required.
+3. **The reader is settled by P1's measurement**, document request against words into the
+   extractor, on the private book against the cell key. The reader with more matching cells and no
+   wrong certain cell ships. On a tie the document request ships, because its spanned cells come
+   from the SDK rather than from inference. The counts go here.
+4. **P4 comes after the partner's PDF case (P0–P3).** The 24 lookups are in the PDF, and IF's
+   device qualification is still owed.
 
 ## Acceptance
 
@@ -219,7 +237,8 @@ a picture.
   one never as a value. Both are asserted on the tool's output with a value-only token (the "no
   results" echo lesson).
 - P3: a correction survives relaunch, is gone when the document is forgotten, and resets on a new
-  hash.
+  hash. An exported `table-checks.json` imports on a second phone. A cell checked to two
+  different values is uncertain again.
 - P4: a captured page's table is gone with the capture's subject delete.
 
 ## Device pass owed
@@ -229,4 +248,6 @@ a picture.
 - `table_lookup` by voice on a recognised cell, then "show me the table".
 - A chain through a recognised cell to a read-back, then the check view, a correction, and the
   read-back again.
+- The checks exported from one phone and imported on a second, which then gives the corrected
+  cell.
 - A photographed binder table (P4) under shop lighting.

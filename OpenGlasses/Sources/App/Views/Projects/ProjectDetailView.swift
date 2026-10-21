@@ -38,6 +38,8 @@ struct ProjectDetailView: View {
                 }
             }
 
+            // One snapshot for the rows and the swipe (see `ListDeletion`).
+            let documents = self.documents
             Section {
                 if documents.isEmpty {
                     Text("No documents in this project yet. Attach files or scan documents from a chat in this project to ground answers here.")
@@ -52,7 +54,7 @@ struct ProjectDetailView: View {
                         }
                     }
                     .onDelete { idx in
-                        idx.map { documents[$0].id }.forEach { documentStore.forget(documentId: $0) }
+                        ListDeletion.ids(at: idx, in: documents).forEach { documentStore.forget(documentId: $0) }
                     }
                 }
             } header: {

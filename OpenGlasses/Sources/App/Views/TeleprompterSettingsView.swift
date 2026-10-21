@@ -199,7 +199,9 @@ struct TeleprompterSettingsView: View {
                 Text("No saved scripts yet.")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(store.scripts) { script in
+                // One snapshot for the rows and the swipe (see `ListDeletion`).
+                let scripts = store.scripts
+                ForEach(scripts) { script in
                     Button {
                         service.start(savedID: script.id)
                     } label: {
@@ -216,7 +218,9 @@ struct TeleprompterSettingsView: View {
                         }
                     }
                 }
-                .onDelete { store.delete(at: $0) }
+                .onDelete { offsets in
+                    ListDeletion.ids(at: offsets, in: scripts).forEach { store.delete(id: $0) }
+                }
             }
         }
     }

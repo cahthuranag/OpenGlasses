@@ -50,7 +50,9 @@ struct PlaybooksSettingsView: View {
             }
 
             Section {
-                ForEach(store.playbooks) { playbook in
+                // One snapshot for the rows and the swipe (see `ListDeletion`).
+                let playbooks = store.playbooks
+                ForEach(playbooks) { playbook in
                     Button { editingPlaybook = playbook } label: {
                         HStack(spacing: 12) {
                             Image(systemName: playbook.icon)
@@ -90,7 +92,7 @@ struct PlaybooksSettingsView: View {
                     .foregroundStyle(Color(.label))
                 }
                 .onDelete { offsets in
-                    for idx in offsets { store.delete(id: store.playbooks[idx].id) }
+                    ListDeletion.ids(at: offsets, in: playbooks).forEach { store.delete(id: $0) }
                 }
             } header: {
                 Text("Playbooks")

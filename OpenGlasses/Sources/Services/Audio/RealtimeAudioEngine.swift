@@ -251,6 +251,20 @@ final class RealtimeAudioEngine {
         let inputNode = audioEngine.inputNode
         let inputNativeFormat = inputNode.outputFormat(forBus: 0)
 
+        // With no usable input — backgrounded behind another app holding the mic, a Bluetooth route
+        // mid-change, an inactive session — the input reports 0 Hz / 0 channels, and `installTap`
+        // with that format raises an Objective-C exception no `catch` sees. Refuse here, before the
+        // generation, tap format and accumulator move, so a throw leaves nothing half-done: no tap,
+        // not capturing, the player merely attached as the next start expects. Callers already
+        // treat a throw as a failed start: session start ends the session, live recovery takes its
+        // degraded ending, a graph reset logs `resetFailed`.
+        guard AudioFormatFactory.isUsableTapFormat(inputNativeFormat) else {
+            PrivacyLog.audio(.realtime, .formatInvalid, owner: PrivacyToken(config.owner.rawValue),
+                             hertz: Int(inputNativeFormat.sampleRate),
+                             channels: Int(inputNativeFormat.channelCount))
+            throw AudioSessionError.invalidFormat(context: "microphone input")
+        }
+
         let needsResample = inputNativeFormat.sampleRate != config.inputSampleRate
             || inputNativeFormat.channelCount != config.channels
 

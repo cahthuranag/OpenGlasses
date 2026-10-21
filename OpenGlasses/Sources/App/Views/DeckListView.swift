@@ -13,8 +13,10 @@ struct DeckListView: View {
                     systemImage: "rectangle.on.rectangle.angled",
                     description: Text("Ask the assistant to “make flashcards from a document” to create a deck."))
             } else {
+                // One snapshot for the rows and the swipe (see `ListDeletion`).
+                let decks = store.decks
                 List {
-                    ForEach(store.decks) { deck in
+                    ForEach(decks) { deck in
                         NavigationLink {
                             DeckDetailView(deck: deck)
                         } label: {
@@ -26,7 +28,7 @@ struct DeckListView: View {
                         }
                     }
                     .onDelete { offsets in
-                        offsets.map { store.decks[$0].id }.forEach(store.deleteDeck)
+                        ListDeletion.ids(at: offsets, in: decks).forEach(store.deleteDeck)
                     }
                 }
                 .ogFormStyle()

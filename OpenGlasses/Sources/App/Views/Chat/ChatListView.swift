@@ -86,14 +86,17 @@ struct ChatListView: View {
     }
 
     private var threadList: some View {
-        List {
-            ForEach(sortedThreads) { thread in
+        // One snapshot for the rows and the swipe: the offsets `onDelete` hands back index the
+        // rows as drawn, and the store can re-sort or prune them before the swipe lands.
+        let threads = sortedThreads
+        return List {
+            ForEach(threads) { thread in
                 NavigationLink(value: thread.id) {
                     ThreadRow(thread: thread)
                 }
             }
-            .onDelete { indexSet in
-                indexSet.map { sortedThreads[$0].id }.forEach { store.deleteThread($0) }
+            .onDelete { offsets in
+                ListDeletion.ids(at: offsets, in: threads).forEach { store.deleteThread($0) }
             }
         }
         .ogFormStyle()

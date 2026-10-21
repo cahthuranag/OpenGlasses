@@ -97,7 +97,7 @@ struct SettingsView: View {
             OGSection(
                 header: "About",
                 // The tagline and the device line, in the owner's words (Plan FY P2.1).
-                footer: "Your AI. Your terms. On your iPhone, through headphones or AirPods, from your wrist, or hands-free with glasses.\n\nAvenkin © 2026 Skunkworks NZ Ltd. Source-available under the Business Source License 1.1: free for personal, non-commercial use — commercial use requires a licence.\n\nJoin the Discord for help, ideas, and to share what you've built."
+                footer: "Your AI. Your terms. On your iPhone, through headphones or AirPods, from your wrist, or hands-free with glasses.\n\nAvenkin © 2026 Skunkworks NZ Ltd.\n\nJoin the Discord for help, ideas, and to share what you've built."
             ) {
                 OGRow("Version", icon: "info.circle", mutedIcon: true, verbatimValue: Self.appVersion, showsChevron: false)
                 OGDivider()

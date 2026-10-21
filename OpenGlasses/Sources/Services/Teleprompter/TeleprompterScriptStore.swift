@@ -75,11 +75,6 @@ final class TeleprompterScriptStore: ObservableObject {
         save()
     }
 
-    func delete(at offsets: IndexSet) {
-        scripts.remove(atOffsets: offsets)
-        save()
-    }
-
     /// Import any scripts shared in via the Share Extension (PR B) and save them (newest
     /// first). Called on init and on app foreground. Returns the number imported.
     /// The inbox is cleared only after the store's save commits — a failed save leaves the

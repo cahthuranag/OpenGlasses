@@ -162,6 +162,8 @@ struct ManualPageSheetModel: Equatable {
     /// The passages the answer cited in this document, to be marked where they are found
     /// (Plan IN P1). Empty for a page opened without one — a figure asked for by number.
     let citedPassages: [CitedPassage]
+    /// Where a table read from a picture was recognised, to outline on its page (Plan JN P2).
+    let pictureAreas: [ManualTable.PictureArea]
 
     private(set) var route: ManualPageRoute
     var integrity: ManualPageIntegrity = .unknown
@@ -172,9 +174,10 @@ struct ManualPageSheetModel: Equatable {
          extractedPages: [Page] = [], publishedURL: URL? = nil,
          ledgerHash: String? = nil, documentIsPDF: Bool = false, citedFigure: String? = nil,
          photographed: Bool = false, reviewedPhotograph:Bool = false, printedPages: [Int: Int] = [:],
-         citedPassages: [CitedPassage] = []) {
+         citedPassages: [CitedPassage] = [], pictureAreas: [ManualTable.PictureArea] = []) {
         self.citation = citation
         self.citedPassages = citedPassages
+        self.pictureAreas = pictureAreas
         self.photographed = photographed
         self.reviewedPhotograph = reviewedPhotograph
         self.printedPages = printedPages
@@ -216,6 +219,19 @@ struct ManualPageSheetModel: Equatable {
     /// The cited passages on a page, in the order the answer numbered them.
     func passages(onPage page: Int) -> [CitedPassage] {
         citedPassages.filter { $0.anchor.page == page }.sorted { $0.number < $1.number }
+    }
+
+    /// The regions to outline on a page: where a table read from a picture was recognised.
+    func pictureAreas(onPage page: Int) -> [ManualTable.PictureArea] {
+        pictureAreas.filter { $0.physical == page }
+    }
+
+    /// What the header says when the page on screen outlines a table read from a picture (Plan JN
+    /// P2): the outline is where the values were read, not a passage of text. Nil otherwise, and on
+    /// the extracted-text route, which has no picture to outline.
+    var pictureLine: String? {
+        guard route == .manufacturerPDF, !pictureAreas(onPage: paging.currentPage).isEmpty else { return nil }
+        return "The table is printed as a picture: the outline marks where its values were read. Check them against the page."
     }
 
     /// The marks for the extracted text of the page on screen — the text fallback marks the same

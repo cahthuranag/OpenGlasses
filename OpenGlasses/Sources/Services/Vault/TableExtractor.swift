@@ -60,10 +60,33 @@ struct ManualTable: Codable, Equatable {
     struct Column: Codable, Equatable {
         var path: [String]
         var unit: String?
+        /// Read from a picture and its heading not clear enough to name the column by (Plan JN P1,
+        /// [[CellCertainty]]): a lookup that names it gives no value. Always false off a text layer.
+        var uncertain: Bool
 
-        init(path: [String], unit: String? = nil) {
+        init(path: [String], unit: String? = nil, uncertain: Bool = false) {
             self.path = path
             self.unit = unit
+            self.uncertain = uncertain
+        }
+
+        private enum CodingKeys: String, CodingKey { case path, unit, uncertain }
+
+        /// A column stored before Plan JN P1 has no `uncertain` and reads as clear.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            path = try container.decode([String].self, forKey: .path)
+            unit = try container.decodeIfPresent(String.self, forKey: .unit)
+            uncertain = try container.decodeIfPresent(Bool.self, forKey: .uncertain) ?? false
+        }
+
+        /// `uncertain` is written only when set, so a text-layer table stores exactly the JSON it
+        /// stored before.
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(path, forKey: .path)
+            try container.encodeIfPresent(unit, forKey: .unit)
+            if uncertain { try container.encode(true, forKey: .uncertain) }
         }
 
         static let pathSeparator = " › "
@@ -79,15 +102,49 @@ struct ManualTable: Codable, Equatable {
         var unit: String?
         /// Footnote markers on the cell: "*", "1" for a superscript one, "a" for "(a)".
         var markers: [String]
+        /// Read from a picture and not clear enough to give (Plan JN P0): a word under the
+        /// confidence floor, a glyph a number could be mistaken for, or two readings that disagree
+        /// ([[CellCertainty]]). The text is kept as read, for the page to be checked against, and is
+        /// never given as a value. Always false for a cell off a text layer.
+        var uncertain: Bool
+        /// What checking the table against its page said of this cell (Plan JN P3,
+        /// [[TableChecks]]): set only when checks are applied to a table read from a picture, for
+        /// the lookup that gives it and the check view. Never stored: the table keeps what was
+        /// read, and the checks are kept beside it.
+        var check: TableCellCheck? = nil
 
-        init(text: String, value: Double? = nil, unit: String? = nil, markers: [String] = []) {
+        init(text: String, value: Double? = nil, unit: String? = nil, markers: [String] = [], uncertain: Bool = false) {
             self.text = text
             self.value = value
             self.unit = unit
             self.markers = markers
+            self.uncertain = uncertain
         }
 
         var isEmpty: Bool { text.isEmpty }
+
+        private enum CodingKeys: String, CodingKey { case text, value, unit, markers, uncertain }
+
+        /// A cell stored before Plan JN has no `uncertain` and reads as certain.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            text = try container.decode(String.self, forKey: .text)
+            value = try container.decodeIfPresent(Double.self, forKey: .value)
+            unit = try container.decodeIfPresent(String.self, forKey: .unit)
+            markers = try container.decode([String].self, forKey: .markers)
+            uncertain = try container.decodeIfPresent(Bool.self, forKey: .uncertain) ?? false
+        }
+
+        /// `uncertain` is written only when set, so a text-layer table stores exactly the JSON it
+        /// stored before Plan JN.
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(text, forKey: .text)
+            try container.encodeIfPresent(value, forKey: .value)
+            try container.encodeIfPresent(unit, forKey: .unit)
+            try container.encode(markers, forKey: .markers)
+            if uncertain { try container.encode(true, forKey: .uncertain) }
+        }
     }
 
     struct Row: Codable, Equatable {
@@ -97,12 +154,90 @@ struct ManualTable: Codable, Equatable {
         var cells: [Cell]
         /// The page this row is printed on — a table continued over pages keeps each row's own.
         var page: Page
+        /// Read from a picture and its key (the row-header cells, or the heading over it) not clear
+        /// enough to find the row by (Plan JN P1, [[CellCertainty]]): a lookup that lands on it
+        /// gives no value, since a misread key points at another row's values. Always false off a
+        /// text layer.
+        var keyUncertain: Bool
+
+        init(path: [String], cells: [Cell], page: Page, keyUncertain: Bool = false) {
+            self.path = path
+            self.cells = cells
+            self.page = page
+            self.keyUncertain = keyUncertain
+        }
+
+        private enum CodingKeys: String, CodingKey { case path, cells, page, keyUncertain }
+
+        /// A row stored before Plan JN P1 has no `keyUncertain` and reads as clear.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            path = try container.decode([String].self, forKey: .path)
+            cells = try container.decode([Cell].self, forKey: .cells)
+            page = try container.decode(Page.self, forKey: .page)
+            keyUncertain = try container.decodeIfPresent(Bool.self, forKey: .keyUncertain) ?? false
+        }
+
+        /// `keyUncertain` is written only when set, so a text-layer table stores exactly the JSON it
+        /// stored before.
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(path, forKey: .path)
+            try container.encode(cells, forKey: .cells)
+            try container.encode(page, forKey: .page)
+            if keyUncertain { try container.encode(true, forKey: .keyUncertain) }
+        }
     }
 
     struct Note: Codable, Equatable {
         /// The marker the note is keyed by ("*", "1", "a"), or nil for an unmarked note.
         var marker: String?
         var text: String
+    }
+
+    /// Where the table's grid was read from (Plan JN P0). A value read from a picture says so,
+    /// every time it is given.
+    enum Source: Codable, Equatable {
+        /// The PDF's own text layer: what every table was before Plan JN.
+        case textLayer
+        /// A picture of the table, read on the phone by `reader`, its words recognised with
+        /// `meanConfidence` (0–1) on average.
+        case recognised(reader: Reader, meanConfidence: Double)
+
+        /// Which recognised reading made the grid.
+        enum Reader: String, Codable, Equatable {
+            /// The recogniser's own table: cells by row and column range ([[RecognisedGrid]]).
+            case documentGrid = "document_grid"
+            /// Recognised words laid out by the text extractor's own rules ([[RecognisedWords]]).
+            case words
+        }
+
+        var isRecognised: Bool {
+            if case .recognised = self { return true }
+            return false
+        }
+    }
+
+    /// Where on a page a table read from a picture was printed (Plan JN P2): the region that was
+    /// recognised, in top-down page points from the page's top left (the space
+    /// [[PictureRegion]] works in), on the PDF's own page. "Show me the table" outlines it, since
+    /// a picture has no text to mark.
+    struct PictureArea: Codable, Equatable {
+        var physical: Int
+        var x: Double
+        var y: Double
+        var width: Double
+        var height: Double
+
+        init(physical: Int, rect: CGRect) {
+            self.physical = physical
+            x = Double(rect.minX)
+            y = Double(rect.minY)
+            width = Double(rect.width)
+            height = Double(rect.height)
+        }
+
+        var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
     }
 
     /// "Table 99".
@@ -122,9 +257,20 @@ struct ManualTable: Codable, Equatable {
     /// can say the table is there and could not be read, and name the page to show, rather than
     /// say the book has no such table.
     var failure: TableExtractor.Failure?
+    /// The text layer, or a picture of the table (Plan JN P0).
+    var source: Source
+    /// The regions a table read from a picture was recognised from, one per page (Plan JN P2).
+    /// Empty off a text layer, and for a recognised table stored before P2.
+    var pictureAreas: [PictureArea] = []
+    /// Set when the organisation requires a table read from a picture to be checked before its
+    /// values are given and this one is not (Plan JN P3, `organizationRequiresTableChecks`): a
+    /// lookup on it gives no value at all. Set by [[TableChecks]] when checks are applied, never
+    /// stored.
+    var uncheckedWithheld = false
 
     init(label: String, title: String, page: Page, rowHeaders: [String] = [], columns: [Column],
-         rows: [Row], notes: [Note] = [], continues: Bool = false, failure: TableExtractor.Failure? = nil) {
+         rows: [Row], notes: [Note] = [], continues: Bool = false, failure: TableExtractor.Failure? = nil,
+         source: Source = .textLayer) {
         self.label = label
         self.title = title
         self.page = page
@@ -134,6 +280,44 @@ struct ManualTable: Codable, Equatable {
         self.notes = notes
         self.continues = continues
         self.failure = failure
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case label, title, page, rowHeaders, columns, rows, notes, continues, failure, source, pictureAreas
+    }
+
+    /// A table stored before Plan JN has no `source` and reads as off the text layer.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        label = try container.decode(String.self, forKey: .label)
+        title = try container.decode(String.self, forKey: .title)
+        page = try container.decode(Page.self, forKey: .page)
+        rowHeaders = try container.decode([String].self, forKey: .rowHeaders)
+        columns = try container.decode([Column].self, forKey: .columns)
+        rows = try container.decode([Row].self, forKey: .rows)
+        notes = try container.decode([Note].self, forKey: .notes)
+        continues = try container.decode(Bool.self, forKey: .continues)
+        failure = try container.decodeIfPresent(TableExtractor.Failure.self, forKey: .failure)
+        source = try container.decodeIfPresent(Source.self, forKey: .source) ?? .textLayer
+        pictureAreas = try container.decodeIfPresent([PictureArea].self, forKey: .pictureAreas) ?? []
+    }
+
+    /// `source` is written only for a recognised table, and `pictureAreas` only when there are
+    /// any, so a text-layer table stores exactly the JSON it stored before Plan JN.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(label, forKey: .label)
+        try container.encode(title, forKey: .title)
+        try container.encode(page, forKey: .page)
+        try container.encode(rowHeaders, forKey: .rowHeaders)
+        try container.encode(columns, forKey: .columns)
+        try container.encode(rows, forKey: .rows)
+        try container.encode(notes, forKey: .notes)
+        try container.encode(continues, forKey: .continues)
+        try container.encodeIfPresent(failure, forKey: .failure)
+        if source != .textLayer { try container.encode(source, forKey: .source) }
+        if !pictureAreas.isEmpty { try container.encode(pictureAreas, forKey: .pictureAreas) }
     }
 
     /// A caption whose page extracted nothing, kept as a pointer to its page.
@@ -203,6 +387,10 @@ enum TableExtractor {
         /// table is printed there with no text the PDF gives — a picture, or type drawn as shapes
         /// (Plan JJ P5). Only a recogniser could read it.
         case noTextInTable = "no_text_in_table"
+        /// The table was read from a picture and its grid passed the structural tests, but too few
+        /// of its cells could be read clearly to trust it (Plan JN P0, [[CellCertainty]]): kept as an
+        /// unread table that names its page, never as a sparse one.
+        case unclearInPicture = "unclear_in_picture"
     }
 
     enum Outcome: Equatable {
@@ -532,37 +720,94 @@ enum TableExtractor {
     static let plainLongHeaderMaximumLines = 12
     static let plainLongHeaderReach = 18
 
-    /// The first of `minimumBodyRows` consecutive rows of numbers within `plainLongHeaderReach`
-    /// lines of the caption, or nil.
-    private static func numericRunStart(in region: [Line]) -> Int? {
-        guard region.count >= minimumBodyRows else { return nil }
-        let last = min(plainLongHeaderReach, region.count - minimumBodyRows)
-        guard last >= 0 else { return nil }
-        return (0...last).first { index in (index..<(index + minimumBodyRows)).allSatisfy { isNumericRow(region[$0]) } }
+    /// A line under a caption, or a row of a recognised grid (Plan JN P0), as the one-weight header
+    /// rule reads it: how many cells it prints, and how many of those after the first are numbers.
+    struct HeaderRuleRow: Equatable {
+        var cells: Int
+        var numbersAfterFirst: Int
+
+        /// A row of cells, each as its text and markers, left to right.
+        init(cells: [(text: String, markers: [String])]) {
+            self.cells = cells.count
+            numbersAfterFirst = cells.dropFirst().filter {
+                TableExtractor.parseCell($0.text, markers: $0.markers, columnUnit: nil).value != nil
+            }.count
+        }
+
+        init(phrases: [Phrase]) {
+            self.init(cells: phrases.map { ($0.text, $0.markers) })
+        }
+
+        /// A row of two or more cells whose cells after the first are at least half numbers.
+        var isNumeric: Bool { cells >= 2 && numbersAfterFirst * 2 >= cells - 1 }
+        /// Every cell after the first is text.
+        var isTextAfterFirst: Bool { numbersAfterFirst == 0 }
     }
 
-    /// A row of two or more cells whose cells after the first are at least half numbers.
-    private static func isNumericRow(_ line: Line) -> Bool {
-        let phrases = line.phrases
-        guard phrases.count >= 2 else { return false }
-        let rest = phrases.dropFirst()
-        let numbers = rest.filter { parseCell($0.text, markers: $0.markers, columnUnit: nil).value != nil }.count
-        return numbers * 2 >= rest.count
+    /// The rows the one-weight header rule ever looks at: far enough down for the deepest header
+    /// it reads and a run of rows under it.
+    static let headerRuleReach = plainLongHeaderReach + minimumBodyRows
+
+    /// The one-weight header rule, shared by a plain text-layer page and a recognised grid (Plan JN
+    /// P0): the lines before the first row of numbers head the table. `rows` are the lines under the
+    /// caption (at least the first `headerRuleReach` of them). `wrapTitle(before:)` reads the lines
+    /// of a title that wrapped under the caption, up to a line index, and gives the index the header
+    /// starts at after them; `isHeaderLine` says a line may be a heading at all. Returns where the
+    /// header starts and where it ends (the body's first line); both zero for a table it finds no
+    /// header for.
+    static func plainHeader(rows: [HeaderRuleRow], wrapTitle: (_ before: Int) -> Int,
+                            isHeaderLine: (Int) -> Bool) -> (start: Int, count: Int) {
+        let reach = plainTitleMaximumLines + plainHeaderMaximumLines
+        let run = numericRunStart(in: rows)
+        // A run of rows of numbers under headings stacked deeper than a short header (Plan JJ
+        // P5): at most `plainLongHeaderMaximumLines` lines of headings that are neither prose nor
+        // a note, after the title's wrapped lines.
+        func deepHeader(_ run: Int, from start: Int) -> Bool {
+            run - start <= plainLongHeaderMaximumLines && (start..<run).allSatisfy(isHeaderLine)
+        }
+        if let firstRow = rows.prefix(reach + 1).firstIndex(where: \.isNumeric) {
+            let start = wrapTitle(firstRow)
+            if firstRow - start <= plainHeaderMaximumLines, (start..<firstRow).allSatisfy(isHeaderLine) {
+                return (start, firstRow)
+            }
+            if run == firstRow, deepHeader(firstRow, from: start) { return (start, firstRow) }
+            return (start, start)
+        }
+        if let run {
+            let start = wrapTitle(run)
+            return (start, deepHeader(run, from: start) ? run : start)
+        }
+        if let run = textGridStart(in: rows, reach: reach) {
+            // A table whose rows are text in every column (Plan JJ P1): no row of numbers to find
+            // the body by. The first run of rows of two or more cells starts the grid; its first
+            // line is the column headings, and one-phrase lines above it are the title wrapping,
+            // as for a table of numbers.
+            let start = wrapTitle(run)
+            if run - start < plainHeaderMaximumLines, (start...run).allSatisfy(isHeaderLine) { return (start, run + 1) }
+            return (start, start)
+        }
+        return (0, 0)
+    }
+
+    /// The first of `minimumBodyRows` consecutive rows of numbers within `plainLongHeaderReach`
+    /// lines of the caption, or nil.
+    private static func numericRunStart(in rows: [HeaderRuleRow]) -> Int? {
+        guard rows.count >= minimumBodyRows else { return nil }
+        let last = min(plainLongHeaderReach, rows.count - minimumBodyRows)
+        guard last >= 0 else { return nil }
+        return (0...last).first { index in (index..<(index + minimumBodyRows)).allSatisfy { rows[$0].isNumeric } }
     }
 
     /// Where a plain page's text-only grid starts: the first of `minimumBodyRows + 1` consecutive
     /// lines of two or more cells (a heading line and three rows), within `reach` lines of the
     /// caption, whose cells after the first are all text. Nil when there is none.
-    private static func textGridStart(in region: [Line], reach: Int) -> Int? {
+    private static func textGridStart(in rows: [HeaderRuleRow], reach: Int) -> Int? {
         let needed = minimumBodyRows + 1
-        guard region.count >= needed else { return nil }
-        for index in 0...min(reach, region.count - needed) {
-            let run = region[index..<(index + needed)]
-            guard run.allSatisfy({ $0.phrases.count >= 2 }) else { continue }
-            let text = run.allSatisfy { line in
-                line.phrases.dropFirst().allSatisfy { parseCell($0.text, markers: $0.markers, columnUnit: nil).value == nil }
-            }
-            return text ? index : nil
+        guard rows.count >= needed else { return nil }
+        for index in 0...min(reach, rows.count - needed) {
+            let run = rows[index..<(index + needed)]
+            guard run.allSatisfy({ $0.cells >= 2 }) else { continue }
+            return run.allSatisfy(\.isTextAfterFirst) ? index : nil
         }
         return nil
     }
@@ -621,15 +866,8 @@ enum TableExtractor {
                 headerCount += 1
             }
         } else {
-            let reach = plainTitleMaximumLines + plainHeaderMaximumLines
-            let run = numericRunStart(in: region)
-            // A run of rows of numbers under headings stacked deeper than a short header (Plan JJ
-            // P5): at most `plainLongHeaderMaximumLines` lines of headings that are neither prose
-            // nor a note, after the title's wrapped lines.
-            func deepHeader(_ run: Int) -> Bool {
-                run - headerStart <= plainLongHeaderMaximumLines && region[headerStart..<run].allSatisfy(isHeaderLine)
-            }
-            func wrapTitle(before first: Int) {
+            // The lines of a long title that wrapped under the caption, up to `first`.
+            func wrapTitle(before first: Int) -> Int {
                 var previous = captionIndex
                 while headerStart < min(first, plainTitleMaximumLines),
                       region[headerStart].phrases.count == 1, !isNoteLine(region[headerStart]),
@@ -638,39 +876,11 @@ enum TableExtractor {
                     previous = start + headerStart
                     headerStart += 1
                 }
+                return headerStart
             }
-            if let firstRow = region.prefix(reach + 1).firstIndex(where: isNumericRow) {
-                wrapTitle(before: firstRow)
-                if firstRow - headerStart <= plainHeaderMaximumLines,
-                   region[headerStart..<firstRow].allSatisfy(isHeaderLine) {
-                    headerCount = firstRow
-                } else if run == firstRow, deepHeader(firstRow) {
-                    headerCount = firstRow
-                } else {
-                    headerCount = headerStart
-                }
-            } else if let run {
-                wrapTitle(before: run)
-                headerCount = deepHeader(run) ? run : headerStart
-            } else if let run = textGridStart(in: region, reach: reach) {
-                // A table whose rows are text in every column (Plan JJ P1): no row of numbers to
-                // find the body by. The first run of rows of two or more cells starts the grid;
-                // its first line is the column headings, and one-phrase lines above it are the
-                // title wrapping, as for a table of numbers.
-                var previous = captionIndex
-                while headerStart < min(run, plainTitleMaximumLines), region[headerStart].phrases.count == 1,
-                      !isNoteLine(region[headerStart]),
-                      region[headerStart].top - all[previous].bottom < region[headerStart].size {
-                    title += (title.isEmpty ? "" : " ") + region[headerStart].text
-                    previous = start + headerStart
-                    headerStart += 1
-                }
-                if run - headerStart < plainHeaderMaximumLines, region[headerStart...run].allSatisfy(isHeaderLine) {
-                    headerCount = run + 1
-                } else {
-                    headerCount = headerStart
-                }
-            }
+            let rows = region.prefix(headerRuleReach).map { HeaderRuleRow(phrases: $0.phrases) }
+            (headerStart, headerCount) = plainHeader(rows: rows, wrapTitle: wrapTitle(before:),
+                                                     isHeaderLine: { isHeaderLine(region[$0]) })
         }
         // A bold run that swallows the whole region is a table with bold rows, not all header.
         if pageHasBold, headerCount >= region.count - 1 { headerCount = min(headerCount, 1) }
@@ -738,6 +948,11 @@ enum TableExtractor {
         var gap: Double
         /// Nothing but a few lines follow the table on its page: the next page may carry it on.
         var runsToFoot: Bool
+        /// Where each row read onto this grid on the caption's page printed its value cells (Plan
+        /// JN P0): per row, in the table's row order, the box of the phrase each value column holds,
+        /// nil for none. Lets a table read from recognised words find each cell's words again, to
+        /// judge how clearly they were read. Never stored.
+        var cellBoxes: [[CGRect?]] = []
 
         var segments: [(Double, Double)] { Array(zip(lows, highs)) }
     }
@@ -810,10 +1025,12 @@ enum TableExtractor {
 
         // Rows.
         var rows: [ManualTable.Row] = []
+        var boxes: [[CGRect?]] = []
         var groups = laid.groups
         for index in groups.indices {
             let read = self.rows(placed, group: groups[index], units: units, page: page)
             rows += read.rows
+            boxes += read.boxes
             groups[index].carry = read.carry
         }
 
@@ -826,7 +1043,8 @@ enum TableExtractor {
         let grid = Grid(label: caption.label, lows: segments.map(\.0), highs: segments.map(\.1), groups: groups,
                         units: units, headings: Set(header.map { headingKey($0.text) }),
                         gap: gaps.isEmpty ? body[0].size : gaps[gaps.count / 2],
-                        runsToFoot: regionStart + region.count == all.count && trailing <= trailingAllowance)
+                        runsToFoot: regionStart + region.count == all.count && trailing <= trailingAllowance,
+                        cellBoxes: boxes)
         return (.table(ManualTable(label: caption.label, title: layout.title, page: page, rowHeaders: laid.rowHeaders,
                                    columns: laid.columns, rows: rows, notes: notes.notes, continues: caption.continues)),
                 grid)
@@ -927,11 +1145,19 @@ enum TableExtractor {
     /// of their own (none, or only the one they share with a neighbour), and the line prints in
     /// every value column, a number in all of them but perhaps the last ("5 or more").
     private static func numberedHeadingRow(_ first: Placed?, paths: [[String]], header: [Line]) -> Bool {
-        guard let first, !header.isEmpty, paths.count >= 3 else { return false }
+        guard let first, !header.isEmpty else { return false }
+        return numberedHeadingRow(prints: { first.cells[$0] != nil }, numeric: { isNumeric(first.cells[$0]) }, paths: paths)
+    }
+
+    /// The numbered-heading rule on any first row (shared with a recognised grid, Plan JN P0):
+    /// `prints` and `numeric` say what the row holds in each column, `paths` are the columns'
+    /// header paths so far.
+    static func numberedHeadingRow(prints: (Int) -> Bool, numeric: (Int) -> Bool, paths: [[String]]) -> Bool {
+        guard paths.count >= 3 else { return false }
         let values = Array(1..<paths.count)
-        guard values.allSatisfy({ first.cells[$0] != nil }),
-              values.dropLast().allSatisfy({ isNumeric(first.cells[$0]) }),
-              values.count >= 3 || isNumeric(first.cells[values[values.count - 1]]) else { return false }
+        guard values.allSatisfy(prints),
+              values.dropLast().allSatisfy(numeric),
+              values.count >= 3 || numeric(values[values.count - 1]) else { return false }
         let spans = values.contains { index in
             !paths[index].isEmpty && values.contains { $0 != index && paths[$0].first == paths[index].first }
         }
@@ -945,12 +1171,19 @@ enum TableExtractor {
     /// number. A table of words throughout has no numbers to tell its row headers by: only its
     /// first column heads the rows (Plan JJ P1).
     private static func stubCount(_ placed: [Placed], columns: [Int]) -> Int {
-        let holdsNumbers = placed.contains { line in columns.dropFirst().contains { isNumeric(line.cells[$0]) } }
+        stubCount(columns: columns.count,
+                  prints: { position in placed.contains { $0.cells[columns[position]] != nil } },
+                  holdsNumber: { position in placed.contains { isNumeric($0.cells[columns[position]]) } })
+    }
+
+    /// The row-header rule on any grid (shared with a recognised grid, Plan JN P0): of `count`
+    /// columns, `prints` says a body row prints something in one, `holdsNumber` that one holds a
+    /// number.
+    static func stubCount(columns count: Int, prints: (Int) -> Bool, holdsNumber: (Int) -> Bool) -> Int {
+        let holdsNumbers = count > 1 && (1..<count).contains(where: holdsNumber)
         var stubs = 1
-        while holdsNumbers, stubs < columns.count - 1 {
-            let column = columns[stubs]
-            guard placed.contains(where: { $0.cells[column] != nil }),
-                  !placed.contains(where: { isNumeric($0.cells[column]) }) else { break }
+        while holdsNumbers, stubs < count - 1 {
+            guard prints(stubs), !holdsNumber(stubs) else { break }
             stubs += 1
         }
         return stubs
@@ -1013,10 +1246,12 @@ enum TableExtractor {
         return (rowHeaders, columns, laid)
     }
 
-    /// One group's rows off the laid lines, starting from what the rows above carried down.
+    /// One group's rows off the laid lines, starting from what the rows above carried down, with
+    /// the box each row's value cells were printed in (`Grid.cellBoxes`).
     private static func rows(_ placed: [Placed], group: Grid.Group, units: [String?], page: ManualTable.Page)
-        -> (rows: [ManualTable.Row], carry: Grid.Carry) {
+        -> (rows: [ManualTable.Row], carry: Grid.Carry, boxes: [[CGRect?]]) {
         var rows: [ManualTable.Row] = []
+        var boxes: [[CGRect?]] = []
         var heading = group.carry.group
         var previousStubs = group.carry.stubs
         var previousLine: Line?
@@ -1057,10 +1292,13 @@ enum TableExtractor {
             }
             let path = group.prefix + (heading.map { [$0] } ?? []) + stubTexts.filter { !$0.isEmpty }
             rows.append(ManualTable.Row(path: path, cells: values, page: page))
+            boxes.append((stubs..<cells.count).map { index in
+                cells[index].map { CGRect(x: $0.minX, y: line.top, width: $0.maxX - $0.minX, height: line.bottom - line.top) }
+            })
             previousStubs = stubTexts
             previousLine = line
         }
-        return (rows, Grid.Carry(group: heading, stubs: previousStubs))
+        return (rows, Grid.Carry(group: heading, stubs: previousStubs), boxes)
     }
 
     /// Notes: the marked lines at the head of `lines`, each with its wrapped lines, and how many
@@ -1449,6 +1687,10 @@ enum TableExtractor {
                out[index].columns.count == piece.columns.count {
                 out[index].rows.append(contentsOf: piece.rows)
                 for note in piece.notes where !out[index].notes.contains(note) { out[index].notes.append(note) }
+                // A page of it read from a picture makes the whole table one read from a picture
+                // (Plan JN P2): its values are said to be so, never presented as the PDF's text.
+                if piece.source.isRecognised, !out[index].source.isRecognised { out[index].source = piece.source }
+                out[index].pictureAreas += piece.pictureAreas
                 continue
             }
             out.append(piece)

@@ -51,6 +51,21 @@ enum TableLookup {
         case document, table, row, column
     }
 
+    /// What of a table read from a picture a lookup could not read clearly (Plan JN P2).
+    enum UnclearPart: Equatable {
+        /// A value cell the lookup would give.
+        case cell
+        /// A row's name: the row it lands on, or any row when where the asked words or number fall
+        /// among the rows depends on them.
+        case rowKey
+        /// A column's heading: the column it names, or any column when the asked words matched a
+        /// heading only loosely.
+        case columnHeading
+        /// The whole table: the organisation requires a table read from a picture to be checked
+        /// against its page before any of its values are given, and this one is not (Plan JN P3).
+        case notChecked
+    }
+
     /// The rows and columns a lookup read.
     struct Found: Equatable {
         let source: Source
@@ -74,6 +89,10 @@ enum TableLookup {
         case notFound(Part, asked: String, available: [String])
         /// The table's caption was found and its grid was not read: the page can be shown.
         case notExtracted(Source)
+        /// The table was read from a picture and what this lookup needs of it — the cell, the
+        /// row's key or the column's heading, `part` says which — could not be read clearly (Plan
+        /// JN P1, worded in P2): no value is given, and the pages can be shown.
+        case unclear(Source, pages: [ManualTable.Page], part: UnclearPart)
         /// The searched manuals hold no tables at all.
         case noTables
     }
@@ -94,21 +113,49 @@ enum TableLookup {
         case .resolved(let found): columns = found
         case .ambiguous(let names): return .ambiguous(.column, asked: request.column ?? "", candidates: names)
         case .none: return .notFound(.column, asked: request.column ?? "", available: table.columns.map(columnName))
+        case .unclear: return .unclear(source, pages: table.pages, part: .columnHeading)
         }
 
         switch resolveRow(request.row, in: table) {
         case .rows(let rows):
-            return .found(Found(source: source, rows: rows, columns: columns, between: nil, unreadPages: unread))
+            return unlessUnclear(Found(source: source, rows: rows, columns: columns, between: nil, unreadPages: unread))
         case .between(let lower, let upper, let value):
-            return .found(Found(source: source, rows: [lower, upper], columns: columns, between: value,
-                                unreadPages: unread))
+            return unlessUnclear(Found(source: source, rows: [lower, upper], columns: columns, between: value,
+                                       unreadPages: unread))
         case .ambiguous(let rows):
             return .ambiguous(.row, asked: request.row, candidates: rows.map(rowName))
         case .outside(let range):
             return .notFound(.row, asked: request.row, available: range)
         case .none:
             return .notFound(.row, asked: request.row, available: Array(table.rows.prefix(12)).map(rowName))
+        case .unclear:
+            return .unclear(source, pages: table.pages, part: .rowKey)
         }
+    }
+
+    // MARK: Read from a picture (Plan JN P1, P2)
+
+    /// What a found lookup leans on that was read unclearly from a picture, or nil: an uncertain
+    /// heading on a column it gives, an uncertain key on a row it gives — or, when the asked number
+    /// fell between two rows, an uncertain key on any row, since a misread key moves where a number
+    /// falls — or an uncertain cell among those it would give. Always nil for a text-layer table.
+    static func unclearPart(_ found: Found) -> UnclearPart? {
+        let table = found.source.table
+        if found.columns.contains(where: { $0 < table.columns.count && table.columns[$0].uncertain }) { return .columnHeading }
+        if found.rows.contains(where: \.keyUncertain) { return .rowKey }
+        if found.between != nil && table.rows.contains(where: \.keyUncertain) { return .rowKey }
+        for row in found.rows where found.columns.contains(where: { $0 < row.cells.count && row.cells[$0].uncertain }) {
+            return .cell
+        }
+        return nil
+    }
+
+    /// Whether a found lookup leans on anything read unclearly from a picture.
+    static func isUnclear(_ found: Found) -> Bool { unclearPart(found) != nil }
+
+    /// `found`, or the outcome that gives no value because it leans on something read unclearly.
+    static func unlessUnclear(_ found: Found) -> Outcome {
+        unclearPart(found).map { .unclear(found.source, pages: pages(of: found), part: $0) } ?? .found(found)
     }
 
     /// An outcome that ends a lookup before its row is read, as an error so it can travel in a
@@ -153,6 +200,11 @@ enum TableLookup {
         }
         let read = candidates.filter(\.table.isExtracted)
         guard let source = read.first else { return .failure(Refusal(outcome: .notExtracted(candidates[0]))) }
+        // Read from a picture, not checked, and the organisation requires checking (Plan JN P3):
+        // nothing of the table is given — no cell, no row, no column search.
+        if source.table.uncheckedWithheld {
+            return .failure(Refusal(outcome: .unclear(source, pages: source.table.pages, part: .notChecked)))
+        }
         return .success((source, candidates.filter { !$0.table.isExtracted }.map(\.table.page)))
     }
 
@@ -179,7 +231,12 @@ enum TableLookup {
 
     // MARK: Columns
 
-    private enum ColumnMatch { case resolved([Int]), ambiguous([String]), none }
+    private enum ColumnMatch {
+        case resolved([Int]), ambiguous([String]), none
+        /// The asked words fit no heading exactly, and a heading of the table was read unclearly
+        /// from a picture, so a loose match could land on the wrong column (Plan JN P2).
+        case unclear
+    }
 
     private static func resolveColumn(_ asked: String?, in table: ManualTable) -> ColumnMatch {
         let all = Array(table.columns.indices)
@@ -204,6 +261,9 @@ enum TableLookup {
                 return whole.count == 1 ? .resolved(whole) : .ambiguous(byPath.map { columnName(table.columns[$0]) })
             }
         }
+        // A loose match over headings any of which was read unclearly from a picture could land on
+        // the column the misread one should have been (Plan JN P2): no column is chosen by words.
+        if table.columns.contains(where: \.uncertain) { return .unclear }
         // By words, in any order: with the units, then — when they fit no column, or several —
         // without them, so a unit said another way ("amps" for "A") or left out decides nothing.
         let paths = all.map { table.columns[$0].path }
@@ -247,6 +307,9 @@ enum TableLookup {
         /// A number outside the rows' range; the range, to say.
         case outside([String])
         case none
+        /// The asked row fits no row's name exactly, and a row's name was read unclearly from a
+        /// picture, so a match by number or by words could land on the wrong row (Plan JN P2).
+        case unclear
     }
 
     private static func resolveRow(_ asked: String, in table: ManualTable) -> RowMatch {
@@ -262,6 +325,11 @@ enum TableLookup {
                 || normalised($0.path.dropFirst().joined(separator: " ")) == key }
             return whole.count == 1 ? .rows(whole) : .ambiguous(exact)
         }
+
+        // Past an exact name, the rows are matched by number or by words, and every row is a
+        // candidate: a misread name anywhere may move the match (Plan JN P2). A between-rows
+        // answer would be refused anyway; a single row found this way is refused too.
+        if rows.contains(where: \.keyUncertain) { return .unclear }
 
         // 2. A number: a row keyed by that number (or a printed range holding it), else the two
         // rows either side of it. Words beside the number narrow the rows first ("QXRT 35").
@@ -533,6 +601,12 @@ enum TableLookup {
                 : "Ask the technician which \(what), then call again with it."
             return "More than one \(what) matches \"\(asked)\": " + candidates.joined(separator: "; ") + ". "
                 + retry + " No value was given."
+        case .unclear(let source, let pages, let part):
+            let table = source.table
+            return "\(table.displayName) is printed on " + pages.map(spokenPage).joined(separator: ", ")
+                + " of \(source.documentName) as a picture, and \(unclearReason(part)), so there is no value to give. "
+                + "Do not answer from memory. Tell the technician, and offer to show the page with show_source.\n"
+                + sourceLine(documentName: source.documentName, label: table.label, pages: pages)
         case .notExtracted(let source):
             let table = source.table
             return "\(table.displayName) is printed on \(spokenPage(table.page)) of \(source.documentName), "
@@ -544,6 +618,35 @@ enum TableLookup {
         }
     }
 
+    /// Why a lookup on a table read from a picture gives no value (Plan JN P2).
+    static func unclearReason(_ part: UnclearPart) -> String {
+        switch part {
+        case .cell: return "this cell could not be read clearly from the picture"
+        case .rowKey: return "a row's name this lookup depends on could not be read clearly from the picture"
+        case .columnHeading: return "a column's heading this lookup depends on could not be read clearly from the picture"
+        case .notChecked: return "this table was read from a picture and has not been checked against the page yet"
+        }
+    }
+
+    /// The latest check of the cells `found` gives from `rows`, when every one of them was checked
+    /// against the page and the checks agree (Plan JN P3); nil when any was not.
+    static func checkMark(of rows: [ManualTable.Row], in found: Found) -> TableCheckMark? {
+        var marks: [TableCheckMark] = []
+        for row in rows {
+            for index in found.columns {
+                guard index < row.cells.count, let mark = row.cells[index].check?.agreedMark else { return nil }
+                marks.append(mark)
+            }
+        }
+        return marks.max { $0.at < $1.at }
+    }
+
+    /// "read from a picture of the table on page 31 of Invented Book" — what every value a
+    /// recognised table gives is said with (Plan JN P2), at the page its row is printed on.
+    static func pictureNote(documentName: String, page: ManualTable.Page) -> String {
+        "read from a picture of the table on \(spokenPage(page)) of \(documentName)"
+    }
+
     private static func reason(_ failure: TableExtractor.Failure?) -> String {
         switch failure {
         case .noTextLayer: return "the page has no text layer"
@@ -553,6 +656,7 @@ enum TableLookup {
         case .mergedCells: return "it has cells spanning several columns"
         case .rotatedHeaders: return "its headings are set on their side"
         case .noTextInTable: return "the table is printed with no text the PDF can give, most likely as a picture"
+        case .unclearInPicture: return "the table was read from a picture and too few of its cells could be read clearly"
         case nil: return "unknown"
         }
     }
@@ -569,6 +673,7 @@ enum TableLookup {
     private static func renderFound(_ found: Found) -> String {
         let source = found.source
         let table = source.table
+        let pictured = table.source.isRecognised
         var lines = ["\(table.displayName), \(source.documentName):"]
         func rowLine(_ row: ManualTable.Row) -> String {
             let cells = found.columns.map { index -> String in
@@ -576,7 +681,12 @@ enum TableLookup {
                 let column = index < table.columns.count ? columnName(table.columns[index]) : "column \(index + 1)"
                 return "column \(column): \(cellText(cell))"
             }
-            return "row \(rowName(row)) (\(spokenPage(row.page))) — " + cells.joined(separator: "; ")
+            let line = "row \(rowName(row)) (\(spokenPage(row.page))) — " + cells.joined(separator: "; ")
+            // Every row a picture gave says so (Plan JN P2), both rows of a between-rows answer too,
+            // and who checked it against the page when someone has (Plan JN P3).
+            guard pictured else { return line }
+            let note = line + " — " + pictureNote(documentName: source.documentName, page: row.page)
+            return checkMark(of: [row], in: found).map { note + ", " + TableChecks.checkedNote($0) } ?? note
         }
         if let value = found.between, found.rows.count == 2 {
             lines.append("\(format(value)) is not a row of this table; it falls between two rows:")
@@ -595,6 +705,25 @@ enum TableLookup {
         if !found.unreadPages.isEmpty {
             lines.append("Part of this table, on " + found.unreadPages.map(spokenPage).joined(separator: ", ")
                          + ", could not be read, so rows printed there are not in this lookup.")
+        }
+        if pictured {
+            if notes.isEmpty {
+                lines.append("Notes printed with a table read from a picture are not read: any note that applies is on the page.")
+            }
+            if let mark = checkMark(of: found.rows, in: found) {
+                // Every value given was checked against the page (Plan JN P3): still said to be from
+                // a picture, and no longer handed back to the technician to check.
+                lines.append("This table is printed as a picture, and the value was read from that picture on the phone, not "
+                             + "from the PDF's text, then checked against the page. Say it was "
+                             + pictureNote(documentName: source.documentName, page: pages(of: found)[0])
+                             + " and " + TableChecks.checkedNote(mark) + ", and offer to show the page with show_source.")
+            } else {
+                lines.append("This table is printed as a picture, and the value was read from that picture on the phone, not "
+                             + "from the PDF's text. Say it was " + pictureNote(documentName: source.documentName,
+                                                                             page: pages(of: found)[0])
+                             + ", read the value back to the technician to check against the page, and offer to show the page "
+                             + "with show_source.")
+            }
         }
         lines.append("Read the value out as printed, with its row, column and page. Do not interpolate, round, "
                      + "or move to another row.")
@@ -629,9 +758,10 @@ extension TableLookup {
         guard rule != .exact else { return outcome }
         switch outcome {
         case .found(let found) where found.between != nil && found.rows.count == 2:
+            // `resolve` gave the two rows only with every key of the table clear (Plan JN P1).
             let row = rule == .atLeast ? found.rows[1] : found.rows[0]
-            return .found(Found(source: found.source, rows: [row], columns: found.columns, between: nil,
-                                unreadPages: found.unreadPages))
+            return unlessUnclear(Found(source: found.source, rows: [row], columns: found.columns, between: nil,
+                                       unreadPages: found.unreadPages))
         case .notFound(.row, _, _):
             guard let value = number(in: request.row),
                   case .success(let resolved) = resolveTable(request, in: sources),
@@ -648,8 +778,13 @@ extension TableLookup {
                 pick = keyed.last { $0.upper == highest }?.row
             }
             guard let pick else { return outcome }
-            return .found(Found(source: resolved.source, rows: [pick], columns: columns, between: nil,
-                                unreadPages: resolved.unread))
+            let found = Found(source: resolved.source, rows: [pick], columns: columns, between: nil,
+                              unreadPages: resolved.unread)
+            // The first or last row by key: a misread key anywhere may have moved which that is.
+            if resolved.source.table.rows.contains(where: \.keyUncertain) {
+                return .unclear(resolved.source, pages: pages(of: found), part: .rowKey)
+            }
+            return unlessUnclear(found)
         default:
             return outcome
         }
@@ -687,6 +822,16 @@ extension TableLookup {
         case .ambiguous(let names): return .refused(.ambiguous(.column, asked: request.column ?? "", candidates: names))
         case .none:
             return .refused(.notFound(.column, asked: request.column ?? "", available: table.columns.map(columnName)))
+        case .unclear:
+            return .refused(.unclear(resolved.source, pages: table.pages, part: .columnHeading))
+        }
+        // A heading or any cell of the column read unclearly from a picture may move which row
+        // meets the number (Plan JN P1): no row is given.
+        if table.columns[column].uncertain {
+            return .refused(.unclear(resolved.source, pages: table.pages, part: .columnHeading))
+        }
+        if table.rows.contains(where: { column < $0.cells.count && $0.cells[column].uncertain }) {
+            return .refused(.unclear(resolved.source, pages: table.pages, part: .cell))
         }
         let numbered = table.rows.compactMap { row -> (row: ManualTable.Row, value: Double)? in
             guard column < row.cells.count, let number = row.cells[column].value else { return nil }
@@ -707,8 +852,12 @@ extension TableLookup {
             chosen = best.map { best in numbered.filter { $0.value == best }.suffix(1).map(\.row) } ?? []
         }
         guard let row = chosen.first else { return .none(resolved.source, column: column, range: range) }
-        return .found(Found(source: resolved.source, rows: [row], columns: [column], between: nil,
-                            unreadPages: resolved.unread))
+        let found = Found(source: resolved.source, rows: [row], columns: [column], between: nil,
+                          unreadPages: resolved.unread)
+        if case .unclear(let source, let pages, let part) = unlessUnclear(found) {
+            return .refused(.unclear(source, pages: pages, part: part))
+        }
+        return .found(found)
     }
 
     /// The row printed after `row`, for "the next row is …".

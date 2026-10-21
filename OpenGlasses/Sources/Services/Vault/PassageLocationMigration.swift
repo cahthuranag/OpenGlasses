@@ -15,7 +15,7 @@ import Foundation
 /// mean recognising every scanned page a second time, and a recognised page has no text layer to
 /// mark anyway. Its rows keep working; the locator splits their sentences itself.
 ///
-/// **Tables (Plan JJ P0, location version 3).** The same pass reads each document's tables from
+/// **Tables (Plan JJ P0, location version 3; pictures, Plan JN P1, version 6).** The same pass reads each document's tables from
 /// its PDF — the document itself, or the original a text import was made from, when that is still
 /// on the phone — and adds their row passages beside the existing chunks, which are only located,
 /// never re-chunked, when their text is unchanged. A document with no PDF has no positions to read
@@ -51,7 +51,8 @@ enum PassageLocationMigration {
                     let root = VaultImporter.baselineDirectory(for: manifest.id)
                     let url = root.appendingPathComponent(manifest.documentRelativePath(document))
                     let original = manifest.documentSourceRelativePath(document).map { root.appendingPathComponent($0) }
-                    switch await migrate(entry: entry, fileURL: url, originalURL: original, store: store) {
+                    switch await migrate(entry: entry, fileURL: url, originalURL: original, store: store,
+                                         checkpointDirectory: VaultImporter.overlayDirectory(for: manifest.id)) {
                     case .located: report.located += 1
                     case .rechunked: report.rechunked += 1
                     case .recognisedSkipped, .unreadable: report.skipped += 1
@@ -69,19 +70,35 @@ enum PassageLocationMigration {
 
     /// One document. Extraction and chunking run off the main actor; the store is written on it.
     /// `originalURL` is the original a text document was extracted from, when the vault has one.
+    /// `pictureReader` reads the tables printed as pictures (Plan JN P1), its regions checkpointed
+    /// in `checkpointDirectory` when one is given.
     static func migrate(entry: VaultDocumentLedger.Entry, fileURL: URL, originalURL: URL? = nil,
-                        store: DocumentStore) async -> Outcome {
+                        store: DocumentStore,
+                        pictureReader: PictureTableReader? = VaultImporter.defaultPictureReader,
+                        checkpointDirectory: URL? = nil) async -> Outcome {
         guard store.needsLocation(documentId: entry.documentId) else { return .current }
         guard !entry.usedRecognition else { return .recognisedSkipped }
         let tablesPDF = VaultDocumentExtractor.tablesSource(document: fileURL, original: originalURL)
-        // Text already located by location version 3 (Plan JJ P0): only the tables changed since —
-        // version 4 keeps the captions whose page did not resolve to a grid (Plan JJ P1), and 5
-        // reads more of the layouts a code book prints (Plan JJ P5) — so the tables are read again
-        // and the document's text is left exactly as it is.
-        if let floor = store.textLocationVersion(documentId: entry.documentId), floor >= 3 {
-            let tables: PDFTableReader.Result? = await Task.detached(priority: .utility) {
-                tablesPDF.flatMap { VaultDocumentExtractor.tables(from: $0) }
+        let tablesHash = tablesPDF == fileURL ? entry.contentHash : (entry.sourceContentHash ?? entry.contentHash)
+        let pictures = pictureReader.map { reader in
+            checkpointDirectory.map { PictureTableReading.context(reader, checkpointIn: $0, contentHash: tablesHash) }
+                ?? PictureTableReading.Context(reader: reader)
+        }
+        func readTables() async -> PDFTableReader.Result? {
+            guard let tablesPDF else { return nil }
+            let read = await Task.detached(priority: .utility) {
+                await VaultDocumentExtractor.tables(from: tablesPDF, pictures: pictures)
             }.value
+            if let checkpointDirectory { PictureTableCheckpoint.remove(from: checkpointDirectory, contentHash: tablesHash) }
+            return read
+        }
+        // Text already located by location version 3 (Plan JJ P0): only the tables changed since —
+        // version 4 keeps the captions whose page did not resolve to a grid (Plan JJ P1), 5 reads
+        // more of the layouts a code book prints (Plan JJ P5), and 6 reads the tables printed as
+        // pictures (Plan JN P1) — so the tables are read again and the document's text is left
+        // exactly as it is.
+        if let floor = store.textLocationVersion(documentId: entry.documentId), floor >= 3 {
+            let tables = await readTables()
             var dropped = 0
             if let tables {
                 dropped = await store.replaceTables(tables.stored, documentId: entry.documentId).rowsDropped
@@ -90,14 +107,13 @@ enum PassageLocationMigration {
             VaultDocumentExtractor.logTables(tables, rowsDropped: dropped)
             return .located
         }
-        let read: (chunks: [DocumentChunker.Chunk], labels: [PageLabel], tables: PDFTableReader.Result?)?
-            = await Task.detached(priority: .utility) {
+        let text: (chunks: [DocumentChunker.Chunk], labels: [PageLabel])? = await Task.detached(priority: .utility) {
             guard let extracted = try? VaultDocumentExtractor.extract(from: fileURL) else { return nil }
             let text = extracted.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (DocumentChunker().chunk(text), extracted.pageLabels,
-                    tablesPDF.flatMap { VaultDocumentExtractor.tables(from: $0) })
+            return (DocumentChunker().chunk(text), extracted.pageLabels)
         }.value
-        guard let read, !read.chunks.isEmpty else { return .unreadable }
+        guard let text, !text.chunks.isEmpty else { return .unreadable }
+        let read = (chunks: text.chunks, labels: text.labels, tables: await readTables())
         store.setPageLabels(read.labels, documentId: entry.documentId)
         let outcome: Outcome
         if store.writeLocations(documentId: entry.documentId, chunks: read.chunks) {

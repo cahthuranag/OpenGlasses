@@ -2622,6 +2622,14 @@ struct Config {
                             stored: UserDefaults.standard.bool(forKey: "organizationForbidsRecordingSyncOnCellular"))
     }
 
+    /// Whether the organisation requires a table read from a picture to be checked against its
+    /// page before any of its values are given (Plan JN P3). A ceiling pinned on, written only by
+    /// a profile; false on a phone without one, where checking is optional.
+    static var organizationRequiresTableChecks: Bool {
+        PolicyEnvelope.bool(.organizationRequiresTableChecks,
+                            stored: UserDefaults.standard.bool(forKey: "organizationRequiresTableChecks"))
+    }
+
     /// That the person holding this phone read what recording a job means and said so
     /// (`RecordingConsent`): when, for which wording, and for which organisation. Three plain
     /// values rather than a record, and nil unless all three are there.

@@ -33,6 +33,21 @@ enum PDFTableReader {
         /// Lines that read as a caption and are an entry in a list of tables, left out because the
         /// document captions the same label elsewhere (Plan JJ P5). Not counted in `captioned`.
         var listedEntries = 0
+        /// Tables read from a picture of them (Plan JN P1), by `pictureReader`.
+        var recognised = 0
+        /// Tables read from a picture whose cells were mostly unclear, kept as unread
+        /// (`unclear_in_picture`).
+        var unclearInPicture = 0
+        /// The cells, row keys and column headings of the tables read from a picture that were
+        /// marked uncertain.
+        var uncertainCells = 0
+        var uncertainKeys = 0
+        var uncertainColumns = 0
+        /// The reading the pictures went through, when any was recognised.
+        var pictureReader: ManualTable.Source.Reader?
+        /// Recognised regions whose checkpoint could not be saved (Plan JN P2): the import carries
+        /// on, and a relaunch would recognise them again. Counted, never silent.
+        var checkpointSaveFailures = 0
 
         var extracted: Int { tables.count }
 
@@ -46,9 +61,21 @@ enum PDFTableReader {
         return read(document: document, printedLabels: printedLabels)
     }
 
-    /// `printedLabels` maps a physical page (1-based) to the number printed on it.
+    /// `printedLabels` maps a physical page (1-based) to the number printed on it. The text layer
+    /// only: exactly what every import read before Plan JN.
     static func read(document: PDFDocument, printedLabels: [Int: String] = [:]) -> Result {
+        scan(document: document, printedLabels: printedLabels, pictures: nil).result
+    }
+
+    /// One reading of the document. With `pictures` (Plan JN P1), a caption whose grid the text
+    /// layer does not give, and a caption on a page with no text layer, is read from the
+    /// recognition of the picture under it when one was made; without, this is the text-layer
+    /// reading unchanged. Either way the captions a recogniser could read are returned, for
+    /// `PictureTableReading` to recognise before a second reading.
+    static func scan(document: PDFDocument, printedLabels: [Int: String] = [:],
+                     pictures: PictureTableReading.Inputs?) -> (result: Result, candidates: [PictureTableReading.Candidate]) {
         var result = Result()
+        var candidates: [PictureTableReading.Candidate] = []
         var pieces: [ManualTable] = []
         // The table the next page may carry on with no caption of its own (Plan JJ P5): which
         // piece, the grid it was read onto, and the page it was last read on.
@@ -75,6 +102,30 @@ enum PDFTableReader {
                 if let waiting { fail(waiting.caption, waiting.failure, at: waiting.place, listed: false) }
                 result.pagesWithoutText += 1
                 open = nil
+                // A page with no text layer (Plan JN P1): its own recognition says whether it
+                // captions a table, and each caption's region is read as a picture.
+                let bounds = page.bounds(for: .mediaBox)
+                candidates.append(.init(physical: physical, kind: .page,
+                                        region: CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height)))
+                guard let pictures, let scanned = pictures.recognitions.pages[physical] else { continue }
+                let place = ManualTable.Page(physical: physical, printed: printedLabels[physical])
+                for found in PictureTableReading.captionRegions(onScannedPage: scanned.words, pageBounds: bounds) {
+                    guard let recognition = pictures.recognitions.regions[.init(physical: physical, label: found.caption.label)]
+                    else { continue }
+                    let read = PictureTableReading.read(recognition, captionWords: found.captionWords,
+                                                        caption: found.caption, page: place, inputs: pictures)
+                    if var table = read.outcome.table {
+                        table.pictureAreas = [.init(physical: physical, rect: found.region)]
+                        pieces.append(table)
+                        if !table.continues { result.captioned += 1 }
+                        count(read, into: &result)
+                        open = read.grid.map { (pieces.count - 1, $0, physical) }
+                    } else {
+                        if read.outcome.failure == .unclearInPicture { count(read, into: &result) }
+                        fail(found.caption, read.outcome.failure == .unclearInPicture ? .unclearInPicture : .noTextLayer,
+                             at: place, listed: false)
+                    }
+                }
                 continue
             }
             let carried = open.flatMap { $0.physical == physical - 1 ? $0 : nil }
@@ -119,6 +170,35 @@ enum PDFTableReader {
                         carry(more, into: carried.piece)
                         continue
                     }
+                    // A grid the text layer does not give, printed as a picture under the caption
+                    // (Plan JN P1): read from its recognition, which must pass the extractor's own
+                    // tests. A picture that makes no table leaves the caption's own failure.
+                    if found.placement != .listed,
+                       let region = PictureTableReading.region(for: found.caption, failure: failure, words: words,
+                                                               pageBounds: page.bounds(for: .mediaBox)) {
+                        candidates.append(.init(physical: physical, kind: .caption(found.caption), region: region))
+                        if let pictures,
+                           let recognition = pictures.recognitions.regions[.init(physical: physical, label: found.caption.label)] {
+                            let read = PictureTableReading.read(
+                                recognition, captionWords: PictureTableReading.captionWords(of: found.caption, in: words),
+                                caption: found.caption, page: place, inputs: pictures)
+                            if var table = read.outcome.table {
+                                // Where it was read from, for "show me the table" to outline
+                                // (Plan JN P2).
+                                table.pictureAreas = [.init(physical: physical, rect: region)]
+                                pieces.append(table)
+                                if !table.continues { result.captioned += 1 }
+                                count(read, into: &result)
+                                next = read.grid.map { (pieces.count - 1, $0, physical) }
+                                continue
+                            }
+                            if read.outcome.failure == .unclearInPicture {
+                                count(read, into: &result)
+                                fail(found.caption, .unclearInPicture, at: place, listed: false)
+                                continue
+                            }
+                        }
+                    }
                     if found.placement == .atFoot {
                         foot = (found.caption, failure, place, words)
                         continue
@@ -145,7 +225,16 @@ enum PDFTableReader {
         result.tables = TableExtractor.merge(pieces)
         // A continuation whose start did not extract is still a table someone captioned.
         result.captioned += result.tables.filter(\.continues).count
-        return result
+        if pictures != nil, result.recognised + result.unclearInPicture > 0 { result.pictureReader = pictures?.reading }
+        return (result, candidates)
+    }
+
+    /// A picture's reading, in the result's counts (Plan JN P1).
+    private static func count(_ read: PictureTableReading.Read, into result: inout Result) {
+        if read.outcome.table != nil { result.recognised += 1 } else { result.unclearInPicture += 1 }
+        result.uncertainCells += read.assessment.uncertain
+        result.uncertainKeys += read.assessment.uncertainKeys
+        result.uncertainColumns += read.assessment.uncertainColumns
     }
 
     // MARK: - Words with their boxes

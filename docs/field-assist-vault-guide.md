@@ -437,6 +437,58 @@ Read from: band from Example Book, page 6, §QR-12; factor from Example Book, pa
 
 The lines under the heading are prose to `chains.md`, so the file imports as it is. **A reviewed chain replaces the kept one:** once the vault arrives with a chain of the same name in `chains.md`, the phone offers yours and no longer offers its kept copy.
 
+### A table printed as a picture: checking it on the phone
+
+Some books print a table as a picture: the caption is text and the grid under it is not. The phone reads such a table from the picture at import, on the phone, and every value it gives from one says so: "read from a picture of the table on page 31 of …". A cell the picture did not show clearly is never given; the technician is offered the page instead. Until someone checks the table against the page, each value is also read back for the technician to check.
+
+**Checking a table.** Open **Settings › Custom Vaults**. Under each manual, a table read from a picture shows **Read from a picture: not checked**, **checked** or **checks disagree**. Tap it to see the picture of the page above the grid the phone read. A cell it could not read clearly, or one checked to two different values, is marked with a triangle. Tap a cell and type what the page prints, or leave what was read and save it to confirm it. A row's name or a column's heading the phone was unsure of can be confirmed, not corrected: if the phone misread it, its values are not given and the page is shown instead. **Mark table checked** confirms every cell that was read clearly, and leaves the marked ones for you to look at one by one. Checking is for whoever can import vaults on that phone.
+
+A checked value is still said to be read from a picture, with who checked it and when, and is no longer handed back to the technician to check. A rule chain step that read a checked cell is marked the same way. Every check names who made it (the name in **Settings › Field Assist**, or the phone's name) and when.
+
+**Where the checks are kept.** In a vault you imported on the phone, the checks are written into the vault's own `table-checks.json` beside `chains.md`. In a vault that came from your organisation's office, a link or a signed pack, the phone never writes into the vault: its checks are kept on the phone beside it and used together with the vault's own file.
+
+**Getting them to another phone.** In the check view, **Share checks** puts the checks of that table's manual on the share sheet as `table-checks.json`. Put the file in the vault's folder (at the top, beside `manifest.json`) on the other phone and import the folder again: its tables are checked there too. No office is needed. An organisation with the office can write the same file into the vault it sends, and the phone reads it the same way.
+
+**When two checks disagree.** A cell checked on one phone to one value and in a file to another is not given at all: it shows **checks disagree** with both values and who gave each, until someone checks it again on the phone to the right value, or the file is corrected. Neither value wins on its own.
+
+**A new copy of the book starts unchecked.** Checks are kept against the PDF they were made on. Import a different PDF and its tables start unchecked; the old checks stay in the file and no longer apply. Removing a manual removes its checks. Removing the vault removes all of them.
+
+**Requiring checks.** An organisation profile can require every table read from a picture to be checked before any of its values are given (`organizationRequiresTableChecks`). Until a table is checked, a lookup on it gives no value and says it has not been checked yet, and a chain stops on it. Without the profile, checking is optional.
+
+#### `table-checks.json`
+
+```json
+{
+  "version": 1,
+  "checks": [
+    {
+      "document_sha256": "<the SHA-256 of the PDF, 64 lower-case hex characters>",
+      "table": "Table Q7",
+      "row": ["QMX90"],
+      "column": ["Spacing (mm)"],
+      "kind": "corrected",
+      "value": "35",
+      "checked_by": "the vault manager",
+      "checked_at": "2026-10-21T09:30:00Z",
+      "origin": "phone"
+    }
+  ]
+}
+```
+
+| Field | What it holds |
+|---|---|
+| `version` | `1`. A file with another version is not read. |
+| `document_sha256` | The SHA-256 of the PDF the table was read from: the manual itself when it is a PDF, otherwise the original PDF it was made from. For a table read from a photographed manual's pages it is the SHA-256 of that capture revision's manifest (a retake starts unchecked), and those checks are kept on the phone, never in a vault's file. |
+| `table` | The table's label as printed. |
+| `row`, `column` | The row's and the column's headings as the phone read them, outermost first, as a list. A cell's check has both; a check of a row's name has `row` only; a check of a column's heading has `column` only. A cell is never named by its position. |
+| `kind` | `confirmed` (the page prints what was read) or `corrected` (the page prints `value`). A row's name or a column's heading can only be `confirmed`. |
+| `value` | What the page prints in the cell, footnote mark included. Empty when the page prints nothing there. |
+| `checked_by`, `checked_at` | Who checked, and when (ISO 8601). |
+| `origin` | `phone` for a check made on a phone; left out by anyone else. |
+
+An entry that does not read is skipped with a warning, and the rest of the file is kept. A check for a PDF the vault does not hold is kept, with a warning, and applies if that PDF is loaded.
+
 ## Describing a site system (optional)
 
 A manual describes one unit on its own. Nobody writes down how the units at one site work together, and that is where the hard faults live: the heat pump shows a communication fault because the furnace board dropped off the bus, and a technician who reads only the heat pump's manual replaces the wrong board. A **site document** is the overlay that joins them: which units are at the site, how they are connected, which controller commands which, the systems outside the site they talk to, the settings someone set on site, and the faults your crew has seen come from the link between two of them.
@@ -646,6 +698,9 @@ Removing a manual is only offered for vaults you imported yourself. A signed pac
 | `core files total … characters (budget 32768)` | Warning only. Move the long material into a document. |
 | `chains.md line N: … unknown step '…'` (or another message after a line number) | A rule chain step does not read. Fix that line; the message says what the step should look like. |
 | `chains.md: the chain '…' needs Table N, which no manual in this vault prints as a table the app could find` | Warning only. The chain is kept and stops at that step. Check the table's number as the book prints it, or load the book that prints it. |
+| `table-checks.json entry N: …; skipped` | Warning only. That check does not read and is left out; the message says why. The rest of the file is kept. |
+| `table-checks.json: N checks are for a PDF this vault does not hold (…)` | Warning only. The checks were made on another copy of the book. They are kept and apply if that copy is loaded. |
+| `table-checks.json has version N; this app reads version 1, so it was not read` | Warning only. The file was written for another version of the app; no check in it is used. |
 | `sites/…: unit '…' model '…' is not a model this vault has a section for` | Spell the model as its section's heading does, or mark a unit the vault does not cover `"covered": false`. |
 | `sites/…: … names '…', which is not a declared unit` | A connection, control, setting or fault names a unit id the file does not declare. |
 | `sites/…: serial '…' is also listed in sites/…` | One serial is one unit in one place; a reusable system type has no serials. |

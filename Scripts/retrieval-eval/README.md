@@ -89,6 +89,9 @@ Scripts/retrieval-eval/run.sh
   evidence gate instead of the shipped one, to calibrate a gate against both sets. The output line
   names the gate.
 
+- `RETRIEVAL_EVAL_RECOGNISE=grid` (or `words`) reads the tables a PDF prints as pictures too, as
+  an import on the phone does (Plan JN P1); `off`, the default, reads the text layer only. Give it
+  its own `RETRIEVAL_EVAL_WORKDIR`.
 - `RETRIEVAL_EVAL_TABLE_ROWS` says which routes search a table's row passages: `1` every route (as
   shipped), `0` none (as before tables), `token` the exact-token and table routes only, `table` the
   table route only. One index serves all four. A line counts the questions that name a table.

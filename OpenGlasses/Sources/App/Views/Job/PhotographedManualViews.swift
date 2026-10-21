@@ -51,6 +51,10 @@ struct PhotographedManualsView: View {
     @State private var error:String?
     @State private var deleting:String?
     @State private var selected:CapturedManualContract.Manifest?
+    /// The photographed manuals with tables read from their pages (Plan JN P4), each with its
+    /// pages' PDF for the check view's picture.
+    @State private var withTables:Set<String> = []
+    @State private var tablePDFs:[String:URL] = [:]
     var body:some View {
         List {
             if let error {Text(error).foregroundStyle(.red)}
@@ -61,6 +65,14 @@ struct PhotographedManualsView: View {
                     HStack {
                         if CapturedManualCatalog.mayUse {Button("View pages") {selected = m}}
                         Button("Forget",role:.destructive) {deleting = m.captureID}
+                    }
+                    // Tables read from the photographed pages, each with where its check stands
+                    // (Plan JN P4). The checks are this phone's own.
+                    if CapturedManualCatalog.mayUse,withTables.contains(m.documentID),
+                       let documents = CapturedManualCatalog.shared.documents,let hash = CapturedManualTables.checkHash(m) {
+                        PicturedTablesList(vaultId:m.vaultID,documentId:m.documentID,documentHash:hash,
+                                           pdfURL:tablePDFs[m.documentID],documentStore:documents,
+                                           canCheck:CapturedManualCatalog.mayUse,photographed:true)
                     }
                 }
             }
@@ -93,6 +105,18 @@ struct PhotographedManualsView: View {
             guard let store = CapturedManualStore.shared else {throw CapturedManualStore.Failure.unavailable}
             manuals = try store.manifests().filter {$0.scope == CapturedManualCatalog.scope(vaultID:$0.vaultID)}
             unfinished = try store.pending().filter {$0.metadata.scope == CapturedManualCatalog.scope(vaultID:$0.metadata.scope.vaultID)}
+            let documents = CapturedManualCatalog.shared.documents
+            let tabled = manuals.filter { m in
+                documents?.tables(documentId:m.documentID).contains { $0.source.isRecognised && $0.isExtracted } == true
+            }
+            withTables = Set(tabled.map(\.documentID))
+            Task {
+                let urls = await Task.detached(priority:.utility) {
+                    Dictionary(tabled.compactMap { m in (try? store.file(m,name:"pages.pdf")).map { (m.documentID,$0) } },
+                               uniquingKeysWith:{ first,_ in first })
+                }.value
+                tablePDFs = urls
+            }
         } catch {self.error = "Manual storage is unavailable while the phone is locked."}
     }
 }

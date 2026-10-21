@@ -37,7 +37,10 @@ enum VaultPromptBuilder {
                               teamLearningsPublished: Bool = false) -> String? {
         // A vault's chains.md is steps for the rule-chain runner, not reference text: the session
         // offers its chains by name (Plan JJ P2), so it does not ride along on every turn.
-        let files = store.readAll().filter { !VaultChains.isChainsFile($0.filename) }
+        // Nor are a vault's table checks (Plan JN P3), should a manifest list them.
+        let files = store.readAll().filter {
+            !VaultChains.isChainsFile($0.filename) && !TableChecksFile.isChecksFile($0.filename)
+        }
         guard !files.isEmpty else { return nil }
 
         var lines: [String] = []

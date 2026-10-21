@@ -76,6 +76,7 @@ enum SensitiveStore: String, CaseIterable {
     case vaultDocuments
     case vaultLedger
     case vaultLinkStaging
+    case tableChecks
     case fieldDeliverySettings
     case jobDeliveryQueue
     case upcomingJobs
@@ -577,6 +578,23 @@ enum SensitiveStore: String, CaseIterable {
                           owner: "VaultLinkStagingStore",
                           ownerPaths: ["OpenGlasses/Sources/Services/Vault/VaultLinkStagingStore.swift"],
                           location: "Caches/VaultLinkStaging/{approval}/archive.zip")
+
+        case .tableChecks:
+            // The checks this phone made of tables read from a picture (Plan JN P3), for a vault it
+            // did not author: what the page prints in a cell, and who checked — the phone's name for
+            // whoever manages the vault there. A colleague of the organisation, not somebody the
+            // wearer observed, so the linkage is the wearer's; the subject erasure still reaches a
+            // check by its document and by the name it gives, so the file is kept out of backup.
+            // For a vault the phone authored the same checks are written into the vault's own
+            // `table-checks.json`, which is part of vaultDocuments.
+            return Record(store: self, dataClass: .documentCorpus, subjectLinkage: .wearer,
+                          protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
+                          retention: .policy("removed with the manual it checks, and with its vault"),
+                          deleteAll: .api("TableCheckStore.removeAll()"),
+                          deleteSubject: .api("TableCheckStore.forget(documentHashes:vaultId:)"),
+                          owner: "TableCheckStore",
+                          ownerPaths: ["OpenGlasses/Sources/Services/Vault/TableCheckStore.swift"],
+                          location: "Application Support/FieldAssist/table-checks/{vault}.json")
 
         case .fieldDeliverySettings:
             return Record(store: self, dataClass: .preference, subjectLinkage: .wearer,

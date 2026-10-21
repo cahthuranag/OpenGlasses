@@ -119,6 +119,28 @@ enum PassageHighlighter {
         return first
     }
 
+    /// Outline each region (top-down page points, as [[PictureRegion]] keeps them) on `page`, where
+    /// a table was read from a picture (Plan JN P2). Tagged like the highlights, so `clear` removes
+    /// them. Returns the first region's bounds in page space, for the viewer to scroll to.
+    @discardableResult
+    static func outline(_ regions: [CGRect], on page: PDFPage) -> CGRect? {
+        let box = page.bounds(for: .mediaBox)
+        var first: CGRect?
+        for region in regions {
+            let bounds = PictureRegion.pdfRect(ofPageRect: region, mediaBox: box)
+            guard bounds.width > 0, bounds.height > 0 else { continue }
+            let outline = PDFAnnotation(bounds: bounds.insetBy(dx: -2, dy: -2), forType: .square, withProperties: nil)
+            outline.color = pageColor.withAlphaComponent(1)
+            let border = PDFBorder()
+            border.lineWidth = 2
+            outline.border = border
+            outline.userName = annotationTag
+            page.addAnnotation(outline)
+            if first == nil { first = bounds }
+        }
+        return first
+    }
+
     /// Remove every mark this app drew on `page`.
     static func clear(_ page: PDFPage) {
         for annotation in page.annotations where annotation.userName == annotationTag {

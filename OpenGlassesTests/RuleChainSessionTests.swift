@@ -191,6 +191,36 @@ final class RuleChainSessionTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(service.promptContext()).contains("RULE CHAINS this vault offers"))
     }
 
+    /// Plan JN P2: a step that read a table from a picture is marked in the reading filed on the
+    /// job, as a field the reading keeps and not only in its text.
+    func testAReadingFiledFromAPictureKeepsTheMark() async throws {
+        let (service, store, _) = try await startSession()
+        let tables = service.chainTables(documentStore: store).map { source -> TableLookup.Source in
+            guard source.table.label == "Table 97" else { return source }
+            var table = source.table
+            table.source = .recognised(reader: .documentGrid, meanConfidence: 0.9)
+            return TableLookup.Source(documentId: source.documentId, documentName: source.documentName, table: table)
+        }
+        let drop = try XCTUnwrap(service.offeredChains.first { $0.chain.name == "Voltage drop on a run" }?.chain)
+        _ = try service.startChain(drop, tables: tables)
+        var progress: ChainProgress?
+        for answer in ["QX6", "20", "100", "240"] { progress = try service.answerChain(answer, tables: tables) }
+        guard case .finished = progress?.step else { return XCTFail("\(String(describing: progress?.step))") }
+        let mark = "from a picture of Table 97 (Run lengths), PDF page 4: check it against the page"
+        let reading = try XCTUnwrap(service.activeSession?.spokenReadings.last)
+        XCTAssertTrue(reading.isRuleChain)
+        XCTAssertEqual(reading.pictureMarks, [mark])
+        XCTAssertTrue(reading.readFromPicture)
+        XCTAssertTrue(reading.value.contains(mark), reading.value)
+
+        // A chain over the text layer files no mark.
+        _ = try service.startChain(drop, tables: service.chainTables(documentStore: store))
+        for answer in ["QX6", "20", "100", "240"] { _ = try service.answerChain(answer, tables: service.chainTables(documentStore: store)) }
+        let plain = try XCTUnwrap(service.activeSession?.spokenReadings.last)
+        XCTAssertNotEqual(plain.id, reading.id)
+        XCTAssertNil(plain.pictureMarks)
+    }
+
     func testAChainThatStopsIsRecordedWithWhyAndOneTheTechnicianStopsIsNot() async throws {
         let (service, store, _) = try await startSession()
         _ = try await chain(["action": "start", "chain": "Check an installed conductor"], service, store)

@@ -2,8 +2,8 @@
 
 Scores the app's table lookup against a key of cells on a Mac: for each question in the key, the
 table, row and column it names, looked up in the tables a vault's own PDFs print, and compared with
-what the key expects. It compiles the app's `TableLookup`, `TableReference`, `TableExtractor` and
-`PDFTableReader` unchanged, with `OpenGlassesTests/TableLookupEval/TableLookupEvalCore.swift` doing
+what the key expects. It compiles the app's `TableLookup`, `TableReference`, `TableExtractor`,
+`PDFTableReader` and the picture readers (`PictureTableReading`, `VisionTableReader`) unchanged, with `OpenGlassesTests/TableLookupEval/TableLookupEvalCore.swift` doing
 the scoring, and reads each PDF as an import on the phone does. Use it on a vault folder anywhere
 on the Mac, your own licensed books included, with a key you wrote against them. Nothing it reads
 is written anywhere.
@@ -20,6 +20,30 @@ output, so choose a name that is not a book's title. The output says "against th
 unless `TABLE_LOOKUP_EVAL_KEY_CHECKED=1`: set it only once someone who knows the book has checked
 every expected cell. PDFKit writes diagnostics of its own to standard error; add `2>/dev/null` to
 keep a saved report to the report.
+
+## Tables printed as pictures (Plan JN P1)
+
+`TABLE_LOOKUP_EVAL_RECOGNISE` reads the tables a PDF prints as pictures too, as an import on the
+phone does: `off` (the default) reads the text layer only, as before; `grid` recognises each region
+under a caption the text layer gives no grid for with Vision's document reading (the app's
+`VisionTableReader`); `words` with its word reading laid out by the text extractor's own rules.
+`TABLE_LOOKUP_EVAL_FLOOR` (default the app's `PictureTableReading.floor`) is the least word
+confidence a clear cell may have. Vision on a Mac can read differently from the phone's; the
+numbers that decide are confirmed by an import on the phone. With a reading on, the run adds:
+
+```
+[CELLS] document 1: stored tables differing from the text layer alone=1
+[CELLS] recognise=document_grid floor=0.5: tables read from a picture=1 unclear_in_picture=0 uncertain cells=2 keys=0 headings=0
+[CELLS]   pictured table 1: rows=12 columns=4 cells=48 uncertain=2 uncertain keys=0 uncertain headings=0
+[CELLS] vault on tables read from a picture: questions=6 resolved=5 unclear=1 cells expected=6 matched=5
+[CELLS]   wrong certain cells: on a pictured table=0 anywhere=0 wrong between rows=0
+```
+
+- **wrong certain cells**: a single cell the lookup gave as certain whose text is not the key's —
+  on a table read from a picture (the number that blocks a reading), and on any table.
+- `TABLE_LOOKUP_EVAL_DIAGNOSE=1` prints, per region recognised, its size, how many words and
+  tables the recogniser read there, their mean confidence and what the reading came to, as counts
+  and the extractor's own failure names.
 
 ## The key
 

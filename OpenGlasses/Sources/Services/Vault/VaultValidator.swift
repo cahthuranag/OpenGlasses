@@ -133,6 +133,13 @@ enum VaultValidator {
             warnings.append(contentsOf: chained.warnings)
         }
 
+        // Checks of pictured tables (Plan JN P3): warnings only. A bad entry is skipped and one for
+        // a PDF the vault does not hold is kept; the vault installs either way.
+        let checksURL = directory.appendingPathComponent(TableChecksFile.fileName)
+        if fm.fileExists(atPath: checksURL.path) {
+            warnings.append(contentsOf: tableCheckWarnings(checksURL, manifest: manifest, directory: directory))
+        }
+
         // Site documents (Plan HV). Only a manifest that lists them reaches this, so every vault
         // without them validates exactly as it did.
         if let sites = manifest.sites {
@@ -187,6 +194,31 @@ enum VaultValidator {
                   let result = VaultDocumentExtractor.tables(from: pdf) else { return [] }
             return result.stored.map(\.label)
         }
+    }
+
+    /// What an import says about a vault's `table-checks.json` (Plan JN P3): each entry that does
+    /// not read, and each PDF the checks are for that the vault does not hold. Never a value.
+    static func tableCheckWarnings(_ url: URL, manifest: VaultManifest, directory: URL) -> [String] {
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        guard size <= TableChecksFile.maximumBytes else {
+            return ["\(TableChecksFile.fileName) is larger than \(TableChecksFile.maximumBytes / 1_048_576) MB, so it was not read"]
+        }
+        guard let data = try? Data(contentsOf: url) else { return ["\(TableChecksFile.fileName) cannot be read"] }
+        let parsed = TableChecksFile.parse(data)
+        guard !parsed.checks.isEmpty else { return parsed.problems }
+        return parsed.problems
+            + TableChecksFile.unknownDocumentWarnings(parsed.checks, known: tablePDFHashes(manifest: manifest, directory: directory))
+    }
+
+    /// The SHA-256 of every PDF the vault's tables are read from, as the import keys them.
+    static func tablePDFHashes(manifest: VaultManifest, directory: URL) -> Set<String> {
+        Set(manifest.documents.compactMap { document -> String? in
+            let url = directory.appendingPathComponent(manifest.documentRelativePath(document))
+            let original = manifest.documentSourceRelativePath(document).map { directory.appendingPathComponent($0) }
+            guard let pdf = VaultDocumentExtractor.tablesSource(document: url, original: original),
+                  let data = try? Data(contentsOf: pdf) else { return nil }
+            return VaultDocumentLedger.hash(of: data)
+        })
     }
 
     /// The `sites` list, each file on its own against the vault's own model index, then across the

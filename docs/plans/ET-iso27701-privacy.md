@@ -131,6 +131,7 @@ subject column distinguishes the wearer from a third party who never installed t
 | spotlightIndex | `SpotlightIndexService` | derivedIndex | wearer | operatingSystemManaged | no | none | `SpotlightIndexService.purgeAll()` | `SpotlightIndexing.delete(ids:)` |
 | stagedExports | `StagedExportCoordinator` | exportArtifact | wearer | complete | yes | TTL sweep | `StagedExportCoordinator.revokeAll()` | none — an export is a lease, released rather than searched |
 | studyDecks | `StudyStore` | personalMemory | wearer | platformDefault | no | none | none — decks are the wearer's authored content, removed individually | n/a — no subject linkage |
+| tableChecks | `TableCheckStore` | documentCorpus | wearer | completeUntilFirstUserAuthentication | yes | removed with the manual it checks, and with its vault | `TableCheckStore.removeAll()` | `TableCheckStore.forget(documentHashes:vaultId:)` |
 | teleprompterScripts | `TeleprompterScriptStore` | personalMemory | wearer | platformDefault | no | none | none — scripts are the wearer's authored content, removed individually | n/a — no subject linkage |
 | toolDefinitionDigests | `ToolDefinitionDigestStore` | operationalAudit | none | completeUntilFirstUserAuthentication | yes | none | `ToolDefinitionDigestStore.forget(serverID:) per server` | n/a — no subject linkage |
 | turnTraces | `TurnTraceStore` | operationalAudit | wearer | completeUntilFirstUserAuthentication | yes | 14 days, at most 2000 turns | `TurnTraceStore.shared.removeAll()` | n/a — no subject linkage |

@@ -884,6 +884,7 @@ extension SettingKey {
         case .organizationForbidsVanStock: return "Van stock is off"
         case .organizationRequiresBlurBeforeOfficeSync: return "Faces must be blurred before a job recording goes to the office"
         case .organizationForbidsRecordingSyncOnCellular: return "Job recordings are never sent over mobile data"
+        case .organizationRequiresTableChecks: return "A table read from a picture gives no value until it is checked"
         case .privacyFilterEnabled: return "Bystander face blur is always on"
         case .remoteInvokeObserveEnabled: return "Remote status requests are off"
         case .remoteInvokeOutputEnabled: return "Remote speak-and-display requests are off"

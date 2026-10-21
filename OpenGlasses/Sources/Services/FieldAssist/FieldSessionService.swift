@@ -1852,6 +1852,33 @@ final class FieldSessionService: ObservableObject {
         return (manuals, learnings, manuals || learnings)
     }
 
+    /// The vault's pictured tables whose row passages must not be searched once its table checks
+    /// are applied (Plan JN P3). Empty, and nothing read, when the vault has no checks and the
+    /// organisation does not require them.
+    func withheldRowPassages(vaultId: String, documentStore: DocumentStore?) -> Set<String> {
+        guard let documentStore else { return [] }
+        let checks = VaultTableChecks.checks(vaultId: vaultId)
+        let require = Config.organizationRequiresTableChecks
+        var withheld = Set<String>()
+        if !checks.isEmpty || require {
+            let stored = documentStore.storedTables(namespace: DocumentStore.vaultNamespace(vaultId))
+            let applied = VaultTableChecks.applied(stored, checks: checks,
+                                                   hashes: VaultTableChecks.documentHashes(VaultImporter.documentLedger(for: vaultId)),
+                                                   requireChecked: require)
+            withheld = VaultTableChecks.rowPassagesWithheld(original: stored, applied: applied)
+        }
+        // A photographed manual's tables (Plan JN P4), with the phone's checks of them.
+        let captured = capturedManuals.eligible(for: activeSession, vaultID: vaultId)
+        let capturedChecks = captured.isEmpty ? [] : VaultTableChecks.capturedChecks(vaultId: vaultId)
+        if !captured.isEmpty, !capturedChecks.isEmpty || require {
+            let stored = captured.flatMap { documentStore.storedTables(namespace: CapturedManualCatalog.namespace($0)) }
+            let applied = VaultTableChecks.applied(stored, checks: capturedChecks,
+                                                   hashes: CapturedManualTables.checkHashes(captured), requireChecked: require)
+            withheld.formUnion(VaultTableChecks.rowPassagesWithheld(original: stored, applied: applied))
+        }
+        return withheld
+    }
+
     /// The one way a `VaultRetriever` is built (Plan FP P2): the per-turn block, `manual_lookup`
     /// and `equipment_lookup`'s manual fall-through all come here, so every route sees the same
     /// corpus with the same tags.
@@ -1885,8 +1912,15 @@ final class FieldSessionService: ObservableObject {
         let learningNamespaces = searched.filter { $0.source == .teamLearning }.map(\.namespace)
         let entries = learningEntries
 
+        // Row passages of a pictured table whose checks changed a value, disagree, or withhold it
+        // (Plan JN P3) still say what was read: they are not searched, and its values come from
+        // table_lookup, which applies the checks.
+        let withheldRows = withheldRowPassages(vaultId: vaultId, documentStore: documentStore)
         func tagged(_ passages: [DocumentStore.Passage], _ space: RetrievalNamespace) -> [DocumentStore.Passage] {
-            passages.map { raw in
+            passages.filter { raw in
+                raw.kind != .tableRow || (space.source != .manual && space.source != .capturedManual) || withheldRows.isEmpty
+                    || !withheldRows.contains(VaultTableChecks.withheldKey(documentId: raw.documentId, label: raw.figure ?? ""))
+            }.map { raw in
                 var passage = raw
                 passage.source = space.source
                 if space.source == .capturedManual, let page = raw.page {
@@ -1931,13 +1965,14 @@ final class FieldSessionService: ObservableObject {
                                                documentIds: ids(for: space)) ?? [], space)
             }
         }, tableSearch: { label in
-            // Tables are extracted from the vault's own manuals only (Plan JJ P0).
-            searched.filter { $0.source == .manual }.flatMap { space in
+            // Tables are extracted from the vault's own manuals (Plan JJ P0) and read from the
+            // pages of a photographed manual (Plan JN P4); never from a learning.
+            searched.filter { $0.source == .manual || $0.source == .capturedManual }.flatMap { space in
                 tagged(documentStore?.passages(table: label, namespace: space.namespace,
                                                documentIds: ids(for: space)) ?? [], space)
             }
         }, tableCatalogue: {
-            searched.filter { $0.source == .manual }.flatMap { space in
+            searched.filter { $0.source == .manual || $0.source == .capturedManual }.flatMap { space in
                 (documentStore?.storedTables(namespace: space.namespace, documentIds: ids(for: space)) ?? [])
                     .map { TableReference.Entry(label: $0.table.label, title: $0.table.title) }
             }
@@ -2133,6 +2168,9 @@ final class FieldSessionService: ObservableObject {
         var presentOnPhone: Bool
         /// The passages an answer cited on this document, marked on the page (Plan IN P1).
         var citedPassages: [CitedPassage] = []
+        /// Where a table a lookup read from a picture was recognised, outlined on the page, since a
+        /// picture has no text to mark (Plan JN P2).
+        var pictureAreas: [ManualTable.PictureArea] = []
 
         init(documentId: String, documentTitle: String, page: Int, figure: String? = nil,
              sourceFile: String? = nil, origin: PageOrigin = .requested,
@@ -2368,10 +2406,12 @@ final class FieldSessionService: ObservableObject {
     func manualPageSheet(for figure: StagedFigure) -> ManualPageSheetModel {
         if let m = capturedManuals.historical(citation: figure.documentTitle) {
             let pdf = try? capturedManuals.source?.file(m, name: "pages.pdf")
+            // A table read from a photographed page is outlined where it was read (Plan JN P4).
             return ManualPageSheetModel(citation: figure.citation, documentTitle: m.title,
                 citedPage: figure.page, manufacturerPDF: pdf, pdfPageCount: m.pageCount,
                 ledgerHash: m.pdfSHA256, documentIsPDF: true, photographed: true,
-                printedPages: Dictionary(uniqueKeysWithValues: m.pages.map { ($0.index, $0.printedPage) }))
+                printedPages: Dictionary(uniqueKeysWithValues: m.pages.map { ($0.index, $0.printedPage) }),
+                pictureAreas: figure.pictureAreas)
         }
         let pdf = manufacturerPDFURL(for: figure)
         let document = manifestDocument(for: figure)
@@ -2404,7 +2444,7 @@ final class FieldSessionService: ObservableObject {
             documentIsPDF: isPDF,
             citedFigure: figure.figure,photographed:reviewed != nil,reviewedPhotograph:reviewed != nil,
             printedPages:Dictionary(uniqueKeysWithValues:reviewed?.pages.map {($0.index,$0.printedPage)} ?? []),
-            citedPassages: figure.citedPassages)
+            citedPassages: figure.citedPassages, pictureAreas: figure.pictureAreas)
     }
 
     /// Audit: a technician opened a citation — from a chip under the answer, or by asking.
@@ -2844,13 +2884,16 @@ final class FieldSessionService: ObservableObject {
     /// Record a rule chain's read-back on the job as a reading (Plan JJ P2): "chain: <name>", the
     /// steps with their citations as the value, worked by the chain rather than said. It attaches
     /// where a spoken reading does — the task in progress, else the job.
+    /// A step that used a value read from a picture of a table is kept in `pictureMarks` as well
+    /// as in the read-back's text (Plan JN P2).
     @discardableResult
-    func recordChainReading(chain: String, readBack: String, at: Date = Date()) -> SpokenReading? {
+    func recordChainReading(chain: String, readBack: String, pictureMarks: [String] = [],
+                            at: Date = Date()) -> SpokenReading? {
         let readBack = readBack.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let session = activeSession, !readBack.isEmpty else { return nil }
         let reading = SpokenReading(quantity: "chain: \(chain)", value: readBack, unit: nil,
                                     unitScope: session.continuityScope, taskId: session.activeTask?.id, at: at,
-                                    method: SpokenReading.ruleChainMethod)
+                                    method: SpokenReading.ruleChainMethod, pictureMarks: pictureMarks)
         mutateSession { $0.spokenReadings.append(reading) }
         attachEvidence { evidence in
             if !evidence.readings.contains(reading.id) { evidence.readings.append(reading.id) }
@@ -2923,6 +2966,7 @@ final class FieldSessionService: ObservableObject {
         if let source = reading.refrigerantSource { payload["refrigerant_source"] = AnyCodable(source) }
         if let supersedes = reading.supersedes { payload["supersedes"] = AnyCodable(supersedes) }
         if let citation = reading.citation { payload["citation"] = AnyCodable(citation) }
+        if let marks = reading.pictureMarks { payload["picture_marks"] = AnyCodable(marks) }
         logger?.append(.init(timestamp: reading.at, kind: kind,
                              text: "\(reading.quantity) \(reading.valueWithUnit)", payload: payload))
     }

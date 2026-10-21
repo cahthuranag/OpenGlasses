@@ -230,6 +230,9 @@ summary lines, with the room, mic and hints noted — go in this plan's status l
 
 ## Owner decisions owed
 
+Items 1–5 were built as proposed on 2026-10-21 ("build it", no choice made); each stays open to
+reversal, and item 6 was added by the P3 build.
+
 1. Countdown default for *Check before sending* — 3 s proposed.
 2. Whether *Check before sending* is a per-conversation switch (proposed: a setting under
    Conversation, with the same name in the session card's quick actions) or a mode of its own.
@@ -238,6 +241,12 @@ summary lines, with the room, mic and hints noted — go in this plan's status l
    every tier, since the key is the wearer's and the switch is theirs.
 5. Whether the trade glossary ships inside the vault (the vault author's words) or inside the app
    (ours) — proposed: both, vault first, so a vendor's names win.
+6. The recogniser comparison runs a cloud engine only when it is the one chosen under
+   Recognizer (the same gate dictation uses), so one cloud engine runs per press; comparing
+   Deepgram against OpenAI means switching the picker and pressing Run again on the same kept
+   question. A comparison-only gate that keeps the key, HIPAA, pin and medical conditions but
+   skips the picker would run both in one press — proposed, not built, because it is egress the
+   wearer did not choose in Settings.
 
 ## Device pass owed
 

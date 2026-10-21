@@ -55,11 +55,26 @@ struct ChainLookup: Equatable {
     var page: ManualTable.Page { row.page }
     var notes: [ManualTable.Note] { TableLookup.notes(for: found) }
 
+    /// The cell came from a table read from a picture (Plan JN P2). It still feeds the chain
+    /// (owner decision 1), and every read-back of it says so.
+    var fromPicture: Bool { table.source.isRecognised }
+
+    /// "from a picture of Table Q7 (Invented spacings), page 31: check it against the page" — the
+    /// read-back's mark on a step that used a value read from a picture, nil for any other.
+    var pictureMark: String? {
+        guard fromPicture else { return nil }
+        let place = "from a picture of \(table.displayName), \(TableLookup.spokenPage(page))"
+        // A cell someone checked against the page is not handed back to be checked (Plan JN P3).
+        if let mark = cell.check?.agreedMark { return place + ", " + TableChecks.checkedNote(mark) }
+        return place + ": check it against the page"
+    }
+
     /// "QMX90 › three conductors (55)", the row printed after this one with its cell in the same
-    /// column; nil on the last row.
+    /// column; nil on the last row, and on a row whose key was read unclearly from a picture, whose
+    /// unclear cell is left out (Plan JN P1).
     var next: String? {
-        guard let next = TableLookup.nextRow(after: row, in: table) else { return nil }
-        let cell = columnIndex < next.cells.count ? next.cells[columnIndex].text : ""
+        guard let next = TableLookup.nextRow(after: row, in: table), !next.keyUncertain else { return nil }
+        let cell = columnIndex < next.cells.count && !next.cells[columnIndex].uncertain ? next.cells[columnIndex].text : ""
         return TableLookup.rowName(next) + (cell.isEmpty ? "" : " (\(cell))")
     }
 
@@ -82,6 +97,8 @@ struct ChainStop: Equatable, Error {
     /// The table page the step could not use, to show.
     let sourceLine: String?
     let citations: [Citation]
+    /// Where that table was read from a picture, for "show me the table" to outline (Plan JN P2).
+    var pictureAreas: [ManualTable.PictureArea] = []
 }
 
 /// What the technician is asked next.
@@ -119,6 +136,9 @@ struct ChainState: Equatable {
         /// The table page a lookup read, as a `Source:` line.
         let sourceLine: String?
         let citations: [Citation]
+        /// The step's lookup used a value read from a picture of a table (Plan JN P2): the mark it
+        /// is read back with, which the reading filed on the job keeps as well.
+        var pictureMark: String? = nil
     }
 
     init() {}
@@ -179,7 +199,8 @@ enum ChainRunner {
                     state.values[lookup.name] = value
                     state.entries.append(.init(stepIndex: index, line: step.line, text: lookupEntry(value),
                                                rules: step.citations, sourceLine: value.lookup?.sourceLine,
-                                               citations: value.lookup?.citations ?? []))
+                                               citations: value.lookup?.citations ?? [],
+                                               pictureMark: value.lookup?.pictureMark))
                 }
             case .calc(let name, let unit, let expression):
                 switch evaluate(expression, state: state) {
@@ -308,13 +329,15 @@ enum ChainRunner {
 
     private static func runLookup(_ lookup: ChainDefinition.Lookup, state: ChainState, tables: [TableLookup.Source],
                                   index: Int, line: Int) -> Result<ChainValue, ChainStop> {
-        func stop(_ reason: String, page source: TableLookup.Source? = nil) -> Result<ChainValue, ChainStop> {
-            let page = source.map { [$0.table.page] }
+        func stop(_ reason: String, page source: TableLookup.Source? = nil,
+                  pages: [ManualTable.Page]? = nil) -> Result<ChainValue, ChainStop> {
+            let page = source.map { pages ?? [$0.table.page] }
             return .failure(ChainStop(
                 reason: reason + " The chain stops here; it never goes on from a guessed cell.",
                 stepIndex: index, line: line,
                 sourceLine: source.flatMap { s in page.map { TableLookup.sourceLine(documentName: s.documentName, label: s.table.label, pages: $0) } },
-                citations: source.flatMap { s in page.map { TableLookup.citations(documentName: s.documentName, label: s.table.label, pages: $0) } } ?? []))
+                citations: source.flatMap { s in page.map { TableLookup.citations(documentName: s.documentName, label: s.table.label, pages: $0) } } ?? [],
+                pictureAreas: source?.table.pictureAreas ?? []))
         }
         let label = ChainDefinition.label(lookup.table)
         let column = lookup.column.map { render($0, state: state, precise: true) }
@@ -352,6 +375,13 @@ enum ChainRunner {
         switch outcome {
         case .noTables:
             return stop("No table could be read from the loaded manuals, so \(label) cannot be looked up.")
+        case .unclear(let source, let pages, let part):
+            // A cell read from a picture never stops a chain; one that could not be read clearly
+            // does, naming the page (Plan JN P2).
+            return stop("\(source.table.displayName) is printed on " + pages.map(TableLookup.spokenPage).joined(separator: ", ")
+                        + " of \(source.documentName) as a picture, and \(TableLookup.unclearReason(part)), so the "
+                        + "chain cannot read this step's cell. Show the page and work this step from the book.",
+                        page: source, pages: pages)
         case .notExtracted(let source):
             return stop("\(source.table.displayName) is printed on \(TableLookup.spokenPage(source.table.page)) of "
                         + "\(source.documentName), but its grid could not be read, so the chain cannot read its cell. "
@@ -422,6 +452,7 @@ enum ChainRunner {
                 (note.marker.map { "[\(TableExtractor.superscripted($0))] " } ?? "") + note.text
             }.joined(separator: " | ")
         }
+        if let mark = lookup.pictureMark { text += " — " + mark }
         return text
     }
 
@@ -555,6 +586,14 @@ enum ChainRunner {
         where !out.contains(line) {
             out.append(line)
         }
+        return out
+    }
+
+    /// The marks of the steps whose lookups used a value read from a picture (Plan JN P2), once
+    /// each, in order: what the reading filed on the job keeps beside the read-back.
+    static func pictureMarks(_ state: ChainState) -> [String] {
+        var out: [String] = []
+        for mark in state.entries.compactMap(\.pictureMark) where !out.contains(mark) { out.append(mark) }
         return out
     }
 

@@ -10,7 +10,7 @@
 <meta name="description" content="How to build a Field Assist vault from your own manuals, import it on the iPhone, test it and share it.">
 <!-- Converted from docs/field-assist-vault-guide.md by Scripts/build-vault-guide-page.py. That file
      is the source: change the guide there and run the script again, rather than editing this page.
-     source-sha256: e1a8c9f7e0a8513a08f3b2dc92afff118b25fa7e7edf464235cfe5a09f39f19c -->
+     source-sha256: a59f191fa535165f1cb158e0c9f26c74b32a7ae6e8d10cf988609ab0dc265ee2 -->
 <link rel="stylesheet" href="/assets/site.css">
 <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
 </head>
@@ -524,6 +524,78 @@ Unreviewed — kept on a phone on 2026-10-20, worked out on job 1042.
 Read from: band from Example Book, page 6, §QR-12; factor from Example Book, page 7, §QR-14; size from Example Book, page 8, §QR-17.
 </code></pre>
 <p>The lines under the heading are prose to <code>chains.md</code>, so the file imports as it is. <strong>A reviewed chain replaces the kept one:</strong> once the vault arrives with a chain of the same name in <code>chains.md</code>, the phone offers yours and no longer offers its kept copy.</p>
+<h3 id="a-table-printed-as-a-picture-checking-it-on-the-phone">A table printed as a picture: checking it on the phone</h3>
+<p>Some books print a table as a picture: the caption is text and the grid under it is not. The phone reads such a table from the picture at import, on the phone, and every value it gives from one says so: "read from a picture of the table on page 31 of …". A cell the picture did not show clearly is never given; the technician is offered the page instead. Until someone checks the table against the page, each value is also read back for the technician to check.</p>
+<p><strong>Checking a table.</strong> Open <strong>Settings › Custom Vaults</strong>. Under each manual, a table read from a picture shows <strong>Read from a picture: not checked</strong>, <strong>checked</strong> or <strong>checks disagree</strong>. Tap it to see the picture of the page above the grid the phone read. A cell it could not read clearly, or one checked to two different values, is marked with a triangle. Tap a cell and type what the page prints, or leave what was read and save it to confirm it. A row's name or a column's heading the phone was unsure of can be confirmed, not corrected: if the phone misread it, its values are not given and the page is shown instead. <strong>Mark table checked</strong> confirms every cell that was read clearly, and leaves the marked ones for you to look at one by one. Checking is for whoever can import vaults on that phone.</p>
+<p>A checked value is still said to be read from a picture, with who checked it and when, and is no longer handed back to the technician to check. A rule chain step that read a checked cell is marked the same way. Every check names who made it (the name in <strong>Settings › Field Assist</strong>, or the phone's name) and when.</p>
+<p><strong>Where the checks are kept.</strong> In a vault you imported on the phone, the checks are written into the vault's own <code>table-checks.json</code> beside <code>chains.md</code>. In a vault that came from your organisation's office, a link or a signed pack, the phone never writes into the vault: its checks are kept on the phone beside it and used together with the vault's own file.</p>
+<p><strong>Getting them to another phone.</strong> In the check view, <strong>Share checks</strong> puts the checks of that table's manual on the share sheet as <code>table-checks.json</code>. Put the file in the vault's folder (at the top, beside <code>manifest.json</code>) on the other phone and import the folder again: its tables are checked there too. No office is needed. An organisation with the office can write the same file into the vault it sends, and the phone reads it the same way.</p>
+<p><strong>When two checks disagree.</strong> A cell checked on one phone to one value and in a file to another is not given at all: it shows <strong>checks disagree</strong> with both values and who gave each, until someone checks it again on the phone to the right value, or the file is corrected. Neither value wins on its own.</p>
+<p><strong>A new copy of the book starts unchecked.</strong> Checks are kept against the PDF they were made on. Import a different PDF and its tables start unchecked; the old checks stay in the file and no longer apply. Removing a manual removes its checks. Removing the vault removes all of them.</p>
+<p><strong>Requiring checks.</strong> An organisation profile can require every table read from a picture to be checked before any of its values are given (<code>organizationRequiresTableChecks</code>). Until a table is checked, a lookup on it gives no value and says it has not been checked yet, and a chain stops on it. Without the profile, checking is optional.</p>
+<h4 id="table-checksjson"><code>table-checks.json</code></h4>
+<pre><code class="language-json">{
+  &quot;version&quot;: 1,
+  &quot;checks&quot;: [
+    {
+      &quot;document_sha256&quot;: &quot;&lt;the SHA-256 of the PDF, 64 lower-case hex characters&gt;&quot;,
+      &quot;table&quot;: &quot;Table Q7&quot;,
+      &quot;row&quot;: [&quot;QMX90&quot;],
+      &quot;column&quot;: [&quot;Spacing (mm)&quot;],
+      &quot;kind&quot;: &quot;corrected&quot;,
+      &quot;value&quot;: &quot;35&quot;,
+      &quot;checked_by&quot;: &quot;the vault manager&quot;,
+      &quot;checked_at&quot;: &quot;2026-10-21T09:30:00Z&quot;,
+      &quot;origin&quot;: &quot;phone&quot;
+    }
+  ]
+}
+</code></pre>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What it holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>version</code></td>
+<td><code>1</code>. A file with another version is not read.</td>
+</tr>
+<tr>
+<td><code>document_sha256</code></td>
+<td>The SHA-256 of the PDF the table was read from: the manual itself when it is a PDF, otherwise the original PDF it was made from. For a table read from a photographed manual's pages it is the SHA-256 of that capture revision's manifest (a retake starts unchecked), and those checks are kept on the phone, never in a vault's file.</td>
+</tr>
+<tr>
+<td><code>table</code></td>
+<td>The table's label as printed.</td>
+</tr>
+<tr>
+<td><code>row</code>, <code>column</code></td>
+<td>The row's and the column's headings as the phone read them, outermost first, as a list. A cell's check has both; a check of a row's name has <code>row</code> only; a check of a column's heading has <code>column</code> only. A cell is never named by its position.</td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td><code>confirmed</code> (the page prints what was read) or <code>corrected</code> (the page prints <code>value</code>). A row's name or a column's heading can only be <code>confirmed</code>.</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td>What the page prints in the cell, footnote mark included. Empty when the page prints nothing there.</td>
+</tr>
+<tr>
+<td><code>checked_by</code>, <code>checked_at</code></td>
+<td>Who checked, and when (ISO 8601).</td>
+</tr>
+<tr>
+<td><code>origin</code></td>
+<td><code>phone</code> for a check made on a phone; left out by anyone else.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>An entry that does not read is skipped with a warning, and the rest of the file is kept. A check for a PDF the vault does not hold is kept, with a warning, and applies if that PDF is loaded.</p>
 <h2 id="describing-a-site-system-optional">Describing a site system (optional)</h2>
 <p>A manual describes one unit on its own. Nobody writes down how the units at one site work together, and that is where the hard faults live: the heat pump shows a communication fault because the furnace board dropped off the bus, and a technician who reads only the heat pump's manual replaces the wrong board. A <strong>site document</strong> is the overlay that joins them: which units are at the site, how they are connected, which controller commands which, the systems outside the site they talk to, the settings someone set on site, and the faults your crew has seen come from the link between two of them.</p>
 <p>It is for any trade. The same shape describes a furnace, heat pump and communicating thermostat; a plant line with its PLC, drives and fieldbus; a comms room with its switches, UPS and management network; a building with its chiller, air handlers and building management system; a dairy shed or a solar installation. The kinds of relationship are a small shared vocabulary, and your trade's own words go in the free text beside them.</p>
@@ -804,6 +876,18 @@ Read from: band from Example Book, page 6, §QR-12; factor from Example Book, pa
 <tr>
 <td><code>chains.md: the chain '…' needs Table N, which no manual in this vault prints as a table the app could find</code></td>
 <td>Warning only. The chain is kept and stops at that step. Check the table's number as the book prints it, or load the book that prints it.</td>
+</tr>
+<tr>
+<td><code>table-checks.json entry N: …; skipped</code></td>
+<td>Warning only. That check does not read and is left out; the message says why. The rest of the file is kept.</td>
+</tr>
+<tr>
+<td><code>table-checks.json: N checks are for a PDF this vault does not hold (…)</code></td>
+<td>Warning only. The checks were made on another copy of the book. They are kept and apply if that copy is loaded.</td>
+</tr>
+<tr>
+<td><code>table-checks.json has version N; this app reads version 1, so it was not read</code></td>
+<td>Warning only. The file was written for another version of the app; no check in it is used.</td>
 </tr>
 <tr>
 <td><code>sites/…: unit '…' model '…' is not a model this vault has a section for</code></td>

@@ -239,11 +239,17 @@ final class RuleChainTool: NativeTool {
         guard !citations.isEmpty else { return }
         let founds = progress.state.values.values.compactMap(\.lookup).map(\.found)
         let rows = documentStore.map { TableLookupTool.rowPassages(for: founds, documentStore: $0) } ?? []
-        session.sourceCenter.noteTableLookup(rows: rows, citations: citations, sessionId: session.activeSession?.id)
+        // A table read from a picture has no row text to mark: its region is outlined (Plan JN P2).
+        let areas = founds.flatMap(\.source.table.pictureAreas) + (progress.state.stop?.pictureAreas ?? [])
+        session.sourceCenter.noteTableLookup(rows: rows, citations: citations, pictureAreas: areas,
+                                             sessionId: session.activeSession?.id)
     }
 
     private func present(_ progress: ChainProgress) -> String {
         var lines = progress.newEntries.map { "- " + Self.entryLine($0) }
+        if progress.newEntries.contains(where: { $0.pictureMark != nil }) {
+            lines.append(Self.pictureLine)
+        }
         switch progress.step {
         case .ask(let ask):
             lines.append(Self.askLine(ask))
@@ -267,6 +273,11 @@ final class RuleChainTool: NativeTool {
         }
         return lines.joined(separator: "\n")
     }
+
+    /// Said whenever a step used a value read from a picture of a table (Plan JN P2).
+    static let pictureLine = "A step marked \"from a picture\" used a value read from a picture of a table on the phone, "
+        + "not from the PDF's text: say so when you read that step back, and offer to show the page with show_source "
+        + "so the technician can check it."
 
     private static func askLine(_ ask: ChainAsk) -> String {
         var line = ""

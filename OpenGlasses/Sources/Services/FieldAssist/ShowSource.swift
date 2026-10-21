@@ -41,6 +41,9 @@ struct AnswerSourceMemory: Equatable {
     /// the table" marks the row the cell came from and not every row the turn retrieved. Kept
     /// after the answer, which repeats the same citation.
     private(set) var tableRows: [String: [Retrieved]] = [:]
+    /// The regions a table read from a picture was recognised from (Plan JN P2), by the citation a
+    /// lookup answered with: a picture has no text to mark, so the page outlines where it was read.
+    private(set) var tableAreas: [String: [ManualTable.PictureArea]] = [:]
 
     /// How many retrieved passages are kept. A few turns' worth: enough to mark what was cited a
     /// question or two ago, not a record of the job.
@@ -77,13 +80,24 @@ struct AnswerSourceMemory: Equatable {
 
     /// `table_lookup` answered (Plan JJ P1): its citations stand for the answer until one that
     /// cites replaces them, and the rows it read are what each citation marks.
-    mutating func noteTableLookup(rows: [Retrieved], citations: [Citation], sessionId: String?) {
+    mutating func noteTableLookup(rows: [Retrieved], citations: [Citation], pictureAreas: [ManualTable.PictureArea] = [],
+                                  sessionId: String?) {
         adopt(sessionId)
         guard !citations.isEmpty else { return }
         provisional = Self.unique(citations)
         for citation in citations {
             tableRows[Self.tableKey(citation)] = rows.filter { $0.page == citation.page }
+            var areas: [ManualTable.PictureArea] = []
+            for area in pictureAreas where area.physical == citation.page && !areas.contains(area) { areas.append(area) }
+            tableAreas[Self.tableKey(citation)] = areas
         }
+    }
+
+    /// The regions to outline for a table citation a lookup answered with, on its page (Plan JN P2).
+    /// Empty for a table read from the text layer, and for any other citation.
+    func pictureAreas(for citation: Citation) -> [ManualTable.PictureArea] {
+        guard citation.figure != nil else { return [] }
+        return tableAreas[Self.tableKey(citation)] ?? []
     }
 
     private static func tableKey(_ citation: Citation) -> String {
@@ -281,12 +295,18 @@ final class ShowSourceCenter: ObservableObject {
     }
 
     /// A table lookup answered (Plan JJ P1) with these citations, reading these row passages.
-    func noteTableLookup(rows: [AnswerSourceMemory.Retrieved], citations: [Citation], sessionId: String?) {
-        memory.noteTableLookup(rows: rows, citations: citations, sessionId: sessionId)
+    func noteTableLookup(rows: [AnswerSourceMemory.Retrieved], citations: [Citation],
+                         pictureAreas: [ManualTable.PictureArea] = [], sessionId: String?) {
+        memory.noteTableLookup(rows: rows, citations: citations, pictureAreas: pictureAreas, sessionId: sessionId)
     }
 
     func noteAnswer(_ text: String, sessionId: String?) {
         memory.noteAnswer(CitationLineParser.parse(text), sessionId: sessionId)
+    }
+
+    /// The regions to outline for a table citation a lookup read from a picture (Plan JN P2).
+    func pictureAreas(for citation: Citation) -> [ManualTable.PictureArea] {
+        memory.pictureAreas(for: citation)
     }
 
     /// The cited passages to mark for a citation opened in `documentId`, numbered as the answer

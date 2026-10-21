@@ -160,7 +160,8 @@ extension FieldSessionService {
                                               sources: run.sources, answers: run.answers))
         case .finished, .stopped:
             let name = run.chain.name + (run.origin.marking.map { " (\($0))" } ?? "")
-            reading = recordChainReading(chain: name, readBack: Self.markedReadBack(run))
+            reading = recordChainReading(chain: name, readBack: Self.markedReadBack(run),
+                                         pictureMarks: ChainRunner.pictureMarks(run.state))
             chainRun = nil
             persistChainRun(nil)
             // A proposed chain that ran to a result is what "keep that chain" keeps; one that

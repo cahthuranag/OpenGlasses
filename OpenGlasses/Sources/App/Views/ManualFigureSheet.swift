@@ -109,6 +109,11 @@ private struct ManualSourcePage: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if let pictured = model.pictureLine {
+                Text(verbatim: pictured)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             // Decision 3: a passage that could not be found is said, never guessed at.
             if let unmarked = marks?.unmarkedLine {
                 Text(verbatim: unmarked)
@@ -132,6 +137,7 @@ private struct ManualSourcePage: View {
             ManualPDFPageView(source: model.manufacturerPDF!,
                               pageIndex: model.paging.currentPage - 1,
                               passages: model.citedPassages,
+                              pictureAreas: model.pictureAreas,
                               onPageChanged: { controller.viewerMoved(to: $0 + 1) },
                               onMarked: { marks, text in
                                   pdfMarks = marks
@@ -288,13 +294,15 @@ private struct ManualPDFPageView: UIViewRepresentable {
     let pageIndex: Int
     /// Cited passages to mark wherever they are found (Plan IN P1).
     var passages: [CitedPassage] = []
+    /// Regions a table was read from a picture in, outlined on their pages (Plan JN P2).
+    var pictureAreas: [ManualTable.PictureArea] = []
     var onPageChanged: (Int) -> Void = { _ in }
     /// What marking the page on screen came to, and that page's text, for the header's line and
     /// for VoiceOver.
     var onMarked: (PassageMarks, String?) -> Void = { _, _ in }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onPageChanged: onPageChanged, passages: passages, onMarked: onMarked)
+        Coordinator(onPageChanged: onPageChanged, passages: passages, pictureAreas: pictureAreas, onMarked: onMarked)
     }
 
     func makeUIView(context: Context) -> PDFView {
@@ -314,6 +322,7 @@ private struct ManualPDFPageView: UIViewRepresentable {
         context.coordinator.onPageChanged = onPageChanged
         context.coordinator.onMarked = onMarked
         context.coordinator.passages = passages
+        context.coordinator.pictureAreas = pictureAreas
         if view.document?.documentURL != source {
             view.document = PDFDocument(url: source)
         }
@@ -332,15 +341,17 @@ private struct ManualPDFPageView: UIViewRepresentable {
     final class Coordinator: NSObject {
         var onPageChanged: (Int) -> Void
         var passages: [CitedPassage]
+        var pictureAreas: [ManualTable.PictureArea]
         var onMarked: (PassageMarks, String?) -> Void
         private weak var view: PDFView?
         /// The page last marked, so a redraw does not mark it again.
         private var markedPage: PDFPage?
 
         init(onPageChanged: @escaping (Int) -> Void, passages: [CitedPassage],
-             onMarked: @escaping (PassageMarks, String?) -> Void) {
+             pictureAreas: [ManualTable.PictureArea], onMarked: @escaping (PassageMarks, String?) -> Void) {
             self.onPageChanged = onPageChanged
             self.passages = passages
+            self.pictureAreas = pictureAreas
             self.onMarked = onMarked
         }
 
@@ -352,8 +363,16 @@ private struct ManualPDFPageView: UIViewRepresentable {
             if let previous = markedPage { PassageHighlighter.clear(previous) }
             markedPage = page
             let text = page.string
-            let marks = PassageMarks(passages: passages, page: document.index(for: page) + 1, pageText: text)
-            let first = marks.hasPassages ? PassageHighlighter.apply(marks, to: page) : nil
+            let number = document.index(for: page) + 1
+            let marks = PassageMarks(passages: passages, page: number, pageText: text)
+            var first = marks.hasPassages ? PassageHighlighter.apply(marks, to: page) : nil
+            // A table read from a picture has no text to mark: the region it was read from is
+            // outlined instead (Plan JN P2).
+            let areas = pictureAreas.filter { $0.physical == number }
+            if !areas.isEmpty {
+                if !marks.hasPassages { PassageHighlighter.clear(page) }
+                first = PassageHighlighter.outline(areas.map(\.rect), on: page) ?? first
+            }
             if scrolling, let first {
                 DispatchQueue.main.async { [weak view] in
                     view?.go(to: first.insetBy(dx: 0, dy: -40), on: page)

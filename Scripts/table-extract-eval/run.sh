@@ -13,8 +13,10 @@ case "$build" in
 esac
 mkdir -p "$build"
 
-swiftc -O -parse-as-library -o "$build/table-extract-eval" \
+swiftc -O -parse-as-library -target "$(uname -m)-apple-macos26.0" -o "$build/table-extract-eval" \
   "$here/main.swift" "$root/OpenGlassesTests/TableExtractEval/TableShapeReport.swift" \
-  "$src/Vault/TableExtractor.swift" "$src/Vault/PDFTableReader.swift"
+  "$src/Vault/TableExtractor.swift" "$src/Vault/TableChecks.swift" "$src/Vault/PDFTableReader.swift" \
+  "$src/Vault/RecognisedTable.swift" "$src/Vault/CellCertainty.swift" "$src/Vault/PictureRegion.swift" \
+  "$src/Vault/PictureTableReading.swift" "$src/Vault/VisionTableReader.swift"
 
 exec "$build/table-extract-eval" "$@"

@@ -384,6 +384,16 @@ struct VaultManagerView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(verbatim: row.accessibilityLabel))
 
+            // Tables read from a picture, each with where its check stands (Plan JN P3). Checking is
+            // for whoever may import vaults on this phone, the same gate as the import button.
+            if let entry, !row.isPendingRemoval {
+                PicturedTablesList(vaultId: manifest.id, documentId: entry.documentId,
+                                   documentHash: entry.tablesHash,
+                                   pdfURL: tablesPDF(manifest: manifest, file: row.file),
+                                   documentStore: appState.documentStore,
+                                   canCheck: ownVaultsGate.allowsImport)
+            }
+
             if let action = row.action {
                 let request = ManualRemovalRequest(vaultId: manifest.id, vaultName: manifest.name,
                                                    file: row.file, title: row.title,
@@ -408,6 +418,15 @@ struct VaultManagerView: View {
                 }
             }
         }
+    }
+
+    /// The PDF a manual's tables were read from, for the picture beside a table being checked.
+    private func tablesPDF(manifest: VaultManifest, file: String) -> URL? {
+        guard let document = manifest.documents.first(where: { $0.file == file }),
+              let root = VaultTableChecks.baselineRoot(manifest.id) else { return nil }
+        return VaultDocumentExtractor.tablesSource(
+            document: root.appendingPathComponent(manifest.documentRelativePath(document)),
+            original: manifest.documentSourceRelativePath(document).map { root.appendingPathComponent($0) })
     }
 
     /// Start the removal a confirmation was shown for.

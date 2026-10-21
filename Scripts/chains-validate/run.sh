@@ -13,11 +13,13 @@ case "$build" in
 esac
 mkdir -p "$build"
 
-swiftc -O -parse-as-library -o "$build/chains-validate" \
+swiftc -O -parse-as-library -target "$(uname -m)-apple-macos26.0" -o "$build/chains-validate" \
   "$here/main.swift" "$here/Stubs.swift" \
   "$root/OpenGlassesTests/ChainsValidate/ChainsValidateCore.swift" \
   "$src/Vault/ChainDefinition.swift" "$src/Vault/TableLookup.swift" "$src/Vault/TableReference.swift" \
-  "$src/Vault/TableExtractor.swift" "$src/Vault/PDFTableReader.swift" "$src/Vault/LexicalSupport.swift" \
+  "$src/Vault/TableExtractor.swift" "$src/Vault/TableChecks.swift" "$src/Vault/PDFTableReader.swift" \
+  "$src/Vault/RecognisedTable.swift" "$src/Vault/CellCertainty.swift" "$src/Vault/PictureRegion.swift" \
+  "$src/Vault/PictureTableReading.swift" "$src/Vault/VisionTableReader.swift" "$src/Vault/LexicalSupport.swift" \
   "$src/NativeTools/ArithmeticExpression.swift" "$src/NativeTools/UnitConversionTool.swift"
 
 exec "$build/chains-validate" "$@"

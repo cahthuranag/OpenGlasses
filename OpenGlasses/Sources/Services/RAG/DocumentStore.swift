@@ -630,12 +630,17 @@ final class DocumentStore: ObservableObject {
 
     /// IF's page-aware ingestion uses a deterministic source id. Prepare before the SQL
     /// transaction, recheck cancellation after each yield, then publish all rows atomically.
+    /// A photographed manual's tables (Plan JN P4) are published in the same transaction: their
+    /// row passages numbered after the pages' text, and the tables replacing any the document had,
+    /// so the text and its tables appear, and go, together.
     @discardableResult
     func ingestPages(documentId: String, name: String, pages: [(number: Int, text: String)],
-                     sourceType: String, namespace: String,
+                     sourceType: String, namespace: String, tables: [ManualTable] = [],
                      stillAllowed: () -> Bool) async -> Bool {
         guard let db, stillAllowed(), !Task.isCancelled else { return false }
-        let chunks = chunker.chunkPages(pages)
+        let textChunks = chunker.chunkPages(pages)
+        let rows = TableRowPassage.chunks(for: tables, startingAt: textChunks.count)
+        let chunks = textChunks + rows.chunks
         var vectors: [Data?] = []
         for chunk in chunks {
             guard stillAllowed(), !Task.isCancelled else { return false }
@@ -658,8 +663,10 @@ final class DocumentStore: ObservableObject {
                         location: chunk)
             guard sqlite3_errcode(db) == SQLITE_OK || sqlite3_errcode(db) == SQLITE_DONE else { return false }
         }
+        setTables(tables, documentId: documentId)
         guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { return false }
         committed = true
+        lastTableRowsDropped = rows.dropped
         refresh()
         return true
     }
@@ -1065,8 +1072,9 @@ final class DocumentStore: ObservableObject {
     /// is kept too, by its label and page (Plan JJ P1); a document whose text version 3 already
     /// located only has its tables read again. 5: tables are read again for the labels a letter
     /// belongs to, the pages a table carries on to with no caption, cells that are marks and groups
-    /// printed side by side (Plan JJ P5) — again the tables only.
-    nonisolated static let locationVersion = 5
+    /// printed side by side (Plan JJ P5) — again the tables only. 6: tables printed as pictures
+    /// are read from the page's recognition (Plan JN P1) — the tables only, the text untouched.
+    nonisolated static let locationVersion = 6
 
     /// The oldest location version among a document's own text chunks (its table rows left out),
     /// or nil when it has none. A never-located row counts as 0.

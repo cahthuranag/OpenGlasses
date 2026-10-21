@@ -16,11 +16,16 @@ enum TableRowPassage {
     /// `doc_tables`; only its passages stop, and the caller logs how many were left out.
     static let rowCap = 400
 
-    /// The sentence for one row, or nil for a row with no value in it.
+    /// The sentence for one row, or nil for a row with no value in it. Nothing read unclearly from
+    /// a picture is written into a passage (Plan JN P1), since a passage is searched and read out
+    /// as it stands: a row whose key is uncertain has none, and an uncertain cell, or a cell under
+    /// an uncertain heading, is left out of its row's.
     static func sentence(for row: ManualTable.Row, in table: ManualTable) -> String? {
+        guard !row.keyUncertain else { return nil }
         var values: [String] = []
-        for (index, cell) in row.cells.enumerated() where !cell.isEmpty {
+        for (index, cell) in row.cells.enumerated() where !cell.isEmpty && !cell.uncertain {
             let column = index < table.columns.count ? table.columns[index] : nil
+            if column?.uncertain == true { continue }
             let name = column.map(\.name).flatMap { $0.isEmpty ? nil : $0 } ?? "column \(index + 1)"
             values.append("\(cell.text) in \(name)")
         }

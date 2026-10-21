@@ -127,6 +127,8 @@ final class SubjectErasureCoordinator {
         var learningEntries: LearningEntryStore?
         var goals: GoalStore?
         var activity: ActivityStore?
+        /// The phone's checks of pictured tables (Plan JN P3).
+        var tableChecks: TableCheckStore?
 
         init() {}
     }
@@ -142,6 +144,8 @@ final class SubjectErasureCoordinator {
         // Derived indexes and projections.
         .spotlightIndex,
         .conversationRecallIndex,
+        // Before the ledger: a document's checks are found by the PDF hash its ledger entry holds.
+        .tableChecks,
         .vaultLedger,
         // Sources.
         .capturedManuals,
@@ -212,6 +216,8 @@ final class SubjectErasureCoordinator {
                 receipt = await eraseSpotlight()
             case .conversationRecallIndex:
                 receipt = eraseRecallIndex(subject)
+            case .tableChecks:
+                receipt = eraseTableChecks(subject)
             case .vaultLedger:
                 receipt = eraseVaultLedger(subject)
             case .capturedManuals:
@@ -441,6 +447,55 @@ final class SubjectErasureCoordinator {
         }
     }
 
+    /// A document's checks go with it, found by the hash of the PDF its tables were read from; a
+    /// person's go when a check names them as who checked. Both from the phone's own store and
+    /// from the vault's own file in each vault directory supplied.
+    private func eraseTableChecks(_ subject: ErasureSubject) -> ErasureReceipt {
+        guard let store = stores.tableChecks else {
+            return .unsupported(.tableChecks, "no table-check store was supplied")
+        }
+        switch subject {
+        case .document(let id):
+            // A photographed manual's tables are checked on this phone only, keyed by the captured
+            // revision's identity (Plan JN P4); the revision is read before its source goes.
+            if id.hasPrefix("captured:"), let captured = stores.capturedManuals {
+                guard let revisions = try? captured.manifests(currentOnly: false) else {
+                    return .unsupported(.tableChecks, "photographed manuals are unavailable; retry when protected data is available")
+                }
+                return .complete(.tableChecks, removed: CapturedManualTables.forgetChecks(
+                    of: revisions.filter { $0.documentID == id }, in: store))
+            }
+            guard !stores.vaultDirectories.isEmpty else {
+                return .unsupported(.tableChecks, "no vault directory was supplied, so the document's PDF cannot be named")
+            }
+            var removed = 0
+            for directory in stores.vaultDirectories {
+                let hashes = Set(VaultDocumentLedger.load(from: directory).entries
+                    .filter { $0.documentId == id }.map(\.tablesHash))
+                removed += VaultTableChecks.forget(documentHashes: hashes, vaultId: directory.lastPathComponent,
+                                                   overlay: directory, baseline: nil, home: .vaultFile,
+                                                   phoneStore: store)
+            }
+            return .complete(.tableChecks, removed: removed)
+        case .person(let name):
+            var removed = store.forget(checkedBy: name)
+            let wanted = TableChecks.normalised(name).lowercased()
+            for directory in stores.vaultDirectories where !wanted.isEmpty {
+                let url = directory.appendingPathComponent(TableChecksFile.fileName)
+                guard let data = try? Data(contentsOf: url) else { continue }
+                let checks = TableChecksFile.parse(data).checks
+                let kept = checks.filter { TableChecks.normalised($0.by).lowercased() != wanted }
+                guard kept.count != checks.count else { continue }
+                if (try? VaultTableChecks.writeVaultFile(kept, overlay: directory)) != nil {
+                    removed += checks.count - kept.count
+                }
+            }
+            return .complete(.tableChecks, removed: removed)
+        case .conversationThread, .memoryFact:
+            return .complete(.tableChecks)   // nothing in a check is keyed by either
+        }
+    }
+
     private func eraseVaultLedger(_ subject: ErasureSubject) -> ErasureReceipt {
         guard case .document(let id) = subject else {
             return .complete(.vaultLedger)   // nothing in the ledger is keyed by anything else
@@ -476,6 +531,12 @@ final class SubjectErasureCoordinator {
                 }
                 if matches {
                     stores.capturedManualDeliveryErasure?(metadata.captureID)
+                    // The checks of its tables go with the capture, every revision's (Plan JN P4).
+                    if let checks = stores.tableChecks {
+                        let revisions = ((try? captured.manifests(currentOnly: false)) ?? [])
+                            .filter { $0.captureID == metadata.captureID }
+                        CapturedManualTables.forgetChecks(of: revisions, in: checks)
+                    }
                     // Forget removes the entire capture, including retained revisions. Retract
                     // every derived revision even when source deletion needs an unlock/retry.
                     for document in stores.documents?.documents ?? []

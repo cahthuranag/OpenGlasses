@@ -53,6 +53,10 @@ enum VaultImporter {
     /// (a scan then fails import the way it did before scanned import existed). Tests inject a fake.
     nonisolated(unsafe) static var defaultScanReader: ScannedPageReader? = VisionScannedPageReader()
 
+    /// The reader for tables printed as pictures (Plan JN P1). Vision by default; nil reads tables
+    /// from the text layer only, as before. Tests inject a fake or nil.
+    nonisolated(unsafe) static var defaultPictureReader: PictureTableReader? = VisionTableReader()
+
     /// `Documents/Vaults/_registry/` — where user vault manifests live for registry discovery.
     static var registryDirectory: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -142,6 +146,16 @@ enum VaultImporter {
                 try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try fm.copyItem(at: sourceDir.appendingPathComponent(path), to: dest)
             }
+            // The checks of the vault's pictured tables (Plan JN P3), at the folder's root whether or
+            // not `files` lists them: bounded, and copied as they are — the validator has already
+            // said what in them does not read, and the reader skips it again.
+            let checksSource = sourceDir.appendingPathComponent(TableChecksFile.fileName)
+            let checksDest = staging.appendingPathComponent(TableChecksFile.fileName)
+            if !fm.fileExists(atPath: checksDest.path),
+               let size = (try? checksSource.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])),
+               size.isRegularFile == true, (size.fileSize ?? 0) <= TableChecksFile.maximumBytes {
+                try fm.copyItem(at: checksSource, to: checksDest)
+            }
             // Receipts are app-written trust records, never author-supplied payload files. Even
             // a folder that lists this reserved path cannot forge a signed Office review handoff.
             let suppliedReceipt = staging.appendingPathComponent(VaultReceipt.filename)
@@ -154,6 +168,11 @@ enum VaultImporter {
             // Migrate legacy installs: clear a pre-existing overlay only on first baseline creation.
             if isFirstBaseline {
                 try? fm.removeItem(at: overlay)
+            }
+            // Checks this phone already wrote into the vault keep their place beside the ones the
+            // folder brings, so a check that disagrees shows rather than one hiding the other.
+            if let data = try? Data(contentsOf: baseline.appendingPathComponent(TableChecksFile.fileName)) {
+                try? VaultTableChecks.mergeImported(TableChecksFile.parse(data).checks, overlay: overlay)
             }
 
             // Record the manifest for registry discovery.
@@ -191,6 +210,7 @@ enum VaultImporter {
                               baseline: URL? = nil,
                               ledgerDirectory: URL? = nil,
                               scanReader: ScannedPageReader? = defaultScanReader,
+                              pictureReader: PictureTableReader? = defaultPictureReader,
                               renderPolicy: ScanRenderPolicy = ScanRenderPolicy(),
                               progress: DocumentProgress? = nil,
                               recognitionProgress: RecognitionProgress? = nil,
@@ -204,7 +224,7 @@ enum VaultImporter {
             }
             return try await syncDocumentsLocked(
                 manifest: manifest, into: store, baseline: baseline, ledgerDirectory: ledgerDirectory,
-                scanReader: scanReader, renderPolicy: renderPolicy,
+                scanReader: scanReader, pictureReader: pictureReader, renderPolicy: renderPolicy,
                 progress: progress, recognitionProgress: recognitionProgress,capturedCatalog:capturedCatalog ?? .shared)
         }
     }
@@ -215,6 +235,7 @@ enum VaultImporter {
                                             baseline: URL?,
                                             ledgerDirectory: URL?,
                                             scanReader: ScannedPageReader?,
+                                            pictureReader: PictureTableReader?,
                                             renderPolicy: ScanRenderPolicy,
                                             progress: DocumentProgress?,
                                             recognitionProgress: RecognitionProgress?,capturedCatalog:CapturedManualCatalog) async throws -> VaultDocumentLedger {
@@ -331,8 +352,14 @@ enum VaultImporter {
             let original = document.flatMap { manifest.documentSourceRelativePath($0) }
                 .map { root.appendingPathComponent($0) }
             let tablesPDF = VaultDocumentExtractor.tablesSource(document: url, original: original)
+            // A table printed as a picture is read too (Plan JN P1), its regions checkpointed under
+            // the hash of the PDF they were drawn from, as recognised pages are.
+            let tablesHash = tablesPDF == url ? want.contentHash : (want.sourceContentHash ?? want.contentHash)
             let tables: PDFTableReader.Result? = await Task.detached(priority: .utility) {
-                tablesPDF.flatMap { VaultDocumentExtractor.tables(from: $0) }
+                guard let tablesPDF else { return nil }
+                return await VaultDocumentExtractor.tables(from: tablesPDF, pictures: pictureReader.map {
+                    PictureTableReading.context($0, checkpointIn: ledgerDir, contentHash: tablesHash)
+                })
             }.value
             let ref = await store.ingest(name: want.title, text: extracted.text,
                                          sourceType: sourceType, namespace: namespace,
@@ -347,6 +374,7 @@ enum VaultImporter {
                 throw ImportError.documentFailed("\(want.file) produced no chunks")
             }
             OCRCheckpoint.remove(from: ledgerDir, contentHash: want.contentHash)
+            PictureTableCheckpoint.remove(from: ledgerDir, contentHash: tablesHash)
             entries.append(.init(file: want.file, title: want.title, documentId: ref.id,
                                  contentHash: want.contentHash, chunkCount: ref.chunkCount,
                                  ocrPages: extracted.ocrPages, lowConfidencePages: extracted.lowConfidencePages,
@@ -445,6 +473,9 @@ enum VaultImporter {
             // Backstop: anything in the vault's namespace the ledger lost track of.
             documentStore.clear(namespace: DocumentStore.vaultNamespace(id))
             documentStore.clear(namespace: DocumentStore.learningNamespace(id))
+            // The checks this phone made of the vault's tables (Plan JN P3) go with it; those it
+            // wrote into the vault's own file go with the overlay below.
+            TableCheckStore().removeAll(vaultId: id)
             uninstall(id: id)
         }
     }

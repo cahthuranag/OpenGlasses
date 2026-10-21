@@ -34,6 +34,11 @@ struct SpokenReading: Codable, Equatable, Identifiable {
     /// that designation came from ("nameplate", "technician", "display") — never assumed.
     let refrigerant: String?
     let refrigerantSource: String?
+    /// For a rule chain's read-back: the steps that used a value read from a picture of a table,
+    /// each as its read-back marks it ("from a picture of Table 99, page 31: check it against the
+    /// page") (Plan JN P2). Nil otherwise, and not written, so a reading without one stores exactly
+    /// what it stored before.
+    let pictureMarks: [String]?
 
     /// The method recorded for a value read off a photographed instrument.
     static let instrumentReadingMethod = "instrument_reading"
@@ -41,7 +46,8 @@ struct SpokenReading: Codable, Equatable, Identifiable {
     init(id: String = UUID().uuidString, quantity: String, value: String, unit: String? = nil,
          unitScope: String = "initial", taskId: String? = nil, at: Date = Date(),
          supersedes: String? = nil, citation: String? = nil, method: String? = nil,
-         photoId: String? = nil, refrigerant: String? = nil, refrigerantSource: String? = nil) {
+         photoId: String? = nil, refrigerant: String? = nil, refrigerantSource: String? = nil,
+         pictureMarks: [String]? = nil) {
         self.id = id
         self.quantity = quantity
         self.value = value
@@ -55,6 +61,7 @@ struct SpokenReading: Codable, Equatable, Identifiable {
         self.photoId = photoId
         self.refrigerant = refrigerant
         self.refrigerantSource = refrigerantSource
+        self.pictureMarks = pictureMarks?.isEmpty == true ? nil : pictureMarks
     }
 
     enum CodingKeys: String, CodingKey {
@@ -63,6 +70,7 @@ struct SpokenReading: Codable, Equatable, Identifiable {
         case taskId = "task_id"
         case photoId = "photo_id"
         case refrigerantSource = "refrigerant_source"
+        case pictureMarks = "picture_marks"
     }
 
     /// The method recorded for a rule chain's read-back (Plan JJ P2): worked step by step from the
@@ -75,11 +83,14 @@ struct SpokenReading: Codable, Equatable, Identifiable {
     /// True when the value is a rule chain's read-back.
     var isRuleChain: Bool { method == Self.ruleChainMethod }
 
+    /// True when a chain's read-back used a value read from a picture of a table (Plan JN P2).
+    var readFromPicture: Bool { !(pictureMarks ?? []).isEmpty }
+
     /// The same reading filed under another unit scope (a job split across two units).
     func movedToScope(_ scope: String) -> SpokenReading {
         SpokenReading(id: id, quantity: quantity, value: value, unit: unit, unitScope: scope, taskId: taskId,
                       at: at, supersedes: supersedes, citation: citation, method: method, photoId: photoId,
-                      refrigerant: refrigerant, refrigerantSource: refrigerantSource)
+                      refrigerant: refrigerant, refrigerantSource: refrigerantSource, pictureMarks: pictureMarks)
     }
 
     /// "140 °F", "0.28 inWC", "140".

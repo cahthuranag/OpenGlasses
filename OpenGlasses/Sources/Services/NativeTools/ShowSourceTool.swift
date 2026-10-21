@@ -73,6 +73,7 @@ final class ShowSourceTool: NativeTool {
             staged.presentOnPhone = true
             staged.citedPassages = center.citedPassages(for: source.citation, documentId: staged.documentId,
                                                         store: documentStore, number: source.number)
+            staged.pictureAreas = center.pictureAreas(for: source.citation)
             session.logCitationOpened(source.citation, origin: .voice)
             pages.append(staged)
         }
@@ -93,11 +94,15 @@ final class ShowSourceTool: NativeTool {
         case unmarked
         /// No passage to mark — the page opens plain, and the reply says nothing about marking.
         case noPassage
+        /// A table read from a picture: the region it was read from is outlined (Plan JN P2).
+        case outlined
     }
 
     private func markState(of staged: FieldSessionService.StagedFigure,
                            session: FieldSessionService) -> MarkState {
-        guard !staged.citedPassages.isEmpty else { return .noPassage }
+        guard !staged.citedPassages.isEmpty else {
+            return staged.pictureAreas.contains { $0.physical == staged.page } ? .outlined : .noPassage
+        }
         var pageText: String?
         if let url = session.sourcePDFURL(for: staged), let document = PDFDocument(url: url),
            staged.page >= 1, staged.page <= document.pageCount {
@@ -131,6 +136,10 @@ final class ShowSourceTool: NativeTool {
                 : "The cited passage is highlighted on the page.")
         } else if marks.contains(.unmarked) {
             lines.append("The passage couldn't be marked on the page, so the page opens without a highlight.")
+        }
+        if marks.contains(.outlined) {
+            lines.append("The table on that page was read from a picture, so the region it was read from is outlined "
+                + "instead of a highlighted row: ask the technician to check the value against the page.")
         }
         if !unavailable.isEmpty {
             lines.append("Not opened, because the manual is no longer in this vault: " + unavailable.joined(separator: "; ") + ".")

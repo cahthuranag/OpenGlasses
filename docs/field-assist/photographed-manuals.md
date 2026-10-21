@@ -61,3 +61,4 @@ shipping limits until the results are recorded here:
 | Low disk and protected-data failures | No half bundle or index; retry/discard remains possible |
 | Signed Office test peer | Early capture plus later job report, exact retries and required-file receipts |
 | Office review and second phone (private FX23 dependency) | Named approval, scan warning, exact Ready supersession and retained old citations |
+| A ruled table on a binder page, under shop lighting | Look up a cell by voice: the "read from a picture" read-back names the photographed page, uncertain cells are refused, "show me the table" outlines it; record clear cells' least word confidence to set the photographed-table floor (provisionally the PDF's 0.5) |

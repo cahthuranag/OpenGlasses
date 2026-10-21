@@ -47,6 +47,9 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     case organizationRequiresBlurBeforeOfficeSync
     /// A recorded job is never sent over mobile data, whatever the technician would allow.
     case organizationForbidsRecordingSyncOnCellular
+    /// A table read from a picture of a manual gives no value until it has been checked against
+    /// its page (Plan JN P3). Checking is optional otherwise.
+    case organizationRequiresTableChecks
 
     // Capability ceilings — tighten only.
     case privacyFilterEnabled
@@ -117,6 +120,7 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
              .organizationForbidsCustomerTranscript, .organizationForbidsJobRecording,
              .organizationForbidsVanStock,
              .organizationRequiresBlurBeforeOfficeSync, .organizationForbidsRecordingSyncOnCellular,
+             .organizationRequiresTableChecks,
              .privacyFilterEnabled, .aiConnectionCueEnabled:
             return .ceiling(pinnedTo: true)
         case .remoteInvokeObserveEnabled, .remoteInvokeOutputEnabled, .remoteInvokeCaptureEnabled,

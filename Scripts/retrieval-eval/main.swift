@@ -37,6 +37,15 @@ struct RetrievalEvalMain {
         try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         let store = DocumentStore(directory: work, chunker: RetrievalEval.chunker(named: env["RETRIEVAL_EVAL_CHUNKER"]))
 
+        // Plan JN P1: tables printed as pictures read too, by the document grid or the words
+        // reading (off by default, as the text layer alone). Give each its own work folder.
+        let pictures: PictureTableReading.Context?
+        switch env["RETRIEVAL_EVAL_RECOGNISE"] ?? "off" {
+        case "off": pictures = nil
+        case "grid": pictures = .init(reader: VisionTableReader(), reading: .documentGrid)
+        case "words": pictures = .init(reader: VisionTableReader(), reading: .words)
+        default: fail("RETRIEVAL_EVAL_RECOGNISE is off, grid or words")
+        }
         for document in manifestDocuments(in: vault) {
             if store.document(named: document.title) != nil { continue }
             let file = document.url
@@ -56,10 +65,10 @@ struct RetrievalEvalMain {
             }
             guard let text = try? String(contentsOf: textFile, encoding: .utf8) else { fail("can't read document \(store.documents.count + 1)") }
             FileHandle.standardError.write("indexing document \(store.documents.count + 1)…\n".data(using: .utf8)!)
-            let tables = pdf.flatMap { url -> [ManualTable]? in
-                guard let doc = PDFDocument(url: url) else { return nil }
-                return PDFTableReader.read(document: doc, printedLabels: printedLabels(of: doc)).stored
-            } ?? []
+            var tables: [ManualTable] = []
+            if let pdf, let doc = PDFDocument(url: pdf) {
+                tables = await PDFTableReader.read(document: doc, printedLabels: printedLabels(of: doc), pictures: pictures).stored
+            }
             _ = await store.ingest(name: document.title, text: text, sourceType: "vault_document", tables: tables)
         }
 

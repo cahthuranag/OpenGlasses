@@ -11,6 +11,14 @@ final class CapturedManualCatalog {
     var accessAllowed: () -> Bool = { CapturedManualCatalog.mayUse }
     var scopeForVault: (String) -> CapturedManualContract.Scope = { CapturedManualCatalog.scope(vaultID: $0) }
     var source: CapturedManualStore? { injectedSource ?? CapturedManualStore.shared }
+    /// Reads the tables printed on the photographed pages (Plan JN P4): Vision on the phone by
+    /// default, the same switch a vault import reads pictured tables with; nil reads none.
+    var pictureReader: PictureTableReader? = VaultImporter.defaultPictureReader
+    /// The phone's own checks of tables, where a photographed manual's checks are kept (Plan JN P4).
+    var tableChecks = TableCheckStore()
+    /// One indexing per captured revision at a time: a relaunch's recovery and the capture's own job
+    /// share it rather than reading the same pages twice.
+    private var indexing: [String: Task<Void, Error>] = [:]
 
     static var mayUse: Bool {
         Config.fieldAssistActive && !Config.hipaaMode && Config.capturedManualsPolicy != "off"
@@ -45,6 +53,14 @@ final class CapturedManualCatalog {
         eligible(for:session,vaultID:vaultID).contains { $0.documentID == documentID }
     }
     func index(_ m: CapturedManualContract.Manifest) async throws {
+        let id = m.documentID
+        if let running = indexing[id] { return try await running.value }
+        let task = Task { try await self.indexNow(m) }
+        indexing[id] = task
+        defer { indexing[id] = nil }
+        try await task.value
+    }
+    private func indexNow(_ m: CapturedManualContract.Manifest) async throws {
         guard accessAllowed(), m.scope == scopeForVault(m.vaultID), let documents, let source else { return }
         let textURL = try source.file(m,name:"text.md")
         let pages = try await Task.detached(priority:.utility) {
@@ -64,11 +80,28 @@ final class CapturedManualCatalog {
             }
             return
         }
+        // The tables printed on the photographed pages (Plan JN P4): only pages whose recognised
+        // text names one, read off the main actor, redacted before anything keeps them, and never
+        // checkpointed. They are published with the text in one transaction, so a reading cut off
+        // by a relaunch is done again when recovery indexes the revision.
+        let tablePages = CapturedManualTables.pagesNamingTables(pages)
+        var tables: PDFTableReader.Result?
+        if let reader = pictureReader, !tablePages.isEmpty {
+            let labels = CapturedManualTables.printedLabels(m)
+            tables = try await Task.detached(priority:.utility) {
+                let pdf = try source.file(m,name:"pages.pdf")
+                return await CapturedManualTables.read(pdf:pdf,pages:tablePages,printedLabels:labels,
+                                                       context:CapturedManualTables.context(reader))
+            }.value
+            guard current() else {throw CapturedManualStore.Failure.cancelled}
+        }
         // Empty failed pages contribute no text, but remain in the source map/PDF for viewing.
         guard await documents.ingestPages(documentId:id,name:Self.citationName(m),pages:pages,
-            sourceType:"captured_manual_ocr",namespace:Self.namespace(m),stillAllowed:current) else {
+            sourceType:"captured_manual_ocr",namespace:Self.namespace(m),tables:tables?.stored ?? [],
+            stillAllowed:current) else {
             throw CapturedManualStore.Failure.cancelled
         }
+        if let tables { VaultDocumentExtractor.logTables(tables,rowsDropped:documents.lastTableRowsDropped) }
         // Remove previous live revisions without touching historical source PDFs/citations.
         for document in documents.documents where document.namespace.hasPrefix("captured:\(m.captureID):") && document.id != id {
             documents.forget(documentId:document.id)
@@ -124,11 +157,14 @@ final class CapturedManualCatalog {
         guard let source else { throw CapturedManualStore.Failure.unavailable }
         // The source lock serialises tombstoning with assembler writes; a failed delete remains
         // suppressed. Remove derived rows even if a protected source unlink has to be retried.
+        // Its tables' checks go with it (Plan JN P4), every revision's, read before the source is.
+        let revisions = ((try? source.manifests(currentOnly:false)) ?? []).filter { $0.captureID == id }
         defer {
             onForget?(id)
             for document in documents?.documents ?? [] where document.id.hasPrefix("captured:\(id):") {
                 documents?.forget(documentId:document.id)
             }
+            CapturedManualTables.forgetChecks(of:revisions,in:tableChecks)
         }
         try source.forget(id)
     }

@@ -216,6 +216,80 @@ enum TableLookupEval {
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
+    // MARK: - Tables read from a picture (Plan JN P1)
+
+    /// What the lookup gave where it matters most for a table read from a picture: a value given
+    /// as certain that the key says is wrong. Counts only.
+    struct PictureReport: Equatable {
+        /// Questions whose table resolved to one read from a picture.
+        var questions = 0
+        /// Of those, the lookups that gave a row (or two either side of a number).
+        var resolved = 0
+        /// The lookups that gave no value because what they needed was read unclearly.
+        var unclear = 0
+        /// Cells the key expects on those tables, and the ones given that match it.
+        var cellsExpected = 0
+        var cellsMatched = 0
+        /// A single cell given as certain that does not match the key: on a table read from a
+        /// picture, and on any table.
+        var wrongCertain = 0
+        var wrongCertainAnywhere = 0
+        /// Two rows either side of a number, given as certain, that are not the rows the key names.
+        var wrongBetween = 0
+    }
+
+    /// Each question looked up as `score` looks it up, counted for the tables read from a picture.
+    static func scorePictures(_ questions: [Question], sources: [TableLookup.Source]) -> PictureReport {
+        var report = PictureReport()
+        for question in questions {
+            let pool = question.edition.map { edition in
+                sources.filter { $0.documentName.localizedCaseInsensitiveContains(edition) }
+            }.flatMap { $0.isEmpty ? nil : $0 } ?? sources
+            guard case .success(let resolved) = TableLookup.resolveTable(.init(table: question.table, row: question.row), in: pool)
+            else { continue }
+            let pictured = resolved.source.table.source.isRecognised
+            let outcome = TableLookup.resolve(.init(table: question.table, row: question.row, column: question.column), in: pool)
+            if pictured {
+                report.questions += 1
+                if case .cell = question.expect { report.cellsExpected += 1 }
+                switch outcome {
+                case .found: report.resolved += 1
+                case .unclear: report.unclear += 1
+                default: break
+                }
+            }
+            switch (question.expect, outcome) {
+            case (.cell(let expected), .found(let found)):
+                guard found.between == nil, found.rows.count == 1, found.columns.count == 1,
+                      found.columns[0] < found.rows[0].cells.count else { break }
+                if same(found.rows[0].cells[found.columns[0]].text, expected) {
+                    if pictured { report.cellsMatched += 1 }
+                } else {
+                    report.wrongCertainAnywhere += 1
+                    if pictured { report.wrongCertain += 1 }
+                }
+            case (.between(let below, let above), .found(let found)) where pictured:
+                if found.between != nil, found.rows.count == 2,
+                   !(names(found.rows[0], found, below) && names(found.rows[1], found, above)) {
+                    report.wrongBetween += 1
+                }
+            default:
+                break
+            }
+        }
+        return report
+    }
+
+    /// The picture report as lines: counts only.
+    static func renderPictures(_ report: PictureReport, label: String) -> [String] {
+        [
+            "[CELLS] \(label) on tables read from a picture: questions=\(report.questions) resolved=\(report.resolved) "
+                + "unclear=\(report.unclear) cells expected=\(report.cellsExpected) matched=\(report.cellsMatched)",
+            "[CELLS]   wrong certain cells: on a pictured table=\(report.wrongCertain) anywhere=\(report.wrongCertainAnywhere) "
+                + "wrong between rows=\(report.wrongBetween)",
+        ]
+    }
+
     // MARK: - Output
 
     /// The report as lines: counts only, said to be against a key nobody has checked yet when it is.

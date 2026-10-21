@@ -17,8 +17,10 @@ final class TableLookupTool: NativeTool {
     the technician names the book. If the number asked for falls between two rows it returns both \
     rows and says so: say both, and never interpolate, round, or pick the next row yourself. If it \
     asks which row, column, table or book, ask the technician. Read the value out as printed with \
-    its row, column and page, and repeat the Source line. Requires an active session in a vault \
-    that has manuals.
+    its row, column and page, and repeat the Source line. A value from a table printed as a picture \
+    comes back marked "read from a picture of the table": say so, read it back for the technician \
+    to check, and offer the page, and a cell the picture did not show clearly is never given, so \
+    never supply it yourself. Requires an active session in a vault that has manuals.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
@@ -89,22 +91,46 @@ final class TableLookupTool: NativeTool {
         let vaultId = store.manifest.id
         let available = VaultManualRemoval.availabilityCheck(forVault: vaultId, documentStore: documentStore,
                                                              capturedCatalog: session.capturedManuals)
-        var stored = documentStore.storedTables(namespace: DocumentStore.vaultNamespace(vaultId))
-            .filter { available($0.documentId) }
+        // Checks of tables read from a picture applied (Plan JN P3): a corrected cell is given as
+        // checked, a disagreeing one is not given, and with the organisation's requirement an
+        // unchecked one gives nothing.
+        var stored = VaultTableChecks.applied(
+            documentStore.storedTables(namespace: DocumentStore.vaultNamespace(vaultId)).filter { available($0.documentId) },
+            checks: VaultTableChecks.checks(vaultId: vaultId),
+            hashes: VaultTableChecks.documentHashes(VaultImporter.documentLedger(for: vaultId)),
+            requireChecked: Config.organizationRequiresTableChecks)
         let editions = session.documentEditions(of: store)
         if !namedDocument,
            let titles = editions.searchableTitles(for: EditionRequest.parse(said, editions: editions),
                                                   among: Array(Set(stored.map(\.documentName)))) {
             stored = stored.filter { titles.contains($0.documentName) }
         }
+        // The tables of the photographed manuals this job may read (Plan JN P4), with the phone's
+        // checks of them, keyed by each captured revision's identity. Not an edition of a vault
+        // manual, so never filtered by one.
+        stored += capturedTables(vaultId: vaultId, session: session, documentStore: documentStore)
         return stored.map { TableLookup.Source(documentId: $0.documentId, documentName: $0.documentName, table: $0.table) }
     }
 
+    /// The stored tables of the photographed manuals eligible for the active job (Plan JN P4) — the
+    /// catalog's own scope, policy and supersession rules decide which — with their checks applied.
+    static func capturedTables(vaultId: String, session: FieldSessionService,
+                               documentStore: DocumentStore) -> [DocumentStore.StoredTable] {
+        let captured = session.capturedManuals.eligible(for: session.activeSession, vaultID: vaultId)
+        guard !captured.isEmpty else { return [] }
+        let stored = captured.flatMap { documentStore.storedTables(namespace: CapturedManualCatalog.namespace($0)) }
+        guard !stored.isEmpty else { return [] }
+        return VaultTableChecks.applied(stored, checks: VaultTableChecks.capturedChecks(vaultId: vaultId),
+                                        hashes: CapturedManualTables.checkHashes(captured),
+                                        requireChecked: Config.organizationRequiresTableChecks)
+    }
+
     /// The stored row passages of the rows a set of lookups read, for "show me the table" to mark —
-    /// a `rule_chain`'s lookups note theirs the same way (Plan JJ P2).
+    /// a `rule_chain`'s lookups note theirs the same way (Plan JJ P2). None for a table read from a
+    /// picture (Plan JN P2): its rows are not text on the page, so its region is outlined instead.
     static func rowPassages(for founds: [TableLookup.Found], documentStore: DocumentStore) -> [AnswerSourceMemory.Retrieved] {
         var out: [AnswerSourceMemory.Retrieved] = []
-        for found in founds {
+        for found in founds where !found.source.table.source.isRecognised {
             let table = found.source.table
             let wanted = Set(found.rows.compactMap { TableRowPassage.sentence(for: $0, in: table) })
             out += documentStore.passages(figure: table.label, documentIds: [found.source.documentId], limit: Int.max)
@@ -117,7 +143,8 @@ final class TableLookupTool: NativeTool {
         return out
     }
 
-    /// What "show me the table" opens next: the cited pages, each marking the row it was read from.
+    /// What "show me the table" opens next: the cited pages, each marking the row it was read from
+    /// or, for a table read from a picture, outlining where the picture was read (Plan JN P2).
     private func noteForShowing(_ outcome: TableLookup.Outcome, session: FieldSessionService,
                                 documentStore: DocumentStore) {
         let sessionId = session.activeSession?.id
@@ -128,12 +155,20 @@ final class TableLookupTool: NativeTool {
                 rows: Self.rowPassages(for: [found], documentStore: documentStore),
                 citations: TableLookup.citations(documentName: found.source.documentName, label: table.label,
                                                  pages: TableLookup.pages(of: found)),
+                pictureAreas: table.pictureAreas,
                 sessionId: sessionId)
         case .notExtracted(let source):
             session.sourceCenter.noteTableLookup(
                 rows: [],
                 citations: TableLookup.citations(documentName: source.documentName, label: source.table.label,
                                                  pages: [source.table.page]),
+                sessionId: sessionId)
+        case .unclear(let source, let pages, _):
+            session.sourceCenter.noteTableLookup(
+                rows: [],
+                citations: TableLookup.citations(documentName: source.documentName, label: source.table.label,
+                                                 pages: pages),
+                pictureAreas: source.table.pictureAreas,
                 sessionId: sessionId)
         case .ambiguous, .notFound, .noTables:
             break

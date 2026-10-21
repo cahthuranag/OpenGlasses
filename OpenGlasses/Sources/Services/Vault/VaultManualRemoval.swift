@@ -323,6 +323,22 @@ enum VaultManualRemoval {
             if let hash = removedEntry?.contentHash,
                !VaultDocumentLedger.load(from: overlay).entries.contains(where: { $0.contentHash == hash }) {
                 OCRCheckpoint.remove(from: overlay, contentHash: hash)
+                PictureTableCheckpoint.remove(from: overlay, contentHash: hash)
+            }
+            // A table checkpoint keyed by the original a text import was made from (Plan JN P1).
+            if let hash = removedEntry?.sourceContentHash,
+               !VaultDocumentLedger.load(from: overlay).entries.contains(where: { $0.sourceContentHash == hash }) {
+                PictureTableCheckpoint.remove(from: overlay, contentHash: hash)
+            }
+
+            // 5b. The checks of its pictured tables (Plan JN P3), under the same shared-reference
+            //     rule: keyed by the hash of the PDF its tables were read from. The phone's own
+            //     store always; the vault's file too when the vault is the phone's.
+            if let hash = removedEntry?.tablesHash,
+               !VaultDocumentLedger.load(from: overlay).entries.contains(where: { $0.tablesHash == hash }) {
+                VaultTableChecks.forget(documentHashes: [hash], vaultId: vaultId, overlay: overlay,
+                                        baseline: baseline, home: VaultTableChecks.home(vaultId: vaultId),
+                                        phoneStore: TableCheckStore())
             }
 
             // 6. Only now is the target genuinely gone, so only now does it stop being pending.

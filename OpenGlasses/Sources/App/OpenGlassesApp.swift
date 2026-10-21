@@ -2213,6 +2213,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // Plan IW P1: goals and the activity trail can name a person; forgetting them reaches both.
         erasure.goals = GoalStore.shared
         erasure.activity = ActivityStore.shared
+        erasure.tableChecks = TableCheckStore()
         return MemoryFactServices(
             stores: MemoryFactStores(semantic: userMemory, brain: BrainStore.shared,
                                      agentDocuments: agentDocs, objects: .shared,
@@ -2758,6 +2759,7 @@ class AppState: ObservableObject, AppStateProtocol {
             erasureStores.learningEntries = LearningEntryStore.shared
             erasureStores.goals = GoalStore.shared
             erasureStores.activity = ActivityStore.shared
+            erasureStores.tableChecks = TableCheckStore()
             replaySources.subjects = SubjectErasureCoordinator(stores: erasureStores)
             replaySources.keyring = .shared
             replaySources.classFiles = { erasable in
@@ -5399,6 +5401,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 staged.citedPassages = ShowSourceCenter.shared.citedPassages(for: citation,
                                                                              documentId: staged.documentId,
                                                                              store: documentStore)
+                staged.pictureAreas = ShowSourceCenter.shared.pictureAreas(for: citation)
                 presentManualFigure(staged)
             case .removed(let title):
                 errorMessage = VaultManualRemovalPresentation.removedCitationNotice(manual: title)

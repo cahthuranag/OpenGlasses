@@ -224,6 +224,14 @@ enum VaultDocumentExtractor {
         return PDFTableReader.read(document: document, printedLabels: labels)
     }
 
+    /// `tables(from:)` with the tables printed as pictures read too (Plan JN P1), through
+    /// `pictures`' reader; with none, exactly `tables(from:)`.
+    static func tables(from url: URL, pictures: PictureTableReading.Context?) async -> PDFTableReader.Result? {
+        guard url.pathExtension.lowercased() == "pdf", let document = PDFDocument(url: url) else { return nil }
+        let labels = Dictionary(pageLabels(of: document).map { ($0.page, $0.label) }, uniquingKeysWith: { first, _ in first })
+        return await PDFTableReader.read(document: document, printedLabels: labels, pictures: pictures)
+    }
+
     /// The PDF a vault document's tables are read from: the document itself when it is one, else
     /// the original it was extracted from when the vault carries that, else nil.
     static func tablesSource(document: URL, original: URL?) -> URL? {
@@ -243,8 +251,27 @@ enum VaultDocumentExtractor {
         }
         PrivacyLog.store(.ragDocuments, .indexed, count: result.extracted, total: result.captioned,
                          detail: PrivacyToken("tables"))
+        // Tables read from a picture (Plan JN P1): how many, how many were too unclear to keep, how
+        // many of their cells, row keys and headings were uncertain, and by which reading.
+        if result.recognised + result.unclearInPicture > 0 {
+            let reader = result.pictureReader?.rawValue ?? "none"
+            PrivacyLog.store(.ragDocuments, .indexed, count: result.recognised, total: result.recognised + result.unclearInPicture,
+                             detail: PrivacyToken("tables_from_picture_" + reader))
+            PrivacyLog.store(.ragDocuments, .dropped, count: result.unclearInPicture,
+                             detail: PrivacyToken("tables_unclear_in_picture"))
+            PrivacyLog.store(.ragDocuments, .indexed, count: result.uncertainCells, detail: PrivacyToken("table_cells_uncertain"))
+            PrivacyLog.store(.ragDocuments, .indexed, count: result.uncertainKeys, detail: PrivacyToken("table_keys_uncertain"))
+            PrivacyLog.store(.ragDocuments, .indexed, count: result.uncertainColumns,
+                             detail: PrivacyToken("table_headings_uncertain"))
+        }
         if rowsDropped > 0 {
             PrivacyLog.store(.ragDocuments, .dropped, count: rowsDropped, detail: PrivacyToken("table_rows_capped"))
+        }
+        // A recognised region whose checkpoint could not be saved (Plan JN P2): counted, never
+        // silent, so a locked-phone import that cannot resume is visible in the log.
+        if result.checkpointSaveFailures > 0 {
+            PrivacyLog.store(.ragDocuments, .saveFailed, count: result.checkpointSaveFailures,
+                             detail: PrivacyToken("table_checkpoint"))
         }
     }
 

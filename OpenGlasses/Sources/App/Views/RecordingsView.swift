@@ -21,9 +21,11 @@ struct RecordingsView: View {
                 )
             } else {
                 List {
-                    if !store.sessions.isEmpty {
+                    // One snapshot for the rows and the swipe (see `ListDeletion`).
+                    let sessions = store.sessions
+                    if !sessions.isEmpty {
                         Section {
-                            ForEach(store.sessions) { session in
+                            ForEach(sessions) { session in
                                 NavigationLink {
                                     RecordedSessionDetailView(
                                         session: session,
@@ -34,7 +36,7 @@ struct RecordingsView: View {
                                     RecordedSessionRow(session: session)
                                 }
                             }
-                            .onDelete(perform: deleteSessions)
+                            .onDelete { offsets in deleteSessions(at: offsets, in: sessions) }
                         }
                     }
                     if !videos.isEmpty {
@@ -98,10 +100,11 @@ struct RecordingsView: View {
         .accessibilityHint("Double-tap to start or stop recording.")
     }
 
-    private func deleteSessions(at offsets: IndexSet) {
-        let sessions = store.sessions
-        for offset in offsets {
-            let session = sessions[offset]
+    /// `sessions` is the snapshot the `ForEach` drew: a recording finishing or a transcript landing
+    /// can change the store between the draw and the swipe.
+    private func deleteSessions(at offsets: IndexSet, in sessions: [RecordedSession]) {
+        let swiped = Set(ListDeletion.ids(at: offsets, in: sessions))
+        for session in sessions where swiped.contains(session.id) {
             controller.cancelTranscription(for: session.id)
             store.delete(session)
         }

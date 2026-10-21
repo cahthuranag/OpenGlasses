@@ -8,15 +8,17 @@ struct ReadingStatsView: View {
     @ObservedObject private var store = ReadingSessionStore.shared
 
     var body: some View {
+        // One snapshot for the rows and the swipe (see `ListDeletion`).
+        let books = store.books()
         Group {
-            if store.books().isEmpty {
+            if books.isEmpty {
                 ContentUnavailableView(
                     "No Reading Yet",
                     systemImage: "book",
                     description: Text("Say “start reading” with a book's title and the glasses will follow along."))
             } else {
                 List {
-                    ForEach(store.books(), id: \.id) { book in
+                    ForEach(books, id: \.id) { book in
                         NavigationLink {
                             ReadingBookDetailView(bookID: book.id)
                         } label: {
@@ -24,8 +26,7 @@ struct ReadingStatsView: View {
                         }
                     }
                     .onDelete { offsets in
-                        let books = store.books()
-                        offsets.map { books[$0].id }.forEach { store.deleteBook(id: $0) }
+                        ListDeletion.ids(at: offsets, in: books, id: \.id).forEach { store.deleteBook(id: $0) }
                     }
                 }
                 .ogFormStyle()

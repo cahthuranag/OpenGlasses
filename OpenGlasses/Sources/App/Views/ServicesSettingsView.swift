@@ -99,6 +99,9 @@ struct ServicesSettingsView: View {
     }
     /// Drives the on-device SenseVoice model download + status row.
     @StateObject private var asrDownloader = ASRModelDownloader()
+    /// Plan JM P2: whether each cloud recogniser's key is saved, read when the screen appears.
+    @State private var deepgramDictationKeyPresent = false
+    @State private var openAIDictationKeyPresent = false
 
     // ElevenLabs account voices (loaded from the user's key)
     @State private var elevenLabsVoices: [TextToSpeechService.ElevenLabsVoice] = []
@@ -127,6 +130,26 @@ struct ServicesSettingsView: View {
     private var isDiarizationOn: Bool { Config.isDiarizationConfigured }
 
     private var isTranslationOn: Bool { Config.isTranslationCloudConfigured }
+
+    /// Plan JM P2: an organisation profile has pinned cloud dictation off. The cloud choices leave
+    /// the picker and a locked row says it is off.
+    private var isCloudDictationLocked: Bool {
+        !adminGate.presentation(.key(.cloudDictationEnabled)).isEditable
+    }
+
+    /// The picker's selection. A cloud choice the organisation has pinned off reads as Auto, which
+    /// is what the turn actually runs; the wearer's stored choice is left alone.
+    private var recognizerSelection: Binding<ASREnginePreference> {
+        Binding(
+            get: { isCloudDictationLocked && asrEnginePreference.isCloud ? .auto : asrEnginePreference },
+            set: { asrEnginePreference = $0 }
+        )
+    }
+
+    private func refreshDictationKeys() {
+        deepgramDictationKeyPresent = !Config.deepgramAPIKey.isEmpty
+        openAIDictationKeyPresent = !Config.dictationOpenAIKey.isEmpty
+    }
 
     var body: some View {
         Form {
@@ -362,13 +385,24 @@ struct ServicesSettingsView: View {
 
             // MARK: Speech Recognition (Additional Capabilities #8)
             Section {
-                Picker("Recognizer", selection: $asrEnginePreference) {
-                    ForEach(ASREnginePreference.allCases) { preference in
+                Picker("Recognizer", selection: recognizerSelection) {
+                    ForEach(ASREnginePreference.allCases.filter { !$0.isCloud || !isCloudDictationLocked }) { preference in
                         Text(preference.displayName).tag(preference)
                     }
                 }
                 .onChange(of: asrEnginePreference) { _, newValue in
                     Config.setASREnginePreference(newValue)
+                    // The cloud switch is the choice itself: on for a cloud recognizer, off otherwise.
+                    Config.cloudDictationEnabled = newValue.isCloud
+                }
+
+                if isCloudDictationLocked {
+                    HStack {
+                        Label("Cloud Dictation", systemImage: "lock")
+                        Spacer()
+                        Text("Off").foregroundStyle(.secondary)
+                    }
+                    ManagedSettingNote(key: .cloudDictationEnabled)
                 }
 
                 Picker("Language", selection: $speechLocale) {
@@ -417,9 +451,28 @@ struct ServicesSettingsView: View {
             } header: {
                 Text("Speech Recognition")
             } footer: {
-                Text("On-device \(ASRModelBundle.active.displayName) (~240 MB) transcribes offline and privately — no audio leaves the device. Until it's installed, recognition uses Apple Speech. Language is what the wake word listener and dictation listen in; the wake phrase is also matched as that language's recognizer would spell it.")
+                VStack(alignment: .leading, spacing: 4) {
+                    if asrEnginePreference.isCloud && !isCloudDictationLocked {
+                        Text(asrEnginePreference.detail)
+                        if hipaaMode {
+                            Text("HIPAA mode is on, so dictation stays on this phone and this choice isn't used.")
+                        }
+                        if asrEnginePreference == .deepgram, !deepgramDictationKeyPresent {
+                            Text("No Deepgram key is saved. Enter one under Diarization, below — diarization itself doesn't need to be on.")
+                        }
+                        if asrEnginePreference == .openAI, !openAIDictationKeyPresent {
+                            Text("No OpenAI API key is saved. Add an OpenAI model with an API key under \(SettingsCatalog.category(.intelligence).title) to use it.")
+                        }
+                    } else if isCloudDictationLocked {
+                        Text("Cloud dictation is off on this phone, so the audio of your questions stays on it.")
+                    }
+                    Text("On-device \(ASRModelBundle.active.displayName) (~240 MB) transcribes offline and privately — no audio leaves the device. Until it's installed, recognition uses Apple Speech. Language is what the wake word listener and dictation listen in; the wake phrase is also matched as that language's recognizer would spell it.")
+                }
             }
-            .onAppear { asrDownloader.refreshState() }
+            .onAppear {
+                asrDownloader.refreshState()
+                refreshDictationKeys()
+            }
 
             // MARK: Diarization
             Section {

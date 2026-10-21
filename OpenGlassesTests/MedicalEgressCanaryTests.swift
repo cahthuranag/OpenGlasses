@@ -111,6 +111,31 @@ final class MedicalEgressCanaryTests: XCTestCase {
         service.stop()
     }
 
+    /// Plan JM P2: the OpenAI dictation upload is built behind the medical guard as well as the
+    /// dictation gate. The gate is opened here so the medical rule is the subject.
+    func testOpenAIDictationUploadNeverReachesTheTransportInLocalOnly() async {
+        let service = OpenAIDictationService()
+        service.isAllowed = { true }
+        service.apiKey = { "canary-key" }
+        let samples = [Float](repeating: 0.01, count: 1_600)
+
+        setMode(.localOnly)
+        do {
+            _ = try await service.transcribe(samples: samples, sampleRate: 16_000, vocabulary: [])
+            XCTFail("the dictation upload was allowed in local-only mode")
+        } catch let refusal as MedicalEgressRefusal {
+            XCTAssertEqual(refusal.route, .openAIDictation)
+        } catch {
+            XCTFail("expected a MedicalEgressRefusal, got \(error)")
+        }
+        XCTAssertEqual(EgressCanaryURLProtocol.seen, [], "question audio reached the transport")
+
+        setMode(.off)
+        _ = try? await service.transcribe(samples: samples, sampleRate: 16_000, vocabulary: [])
+        XCTAssertEqual(EgressCanaryURLProtocol.seen, [OpenAIDictationRequest.url],
+                       "with the guard off the same drive must reach the transport")
+    }
+
     // MARK: - Text to speech
 
     func testElevenLabsSynthesisNeverReachesTheTransportInLocalOnly() async {

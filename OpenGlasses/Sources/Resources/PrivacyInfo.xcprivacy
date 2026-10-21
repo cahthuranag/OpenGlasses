@@ -18,7 +18,9 @@
   device. Avenkin has no developer-operated backend or user account: every
   transmission is user-directed app functionality sent under the user's own API
   keys to third-party providers (Anthropic / OpenAI / Gemini / Groq / OpenRouter
-  / etc. for LLM + vision, ElevenLabs / OpenAI / xAI for TTS, Perplexity / Tavily / Brave /
+  / etc. for LLM + vision, ElevenLabs / OpenAI / xAI for TTS, Deepgram for diarized
+  captions, Deepgram or OpenAI for dictation when the wearer chooses a cloud
+  recognizer (off by default), Perplexity / Tavily / Brave /
   SearXNG (user-configured) / DuckDuckGo for search, Apple WeatherKit for weather,
   adsb.fi for flights, RTMP / WebRTC for live streaming). There is no analytics, crash-reporting, or advertising SDK, and no
   cross-app/-developer tracking — so every type below is Linked=false,
@@ -54,7 +56,9 @@
 	<array/>
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
-		<!-- Voice/transcripts to LLMs, mic audio to Gemini Live / OpenAI Realtime, text to ElevenLabs / OpenAI / xAI TTS -->
+		<!-- Voice/transcripts to LLMs, mic audio to Gemini Live / OpenAI Realtime, text to ElevenLabs / OpenAI / xAI TTS,
+	     diarized-caption audio to Deepgram, and the audio of each question to Deepgram or OpenAI when the
+	     wearer chooses cloud dictation (off by default; never in HIPAA mode) -->
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeAudioData</string>

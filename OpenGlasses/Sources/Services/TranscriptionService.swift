@@ -98,16 +98,38 @@ class TranscriptionService: ObservableObject {
     var micRouteProvider: () -> MicRoute = { Config.micRoute }
     var voiceProcessingSwitchProvider: () -> Bool = { Config.dictationVoiceProcessingEnabled }
 
-    // MARK: - On-device ASR (Additional Capabilities #8)
+    // MARK: - Engines (Additional Capabilities #8, Plan JM P2)
     //
-    // SenseVoice is offline / whole-buffer (not streaming), so when it's the selected engine we
-    // accumulate the utterance's PCM and decode once on stop, instead of Apple's streaming partials.
-    // VAD-based endpointing + on-device partial results are the staged follow-up; for now the turn
-    // ends on the caller's `stopRecording()` (or the no-speech timeout).
+    // Three capture shapes (`ASREngine.CaptureShape`):
+    // - Apple streaming: buffers into `SFSpeechAudioBufferRecognitionRequest`, partials as spoken.
+    // - Whole utterance: the on-device SenseVoice engine and OpenAI's transcription endpoint. The
+    //   utterance's PCM is accumulated and decoded (or uploaded) once on stop. For SenseVoice the
+    //   turn ends on the caller's `stopRecording()` (or the no-speech timeout), as it always has;
+    //   for OpenAI an energy gate over the same buffers arms the silence window, because an upload
+    //   engine has no partials to arm it with.
+    // - Cloud streaming: Deepgram. Buffers stream to the socket; partials arrive as spoken and arm
+    //   the silence window exactly as Apple's do.
     private let onDeviceEngine = OnDeviceASREngine()
-    private var useOnDevice = false
+    /// The engine this turn runs on — chosen once, in `startRecording()`.
+    private(set) var activeEngine: ASREngine = .appleSpeech
+    /// The next engine in the chain, taken if a cloud engine cannot be set up for this turn.
+    private var fallbackEngine: ASREngine?
     private var accumulatedSamples: [Float] = []
     private var captureSampleRate: Double = 16000
+
+    /// Plan JM P2: whether the question's audio may go to a cloud recogniser right now. Read when
+    /// the engine is chosen, by the Deepgram service on every buffer, and before the OpenAI upload.
+    var cloudDictationGate: CloudDictationGate = .live
+    /// Whether the phone is online. A cloud preference offline behaves as `.auto` for the turn.
+    /// AppState installs the live reachability; the default keeps today's "assume online".
+    var onlineProvider: () -> Bool = { true }
+    private let deepgramDictation = DeepgramDictationService()
+    private let openAIDictation = OpenAIDictationService()
+    /// The vocabulary read at the start of this turn, for the cloud engines.
+    private var turnVocabulary: [String] = []
+    /// The energy gate that stands in for partials on the OpenAI upload path.
+    private var utteranceScorer = EnergySpeechScorer(gateConfiguration: .default)
+    private var utteranceGate = SpeechActivityGate(configuration: .default)
 
     init() {
         speechRecognizer = SFSpeechRecognizer(locale: SpeechLocaleResolver.current)
@@ -145,15 +167,12 @@ class TranscriptionService: ObservableObject {
         // that never became a turn must not leave one behind for the next one to inherit.
         TurnRecorder.forgetPendingUtterance()
 
-        // Pick the recognizer: on-device SenseVoice when selected + its model is ready, else Apple.
-        let availability = ASREngineSelector.Availability(
-            appleSpeechReady: speechRecognizer?.isAvailable ?? false,
-            onDeviceReady: onDeviceEngine.isReady,
-            online: true
-        )
-        useOnDevice = ASREngineSelector.select(preference: Config.asrEnginePreference,
-                                               availability: availability) == .onDevice
+        // Pick the recognizer: a chosen cloud engine when it is allowed and we are online, else
+        // on-device SenseVoice when selected + its model is ready, else Apple.
+        chooseEngine()
         accumulatedSamples.removeAll(keepingCapacity: true)
+        utteranceScorer.reset()
+        utteranceGate = SpeechActivityGate(configuration: .default)
 
         // BJ PR2 follow-up: the fallback engine start may activate the shared session off the main
         // thread now, so setup is async. Keep `startRecording()` synchronous (its ~8 callers are
@@ -161,7 +180,17 @@ class TranscriptionService: ObservableObject {
         isRecording = true
         Task { @MainActor in
             do {
-                try await setupAndStartRecording()
+                do {
+                    try await setupAndStartRecording()
+                } catch where activeEngine.isCloud {
+                    // A cloud engine that cannot start this turn hands it to the next engine in
+                    // the chain, once — the wearer is mid-question, not choosing a recognizer.
+                    PrivacyLog.speech(.dictation, .cloudFallback, detail: PrivacyToken("setupFailed"),
+                                      error: SafeErrorSummary(error))
+                    cleanupEngine()
+                    activeEngine = fallbackEngine ?? .appleSpeech
+                    try await setupAndStartRecording()
+                }
                 PrivacyLog.speech(.dictation, .started)
                 startNoSpeechTimer()
             } catch {
@@ -169,6 +198,34 @@ class TranscriptionService: ObservableObject {
                 errorMessage = error.localizedDescription
                 isRecording = false
             }
+        }
+    }
+
+    /// Choose this turn's engine from the selector, with the live cloud gate and reachability.
+    private func chooseEngine() {
+        let gate = cloudDictationGate
+        let preference = gate.preference()
+        let hipaa = gate.hipaa()
+        let online = onlineProvider()
+        let availability = ASREngineSelector.Availability(
+            appleSpeechReady: speechRecognizer?.isAvailable ?? false,
+            onDeviceReady: onDeviceEngine.isReady,
+            online: online,
+            deepgramReady: gate.isConfigured(provider: .deepgram),
+            openAIReady: gate.isConfigured(provider: .openAI)
+        )
+        let chain = ASREngineSelector.chain(preference: preference, availability: availability, hipaa: hipaa)
+        activeEngine = chain.first ?? .appleSpeech
+        fallbackEngine = chain.dropFirst().first
+        turnVocabulary = activeEngine.isCloud ? vocabularyProvider() : []
+
+        // A chosen cloud engine that did not take the turn says why, as a token — never silently.
+        if let cloud = preference.cloudEngine, activeEngine != cloud {
+            let reason: String
+            if hipaa { reason = "hipaa" }
+            else if !availability.isReady(cloud) { reason = "notConfigured" }
+            else { reason = "offline" }
+            PrivacyLog.speech(.dictation, .cloudFallback, detail: PrivacyToken(reason))
         }
     }
 
@@ -187,7 +244,7 @@ class TranscriptionService: ObservableObject {
         // `perceivedLatency` show the floor being removed instead of absorbing it.
         TurnRecorder.noteSpeechEnd(at: acousticSpeechEndedAt ?? lastSpeechObservedAt ?? Date())
         if let reason = endOfTurnReason { TurnRecorder.noteEndOfTurnReason(reason) }
-        TurnRecorder.noteTranscriber(useOnDevice ? .onDevice : .appleSpeech)
+        TurnRecorder.noteTranscriber(activeEngine)
         lastSpeechObservedAt = nil
         acousticSpeechEndedAt = nil
         speechActivityDetector?.end()
@@ -197,9 +254,15 @@ class TranscriptionService: ObservableObject {
         noSpeechTimer?.invalidate()
         noSpeechTimer = nil
 
-        if useOnDevice {
-            finishOnDeviceRecording()
+        switch activeEngine.captureShape {
+        case .wholeUtterance:
+            finishWholeUtteranceRecording()
             return
+        case .cloudStreaming:
+            finishCloudStreamingRecording()
+            return
+        case .appleStreaming:
+            break
         }
 
         recognitionTask?.finish()
@@ -232,9 +295,15 @@ class TranscriptionService: ObservableObject {
     }
 
     private func setupAndStartRecording() async throws {
-        if useOnDevice {
-            try await setupOnDeviceCapture()
+        switch activeEngine.captureShape {
+        case .wholeUtterance:
+            try await setupWholeUtteranceCapture()
             return
+        case .cloudStreaming:
+            try await setupCloudStreamingCapture()
+            return
+        case .appleStreaming:
+            break
         }
 
         recognitionTask?.cancel()
@@ -360,70 +429,214 @@ class TranscriptionService: ObservableObject {
         }
     }
 
-    // MARK: - On-device capture (SenseVoice)
+    // MARK: - Capture for the whole-utterance and cloud-streaming engines
 
-    /// Accumulate the utterance's mono float samples (the recognizer resamples to 16 kHz on decode).
-    private func setupOnDeviceCapture() async throws {
-        let accumulate: @Sendable (AVAudioPCMBuffer) -> Void = { [weak self] buffer in
-            guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else { return }
-            let samples = Array(UnsafeBufferPointer(start: channels[0], count: Int(buffer.frameLength)))
-            let rate = buffer.format.sampleRate
-            Task { @MainActor [weak self] in
-                guard let self, self.isRecording else { return }
-                self.captureSampleRate = rate
-                self.accumulatedSamples.append(contentsOf: samples)
-                if !self.didReceiveSpeech {
-                    self.didReceiveSpeech = true
-                    self.noSpeechTimer?.invalidate()
-                    self.noSpeechTimer = nil
-                }
-            }
-        }
-
+    /// Hand every captured buffer to `forward`: through the wake-word engine's tap when it is
+    /// running, else on a dedicated engine of our own (foreground only). One tap either way.
+    private func installCapture(channel: PrivacyLog.SpeechChannel,
+                                forward: @escaping @Sendable (AVAudioPCMBuffer) -> Void) async throws {
         if let provider = sharedAudioEngineProvider, provider.getAudioEngine() != nil {
-            PrivacyLog.speech(.onDeviceASR, .engineShared)
-            provider.setAudioBufferForwarder { buffer in accumulate(buffer) }
+            PrivacyLog.speech(channel, .engineShared)
+            provider.setAudioBufferForwarder { buffer in forward(buffer) }
         } else {
-            PrivacyLog.speech(.onDeviceASR, .engineDedicated)
+            PrivacyLog.speech(channel, .engineDedicated)
             // BJ PR2 follow-up: activate off-main before the engine starts — and before the input
             // format is read (see setupAndStartRecording).
             await AudioSessionCoordinator.shared.ensureActiveOffMain()
             let audioEngine = AVAudioEngine()
             let inputNode = audioEngine.inputNode
             let format = inputNode.outputFormat(forBus: 0)
-            try Self.requireUsableTapFormat(format, channel: .onDeviceASR)
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in accumulate(buffer) }
+            try Self.requireUsableTapFormat(format, channel: channel)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in forward(buffer) }
             audioEngine.prepare()
             try audioEngine.start()
             self.fallbackAudioEngine = audioEngine
         }
     }
 
-    /// On stop, decode the accumulated buffer with SenseVoice and report the result (whole-utterance —
-    /// no streaming partials).
-    private func finishOnDeviceRecording() {
+    /// Accumulate the utterance's mono float samples (SenseVoice resamples to 16 kHz on decode; the
+    /// OpenAI upload resamples to 16 kHz before encoding).
+    private func setupWholeUtteranceCapture() async throws {
+        let engine = activeEngine
+        let accumulate: @Sendable (AVAudioPCMBuffer) -> Void = { [weak self] buffer in
+            guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else { return }
+            let samples = Array(UnsafeBufferPointer(start: channels[0], count: Int(buffer.frameLength)))
+            let rate = buffer.format.sampleRate
+            Task { @MainActor [weak self] in
+                guard let self, self.isRecording, self.activeEngine == engine else { return }
+                self.captureSampleRate = rate
+                self.accumulatedSamples.append(contentsOf: samples)
+                if engine == .onDevice {
+                    // Unchanged: the first buffer counts as speech for the on-device engine.
+                    if !self.didReceiveSpeech {
+                        self.didReceiveSpeech = true
+                        self.noSpeechTimer?.invalidate()
+                        self.noSpeechTimer = nil
+                    }
+                } else {
+                    self.observeUtteranceEnergy(samples, sampleRate: rate)
+                }
+            }
+        }
+        try await installCapture(channel: engine == .onDevice ? .onDeviceASR : .cloudDictation,
+                                 forward: accumulate)
+    }
+
+    /// The upload engine's stand-in for partials: while the energy gate hears speech, the silence
+    /// window is re-armed, so the turn ends that window after the wearer stops — and a turn in which
+    /// nothing was ever heard ends on the no-speech timeout without uploading anything.
+    private func observeUtteranceEnergy(_ samples: [Float], sampleRate: Double) {
+        let score = utteranceScorer.score(samples, sampleRate: sampleRate)
+        _ = utteranceGate.observe(score: score, at: Date())
+        guard utteranceGate.isSpeaking else { return }
+        if !didReceiveSpeech {
+            didReceiveSpeech = true
+            noSpeechTimer?.invalidate()
+            noSpeechTimer = nil
+        }
+        resetSilenceTimer()
+    }
+
+    /// Deepgram: stream each buffer, as linear16 mono at its own rate, to the dictation socket.
+    /// The service re-reads the gate on every buffer.
+    private func setupCloudStreamingCapture() async throws {
+        let service = deepgramDictation
+        let gate = cloudDictationGate
+        service.isAllowed = { gate.isConfigured(provider: .deepgram) }
+        service.onTranscript = { [weak self] text in self?.handleCloudTranscript(text) }
+        service.onStopped = { [weak self] reason in self?.handleCloudStreamStopped(reason) }
+        guard service.start(vocabulary: turnVocabulary) else {
+            throw TranscriptionError.setupFailed("Cloud dictation unavailable")
+        }
+        if !turnVocabulary.isEmpty {
+            PrivacyLog.speech(.cloudDictation, .vocabularyApplied, count: turnVocabulary.count)
+        }
+        do {
+            try await installCapture(channel: .cloudDictation) { buffer in
+                let data = PCMConverter.linear16Mono(from: buffer)
+                let rate = Int(buffer.format.sampleRate.rounded())
+                Task { @MainActor in service.sendAudio(data, sampleRate: rate) }
+            }
+        } catch {
+            service.cancel()
+            throw error
+        }
+    }
+
+    /// A Deepgram partial or final: the live transcript, and a re-armed silence window.
+    private func handleCloudTranscript(_ text: String) {
+        guard isRecording, activeEngine == .deepgram else { return }
+        currentTranscription = text
+        if !didReceiveSpeech {
+            didReceiveSpeech = true
+            noSpeechTimer?.invalidate()
+            noSpeechTimer = nil
+        }
+        resetSilenceTimer()
+    }
+
+    /// The Deepgram stream stopped mid-turn: the gate closed (HIPAA, the choice revoked, a pin) or
+    /// the socket failed. The audio has already stopped leaving; end the turn with what was heard,
+    /// which is the ordinary no-speech path when nothing was.
+    private func handleCloudStreamStopped(_ reason: String) {
+        guard isRecording, activeEngine == .deepgram else { return }
+        PrivacyLog.speech(.dictation, .cloudFallback, detail: PrivacyToken(reason))
+        cleanupEngine()
+        stopRecording()
+    }
+
+    /// On stop, close the Deepgram stream, wait (bounded) for its last final, and deliver through
+    /// the same `onTranscriptionComplete` every engine uses.
+    private func finishCloudStreamingRecording() {
+        cleanupEngine()
+        isRecording = false
+        let service = deepgramDictation
+        let shown = currentTranscription
+        Task { @MainActor in
+            let heard = await service.finish()
+            deliverTranscript(heard.isEmpty ? shown : heard, channel: .cloudDictation)
+        }
+    }
+
+    /// On stop, decode the accumulated buffer with SenseVoice — or upload it to OpenAI — and report
+    /// the result (whole-utterance — no streaming partials).
+    private func finishWholeUtteranceRecording() {
         cleanupEngine()
         isRecording = false
         let samples = accumulatedSamples
         let rate = captureSampleRate
+        let engine = activeEngine
+        let heardSpeech = didReceiveSpeech
+        let vocabulary = turnVocabulary
         accumulatedSamples.removeAll(keepingCapacity: false)
 
         Task { @MainActor in
-            do {
-                let text = try await onDeviceEngine.transcribe(samples: samples, sampleRate: rate)
-                if text.isEmpty {
-                    PrivacyLog.speech(.onDeviceASR, .noSpeechDetected)
-                    onSilenceTimeout?()
-                } else {
-                    PrivacyLog.speech(.onDeviceASR, .transcriptDelivered, characters: text.count)
-                    currentTranscription = ""
-                    onTranscriptionComplete?(text)
-                }
-            } catch {
-                PrivacyLog.speech(.onDeviceASR, .recognitionFailed, error: SafeErrorSummary(error))
+            switch engine {
+            case .openAI:
+                await finishOpenAIUtterance(samples: samples, sampleRate: rate,
+                                            heardSpeech: heardSpeech, vocabulary: vocabulary)
+            default:
+                await decodeOnDevice(samples: samples, sampleRate: rate)
+            }
+        }
+    }
+
+    /// One upload, timed into the log. On failure the same samples go to the on-device engine when
+    /// it is ready; otherwise the turn ends on the ordinary no-speech path. Never retried.
+    private func finishOpenAIUtterance(samples: [Float], sampleRate: Double, heardSpeech: Bool,
+                                       vocabulary: [String]) async {
+        guard heardSpeech else {
+            // Nothing was ever heard: nothing is uploaded.
+            PrivacyLog.speech(.cloudDictation, .noSpeechDetected, detail: PrivacyToken("openAI"))
+            onSilenceTimeout?()
+            return
+        }
+        let started = Date()
+        do {
+            let text = try await openAIDictation.transcribe(samples: samples, sampleRate: sampleRate,
+                                                            vocabulary: vocabulary)
+            // The upload is the gap between speech end and commit in the turn ledger; the log
+            // carries it on its own as well.
+            PrivacyLog.speech(.cloudDictation, .analysisCompleted,
+                              seconds: Date().timeIntervalSince(started), detail: PrivacyToken("openAI"))
+            deliverTranscript(text, channel: .cloudDictation)
+        } catch {
+            let token = (error as? OpenAIDictationError)?.token
+                ?? ((error is MedicalEgressRefusal) ? "medicalLocalOnly" : "transportFailed")
+            PrivacyLog.speech(.cloudDictation, .recognitionFailed,
+                              seconds: Date().timeIntervalSince(started), detail: PrivacyToken(token))
+            if onDeviceEngine.isReady {
+                PrivacyLog.speech(.dictation, .cloudFallback, detail: PrivacyToken("onDevice"))
+                await decodeOnDevice(samples: samples, sampleRate: sampleRate)
+            } else {
                 errorMessage = error.localizedDescription
                 onSilenceTimeout?()
             }
+        }
+    }
+
+    /// The SenseVoice decode of a whole utterance.
+    private func decodeOnDevice(samples: [Float], sampleRate: Double) async {
+        do {
+            let text = try await onDeviceEngine.transcribe(samples: samples, sampleRate: sampleRate)
+            deliverTranscript(text, channel: .onDeviceASR)
+        } catch {
+            PrivacyLog.speech(.onDeviceASR, .recognitionFailed, error: SafeErrorSummary(error))
+            errorMessage = error.localizedDescription
+            onSilenceTimeout?()
+        }
+    }
+
+    /// The one delivery for the non-Apple engines: a transcript to `onTranscriptionComplete`, or
+    /// the no-speech path for an empty one. The count is logged, never the words.
+    private func deliverTranscript(_ text: String, channel: PrivacyLog.SpeechChannel) {
+        if text.isEmpty {
+            PrivacyLog.speech(channel, .noSpeechDetected)
+            onSilenceTimeout?()
+        } else {
+            PrivacyLog.speech(channel, .transcriptDelivered, characters: text.count)
+            currentTranscription = ""
+            onTranscriptionComplete?(text)
         }
     }
 

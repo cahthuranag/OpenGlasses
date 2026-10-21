@@ -2576,6 +2576,10 @@ class AppState: ObservableObject, AppStateProtocol {
             self?.dictationVocabulary() ?? []
         }
 
+        // Plan JM P2: a cloud recogniser the wearer chose runs only while the phone is online; offline
+        // the turn takes the `.auto` chain.
+        transcriptionService.onlineProvider = { [reachability] in reachability.isOnline }
+
         // TTS borrows the wake-word service so it can pause/resume other audio via the
         // same reference-counted hold that the active-listening flow uses.
         speechService.wakeWordService = wakeWordService

@@ -79,6 +79,22 @@ final class OrgProfileApplierTests: XCTestCase {
                           "the review sheet names it in words")
     }
 
+    /// Plan JM P2: an organisation may hold dictation to the phone, and may never send the wearer's
+    /// voice to a cloud recogniser — that is the wearer's choice.
+    func testCloudDictationCanBePinnedOffAndNeverOn() {
+        XCTAssertEqual(SettingKey.cloudDictationEnabled.kind, .ceiling(pinnedTo: false))
+
+        let off = apply(["cloudDictationEnabled": RawSetting(.bool(false), .ceiling)])
+        XCTAssertEqual(off.ceilings[.cloudDictationEnabled], .bool(false))
+        XCTAssertTrue(off.drops.isEmpty)
+
+        let on = apply(["cloudDictationEnabled": RawSetting(.bool(true), .ceiling)])
+        XCTAssertNil(on.ceilings[.cloudDictationEnabled])
+        XCTAssertEqual(on.drops, [.init(key: "cloudDictationEnabled", reason: .wrongDirection)])
+
+        XCTAssertEqual(SettingKey.cloudDictationEnabled.ceilingDescription, "Cloud dictation is off")
+    }
+
     func testACeilingOnlyKeyRefusesAStartingValue() {
         let result = apply(["privacyFilterEnabled": RawSetting(.bool(true), .default)])
         XCTAssertEqual(result.drops, [.init(key: "privacyFilterEnabled",

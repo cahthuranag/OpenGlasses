@@ -141,6 +141,25 @@ final class NetworkRouteRegistryTests: XCTestCase {
 
     // MARK: - Registry shape
 
+    /// Plan JM P2: dictation through a cloud recogniser is its own pair of routes — not the
+    /// diarization routes — counted, owned, user-configured cloud, and refused in local-only mode.
+    func testCloudDictationRoutesAreCountedSeparatelyFromDiarization() {
+        XCTAssertEqual(NetworkRoute.deepgramDictation.dataClasses, [.audio, .transcript])
+        XCTAssertEqual(NetworkRoute.openAIDictation.dataClasses, [.audio, .transcript, .credential])
+        XCTAssertEqual(NetworkRoute.deepgramDictation.owningTypes, ["DeepgramDictationService"])
+        XCTAssertEqual(NetworkRoute.openAIDictation.owningTypes, ["OpenAIDictationService"])
+        XCTAssertEqual(NetworkRouteRegistry.route(owningType: "DeepgramDictationService"), .deepgramDictation)
+        XCTAssertEqual(NetworkRouteRegistry.route(owningType: "OpenAIDictationService"), .openAIDictation)
+        XCTAssertEqual(NetworkRouteRegistry.route(owningType: "DeepgramSTTService"), .deepgramLiveTranscription,
+                       "captions keep their own route")
+        for route in [NetworkRoute.deepgramDictation, .openAIDictation] {
+            XCTAssertEqual(route.endpointClass, .userConfiguredCloud, route.rawValue)
+            XCTAssertTrue(route.medicalPolicy.blocksLocalOnly, route.rawValue)
+            XCTAssertNil(route.transportDelegatedTo, route.rawValue)
+            XCTAssertNotEqual(route.purpose, NetworkRoute.deepgramLiveTranscription.purpose)
+        }
+    }
+
     func testEveryRouteDescribesItself() {
         for route in NetworkRoute.allCases {
             XCTAssertTrue(!route.owningTypes.isEmpty || route.transportDelegatedTo != nil

@@ -125,6 +125,26 @@ final class TelemetryOptOutGuardTests: XCTestCase {
                           + "ships a privacy claim it does not honour.")
     }
 
+    /// Plan JM P2 — the same rule for a vendor the wearer chooses: cloud dictation sends the audio
+    /// of a question to Deepgram or OpenAI, so the manifest's audio entry and the in-app privacy
+    /// copy must both say so, in the same PR that adds the egress.
+    func testCloudDictationVendorsAreDisclosedInTheManifestAndThePrivacyCopy() throws {
+        let manifest = normalisedWhitespace(try sourceText(Self.privacyManifest))
+        XCTAssertTrue(manifest.contains("the audio of each question to Deepgram or OpenAI when the wearer chooses cloud dictation"),
+                      "PrivacyInfo.xcprivacy's AudioData comment no longer names cloud dictation's vendors")
+        XCTAssertTrue(manifest.contains("Deepgram or OpenAI for dictation when the wearer chooses a cloud recognizer"),
+                      "PrivacyInfo.xcprivacy's header list of recipients no longer names cloud dictation")
+
+        let privacyCopy = normalisedWhitespace(try sourceText("OpenGlasses/Sources/App/Views/SettingsView.swift"))
+        XCTAssertTrue(privacyCopy.contains("Cloud dictation is off by default: only when you choose Deepgram or OpenAI as the recognizer does the audio of each question go to that vendor."),
+                      "the in-app Privacy section no longer discloses cloud dictation")
+
+        for route in [NetworkRoute.deepgramDictation, .openAIDictation] {
+            XCTAssertTrue(route.dataClasses.contains(.audio))
+            XCTAssertTrue(NetworkRouteRegistry.requiredPrivacyManifestTypes.contains("NSPrivacyCollectedDataTypeAudioData"))
+        }
+    }
+
     // MARK: - Backstop ordering
 
     /// Drops whole-line `//` comments so a source-order scan reads code, not prose.

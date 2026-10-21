@@ -1,6 +1,7 @@
 # Plan JO — Watchers ("tell me the score", "tell me when they announce a show near here", "I'm waiting on a letter")
 
-**Status:** 📝 Drafted (not scheduled), 2026-10-21 — nothing built.
+**Status:** 📝 Drafted (not scheduled), 2026-10-21 — nothing built. Owner decisions taken the same day,
+see [Decisions](#decisions-for-greig-taken-2026-10-21).
 **Builds on:** `AgentScheduler` (typed tasks, as Plan [IW](IW-goals-and-activity-trail.md) P2's goal
 check-ins), `AgentNotificationQueue`, Plan [BZ](BZ-notification-digest.md) (digest, `NotificationPriority`),
 Plan [DY](DY-my-day-everyday-briefing.md) (`MyDayDeliveryPolicy`, quiet hours), Plan IW (activity
@@ -8,8 +9,8 @@ trail, goals), `PresenceMonitor`, `NetworkRouteRegistry`, `LocationService`, `Me
 **Sits beside:** Plan [GN](GN-agent-notebook.md) (the assistant's notes about *your* data — a watcher
 is a standing question about the *outside world*; both need the same background runner, see P2),
 Plan [IZ](IZ-product-lookup-and-price-alerts.md) (a price watch becomes one watcher kind rather than
-its own scheduler), Plan [IX](IX-scoped-grants-and-read-only-integrations.md) (read-only mail, P4,
-is an IX integration), Plan [GG](GG-readable-memory.md) (suggestions read memory; every watcher is
+its own scheduler), Plan [IX](IX-scoped-grants-and-read-only-integrations.md) (a mail source, if one is ever added,
+is an IX read-only integration — not in this plan, decision 5), Plan [GG](GG-readable-memory.md) (suggestions read memory; every watcher is
 readable and removable the same way a fact is).
 
 ---
@@ -28,7 +29,7 @@ alive, costs a model call every time, and can't say "only tell me if it changed"
 
 **It connects what you're waiting for with what arrives.** "I'm waiting on a letter from the
 council" should make the assistant watch for it — in calendar entries, reminders, the gateway's
-events and, once there is a way to read it, mail — and say so when it shows up, the way it would if
+events — and say so when it shows up, the way it would if
 it had been told the parcel's tracking number. Nothing holds an expectation today; IW goals hold
 steps, not things the wearer is waiting to *receive*.
 
@@ -51,8 +52,9 @@ each of those can and can't promise. An always-on tier is named and left for lat
   fortnight. Want me to tell you their scores?" One offer, at a free moment; "no" means it isn't
   asked again for 90 days. The assistant never creates a watcher the wearer didn't say yes to.
 - **Waiting on something.** "I'm waiting on a letter from the council" → an expectation watcher;
-  when a matching item appears in a source the app can read, "the council letter you were waiting
-  on — your mail digest says it arrives today". "What am I waiting on?" lists them.
+  when a matching item appears in a source the app can read (calendar, reminders, the gateway's
+  events), "the council letter you were waiting on — there's a reminder from the council for
+  Thursday". "What am I waiting on?" lists them.
 - **Bounded.** At most three unprompted spoken findings a day across all watchers (the rest wait in
   the digest), never in quiet hours, a meeting or a live session, and a finding that has gone stale
   (a half-time score after full time) is dropped, not delivered late.
@@ -126,6 +128,22 @@ date)` for expectations). Each source is a `NetworkRoute` (declared, egress-clas
 `blockedWhenLocalOnly`) using `BoundedHTTPClient`; its parser is pure and tested from recorded
 fixtures. Output is untrusted (never instructions; phrased from typed fields, not passed raw).
 
+**Sources follow the wearer's region (decision 2).** There is no single worldwide list of sports,
+event or local-news providers, so the app ships a versioned, bundled `WatchSourceCatalog`: for each
+watcher kind, an ordered list of providers keyed by country (ISO region from the device locale, or the
+watcher's `CoarseArea` when it names another country), each with its coverage (sports codes and
+leagues, cities), terms note and route. A kind with no regional provider falls back to the
+generic one — news search for the country, then web search phrased into typed fields with "I think"
+— and the watcher screen says which source a watcher uses. Starting points known at drafting: a
+regional event-listing provider for New Zealand (and possibly Australia) with a free developer API
+and location filtering; a worldwide sports-data provider whose rugby, league and cricket coverage
+appears to sit on a paid tier (verify against its own pricing at P1); the news feed with the device's
+country instead of a fixed US locale. **Official alerts do have a list:** the WMO Register of
+Alerting Authorities names each country's alerting authorities and, for many, a Common Alerting
+Protocol feed — the catalogue's alert entries are seeded from it and checked by hand, since entries
+can be missing or stale. Adding a country is a catalogue entry plus a parser fixture, not new code
+when the provider's format is already supported.
+
 **Location is coarse by construction.** `CoarseArea` is a suburb/city name from reverse geocoding (on
 the device) or coordinates rounded to ~1 km; precise coordinates never leave the phone for a watcher.
 
@@ -183,14 +201,14 @@ times in 14 days, from the tool-call trail, not transcripts), GG memory facts in
 and on-device library play counts (top artists over 30 days). Output: at most one suggestion a day,
 with a `because`, delivered through `WatchDeliveryPolicy` as a question. Yes → a watcher with
 `origin: .acceptedSuggestion`; no → that subject is not offered again for 90 days; "stop suggesting
-these" turns suggestions off. Suggestions are Agent-Mode-gated (decision 1); a watcher the wearer
-asks for directly is not.
+these" turns suggestions off. No part of this plan needs Agent Mode (decision 1): suggestions have their own
+"suggest things to watch" switch in the Watching screen.
 
 ### Expectations and digging
 
 `Expectation { text, senderHints, subjectHints, sources, expiresAt }`. "I'm waiting on…" and IW goal
 steps phrased as waiting ("wait for the quote from the plumber") create one. Sources in order of
-availability: calendar, reminders, the gateway's events (P3), mail (P4). Digging is the same matcher
+availability: calendar, reminders, the gateway's events (P3). Mail is not a source (decision 5). Digging is the same matcher
 run on demand: "is there anything about reference 48-2211?" searches the readable sources for the
 token and reports matches with where they were found — never a guess at what the reference is.
 
@@ -216,7 +234,9 @@ floor, store round-trip and erasure.
 
 **P1 — Sources.** Fixtures/scores, artist shows, local news by `CoarseArea`, official alerts where a
 region publishes a feed; each a declared route + pure parser + recorded fixtures; the Watching screen
-in Settings with honest timing copy. Provider choice per decisions 2–4; privacy copy + manifest.
+in Settings with honest timing copy. `WatchSourceCatalog` with the New Zealand entries first, the
+generic fallback for every other country, and the alert entries seeded from the WMO register;
+providers chosen per decisions 2–4; privacy copy + manifest.
 
 **P2 — Background.** `BackgroundRefreshCoordinator` (`BGAppRefreshTask`, `fetch` mode,
 `BGTaskSchedulerPermittedIdentifiers`), significant-location-change wakes, foreground/wake-word
@@ -226,10 +246,6 @@ score heard after a locked evening; a show watcher firing on a morning unlock).
 **P3 — Suggestions and expectations.** `WatchSuggester` (repeated asks, memory facts, library play
 counts), the 90-day decline memory, `Expectation` over calendar, reminders and gateway events, IW
 "waiting" steps, and on-demand digging over those sources.
-
-**P4 — Read-only mail.** One mail route per decision 5, as an IX read-only integration (read, never
-send, never delete); expectations and digging gain mail as a source; the mail credential lives in the
-keychain; HIPAA keeps it off.
 
 ## Later: always-on
 
@@ -249,27 +265,24 @@ phone tier, never a prerequisite for it — every watcher in this plan works pho
   area only, and keep the watcher list on the device.
 - **Expectation false positives.** A weak match is said as "might be"; a match always names where.
 
-## Decisions for Greig
+## Decisions for Greig (taken 2026-10-21)
 
-1. **Agent Mode gate.** *Recommend:* a watcher the wearer asks for works without Agent Mode (like a
-   reminder or geofence); suggestions and expectations-from-goals need Agent Mode.
-2. **Sports data.** One provider that covers NZ/AU codes (rugby, league, netball, cricket) with terms
-   that permit alerts, or web search as a fallback only. *Recommend* deciding at P1 from a short
-   terms-and-coverage comparison.
-3. **Concert/show data.** A public event-listing API with a free tier. *Recommend* one provider, with
-   the radius in kilometres and default 50 km.
-4. **Hyper-local scope.** *Recommend* local news for the suburb plus official emergency/civil-defence
-   feeds only — no police-scanner or crime-report aggregators (accuracy and bystander privacy).
-5. **Mail route (P4).** IMAP with an app password (any provider, no third-party assessment, clunkier
-   setup) vs Gmail's read-only API (smooth sign-in, but a restricted scope that needs Google's
-   security assessment before broad release — confirm the current policy) vs mail read on the gateway
-   only. *Recommend* IMAP first.
-6. **Daily cap.** *Recommend* 3 spoken findings a day, ≥ 60 min apart, the rest in the digest.
-7. **Always-on tier.** *Recommend* a separate plan after P2's device pass shows what the phone tier
-   delivers.
+1. **Agent Mode gate — none.** Watchers, suggestions and expectations all work without Agent Mode.
+   Suggestions keep their own switch ("suggest things to watch") so they can be turned off alone.
+2. **Sports data — follow the wearer's region.** A bundled per-country `WatchSourceCatalog` with a
+   generic fallback, not one fixed provider; the provider per country is picked at P1 from a
+   terms-and-coverage check (see [Sources](#sources--typed-pure-parsers-one-route-each)).
+3. **Concert/show data — the same:** regional providers in the catalogue, default radius 50 km.
+4. **Hyper-local — the same, regional:** local news for the suburb from the country's news feed plus
+   the official alert feeds the catalogue lists (seeded from the WMO register); no police-scanner or
+   crime-report aggregators.
+5. **Mail — not in this plan.** No mail source and no mail phase; expectations and digging use
+   calendar, reminders and the gateway's events.
+6. **Daily cap — 3** spoken findings a day, ≥ 60 min apart, the rest in the digest.
+7. **Always-on tier — its own plan later**, after P2's device pass shows what the phone tier delivers.
 
 ## Out of scope
 
 Inferring watchers without asking; reading other apps' notifications (iOS does not allow it);
-live play-by-play; ticket purchase; scanner/crime feeds; any model call on a routine check; the
-always-on tier (see above).
+live play-by-play; ticket purchase; scanner/crime feeds; any model call on a routine check; reading mail;
+the always-on tier (see above).

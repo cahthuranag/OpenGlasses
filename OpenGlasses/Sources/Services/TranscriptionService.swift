@@ -131,6 +131,57 @@ class TranscriptionService: ObservableObject {
     private var utteranceScorer = EnergySpeechScorer(gateConfiguration: .default)
     private var utteranceGate = SpeechActivityGate(configuration: .default)
 
+    // MARK: - The last question, kept for the recogniser comparison (Plan JM P3)
+
+    /// Whether this turn's audio may be kept: the developer switch, and (installed by AppState) the
+    /// app on screen. Read when a turn starts and again when it ends.
+    var comparisonRetentionAllowedProvider: () -> Bool = { Config.recognizerComparisonEnabled }
+    private var utteranceRetention = UtteranceRetention()
+    /// The most recent question that heard speech, while the comparison switch is on. Memory only;
+    /// replaced by the next one, forgotten by `forgetKeptUtterance()`.
+    @Published private(set) var lastUtterance: KeptUtterance?
+
+    /// Dictation's own on-device engine, so the comparison does not load the model a second time.
+    var onDeviceRecognizer: OnDeviceASREngine { onDeviceEngine }
+
+    /// Forget the kept question — the switch went off, or the app left the screen.
+    func forgetKeptUtterance() {
+        utteranceRetention.clear()
+        if lastUtterance != nil { lastUtterance = nil }
+    }
+
+    /// A tap that copies each buffer into the retention, or nil when this turn keeps nothing. Bound
+    /// to this turn, so a buffer that lands after the next turn began is dropped.
+    private func comparisonTap() -> (@Sendable (AVAudioPCMBuffer) -> Void)? {
+        guard utteranceRetention.isCollecting else { return nil }
+        let turn = utteranceRetention.turn
+        return { [weak self] buffer in
+            guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else { return }
+            let samples = Array(UnsafeBufferPointer(start: channels[0], count: Int(buffer.frameLength)))
+            let rate = buffer.format.sampleRate
+            Task { @MainActor [weak self] in
+                self?.utteranceRetention.append(samples, sampleRate: rate, turn: turn)
+            }
+        }
+    }
+
+    /// The turn ended: keep it if it heard speech and keeping is still allowed. Only the count is
+    /// logged.
+    private func keepLastUtterance(heardSpeech: Bool) {
+        if activeEngine.captureShape == .wholeUtterance, utteranceRetention.isCollecting {
+            // The whole-utterance engines already hold the samples; no second tap.
+            utteranceRetention.append(accumulatedSamples, sampleRate: captureSampleRate,
+                                      turn: utteranceRetention.turn)
+        }
+        let allowed = comparisonRetentionAllowedProvider()
+        if let count = utteranceRetention.endTurn(heardSpeech: heardSpeech, allowed: allowed, at: Date()) {
+            lastUtterance = utteranceRetention.kept
+            PrivacyLog.speech(.dictation, .utteranceKept, count: count)
+        } else if !allowed, lastUtterance != nil {
+            lastUtterance = nil
+        }
+    }
+
     init() {
         speechRecognizer = SFSpeechRecognizer(locale: SpeechLocaleResolver.current)
     }
@@ -171,6 +222,9 @@ class TranscriptionService: ObservableObject {
         // on-device SenseVoice when selected + its model is ready, else Apple.
         chooseEngine()
         accumulatedSamples.removeAll(keepingCapacity: true)
+        // Plan JM P3: this turn's audio is kept only with the comparison switch on.
+        utteranceRetention.beginTurn(allowed: comparisonRetentionAllowedProvider())
+        if !utteranceRetention.isCollecting, lastUtterance != nil { lastUtterance = nil }
         utteranceScorer.reset()
         utteranceGate = SpeechActivityGate(configuration: .default)
 
@@ -253,6 +307,7 @@ class TranscriptionService: ObservableObject {
         silenceTimer = nil
         noSpeechTimer?.invalidate()
         noSpeechTimer = nil
+        keepLastUtterance(heardSpeech: didReceiveSpeech)
 
         switch activeEngine.captureShape {
         case .wholeUtterance:
@@ -327,8 +382,10 @@ class TranscriptionService: ObservableObject {
             PrivacyLog.speech(.dictation, .engineShared)
             // Capture request directly — the closure is @Sendable so can't access @MainActor self
             let request = recognitionRequest
+            let keep = comparisonTap()
             provider.setAudioBufferForwarder { buffer in
                 request.append(buffer)
+                keep?(buffer)
             }
         } else {
             // Fallback: create our own engine (works in foreground only)
@@ -369,8 +426,10 @@ class TranscriptionService: ObservableObject {
             let recordingFormat = inputNode.outputFormat(forBus: 0)
             try Self.requireUsableTapFormat(recordingFormat, channel: .dictation)
 
+            let keep = comparisonTap()
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
                 self?.recognitionRequest?.append(buffer)
+                keep?(buffer)
             }
 
             audioEngine.prepare()
@@ -512,7 +571,9 @@ class TranscriptionService: ObservableObject {
             PrivacyLog.speech(.cloudDictation, .vocabularyApplied, count: turnVocabulary.count)
         }
         do {
+            let keep = comparisonTap()
             try await installCapture(channel: .cloudDictation) { buffer in
+                keep?(buffer)
                 let data = PCMConverter.linear16Mono(from: buffer)
                 let rate = Int(buffer.format.sampleRate.rounded())
                 Task { @MainActor in service.sendAudio(data, sampleRate: rate) }

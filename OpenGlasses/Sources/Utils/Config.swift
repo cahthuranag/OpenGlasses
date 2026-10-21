@@ -559,6 +559,13 @@ struct Config {
     @UserDefaultsBacked("dictationVoiceProcessingEnabled", default: false)
     static var dictationVoiceProcessingEnabled: Bool
 
+    /// Keep the last question's audio in memory for the recogniser comparison (Plan JM P3). Off by
+    /// default. Memory only, until the next question, the switch going off or the app leaving the
+    /// screen — see `UtteranceRetention`. Comparing sends that audio to any cloud recogniser the
+    /// gate allows. The switch is in Settings › Advanced › Developer.
+    @UserDefaultsBacked("recognizerComparisonEnabled", default: false)
+    static var recognizerComparisonEnabled: Bool
+
     /// "Check what I said before sending" (Plan JM P1): a finished transcript waits in the chat bar
     /// for a short countdown before it goes, so the wearer can correct it. Off by default; only on
     /// the phone's screen in Direct mode — see `SendReviewPolicy`. In Settings › Voice & Triggers.

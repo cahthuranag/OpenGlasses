@@ -1,6 +1,6 @@
 # Plan JM — Dictation in a Noisy Room (heard right on site, a way to type or check when it isn't, and a cloud recogniser as an option)
 
-**Status:** 🚧 P0–P2 built 2026-10-21 — dictation now passes `DictationVocabulary` hints (active equipment, job equipment, van stock, the vault's manual titles, wake phrases, a per-trade glossary; capped at 250, no customer or site fields) to Apple Speech, `DictationCapturePolicy` turns on phone-mic voice processing on dictation's own engine behind a developer switch (off until measured on the device), and `MicRouteHintPolicy` shows once per process that the phone mic hears better after a wearer-opened turn on the glasses mic heard nothing. P1: `TypeInsteadPolicy` offers a "Type instead" chip above the dock after two wearer-opened turns in a row heard nothing or no word (Direct mode only; the "did not understand" event is in the ledger but unwired — the app has no deterministic signal for it), and the off-by-default *Check what I said before sending* option (Settings › Voice & Triggers › Conversation, 3 s, 2–10 s) holds a finished transcript in the chat bar under a countdown ring when `SendReviewPolicy` says somebody can read it (foreground, screen on, Direct, not CarPlay) — untouched it runs the ordinary spoken turn, edited it goes as a typed turn whose job-record line carries an `edited` flag, cancel returns to the wake word, backgrounding sends it as spoken. P2: the Recognizer picker offers Cloud (Deepgram) and Cloud (OpenAI) — never chosen by Auto, first in the chain only when chosen, keyed, online and not under HIPAA (HIPAA strips them from the chain outright), with `CloudDictationGate` re-read before each turn, on every Deepgram buffer and before the OpenAI upload, so a mid-utterance flip stops the audio at once; Deepgram streams through a new `DeepgramDictationService` (no diarisation, interim results, the vocabulary as Nova-3 keyterms, `CloseStream` then at most 1.5 s for the last final), OpenAI uploads the whole question as WAV with the API key (vocabulary as the prompt; an energy gate ends the turn and a silent turn uploads nothing; a failed upload falls back to the on-device engine when it is ready), each on its own `NetworkRoute`, named in the privacy manifest and the in-app Privacy copy, and pinnable off by an organisation (`SettingKey.cloudDictationEnabled`). Device pass owed for P0–P2, P3 not started. Drafted 2026-10-21. Raised by a tester after a demo over lunch
+**Status:** 🚧 P0–P3 built 2026-10-21 — dictation now passes `DictationVocabulary` hints (active equipment, job equipment, van stock, the vault's manual titles, wake phrases, a per-trade glossary; capped at 250, no customer or site fields) to Apple Speech, `DictationCapturePolicy` turns on phone-mic voice processing on dictation's own engine behind a developer switch (off until measured on the device), and `MicRouteHintPolicy` shows once per process that the phone mic hears better after a wearer-opened turn on the glasses mic heard nothing. P1: `TypeInsteadPolicy` offers a "Type instead" chip above the dock after two wearer-opened turns in a row heard nothing or no word (Direct mode only; the "did not understand" event is in the ledger but unwired — the app has no deterministic signal for it), and the off-by-default *Check what I said before sending* option (Settings › Voice & Triggers › Conversation, 3 s, 2–10 s) holds a finished transcript in the chat bar under a countdown ring when `SendReviewPolicy` says somebody can read it (foreground, screen on, Direct, not CarPlay) — untouched it runs the ordinary spoken turn, edited it goes as a typed turn whose job-record line carries an `edited` flag, cancel returns to the wake word, backgrounding sends it as spoken. P2: the Recognizer picker offers Cloud (Deepgram) and Cloud (OpenAI) — never chosen by Auto, first in the chain only when chosen, keyed, online and not under HIPAA (HIPAA strips them from the chain outright), with `CloudDictationGate` re-read before each turn, on every Deepgram buffer and before the OpenAI upload, so a mid-utterance flip stops the audio at once; Deepgram streams through a new `DeepgramDictationService` (no diarisation, interim results, the vocabulary as Nova-3 keyterms, `CloseStream` then at most 1.5 s for the last final), OpenAI uploads the whole question as WAV with the API key (vocabulary as the prompt; an energy gate ends the turn and a silent turn uploads nothing; a failed upload falls back to the on-device engine when it is ready), each on its own `NetworkRoute`, named in the privacy manifest and the in-app Privacy copy, and pinnable off by an organisation (`SettingKey.cloudDictationEnabled`). P3: a developer comparison (Developer › Compare recognisers) runs the last question — kept in memory only behind the off-by-default *Keep the last question for recogniser comparison* switch, up to 120 s, replaced by the next question and forgotten when the switch goes off or the app leaves the screen — through Apple Speech (as dictation uses it, and forced on-device where supported), the on-device engine when ready, and the cloud engine `CloudDictationGate` allows (the others say "Not configured" and send nothing), one at a time, scoring each by word error rate (`RecognizerComparison`, S/I/D counts) against what the wearer typed, into a copyable session table; the device pass protocol is written under P3. Device pass and live cloud checks owed for P0–P3. Drafted 2026-10-21. Raised by a tester after a demo over lunch
 in a noisy restaurant: the assistant kept mishearing them, it works well somewhere quiet, and
 background conversation or equipment noise on site would be a problem. They asked for a typed
 fallback, a chance to correct the transcript before it goes, and whether a cloud recogniser through
@@ -190,6 +190,30 @@ on and off. Results recorded in this plan's status line, not in a PR.
 
 Tests: `RecognizerComparisonTests` (alignment, substitutions/insertions/deletions, empty and
 identical cases, a transcript with punctuation and case differences scoring as equal).
+
+### Device pass protocol
+
+Ten sentences, said the same way each time. The part, model and brand names are invented for the
+test — never a real catalogue number:
+
+1. "Order part number 7X-4420-B for the condenser fan."
+2. "Is part number QK-1187-03 in the van?"
+3. "Pull up the manual for model ZR-58VT-090."
+4. "How much R-454B does this system hold?"
+5. "Suction pressure is 118 psi and the superheat is 9 degrees Fahrenheit."
+6. "What does a flashing amber light mean on a Corvane furnace?"
+7. "What's the weather this afternoon?"
+8. "Remind me to call the office at four."
+9. "How long should the system run before I take a reading?"
+10. "Read me the next step."
+
+Each sentence in three rooms — a quiet room, beside a running unit, and a café — on two mics —
+the glasses route and the phone route (the Microphone setting) — with vocabulary hints on and
+off (the comparison screen's *Pass vocabulary hints* switch; the table's Hints column records which), so 12 runs of the ten. Turn on *Keep the last question
+for recogniser comparison* in the Developer panel, say the sentence as an ordinary question, open
+*Compare recognisers*, type the sentence, Run, and Add to session; Copy table at the end of each
+room. Every configured recogniser runs on the same audio, one at a time. Results — the per-engine
+summary lines, with the room, mic and hints noted — go in this plan's status line, never in a PR.
 
 ## Not in this plan
 

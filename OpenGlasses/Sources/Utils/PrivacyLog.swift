@@ -1399,6 +1399,10 @@ enum PrivacyLog {
         /// Plan JM P2: a chosen cloud recogniser did not take this turn — skipped (offline, not
         /// configured, HIPAA) or failed and another engine took over — with the reason as a token.
         case cloudFallback
+        /// Plan JM P3: the developer comparison kept the last question's audio in memory (`count` is
+        /// the number of samples), and ran one recogniser on it (`detail` is the engine and how it
+        /// ended, as tokens). Never a word of it.
+        case utteranceKept, comparisonRan
     }
 
     /// `language` is a BCP-47 tag — a property of the session, not of what was said — so it is

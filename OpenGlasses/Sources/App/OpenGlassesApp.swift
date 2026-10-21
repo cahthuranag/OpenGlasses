@@ -2580,6 +2580,12 @@ class AppState: ObservableObject, AppStateProtocol {
         // the turn takes the `.auto` chain.
         transcriptionService.onlineProvider = { [reachability] in reachability.isOnline }
 
+        // Plan JM P3: the last question is kept for the recogniser comparison only with the
+        // developer switch on and the app on screen; leaving the screen forgets it (below).
+        transcriptionService.comparisonRetentionAllowedProvider = {
+            Config.recognizerComparisonEnabled && UIApplication.shared.applicationState != .background
+        }
+
         // TTS borrows the wake-word service so it can pause/resume other audio via the
         // same reference-counted hold that the active-listening flow uses.
         speechService.wakeWordService = wakeWordService
@@ -2922,6 +2928,8 @@ class AppState: ObservableObject, AppStateProtocol {
             // screen that asked for it is.
             Task { @MainActor in DiagnosticExportCoordinator.shared.handleBackground() }
             Task { @MainActor in StagedExportCoordinator.handleBackgroundAll() }
+            // Plan JM P3: the question kept for the recogniser comparison is the same bargain.
+            Task { @MainActor in self?.transcriptionService.forgetKeptUtterance() }
         }
 
         // Hands-free "new topic" — the `new_topic` tool posts this when the model calls it

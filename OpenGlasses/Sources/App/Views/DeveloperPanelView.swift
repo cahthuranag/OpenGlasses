@@ -18,6 +18,8 @@ struct DeveloperPanelView: View {
     /// Plan JM P0 — `Config.dictationVoiceProcessingEnabled`, the same key and default (off until
     /// measured on device).
     @AppStorage("dictationVoiceProcessingEnabled") private var dictationVoiceProcessingEnabled = false
+    /// Plan JM P3 — `Config.recognizerComparisonEnabled`, the same key and default (off).
+    @AppStorage("recognizerComparisonEnabled") private var recognizerComparisonEnabled = false
 
     init(appState: AppState) {
         self.appState = appState
@@ -112,6 +114,28 @@ struct DeveloperPanelView: View {
             ) {
                 OGRow("Voice processing on the phone mic (dictation)", isOn: $dictationVoiceProcessingEnabled,
                       icon: "waveform.and.mic")
+            }
+
+            // Plan JM P3: the rest of Dictation, as its own card so each footer sits under its switch.
+            OGSection(
+                footer: "Keeping the last question holds the audio of your most recent question in memory only, until your next question or until the app leaves the screen. Comparing sends that audio to any cloud recogniser you have configured."
+            ) {
+                OGRow("Keep the last question for recogniser comparison", isOn: $recognizerComparisonEnabled,
+                      icon: "waveform.badge.magnifyingglass")
+                OGDivider()
+                NavigationLink {
+                    RecognizerComparisonView(appState: appState)
+                } label: {
+                    OGRow(
+                        "Compare recognisers", icon: "chart.bar.xaxis",
+                        subtitle: "Every recogniser on the last question, scored by word error rate"
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .onChange(of: recognizerComparisonEnabled) { _, keep in
+                // Off means forgotten now, not at the next question.
+                if !keep { appState.transcriptionService.forgetKeptUtterance() }
             }
 
             OGSection(header: "Turn Latency") {

@@ -1376,6 +1376,8 @@ enum PrivacyLog {
     enum SpeechChannel: String {
         case dictation, onDeviceASR, ambientCaptions, liveTranslation, meetingNotes
         case memoryRewind, diarization, intentClassifier
+        /// Dictation through a cloud recogniser the wearer chose (Plan JM P2).
+        case cloudDictation
     }
 
     enum SpeechEvent: String {
@@ -1394,6 +1396,9 @@ enum PrivacyLog {
         /// The phone-mic voice-processing experiment came on, or failed and the turn went on
         /// without it. The once-per-process hint that the phone's mic hears better was shown.
         case vocabularyApplied, voiceProcessingOn, voiceProcessingFailed, micRouteHinted
+        /// Plan JM P2: a chosen cloud recogniser did not take this turn — skipped (offline, not
+        /// configured, HIPAA) or failed and another engine took over — with the reason as a token.
+        case cloudFallback
     }
 
     /// `language` is a BCP-47 tag — a property of the session, not of what was said — so it is

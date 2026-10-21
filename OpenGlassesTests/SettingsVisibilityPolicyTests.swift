@@ -104,12 +104,18 @@ final class SettingsVisibilityPolicyTests: XCTestCase {
         XCTAssertEqual(Policy.presentation(.key(.privacyFilterEnabled), in: context), .readOnly,
                        "bystander blurring, pinned on, is shown read-only to the technician")
         XCTAssertEqual(Policy.alwaysShown, [.key(.privacyFilterEnabled), .area(.requestRouting),
-                                            .key(.faceRecognitionEnabled), .key(.aiConnectionCueEnabled)])
+                                            .key(.faceRecognitionEnabled), .key(.aiConnectionCueEnabled),
+                                            .key(.cloudDictationEnabled)])
         // Plan HP P2: face recognition pinned off and the AI cue pinned on are both drawn read-only
         // for the technician — one protects bystanders, the other is a disclosure.
         let hpContext = technician(lockEverything, keys: [.faceRecognitionEnabled, .aiConnectionCueEnabled])
         XCTAssertEqual(Policy.presentation(.key(.faceRecognitionEnabled), in: hpContext), .readOnly)
         XCTAssertEqual(Policy.presentation(.key(.aiConnectionCueEnabled), in: hpContext), .readOnly)
+        // Plan JM P2: cloud dictation pinned off is drawn read-only — where the voice goes is shown.
+        let jmContext = technician(lockEverything, keys: [.cloudDictationEnabled])
+        XCTAssertEqual(Policy.presentation(.key(.cloudDictationEnabled), in: jmContext), .readOnly)
+        XCTAssertEqual(Policy.presentation(.key(.cloudDictationEnabled), in: technician(lockEverything)), .editable,
+                       "unpinned, the cloud choices are the wearer's")
     }
 
     func testPinnedKeysAndClosedToolsAreHiddenFromTheTechnician() {

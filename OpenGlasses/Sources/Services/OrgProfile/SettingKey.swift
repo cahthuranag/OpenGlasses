@@ -66,6 +66,10 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     /// phone that never approves — and never on from here: naming the reviewer in a signed profile
     /// is an open decision (FP open question 1).
     case teamLearningReviewerDevice
+    /// Dictation through a cloud recogniser the wearer chose (Plan JM P2): an organisation may pin
+    /// it off, so a company that has not approved the vendor holds dictation to the phone, and
+    /// never on — sending the wearer's voice to a vendor is the wearer's choice.
+    case cloudDictationEnabled
 
     // Starting values the person may change.
     case fieldAssistEnabled
@@ -116,7 +120,8 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
              .privacyFilterEnabled, .aiConnectionCueEnabled:
             return .ceiling(pinnedTo: true)
         case .remoteInvokeObserveEnabled, .remoteInvokeOutputEnabled, .remoteInvokeCaptureEnabled,
-             .mcpServerEnabled, .agentModeEnabled, .faceRecognitionEnabled, .teamLearningReviewerDevice:
+             .mcpServerEnabled, .agentModeEnabled, .faceRecognitionEnabled, .teamLearningReviewerDevice,
+             .cloudDictationEnabled:
             return .ceiling(pinnedTo: false)
         case .fieldAssistEnabled:
             return .startingValue(.bool)

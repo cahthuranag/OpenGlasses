@@ -114,6 +114,10 @@ enum NetworkRoute: String, CaseIterable, Sendable {
     // MARK: Speech to text
     case deepgramLiveTranscription
     case deepgramBatchTranscription
+    /// Plan JM P2 — dictation through a cloud recogniser the wearer chose. Separate from the
+    /// diarization routes: a different switch, a different purpose.
+    case deepgramDictation
+    case openAIDictation
 
     // MARK: Text to speech
     case elevenLabsSpeechSynthesis
@@ -206,6 +210,8 @@ extension NetworkRoute {
         switch self {
         case .deepgramLiveTranscription: return "Stream captured audio to the diarization vendor for live who-said-what transcription."
         case .deepgramBatchTranscription: return "Upload a recorded audio file for diarized transcription after the fact."
+        case .deepgramDictation: return "Stream the audio of a question the wearer is asking to Deepgram, with the wearer's own key, when they chose it as the recognizer."
+        case .openAIDictation: return "Upload the audio of a question the wearer just asked to OpenAI's transcription endpoint, with the OpenAI API key, when they chose it as the recognizer."
         case .elevenLabsSpeechSynthesis: return "Send the assistant's reply text to the cloud voice vendor and play back the returned audio."
         case .elevenLabsVoiceCatalog: return "List the voices the configured key may use, for the voice picker."
         case .openAISpeechSynthesis: return "Send the assistant's reply text to OpenAI's speech endpoint with the OpenAI key and play back the returned audio."
@@ -269,8 +275,10 @@ extension NetworkRoute {
     /// `modelAsset`, which exists so asset downloads are visibly distinguished from content egress.
     var dataClasses: Set<NetworkDataClass> {
         switch self {
-        case .deepgramLiveTranscription, .deepgramBatchTranscription:
+        case .deepgramLiveTranscription, .deepgramBatchTranscription, .deepgramDictation:
             return [.audio, .transcript]
+        case .openAIDictation:
+            return [.audio, .transcript, .credential]
         case .elevenLabsSpeechSynthesis, .openAISpeechSynthesis, .xaiSpeechSynthesis:
             return [.transcript, .credential]
         case .elevenLabsVoiceCatalog, .xaiVoiceCatalog, .geminiLiveModelCatalog, .providerModelCatalog,
@@ -336,6 +344,7 @@ extension NetworkRoute {
     var endpointClass: NetworkEndpointClass {
         switch self {
         case .deepgramLiveTranscription, .deepgramBatchTranscription,
+             .deepgramDictation, .openAIDictation,
              .elevenLabsSpeechSynthesis, .elevenLabsVoiceCatalog,
              .openAISpeechSynthesis, .xaiSpeechSynthesis, .xaiVoiceCatalog,
              .openAIRealtimeSession, .geminiLiveSession, .geminiLiveModelCatalog,
@@ -420,6 +429,8 @@ extension NetworkRoute {
         switch self {
         case .deepgramLiveTranscription: return ["DeepgramSTTService"]
         case .deepgramBatchTranscription: return ["DeepgramBatchService"]
+        case .deepgramDictation: return ["DeepgramDictationService"]
+        case .openAIDictation: return ["OpenAIDictationService"]
         case .elevenLabsSpeechSynthesis, .elevenLabsVoiceCatalog,
              .openAISpeechSynthesis, .xaiSpeechSynthesis, .xaiVoiceCatalog: return ["TextToSpeechService"]
         case .openAIRealtimeSession: return ["RealtimeJSONSessionService"]

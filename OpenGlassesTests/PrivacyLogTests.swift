@@ -714,6 +714,8 @@ final class PrivacyLogTests: XCTestCase {
         "OpenGlasses/Sources/Services/Translation/GeminiTranslationProvider.swift",
         "OpenGlasses/Sources/Services/ASR/OnDeviceASREngine.swift",
         "OpenGlasses/Sources/Services/Diarization/DeepgramSTTService.swift",
+        "OpenGlasses/Sources/Services/ASR/DeepgramDictationService.swift",
+        "OpenGlasses/Sources/Services/ASR/OpenAIDictationService.swift",
         "OpenGlasses/Sources/Services/MemoryRewindService.swift",
         "OpenGlasses/Sources/Services/MeetingAssistantService.swift",
         "OpenGlasses/Sources/Services/IntentClassifier.swift",

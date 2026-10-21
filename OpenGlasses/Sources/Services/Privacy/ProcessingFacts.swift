@@ -178,12 +178,20 @@ enum ProcessingFactsProvider {
 
         // What you say.
         let onDeviceASRReady = OnDeviceASREngine().isReady
+        let dictationGate = CloudDictationGate.live
         let chosenASR = ASREngineSelector.select(
             preference: Config.asrEnginePreference,
             availability: ASREngineSelector.Availability(appleSpeechReady: true,
                                                          onDeviceReady: onDeviceASRReady,
-                                                         online: true))
+                                                         online: true,
+                                                         deepgramReady: dictationGate.isConfigured(provider: .deepgram),
+                                                         openAIReady: dictationGate.isConfigured(provider: .openAI)),
+            hipaa: Config.hipaaMode)
         facts.speechRecognitionOnDevice = (chosenASR == .onDevice)
+        // Plan JM P2: a cloud recogniser the wearer chose, and may use, is where the question goes.
+        if let chosenASR, let cloud = CloudDictationProvider(engine: chosenASR) {
+            facts.speechRecognitionProviderName = cloud.vendorName
+        }
         facts.speechRecognitionAssetName = ASRModelBundle.active.displayName
         facts.speechRecognitionAssetPresent = onDeviceASRReady
         // `isDiarizationConfigured` rather than the raw switch: opted in, keyed, and not suppressed

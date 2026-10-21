@@ -100,9 +100,13 @@ enum SettingsVisibilityPolicy {
     ///   setting.
     /// - **The "Connecting to Avenkin AI" cue**, pinned on (Plan HP P2): a disclosure, so the
     ///   person must be able to see it is being said.
+    /// - **Cloud dictation**, pinned off (Plan JM P2): where the wearer's voice goes. A wearer who
+    ///   chose a cloud recogniser is told it is off rather than left wondering why the choice is
+    ///   gone, and the on-phone recognisers beside it stay theirs to pick.
     static let alwaysShown: Set<ManagedSetting> = [.key(.privacyFilterEnabled), .area(.requestRouting),
                                                    .key(.faceRecognitionEnabled),
-                                                   .key(.aiConnectionCueEnabled)]
+                                                   .key(.aiConnectionCueEnabled),
+                                                   .key(.cloudDictationEnabled)]
 
     /// Whether the organisation's policy stops whoever is looking from changing `setting`.
     static func isLocked(_ setting: ManagedSetting, in context: ManagedSettingsContext) -> Bool {

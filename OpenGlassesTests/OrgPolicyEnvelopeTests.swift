@@ -7,7 +7,7 @@ final class OrgPolicyEnvelopeTests: XCTestCase {
 
     private let touchedKeys = ["privacyFilterEnabled", "remoteInvokeCaptureEnabled", "agentModeEnabled",
                                "organizationDisplayName", "organizationAllowsUnsignedVaults",
-                               "faceRecognitionEnabled"]
+                               "faceRecognitionEnabled", "cloudDictationEnabled"]
     private var saved: [String: Any] = [:]
 
     override func setUp() {
@@ -116,6 +116,34 @@ final class OrgPolicyEnvelopeTests: XCTestCase {
 
         PolicyEnvelope.clear()
         XCTAssertTrue(Config.faceRecognitionEnabled, "removing the profile restores the wearer's choice")
+    }
+
+    /// Plan JM P2: cloud dictation defaults off, and an organisation's off-ceiling wins on read —
+    /// through `Config` and so through the dictation gate — without touching the wearer's choice.
+    func testCloudDictationDefaultsOffAndAnOrganisationCanPinItOff() {
+        UserDefaults.standard.removeObject(forKey: "cloudDictationEnabled")
+        XCTAssertFalse(Config.cloudDictationEnabled, "a fresh install's default is off")
+
+        UserDefaults.standard.set(true, forKey: "cloudDictationEnabled")
+        XCTAssertTrue(Config.cloudDictationEnabled)
+        XCTAssertFalse(PolicyEnvelope.isLocked(.cloudDictationEnabled))
+
+        install(["cloudDictationEnabled": RawSetting(.bool(false), .ceiling)])
+        XCTAssertFalse(Config.cloudDictationEnabled)
+        XCTAssertTrue(PolicyEnvelope.isLocked(.cloudDictationEnabled))
+
+        // The live gate's two organisation inputs both read closed.
+        let live = CloudDictationGate.live
+        XCTAssertFalse(live.optedIn())
+        XCTAssertTrue(live.orgPinnedOff())
+
+        Config.cloudDictationEnabled = true   // a locked switch refuses the write
+        XCTAssertFalse(Config.cloudDictationEnabled)
+        XCTAssertEqual(UserDefaults.standard.object(forKey: "cloudDictationEnabled") as? Bool, true,
+                       "a ceiling never overwrites the stored preference")
+
+        PolicyEnvelope.clear()
+        XCTAssertTrue(Config.cloudDictationEnabled, "removing the profile restores the wearer's choice")
     }
 
     func testTheEnvelopeAnnouncesAChange() {

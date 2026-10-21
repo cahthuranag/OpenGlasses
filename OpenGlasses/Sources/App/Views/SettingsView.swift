@@ -919,7 +919,7 @@ struct HardwarePrivacyView: View {
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("Bystander Face Blur runs entirely on-device: faces are found and blurred on your phone, and the blurred frame is what an AI provider, recording, broadcast or expert call receives. Share Health Data with AI (under Health) is off by default: Apple Health numbers are sent to your AI provider only when you turn it on. Avenkin has no analytics or crash reporting of its own (Apple may share crash reports with us from TestFlight, or if you allow it in iOS), and the glasses SDK's own analytics are opted out and blocked on this phone.")
+                Text("Bystander Face Blur runs entirely on-device: faces are found and blurred on your phone, and the blurred frame is what an AI provider, recording, broadcast or expert call receives. Share Health Data with AI (under Health) is off by default: Apple Health numbers are sent to your AI provider only when you turn it on. Cloud dictation is off by default: only when you choose Deepgram or OpenAI as the recognizer does the audio of each question go to that vendor. Avenkin has no analytics or crash reporting of its own (Apple may share crash reports with us from TestFlight, or if you allow it in iOS), and the glasses SDK's own analytics are opted out and blocked on this phone.")
             }
 
             Section {

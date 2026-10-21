@@ -25,7 +25,7 @@ Counts only (the numbers below are an example, not a measurement):
 
 - **captioned**: table captions found — `TABLE N` in bold, or on a page set in one weight a line
   that begins `Table N` and stands on its own — with the label as printed, a letter beside the
-  number included ("Table 5A", "Table D3"). A "(Continued)" caption that joined its table is not
+  number included ("Table 95A", "Table Q7"). A "(Continued)" caption that joined its table is not
   counted again, and neither is an entry in a list of tables (`list_entries`) whose table is
   captioned elsewhere in the document.
 - **extracted**: captions whose page resolved to a grid. A grid is not necessarily a correct

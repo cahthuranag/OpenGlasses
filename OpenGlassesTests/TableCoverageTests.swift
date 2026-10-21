@@ -90,17 +90,17 @@ final class TableCoverageTests: XCTestCase {
         XCTAssertEqual(TableReference.labels(in: "what does table 95A say"), ["Table 95A"])
         XCTAssertEqual(TableReference.labels(in: "what does table 95a say"), ["Table 95A"])
         XCTAssertEqual(TableReference.labels(in: "look at table 95 B for QXRT"), ["Table 95B"])
-        XCTAssertEqual(TableReference.labels(in: "look at table five A"), ["Table 5A"])
+        XCTAssertEqual(TableReference.labels(in: "look at table ninety-five A"), ["Table 95A"])
         XCTAssertEqual(TableReference.labels(in: "table ninety-five B, row QB2"), ["Table 95B"])
         XCTAssertEqual(TableReference.labels(in: "check table Q7"), ["Table Q7"])
         XCTAssertEqual(TableReference.labels(in: "check table Q seven"), ["Table Q7"])
         XCTAssertEqual(TableReference.labels(in: "table 95A and table 95"), ["Table 95A", "Table 95"])
         XCTAssertEqual(TableReference.labels(in: "table 99X is the model"), ["Table 99X"], "never read as Table 99")
-        XCTAssertEqual(TableReference.labels(in: "is table 5 a good place to look"), ["Table 5"], "\"a\" is a word")
-        XCTAssertEqual(TableReference.labels(in: "is table 5 a good place to look", among: ["Table 5A"]), ["Table 5A"],
-                       "unless the vault prints a Table 5A")
-        XCTAssertEqual(TableReference.references(in: "what does table five a say for QB2",
-                                                 catalogue: [.init(label: "Table 5A", title: "Invented")]), ["Table 5A"])
+        XCTAssertEqual(TableReference.labels(in: "is table 95 a good place to look"), ["Table 95"], "\"a\" is a word")
+        XCTAssertEqual(TableReference.labels(in: "is table 95 a good place to look", among: ["Table 95A"]), ["Table 95A"],
+                       "unless the vault prints a Table 95A")
+        XCTAssertEqual(TableReference.references(in: "what does table ninety-five a say for QB2",
+                                                 catalogue: [.init(label: "Table 95A", title: "Invented")]), ["Table 95A"])
         XCTAssertFalse(TableReference.removingReferences(from: "in table 95A, QB1 30").contains("95"))
         for text in ["what is a TBL95A controller", "table and chairs", "the table I built"] {
             XCTAssertEqual(TableReference.labels(in: text), [], text)

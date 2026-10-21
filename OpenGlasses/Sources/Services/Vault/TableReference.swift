@@ -47,7 +47,7 @@ enum TableReference {
 
     /// The tables a question names by number, reading a lower-case "a" or "i" after the number as
     /// the label's letter only when `available` holds that label ("table five a" where the vault
-    /// prints a Table 5A). Labels are compared without case.
+    /// prints a Table 95A). Labels are compared without case.
     static func labels(in text: String, among available: [String]) -> [String] {
         var seen = Set<String>()
         return spans(in: text).map { span in

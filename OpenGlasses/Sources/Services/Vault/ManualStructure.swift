@@ -128,7 +128,7 @@ enum ManualStructure {
             && line.text.hasPrefix("(") && line.text.count <= 80
     }
 
-    /// The caption a line carries ("Figure 58", "Table 16", "Table 16A") and whatever title follows it on the
+    /// The caption a line carries ("Figure 58", "Table 16", "Table 95A") and whatever title follows it on the
     /// same line, else nil. Captions are bold; the number is what separates a caption from a
     /// cross-reference ("See FIGURE 58 on page 44").
     static func caption(_ line: TypedLine) -> (label: String, inlineTitle: String)? {

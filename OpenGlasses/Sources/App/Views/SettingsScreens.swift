@@ -245,7 +245,7 @@ struct VoiceTriggersSettingsScreen: View {
             } header: {
                 Text("Conversation")
             } footer: {
-                Text("Your words appear in the text bar for a moment before they go. Leave them and they send themselves; touch them to edit. Only on this phone's screen — hands-free turns on the glasses, CarPlay or the Watch send as usual.")
+                Text("Your words appear in the text bar for a moment before they go. Leave them and they send themselves; touch them to edit. Only while this screen is in front of you — a turn with the screen off, in CarPlay or from the Watch sends as usual.")
             }
 
             // MARK: Hands-Free Triggers

@@ -163,6 +163,9 @@ enum NetworkRoute: String, CaseIterable, Sendable {
     case openClawEventStream
     case gatewayConnectionTest
     case hermesBridgeSession
+    /// Plan JP: Hermes Agent's own OpenAI-compatible API server — a conversation turn over HTTP,
+    /// beside the bridge script's socket above.
+    case hermesAgentAPI
     case mcpHTTPTransport
     case customAgentHarness
     case expertBridgeWebhook
@@ -242,6 +245,7 @@ extension NetworkRoute {
         case .openClawEventStream: return "Subscribe to the agent gateway's event stream."
         case .gatewayConnectionTest: return "Health-check a gateway URL and token the user just entered."
         case .hermesBridgeSession: return "Exchange session data with a Hermes bridge host on the wearer's network."
+        case .hermesAgentAPI: return "Send a conversation turn — and, for a visual question, one privacy-filtered glasses still — to the Hermes Agent API server on the wearer's network, and check that it answers."
         case .mcpHTTPTransport: return "Call a configured MCP server's HTTP transport with a tool request."
         case .customAgentHarness: return "Drive a user-supplied agent endpoint with the conversation so far."
         case .expertBridgeWebhook: return "Notify a Field Assist expert endpoint that help was requested."
@@ -313,6 +317,8 @@ extension NetworkRoute {
             return [.credential]
         case .hermesBridgeSession:
             return [.transcript, .frame]
+        case .hermesAgentAPI:
+            return [.promptText, .transcript, .frame, .credential]
         case .mcpHTTPTransport:
             return [.promptText, .credential]
         case .expertBridgeWebhook:
@@ -362,7 +368,7 @@ extension NetworkRoute {
         case .webSearch, .newsHeadlines, .podcastDirectory, .currencyRates,
              .aircraftOverhead, .aedDirectory, .twitchChatSocket, .playbookHTTPStep:
             return .publicWeb
-        case .homeAssistantCommand, .homeAssistantEntityCache, .hermesBridgeSession,
+        case .homeAssistantCommand, .homeAssistantEntityCache, .hermesBridgeSession, .hermesAgentAPI,
              .mcpHTTPTransport, .webHUDMirrorListener, .mcpGlassesListener, .jobRecordingOfficeSync,
              .openAICompatibleRealtimeSession:
             // The explicit compatible-server setting supports both LAN servers and TLS gateways.
@@ -458,6 +464,7 @@ extension NetworkRoute {
         case .openClawEventStream: return []
         case .gatewayConnectionTest: return ["EditGatewaySheet"]
         case .hermesBridgeSession: return ["URLSessionHermesSocket"]
+        case .hermesAgentAPI: return ["URLSessionHermesHTTPTransport"]
         case .mcpHTTPTransport: return ["HTTPTransport"]
         case .customAgentHarness: return ["CustomAgentHarness"]
         case .expertBridgeWebhook: return ["WebhookExpertNotifier"]

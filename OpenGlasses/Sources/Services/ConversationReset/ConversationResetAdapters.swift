@@ -123,3 +123,36 @@ final class BridgeSessionResetAdapter: ConversationContextResetting {
         return .issuedUnverified(backend, note: "the bridge protocol does not acknowledge a reset")
     }
 }
+
+// MARK: - Hermes Agent API server (Plan JP)
+
+/// A conversation held as a chain of stored responses on the server, which the phone addresses by
+/// the id of the last one (`previous_response_id`). The phone owns the only pointer into it.
+@MainActor
+protocol ResponseChainResetting: AnyObject {
+    var hasConversation: Bool { get }
+    func resetConversation()
+}
+
+@MainActor
+final class ResponseChainResetAdapter: ConversationContextResetting {
+    let backend = ConversationBackendID.hermes
+    private let chain: any ResponseChainResetting
+
+    init(chain: any ResponseChainResetting) {
+        self.chain = chain
+    }
+
+    func resetConversationContext() async -> ConversationResetOutcome {
+        chain.resetConversation()
+        guard !chain.hasConversation else {
+            return .failed(backend, reason: "the conversation id was not dropped")
+        }
+        // Locally observable and complete, like the gateway's key rotation: the server replays
+        // only the chain a request names, and no later request names the old one. Hermes's own
+        // long-term memory is a separate store that no reset of any backend reaches — the API
+        // offers no way to clear it — so this retires the conversation, not what Hermes chose to
+        // remember from it.
+        return .completed(backend)
+    }
+}

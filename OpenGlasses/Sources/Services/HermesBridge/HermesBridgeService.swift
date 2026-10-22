@@ -42,6 +42,13 @@ final class HermesBridgeService: ObservableObject {
     var onDebugEvent: ((String) -> Void)?
 
     private var socket: HermesSocket?
+    /// The address the current socket dialled, so Test Connection can tell a socket opened for
+    /// settings that have since changed from one for the settings on screen.
+    private var socketURL: URL?
+    /// Why the last socket failed, read from the transport before it was torn down (Plan JP).
+    private(set) var lastFailure: HermesConnectionDiagnosis?
+    /// Counts `pong` frames, so a probe on an open socket can tell its ping was answered.
+    private var pongCount = 0
     private let socketFactory: HermesSocketFactory
     private var receiveLoop: Task<Void, Never>?
     private var pendingResponse: CheckedContinuation<String, Error>?
@@ -49,8 +56,10 @@ final class HermesBridgeService: ObservableObject {
     /// (tools, vision), so this is generous.
     private let queryTimeout: TimeInterval = 120
 
+    /// Hermes is on, Agent Mode is on, and the connection kind is the bridge script — the only
+    /// kind that holds a socket. Every launch-time and settings `connect()` is gated on this.
     var isEnabled: Bool {
-        Config.hermesBridgeEnabled && Config.agentModeEnabled
+        Config.hermesBridgeEnabled && Config.agentModeEnabled && Config.hermesConnectionKind == .bridgeScript
     }
 
     /// The socket factory is the only seam: production dials a `URLSessionWebSocketTask`, a test
@@ -78,8 +87,11 @@ final class HermesBridgeService: ObservableObject {
             return
         }
         status = .connecting
+        lastFailure = nil
         self.socket = socketFactory(url)
-        onDebugEvent?("Hermes bridge: connecting to \(url.absoluteString)")
+        socketURL = url
+        // The token rides in the query string; the debug line must not carry it.
+        onDebugEvent?("Hermes bridge: connecting to \(HermesBridgeProtocol.redactedForLog(url))")
         startReceiveLoop()
     }
 
@@ -88,23 +100,86 @@ final class HermesBridgeService: ObservableObject {
         receiveLoop = nil
         socket?.cancel()
         socket = nil
+        socketURL = nil
         status = .disconnected
         failPending(with: BridgeError.closed)
     }
 
-    /// One-shot reachability probe for the settings screen: connects if
-    /// needed and pings.
-    func checkConnection() async -> Bool {
-        if status == .disconnected { connect() }
-        guard let socket else { return false }
-        do {
-            try await socket.send(HermesBridgeProtocol.encodePing())
-            return true
-        } catch {
-            onDebugEvent?("Hermes bridge: ping failed — \(error.localizedDescription)")
-            disconnect()
-            return false
+    /// Test Connection for the settings screen (Plan JP).
+    ///
+    /// It used to report success as soon as a ping was *sent* — and URLSession queues a send before
+    /// the socket is open, so an address with nothing listening still showed a tick. Now an open
+    /// socket must answer a ping with `pong`, and a new one must be greeted with `welcome` (the
+    /// bridge sends it on connect), each within `timeout`. A failure is read from what the transport
+    /// exposes (`HermesConnectionDiagnosis.bridgeFailure`).
+    func checkConnection(timeout: TimeInterval = 5) async -> HermesConnectionDiagnosis {
+        let diagnosis = await probe(timeout: timeout)
+        onDebugEvent?("Hermes bridge: test connection — \(diagnosis.logToken)")
+        return diagnosis
+    }
+
+    private func probe(timeout: TimeInterval) async -> HermesConnectionDiagnosis {
+        guard !Config.hermesBridgeHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .noHost
         }
+        guard let candidate = HermesBridgeProtocol.endpointURL(
+            host: Config.hermesBridgeHost,
+            port: Config.hermesBridgePort,
+            token: Config.hermesBridgeToken
+        ) else { return .invalidAddress }
+        do {
+            _ = try EndpointPolicy.requireOpenable(url: candidate, for: .hermesBridgeSession)
+        } catch {
+            return .policy(error)
+        }
+
+        if status == .connected, let socket, socketURL == candidate {
+            let before = pongCount
+            do {
+                try await socket.send(HermesBridgeProtocol.encodePing())
+            } catch {
+                let failure = Self.failure(of: error, on: socket)
+                disconnect()
+                return failure
+            }
+            await waitUntil(timeout) { self.pongCount > before || self.status == .disconnected }
+            if pongCount > before { return .bridgeReady }
+            if status == .disconnected { return lastFailure ?? .unreachable(.bridgeScript) }
+            return .bridgeSilent
+        }
+
+        // A socket still connecting, or one opened for settings since changed, is not evidence
+        // about the address on screen: start over.
+        if status != .disconnected { disconnect() }
+        connect()
+        guard socket != nil else { return lastFailure ?? .invalidAddress }
+        await waitUntil(timeout) { self.status != .connecting }
+        switch status {
+        case .connected:
+            return .bridgeReady
+        case .disconnected:
+            return lastFailure ?? .unreachable(.bridgeScript)
+        case .connecting:
+            let evidence = socket?.diagnostics() ?? HermesSocketDiagnostics()
+            disconnect()
+            return HermesConnectionDiagnosis.bridgeFailure(httpStatus: evidence.httpStatus,
+                                                           closeCode: evidence.closeCode,
+                                                           urlErrorCode: nil)
+        }
+    }
+
+    private func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline, !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
+
+    private static func failure(of error: Error, on socket: HermesSocket) -> HermesConnectionDiagnosis {
+        let evidence = socket.diagnostics()
+        return HermesConnectionDiagnosis.bridgeFailure(httpStatus: evidence.httpStatus,
+                                                       closeCode: evidence.closeCode,
+                                                       urlErrorCode: HermesAgentAPI.urlErrorCode(of: error))
     }
 
     // MARK: - Query
@@ -167,6 +242,7 @@ final class HermesBridgeService: ObservableObject {
                 } catch {
                     if !Task.isCancelled {
                         await MainActor.run {
+                            self.lastFailure = Self.failure(of: error, on: socket)
                             self.onDebugEvent?("Hermes bridge: receive failed — \(error.localizedDescription)")
                             self.disconnect()
                         }
@@ -208,7 +284,9 @@ final class HermesBridgeService: ObservableObject {
                 domain: "HermesBridge", code: 1,
                 userInfo: [NSLocalizedDescriptionKey: message]
             ))
-        case .sessionReset, .audioStart, .audioEnd, .pong:
+        case .pong:
+            pongCount += 1
+        case .sessionReset, .audioStart, .audioEnd:
             break
         case .unknown(let type):
             onDebugEvent?("Hermes bridge: unknown message type '\(type)'")

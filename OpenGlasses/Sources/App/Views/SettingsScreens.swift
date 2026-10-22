@@ -908,7 +908,7 @@ struct ConnectionsSettingsScreen: View {
             } header: {
                 Text("Connected Apps & Services")
             } footer: {
-                Text("Cloud voices (ElevenLabs, OpenAI, xAI), Perplexity search, broadcast targets, and live-streaming live under Services. Gateways connect the app to external agents — OpenClaw tool bridges and the Hermes agent bridge. MCP Servers expose external tool servers the AI can call.")
+                Text("Cloud voices (ElevenLabs, OpenAI, xAI), Perplexity search, broadcast targets, and live-streaming live under Services. Gateways connect the app to external agents — OpenClaw tool bridges and Hermes Agent. MCP Servers expose external tool servers the AI can call.")
             }
         }
         .navigationTitle("Connections")

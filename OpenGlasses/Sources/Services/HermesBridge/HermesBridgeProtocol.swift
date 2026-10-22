@@ -95,6 +95,18 @@ enum HermesBridgeProtocol {
         return components.url
     }
 
+    /// The endpoint as a debug line may show it: the `?token=` value replaced, so a bridge token
+    /// never reaches the field log.
+    static func redactedForLog(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return "(unreadable address)"
+        }
+        let hadToken = components.queryItems?.contains { $0.name == "token" } ?? false
+        components.query = nil
+        let shown = components.string ?? "(unreadable address)"
+        return hadToken ? "\(shown)?token=<redacted>" : shown
+    }
+
     private static func encode(_ object: [String: Any]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
               let text = String(data: data, encoding: .utf8) else {

@@ -98,6 +98,9 @@ the normal local/cloud path. Gateway-class feature — gated behind Agent Mode p
 rule. Settings → Connections → Hermes Bridge (host/port/optional token, probe, session
 reset).
 
+Follow-up: Plan [JP](JP-hermes-agent-api-server.md) adds Hermes Agent's own API server as a
+second connection kind beside this bridge, and makes Test Connection say why it failed.
+
 ## P6 — Brave Search provider
 
 `web_search` gains Brave Search API as a third configured tier (Perplexity → Tavily →

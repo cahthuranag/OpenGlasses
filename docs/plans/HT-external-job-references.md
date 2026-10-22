@@ -45,6 +45,8 @@ work order into the FSM. What the phone needs is small: the job has to keep its 
 other system on the way in, show the number people know it by, and carry that identity back out
 untouched so the office never has to match a report to a job by a customer's name.
 
+**Amended 2026-10-23 by Plan [JR](JR-workiz-from-the-phone.md) (owner):** the rule above holds for every firm that runs Avenkin Office. A firm without the office may connect one field-service system directly from the phone, Workiz first. Its jobs reuse this plan's `ExternalJobReference` (`system: "workiz"`), so the record echoes the same identity whichever route a job took. A firm with an office connection keeps the office's connector, and the phone's is hidden.
+
 ## Outcome
 
 - **A job file may carry an `external` block**: which system the job came from, that system's

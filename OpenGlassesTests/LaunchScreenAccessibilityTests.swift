@@ -25,7 +25,7 @@ final class LaunchScreenAccessibilityTests: XCTestCase {
         let source = try String(contentsOf: Self.uiTestFile("AccessibilityAudit.swift"),
                                 encoding: .utf8)
         let start = try XCTUnwrap(source.range(of: "private func waitForLaunchScreenToClear"))
-        let end = try XCTUnwrap(source.range(of: "\n    // MARK: - Audit",
+        let end = try XCTUnwrap(source.range(of: "\n    // MARK: Audit",
                                             range: start.upperBound..<source.endIndex))
         let body = source[start.lowerBound..<end.lowerBound]
         XCTAssertTrue(body.contains("app.buttons.firstMatch.waitForExistence"), String(body))

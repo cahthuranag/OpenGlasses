@@ -41,6 +41,9 @@ jobs:
       - name: Prepare the Xcode project
         id: project
         uses: ./.github/actions/xcode-project
+        with:
+          # This runner only compiles and packages; each audit job boots its own fresh device.
+          boot-simulator: 'false'
       - name: Build UI tests with resource and target timings
         # One measured runner needed over 40 minutes while still making progress.
         # Record why, and leave time for diagnostics rather than losing the whole run.

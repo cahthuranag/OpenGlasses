@@ -325,7 +325,8 @@ final class FieldSessionService: ObservableObject {
         guard let offlineQueue else { throw CocoaError(.fileWriteUnknown) }
         guard !offlineQueue.containsWorkRecord(sessionId: session.id) else { return }
         let record = WorkRecord(session: session, vaultName: session.vaultId,
-                                usage: jobUsage(sessionId: session.id))
+                                usage: jobUsage(sessionId: session.id),
+                                capturedManuals: capturedManualReferences(for: session))
         offlineQueue.enqueue(QueuedOp.make(workRecord: record))
         guard offlineQueue.containsWorkRecord(sessionId: session.id) else { throw CocoaError(.fileWriteUnknown) }
     }
@@ -348,7 +349,8 @@ final class FieldSessionService: ObservableObject {
     func handoverWorkRecord(sessionId: String) -> WorkRecord? {
         guard let session = storedSession(id: sessionId) else { return nil }
         return WorkRecord(session: session, vaultName: session.vaultId,
-                          usage: jobUsage(sessionId: sessionId))
+                          usage: jobUsage(sessionId: sessionId),
+                          capturedManuals: capturedManualReferences(for: session))
     }
 
     func departureThreadID(sessionId: String) -> String? {

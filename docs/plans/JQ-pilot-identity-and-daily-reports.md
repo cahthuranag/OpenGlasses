@@ -141,6 +141,14 @@ not secret, and it identifies which code a phone runs without printing the code 
 4. **May a profile switch pilot reports on?** Proposed: it may set it on and set the addresses, but
    never lock it on. The tester's agreement is the reason it is on, so the tester can switch it off.
 5. **Seven days of app events**, with the capacity raise measured on a device. Proposed: yes.
+6. **Which technician ID a job from a field-service system prints.** Added 2026-10-23 from office
+   plan FX29 (private), decision 2. A job from Workiz (Plan [JR](JR-workiz-from-the-phone.md)) or
+   from an office connected to ServiceTitan carries that system's technician ID as
+   `external.technician_id`. The office recommends printing **that** ID instead of the phone's own
+   label on such a job, because it is the ID the firm's own system and its customers already use.
+   Jobs from no system keep the phone's label. Taking it means Plan
+   [HT](HT-external-job-references.md)'s decision 3 (no external identifier shown on the phone)
+   is narrowed for this one value, printed on reports and never shown on screens. *Proposed: yes.*
 
 ## Not covered
 

@@ -1,6 +1,9 @@
 # Plan JR — Workiz From the Phone
 
-**Status:** 📝 Drafted 2026-10-23 — nothing implemented.
+**Status:** 📝 Drafted 2026-10-23 — nothing implemented. **Amended the same day** for the hand-over
+to an office (*When the firm gets Avenkin Office*): a route key, a check-in member, and shared
+Workiz fixtures with a short contract, so the office's own Workiz connector (office plans FX24 and
+FX29, private) reads what the phone wrote.
 **Origin:** an appliance-repair tester that runs its business on Workiz asked, through the pilot
 partner, whether the app could connect to it. Its owner wants to start with refrigerators, and the
 firm has no office computer running Avenkin Office.
@@ -85,15 +88,38 @@ All pure, over values and fixtures, with no network:
   2. optionally a client note (`POST /clients/{clientId}/notes`) headed *Job 1234 — 23 Oct 2026*;
   3. optionally a sub-status (decision 3).
 
-  The plan never writes the description, schedule, status, client details, tags or money. It is
-  idempotent per job: a resend overwrites the same field, and a client note is posted once, with its
-  ID remembered.
-- **Fixtures.** Built from the spec's own example shapes, with invented IDs, names and addresses.
+  The plan never writes the description, schedule, status, client details, tags or money. The
+  field's value is made of **report blocks**, each beginning with its marker line (`Contracts/fsm-workiz.md`).
+  A writer replaces only the block carrying its own marker, appends a block for a new report, and
+  never removes or edits another block, whether the phone or an office wrote it. So a resend is
+  idempotent, and a revisit's report sits below the first. A client note is posted once, with its ID
+  remembered, and carries the same marker line.
+- **Shared fixtures and a contract, in `Contracts/`.** The office's Workiz connector decodes the
+  same responses and must recognise what the phone wrote, so P0 publishes both where the office pins
+  public contracts:
+  - `Contracts/fixtures/workiz-v2/` with a `README.md` (synthetic, built from the v2 document's
+    example shapes, invented IDs, names and addresses): a jobs page with `hasMore` and a last page;
+    jobs scheduled, unscheduled, cancelled, done, with two technicians, and with notes and
+    attachments; the users list; the custom-field list with and without the report field; a job
+    whose report field holds two blocks; a client-notes list holding a marker; and the error bodies
+    for `400`, `401`, `403` and `429`.
+  - `Contracts/fsm-workiz.md`, short:
+    - the report field's default name, **Field Assist report** (*Large Text*, on jobs);
+    - the marker line, `Avenkin ref <8 lowercase hex>`, where the hex is the first eight digits of
+      the SHA-256 of the report's work record as sent;
+    - the block rules above;
+    - the job identity (`external.job_id` is the `JOB-…` ID, never v1's `uuid`;
+      `external.technician_id` is the `USR-…` ID);
+    - the only writes allowed: the report field through a `customFields`-only `PUT`, and
+      `POST /clients/{id}/notes`.
+
+  The phone's tests run over these fixtures, as the office's will.
 
 ## P1 — The connection, in Settings
 
 **Settings → Field Assist → Field service software → Workiz.** The section is shown only when Field
-Assist is licensed and no Avenkin Office connection is set (decision 5).
+Assist is licensed and the profile does not route the firm's field-service system through its
+office (`organizationFieldServiceRoute`, see *When the firm gets Avenkin Office*).
 
 1. **Key.** A paste field with a short *How to make a key* list: Feature center → Developer API;
    Settings → Developer → v2 → Create New API Key; the scopes above; an expiry.
@@ -146,6 +172,39 @@ Only, and gets its own `URLSession` transport behind a seam so tests never reach
 - The visit's record keeps the `ExternalJobReference` (Plan HT's echo), so the job file, report and
   Workiz job stay tied together.
 
+## When the firm gets Avenkin Office
+
+A firm may start on the phone and add the office later. The office then connects Workiz itself
+(office plan FX24), and the two routes must never run together, or the same job is issued twice
+and the same report written twice (office plan FX29). Three things on the phone make the
+hand-over safe:
+
+1. **A route key.** `SettingKey.organizationFieldServiceRoute`, tighten-only, whose one value is
+   `office`. The office adds it to its profile request when it first connects a field-service
+   system. On a phone that verifies a profile carrying it:
+   - the direct connector stops, for every system;
+   - the Settings section is replaced by one line, *"Your office connects to Workiz for you."*;
+   - the Workiz key and the stored `USR-` ID are erased;
+   - Workiz jobs not yet started leave the list on the next refresh; jobs already started keep
+     their snapshot and their `ExternalJobReference`;
+   - a Workiz delivery still waiting in the queue ends as *"Not sent to Workiz — your office posts
+     reports now"*. The report goes to the office by the usual route, and the office posts it,
+     recognising any block the phone already wrote by its marker.
+
+   The key never re-enables anything when it is absent: a later profile without it leaves the
+   section available again, and the technician has to paste a key again.
+2. **A check-in member.** The office check-in (`Contracts/office-check-in.md` §4.2, draft v1)
+   gains an optional member `fsmDirect: {system, state}`, with `state` either `on` (a key is stored
+   and the connector is running) or `off`. Absent means an app that predates it, which the office
+   reads as *unknown*. It is covered by the check-in's signature like every member. The contract's
+   §11 fixtures are regenerated with one `on` and one `off` check-in. The office holds a
+   technician's jobs until that phone's check-in reports `off` under the new profile.
+3. **The shared fixtures and contract** (P0), so the office's connector reads the phone's job
+   identity and report blocks exactly as the phone wrote them.
+
+This replaces decision 5's *"hidden while an office connection is set"*: the profile, not a local
+guess about a connection, decides.
+
 ## How we check the experience
 
 **1. In the simulator, with a stub (built with P2).** A UI-test launch argument
@@ -195,8 +254,8 @@ feedback comes through the partner. Plan JQ's daily report carries the evidence.
    *Report sent*), never *Done*.
 4. **The customer's contact details on the phone.** *Proposed: name, address and primary phone
    (to call ahead); not email.*
-5. **A firm with Avenkin Office and Workiz.** *Proposed: the office's connector only*; the phone's
-   section is hidden while an office connection is set, so a job is never written twice.
+5. **A firm with Avenkin Office and Workiz.** *Proposed: the office's connector only.* The
+   mechanism is the route key and check-in member in *When the firm gets Avenkin Office*.
 6. **Workiz job notes on the phone.** *Proposed: the newest five, read only*, since they are often
    the office's instructions for the visit.
 
@@ -216,8 +275,8 @@ feedback comes through the partner. Plan JQ's daily report carries the evidence.
   not reshape them.
 - **Webhooks and background refresh.** There is no server to receive a webhook, and there is no
   background run.
-- **Office-side Workiz.** For firms with Avenkin Office, a Workiz connector belongs in the office's
-  own connector plans, beside the ServiceTitan and Jobber ones.
+- **The office's own Workiz connector.** It is office plan FX24 (private). This plan owns only the
+  phone's half of the hand-over and the shared contract.
 
 ## Tests
 
@@ -229,7 +288,13 @@ feedback comes through the partner. Plan JQ's daily report carries the evidence.
 - `WorkizJobMapperTests`: every mapped field, the external reference, attachments never fetched,
   re-pull versus started snapshot, cancellation.
 - `WorkizWriteBackTests`: the composed text (no transcript; JQ identity), a body with only
-  `customFields`, field lookup by name, the client note once, idempotent resend.
+  `customFields`, field lookup by name, the marker line's digest, block rules (replace own, append
+  new, never touch another's, over the two-block fixture), the client note once, idempotent resend.
+- `WorkizRouteTests`: `organizationFieldServiceRoute` is tighten-only; on it, the connector stops,
+  the key and user ID are erased, unstarted jobs leave, started jobs keep their reference, and a
+  queued delivery ends with its sentence.
+- Check-in: `fsmDirect` encoded `on`, `off` and absent, signed over, against the regenerated
+  fixtures.
 - `WorkizSyncSinkTests`: retry and back-off, `401`/`403` stopping, persistence over relaunch.
 - `NetworkRouteRegistry`, `DataStoreRegistry` and telemetry guards updated for the new route, the
   key and the stored user ID.

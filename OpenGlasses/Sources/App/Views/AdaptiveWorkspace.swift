@@ -21,6 +21,12 @@ struct WorkspaceRegionLayout: Layout {
 final class AdaptiveWorkspaceState: ObservableObject {
     @Published var isExpanded = false
     @Published var section: Section = .job
+    @Published var personalSection: PersonalSection = .conversation
+
+    enum PersonalSection: Hashable {
+        case conversation
+        case myDay
+    }
 
     enum Section: String, CaseIterable, Identifiable {
         case job = "Job"
@@ -38,6 +44,7 @@ struct AdaptiveWorkspaceContext: View {
     @Environment(\.appAccent) private var accent
     let showsJobs: Bool
     let showsMyDay: Bool
+    let hasUnfinishedJob: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -61,22 +68,8 @@ struct AdaptiveWorkspaceContext: View {
                 }
             } else if appState.manualFigureRequest != nil {
                 reference
-            } else if showsMyDay {
-                ScrollView {
-                    MyDayHomeView(service: appState.myDayService, compact: false,
-                                  onRemoveFromHome: {
-                        UserDefaults.standard.set(false, forKey: MyDayHomePlacement.onHomeKey)
-                    })
-                    .padding(12)
-                }
             } else {
-                VStack(spacing: 8) {
-                    ConversationPageHeader(store: appState.conversationStore)
-                    ConversationPageBody(store: appState.conversationStore,
-                                         session: appState.geminiLiveSession,
-                                         openAISession: appState.openAIRealtimeSession)
-                }
-                .padding(12)
+                personalContext
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -89,6 +82,55 @@ struct AdaptiveWorkspaceContext: View {
         .tint(accent)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("adaptive-workspace-context")
+        .onChange(of: showsMyDay) { _, available in
+            if !available { workspace.personalSection = .conversation }
+        }
+    }
+
+    @ViewBuilder
+    private var personalContext: some View {
+        if hasUnfinishedJob {
+            Button {
+                appState.openJobs(.currentJob)
+            } label: {
+                Label("Open unfinished job", systemImage: "arrow.uturn.backward")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .accessibilityIdentifier("adaptive-workspace-open-job")
+        }
+
+        if showsMyDay {
+            Picker("Personal context", selection: $workspace.personalSection) {
+                Text("Conversation").tag(AdaptiveWorkspaceState.PersonalSection.conversation)
+                Text("My Day").tag(AdaptiveWorkspaceState.PersonalSection.myDay)
+            }
+            .pickerStyle(.segmented)
+            .padding(12)
+        }
+
+        if showsMyDay && workspace.personalSection == .myDay {
+            ScrollView {
+                MyDayHomeView(service: appState.myDayService, compact: false,
+                              onRemoveFromHome: {
+                    UserDefaults.standard.set(false, forKey: MyDayHomePlacement.onHomeKey)
+                })
+                .padding(12)
+            }
+            .accessibilityIdentifier("adaptive-workspace-my-day")
+        } else {
+            VStack(spacing: 8) {
+                ConversationPageHeader(store: appState.conversationStore)
+                ConversationPageBody(store: appState.conversationStore,
+                                     session: appState.geminiLiveSession,
+                                     openAISession: appState.openAIRealtimeSession)
+            }
+            .padding(12)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("adaptive-workspace-conversation")
+        }
     }
 
     @ViewBuilder

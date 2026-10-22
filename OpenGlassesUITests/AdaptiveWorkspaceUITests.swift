@@ -7,6 +7,77 @@ final class AdaptiveWorkspaceUITests: AccessibilityAuditCase {
         super.tearDown()
     }
 
+    func testPersonalWorkspaceStartsWithConversationAndCanShowMyDay() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch([.configured, .seedConversations, .seedMyDay])
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitForOrientation(app, landscape: true)
+
+        let context = app.otherElements["adaptive-workspace-context"]
+        let conversation = context.otherElements["adaptive-workspace-conversation"]
+        awaitScreen(conversation, named: "Personal conversation")
+        XCTAssertTrue(context.buttons["Conversation"].isSelected)
+        XCTAssertFalse(context.buttons["Job"].exists)
+        XCTAssertFalse(context.buttons["Reference"].exists)
+        XCTAssertFalse(context.buttons["Evidence"].exists)
+        XCTAssertFalse(context.buttons["adaptive-workspace-open-job"].exists)
+
+        context.buttons["My Day"].tap()
+        awaitScreen(context.scrollViews["adaptive-workspace-my-day"], named: "Personal My Day")
+        XCTAssertTrue(context.buttons["My Day"].isSelected)
+
+        context.buttons["Conversation"].tap()
+        awaitScreen(conversation, named: "Return to personal conversation")
+        XCTAssertTrue(context.buttons["Conversation"].isSelected)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "adaptive-personal-conversation-and-my-day"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testTurningFieldAssistOffKeepsTheOpenJobOutOfThePersonalWorkspace() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = launch([.configured, .seedFieldJob, .seedFieldPhotos, .seedConversations])
+        openTab("Jobs", in: app)
+        let jobRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Job 1005,")).firstMatch
+        awaitScreen(jobRow, named: "The unfinished job row")
+        jobRow.tap()
+        awaitScreen(app.textFields["Job number"], named: "Seeded unfinished job")
+
+        openTab("Settings", in: app)
+        let row = app.scrollViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Field Assist")).firstMatch
+        for _ in 0..<8 {
+            if row.exists && row.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(row.exists && row.isHittable, "Field Assist settings is unreachable")
+        row.tap()
+        let enabled = app.switches["Enable Field Assist"]
+        awaitScreen(enabled, named: "Field Assist switch")
+        XCTAssertEqual(enabled.value as? String, "1")
+        enabled.switches.firstMatch.tap()
+        XCTAssertEqual(enabled.value as? String, "0")
+
+        openTab("Avenkin", in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitForOrientation(app, landscape: true)
+        let context = app.otherElements["adaptive-workspace-context"]
+        awaitScreen(context.otherElements["adaptive-workspace-conversation"], named: "Personal workspace after switching off")
+        XCTAssertFalse(context.buttons["Job"].exists)
+        XCTAssertFalse(context.buttons["Reference"].exists)
+        XCTAssertFalse(context.buttons["Evidence"].exists)
+
+        let openJob = context.buttons["adaptive-workspace-open-job"]
+        awaitScreen(openJob, named: "Unfinished job recovery")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "adaptive-personal-with-unfinished-job"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        openJob.tap()
+        awaitScreen(app.textFields["Job number"], named: "The unfinished job is still accessible")
+        XCTAssertEqual(app.textFields["Job number"].value as? String, "1005")
+    }
+
     func testRotationPreservesTheDockPageAndConversation() {
         XCUIDevice.shared.orientation = .portrait
         let app = launch([.configured, .seedConversations])

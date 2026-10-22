@@ -111,15 +111,24 @@ enum VaultValidator {
             }
         }
 
-        // Procedures decode + graph-validate.
+        // Procedures decode + graph-validate, and each declares its own id: a scenario is addressed
+        // by id everywhere (the Field Assist tab, `procedure` actions), so two files sharing one
+        // would leave one of them unreachable.
         if let dir = manifest.proceduresDir {
             let proceduresURL = directory.appendingPathComponent(dir, isDirectory: true)
-            let jsons = (try? fm.contentsOfDirectory(at: proceduresURL, includingPropertiesForKeys: nil))?
-                .filter { $0.pathExtension.lowercased() == "json" } ?? []
+            let jsons = ((try? fm.contentsOfDirectory(at: proceduresURL, includingPropertiesForKeys: nil))?
+                .filter { $0.pathExtension.lowercased() == "json" } ?? [])
+                .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            var fileById: [String: String] = [:]
             for url in jsons {
                 guard let pdata = try? Data(contentsOf: url),
                       let procedure = try? JSONDecoder().decode(Procedure.self, from: pdata) else {
                     issues.append("procedure does not decode: \(url.lastPathComponent)"); continue
+                }
+                if let first = fileById[procedure.id] {
+                    issues.append("procedure id \(procedure.id) is declared by both \(first) and \(url.lastPathComponent)")
+                } else {
+                    fileById[procedure.id] = url.lastPathComponent
                 }
                 issues.append(contentsOf: validateProcedureGraph(procedure).map { "\(procedure.id): \($0)" })
             }

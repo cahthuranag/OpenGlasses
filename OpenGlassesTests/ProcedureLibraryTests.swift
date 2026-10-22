@@ -115,4 +115,65 @@ final class ProcedureLibraryTests: XCTestCase {
         let library = ProcedureLibrary(store: makeStore())
         XCTAssertEqual(library.all.count, 1)
     }
+
+    // MARK: - One procedure per id
+
+    /// A minimal valid procedure: one terminal step.
+    private func procedureJSON(id: String, title: String) -> Data {
+        Data("""
+        {"id": "\(id)", "title": "\(title)", "version": "1.0.0", "safety_notes": [], "entry_step": "done",
+         "steps": [{"id": "done", "title": "Done", "instruction": "Finished.", "terminal": true}]}
+        """.utf8)
+    }
+
+    /// Two files declaring one id list it once, the same one every load. Listing both put two rows
+    /// with one id in the Field Assist tab's `List`, in an order that changed between redraws — a
+    /// `UICollectionView` batch-update assertion (TestFlight crash, build 556).
+    func testTwoFilesDeclaringOneIdListItOnceByTheFirstFileName() throws {
+        let proceduresDir = tempRoot.appendingPathComponent("procedures", isDirectory: true)
+        try FileManager.default.createDirectory(at: proceduresDir, withIntermediateDirectories: true)
+        try procedureJSON(id: "leak_check", title: "From b").write(to: proceduresDir.appendingPathComponent("b.json"))
+        try procedureJSON(id: "leak_check", title: "From a").write(to: proceduresDir.appendingPathComponent("a.json"))
+        try procedureJSON(id: "airflow", title: "Airflow").write(to: proceduresDir.appendingPathComponent("c.json"))
+
+        for _ in 0..<5 {
+            let library = ProcedureLibrary(store: makeStore())
+            XCTAssertEqual(library.all.map(\.id), ["airflow", "leak_check"])
+            XCTAssertEqual(library.procedure(id: "leak_check")?.title, "From a")
+        }
+    }
+
+    func testTheOverlaysFileWinsOverTheBundlesForOneId() throws {
+        let bundleRoot = tempRoot.appendingPathComponent("bundle", isDirectory: true)
+        let overlayRoot = tempRoot.appendingPathComponent("overlay", isDirectory: true)
+        for root in [bundleRoot, overlayRoot] {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent("procedures"),
+                                                    withIntermediateDirectories: true)
+        }
+        // The bundle's file name sorts first; the overlay still wins.
+        try procedureJSON(id: "leak_check", title: "Bundled")
+            .write(to: bundleRoot.appendingPathComponent("procedures/a.json"))
+        try procedureJSON(id: "leak_check", title: "Edited")
+            .write(to: overlayRoot.appendingPathComponent("procedures/z.json"))
+        let manifest = VaultManifest(id: "refrigeration", name: "Refrigeration Service", version: "1.0.0",
+                                     files: [], proceduresDir: "procedures")
+
+        let library = ProcedureLibrary(store: VaultStore(manifest: manifest, bundleRoot: bundleRoot,
+                                                         overlayRoot: overlayRoot))
+        XCTAssertEqual(library.all.map(\.title), ["Edited"])
+    }
+
+    func testResolveGivesTheSameListWhateverOrderTheFilesArriveIn() throws {
+        func candidate(_ file: String, _ id: String, overlay: Bool = false) throws -> ProcedureLibrary.Candidate {
+            let procedure = try JSONDecoder().decode(Procedure.self, from: procedureJSON(id: id, title: file))
+            return .init(file: file, fromOverlay: overlay, procedure: procedure)
+        }
+        let candidates = [try candidate("b.json", "x"), try candidate("a.json", "x"),
+                          try candidate("c.json", "w"), try candidate("d.json", "x", overlay: true)]
+        let expected = ProcedureLibrary.resolve(candidates).map(\.title)
+        XCTAssertEqual(expected, ["c.json", "d.json"])
+        XCTAssertEqual(ProcedureLibrary.resolve(candidates.reversed()).map(\.title), expected)
+        XCTAssertEqual(ProcedureLibrary.resolve([candidates[2], candidates[0], candidates[3], candidates[1]])
+            .map(\.title), expected)
+    }
 }

@@ -23,6 +23,9 @@ struct FieldAssistModeTab: View {
     @State private var otherModesExpanded = false
     @State private var editingPersona: Persona?
     @State private var shelf: [FieldAssistManualShelf.Vault] = []
+    /// The current vault's scenarios, read with the shelf rather than on every redraw: this tab
+    /// redraws on every `appState` change, and a `List` must see the same rows each time.
+    @State private var procedures: [Procedure] = []
     @State private var previewURL: URL?
     @State private var askingManual: FieldAssistManualShelf.Manual?
 
@@ -68,8 +71,8 @@ struct FieldAssistModeTab: View {
         .navigationTitle("Field Assist")
         .listStyle(.insetGrouped)
         .ogFormStyle()
-        .onAppear(perform: reloadShelf)
-        .onChange(of: faVaultId) { _, _ in reloadShelf() }
+        .onAppear(perform: reload)
+        .onChange(of: faVaultId) { _, _ in reload() }
         .quickLookPreview($previewURL)
         .sheet(item: $editingPersona) { persona in
             PersonaDetailView(persona: persona, appState: appState)
@@ -178,7 +181,6 @@ struct FieldAssistModeTab: View {
     @ViewBuilder
     private var scenariosSection: some View {
         if let current {
-            let procedures = ProcedureLibrary(store: VaultRegistry.shared.store(for: current)).all
             let unlocked = VaultRegistry.shared.isUnlocked(current)
             Section {
                 if procedures.isEmpty {
@@ -350,8 +352,9 @@ struct FieldAssistModeTab: View {
         Task { await appState.sendTextMessage(prompt) }
     }
 
-    private func reloadShelf() {
+    private func reload() {
         shelf = FieldAssistManualFiles.shelf()
+        procedures = current.map { ProcedureLibrary(store: VaultRegistry.shared.store(for: $0)).all } ?? []
     }
 
     // MARK: - Settings

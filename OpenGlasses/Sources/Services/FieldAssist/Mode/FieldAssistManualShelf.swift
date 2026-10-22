@@ -51,12 +51,17 @@ enum FieldAssistManualShelf {
 
     /// Every listed manual matching `query`: the active vault's first, then the rest by vault name,
     /// each vault's manuals by title. An empty query matches everything.
+    ///
+    /// Each manual once: a manifest that lists a file twice (or a vault id seen twice) would give
+    /// two rows the same `Manual.id`, and a SwiftUI `List` keyed by id asserts on that. The first
+    /// in the order above is kept.
     static func manuals(vaults: [Vault], activeVaultId: String, query: String = "") -> [Manual] {
         let needle = normalized(query)
         let ordered = vaults.filter(\.unlocked).sorted { lhs, rhs in
             if (lhs.id == activeVaultId) != (rhs.id == activeVaultId) { return lhs.id == activeVaultId }
             return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
         }
+        var seen = Set<String>()
         return ordered.flatMap { vault in
             vault.documents
                 .filter { !vault.unavailableFiles.contains($0.file) }
@@ -68,6 +73,7 @@ enum FieldAssistManualShelf {
                         .contains { normalized($0).contains(needle) }
                 }
         }
+        .filter { seen.insert($0.id).inserted }
     }
 
     /// Whether a manual can be asked a question now: only inside a job open on its vault, because

@@ -97,6 +97,33 @@ final class GuidedJobFlowTests: XCTestCase {
         try flow.startJob(vaultId: "refrigeration", jobReference: reference)
     }
 
+    func testWithdrawingAnOrganisationJobDoesNotSendItsConversationToPersonalRecall() async throws {
+        _ = try startJob(reference: "1005")
+        await turn("Employer-only job information")
+        let thread = try XCTUnwrap(service.activeSession?.conversationThreadId)
+        let priorClears = clearHistoryCalls
+        var recalled: [String] = []
+        store.onThreadLeft = { recalled.append($0) }
+        let ended = try service.closeForAccessLoss(reason: "Organisation profile removed")
+        flow.didCloseForAccessLoss(ended, withdrawingConversation: true)
+        XCTAssertFalse(store.threads.contains { $0.id == thread })
+        XCTAssertNil(store.activeThreadId)
+        XCTAssertTrue(recalled.isEmpty, "Withdrawn job content must not enter personal recall")
+        XCTAssertEqual(clearHistoryCalls, priorClears + 1)
+    }
+
+    func testSubscriptionExpiryKeepsThePersonsOwnConversationHistory() async throws {
+        _ = try startJob(reference: "1005")
+        await turn("My own job information")
+        let thread = try XCTUnwrap(service.activeSession?.conversationThreadId)
+        let priorClears = clearHistoryCalls
+        let ended = try service.closeForAccessLoss(reason: "Subscription expired")
+        flow.didCloseForAccessLoss(ended)
+        XCTAssertTrue(store.threads.contains { $0.id == thread })
+        XCTAssertNil(store.activeThreadId)
+        XCTAssertEqual(clearHistoryCalls, priorClears + 1)
+    }
+
     private func equipment(_ token: String) -> EquipmentIdentity {
         EquipmentIdentity(modelToken: token, heading: token, file: "models.md", source: .spoken)
     }

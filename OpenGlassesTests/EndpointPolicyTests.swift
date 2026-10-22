@@ -48,7 +48,7 @@ final class EndpointPolicyTests: XCTestCase {
     }
 
     func testLocalRoutesMayReachPrivateSpace() {
-        for route: NetworkRoute in [.mcpHTTPTransport, .hermesBridgeSession, .homeAssistantCommand,
+        for route: NetworkRoute in [.mcpHTTPTransport, .hermesBridgeSession, .hermesAgentAPI, .homeAssistantCommand,
                                     .webHUDMirrorListener, .loopbackOAuthCallback,
                                     .openClawGatewaySocket] {
             XCTAssertNil(EndpointPolicy.validate("http://192.168.1.20:8123/api", for: route, build: .release).rejection,
@@ -89,6 +89,14 @@ final class EndpointPolicyTests: XCTestCase {
                                              for: .openClawGatewaySocket, build: .release).rejection)
         XCTAssertNil(EndpointPolicy.validate("ws://192.168.1.9:8765/",
                                              for: .hermesBridgeSession, build: .release).rejection)
+        // Plan JP: Hermes's API server is the same local-network route over http, and gets no more.
+        XCTAssertNil(EndpointPolicy.validate("http://192.168.1.9:8642/v1/responses",
+                                             for: .hermesAgentAPI, build: .release).rejection)
+        guard case .cleartextHTTPNotPermitted? =
+                EndpointPolicy.validate("http://hermes.example.com:8642/v1/responses",
+                                        for: .hermesAgentAPI, build: .release).rejection else {
+            return XCTFail("cleartext http to a public Hermes host was allowed")
+        }
     }
 
     func testCleartextHTTPToAPublicHostIsRejectedInRelease() {

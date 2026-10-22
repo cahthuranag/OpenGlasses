@@ -18,6 +18,21 @@ protocol HermesSocket: AnyObject {
     func send(_ text: String) async throws
     func receive() async throws -> HermesFrame
     func cancel()
+    /// What the transport learned about the connection, read when it fails so Test Connection can
+    /// say why (Plan JP). Defaults to nothing known, so a scripted socket need not implement it.
+    func diagnostics() -> HermesSocketDiagnostics
+}
+
+/// The evidence a failed WebSocket leaves behind: the HTTP status of the upgrade answer (101 when
+/// the socket opened; anything else means something answered plain HTTP instead) and the close
+/// code the far side sent. Read by `HermesConnectionDiagnosis.bridgeFailure`.
+struct HermesSocketDiagnostics: Equatable, Sendable {
+    var httpStatus: Int?
+    var closeCode: Int?
+}
+
+extension HermesSocket {
+    func diagnostics() -> HermesSocketDiagnostics { HermesSocketDiagnostics() }
 }
 
 typealias HermesSocketFactory = (URL) -> HermesSocket
@@ -48,5 +63,11 @@ final class URLSessionHermesSocket: HermesSocket {
 
     func cancel() {
         task.cancel(with: .normalClosure, reason: nil)
+    }
+
+    func diagnostics() -> HermesSocketDiagnostics {
+        let status = (task.response as? HTTPURLResponse)?.statusCode
+        let close = task.closeCode == .invalid ? nil : task.closeCode.rawValue
+        return HermesSocketDiagnostics(httpStatus: status, closeCode: close)
     }
 }

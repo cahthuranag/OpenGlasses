@@ -1269,6 +1269,9 @@ class AppState: ObservableObject, AppStateProtocol {
     let glassesDisplay = GlassesDisplayService()
     /// Hermes agent bridge (Plan CL P5): optional LAN "brain" behind Agent Mode.
     let hermesBridge = HermesBridgeService()
+    /// Hermes Agent's own API server (Plan JP): the same brain, reached over HTTP instead of the
+    /// bridge script's socket. Which one a turn uses is `Config.hermesConnectionKind`.
+    let hermesAgent = HermesAgentAPIClient()
     /// Dwell capture (Plan CG): gaze-hold on an object captures it. Passive until frames
     /// flow; `Config.dwellCaptureEnabled` gates the per-frame work.
     let dwellCapture = DwellCaptureService()
@@ -1632,6 +1635,7 @@ class AppState: ObservableObject, AppStateProtocol {
         RealtimeSessionResetAdapter(backend: .openAIRealtime, session: openAIRealtimeSession)
     private lazy var gatewayResetAdapter = GatewaySessionResetAdapter(gateway: openClawBridge)
     private lazy var bridgeResetAdapter = BridgeSessionResetAdapter(bridge: hermesBridge)
+    private lazy var hermesAPIResetAdapter = ResponseChainResetAdapter(chain: hermesAgent)
 
     /// The backends that own this conversation's context *right now*, in reset order. Only live
     /// owners are listed: a gateway or bridge that is not currently part of the conversation has
@@ -1642,7 +1646,13 @@ class AppState: ObservableObject, AppStateProtocol {
         if geminiLiveSession.isActive { plan.append(.geminiLive) }
         if openAIRealtimeSession.isActive { plan.append(.openAIRealtime) }
         if Config.isOpenClawAgentActive { plan.append(.openClaw) }
-        if hermesBridge.isEnabled, hermesBridge.status != .disconnected { plan.append(.hermes) }
+        if hermesBridge.isEnabled, hermesBridge.status != .disconnected {
+            plan.append(.hermes)
+        } else if hermesAgent.isEnabled {
+            // Plan JP: no socket to be "up" — the API server's conversation is the chain id this
+            // phone holds, so whenever the kind is on it is part of the conversation.
+            plan.append(.hermes)
+        }
         return plan
     }
 
@@ -1653,7 +1663,8 @@ class AppState: ObservableObject, AppStateProtocol {
         case .geminiLive: return geminiLiveResetAdapter
         case .openAIRealtime: return openAIRealtimeResetAdapter
         case .openClaw: return gatewayResetAdapter
-        case .hermes: return bridgeResetAdapter
+        case .hermes:
+            return Config.hermesConnectionKind == .apiServer ? hermesAPIResetAdapter : bridgeResetAdapter
         }
     }
 
@@ -2642,7 +2653,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // is weak, so this list is a statement about which sessions exist, not about lifetime.
         for participant: any MedicalEgressTeardown in [
             geminiLiveSession, openAIRealtimeSession, openClawBridge, openClawEventClient,
-            hermesBridge, webRTCStreaming, MCPGlassesServer.shared
+            hermesBridge, hermesAgent, webRTCStreaming, MCPGlassesServer.shared
         ] {
             egressCoordinator.register(participant)
         }
@@ -3439,16 +3450,33 @@ class AppState: ObservableObject, AppStateProtocol {
         }
 
         // Hermes agent bridge (Plan CL P5): eyes on request, events into the field log.
+        //
+        // Plan JP: the bridge's photo leaves the phone for another machine, so it goes through the
+        // privacy chokepoint like every other remote-agent still (`agentAttachment`). It used to
+        // send `capturePhoto()` bytes as they came off the glasses. A picture that cannot be
+        // prepared is an error, which the bridge is told as `photo_error` — never the raw pixels.
         hermesBridge.photoProvider = { [weak self] in
             guard let self, self.isConnected else {
                 throw NSError(domain: "HermesBridge", code: 3,
                               userInfo: [NSLocalizedDescriptionKey: "Glasses camera unavailable"])
             }
-            return try await self.cameraService.capturePhoto()
+            let still = await self.cameraService.filteredStill(for: .agentAttachment, source: .photoOnly)
+            guard let jpeg = still.jpegData(compressionQuality: 0.85) else {
+                throw NSError(domain: "HermesBridge", code: 4,
+                              userInfo: [NSLocalizedDescriptionKey: "Glasses picture unavailable"])
+            }
+            return jpeg
         }
         hermesBridge.onDebugEvent = { [weak self] event in
             self?.addDebugEvent(event)
         }
+        hermesAgent.onDebugEvent = { [weak self] event in
+            self?.addDebugEvent(event)
+        }
+        // Plan JP: an install that already had a bridge host keeps the bridge; write the default
+        // down before anything reads it, so a host typed later cannot flip the kind.
+        Config.settleHermesConnectionKind()
+        // Only the bridge-script kind holds a socket (`isEnabled` checks the kind).
         if hermesBridge.isEnabled {
             hermesBridge.connect()
         }
@@ -6887,8 +6915,12 @@ class AppState: ObservableObject, AppStateProtocol {
 
     /// Reuse an already-available live frame for vision-capable models without trying to
     /// start the camera. This avoids re-triggering fragile Meta camera permission flows.
-    private func currentVisionFrameDataIfAvailable() -> Data? {
-        guard Config.hasVisionCapableModel else { return nil }
+    ///
+    /// Plan JP: `scope` and `requiresVisionModel` let a Hermes API turn reuse the same decision
+    /// under its own privacy scope, without the selected-model gate (Hermes decides vision itself).
+    private func currentVisionFrameDataIfAvailable(scope: PrivacyFilterScope = .directModelTurn,
+                                                   requiresVisionModel: Bool = true) -> Data? {
+        if requiresVisionModel, !Config.hasVisionCapableModel { return nil }
         // Frame pinning (Plan CE): a held pin IS the referent — multi-turn "and the label? and
         // the connector?" interrogates the same scene, whether or not the camera still streams.
         if Config.framePinEnabled, let pinned = framePin.pinnedFrame,
@@ -6902,7 +6934,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // turn rather than a confident wrong answer.
         guard cameraService.readinessNow.hasFreshVisualEvidence,
               let frame = cameraService.latestFrame else { return nil }
-        let outbound = privacyFilter.filtered(frame, for: .directModelTurn)   // CO Item 0
+        let outbound = privacyFilter.filtered(frame, for: scope)   // CO Item 0
         guard let data = outbound.jpegData(compressionQuality: Config.geminiLiveVideoJPEGQuality),
               !LLMImagePreparer.isDegenerate(data) else { return nil }
         return data
@@ -6981,11 +7013,18 @@ class AppState: ObservableObject, AppStateProtocol {
     /// 2. If smart camera is enabled and query is vision-related, activate camera and capture.
     /// 3. If preset has "always" camera behavior, keep camera on.
     /// 4. Otherwise, no image.
-    private func smartCameraImageData(for query: String) async -> Data? {
-        guard Config.hasVisionCapableModel else { return nil }
+    ///
+    /// Plan JP: a Hermes API turn asks the same question with `scope: .agentAttachment` and
+    /// `requiresVisionModel: false` — the frame goes to a remote agent, and whether it can see is
+    /// Hermes's business, not the selected cloud model's.
+    private func smartCameraImageData(for query: String,
+                                      scope: PrivacyFilterScope = .directModelTurn,
+                                      requiresVisionModel: Bool = true) async -> Data? {
+        if requiresVisionModel, !Config.hasVisionCapableModel { return nil }
 
         // Already have a live frame? Use it (cheapest path).
-        if let existing = currentVisionFrameDataIfAvailable() {
+        if let existing = currentVisionFrameDataIfAvailable(scope: scope,
+                                                            requiresVisionModel: requiresVisionModel) {
             lastSmartCameraActivation = Date()
             return existing
         }
@@ -6995,7 +7034,7 @@ class AppState: ObservableObject, AppStateProtocol {
 
         // "always" mode: try to keep camera on and capture
         if cameraBehavior == "always" {
-            return await smartCameraCapture(reason: "always-on mode")
+            return await smartCameraCapture(reason: "always-on mode", scope: scope)
         }
 
         // Smart camera detection
@@ -7004,7 +7043,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // Within cooldown window from last vision query? Auto-activate for follow-ups.
         if let lastActivation = lastSmartCameraActivation,
            Date().timeIntervalSince(lastActivation) < Config.smartCameraCooldown {
-            return await smartCameraCapture(reason: "cooldown follow-up")
+            return await smartCameraCapture(reason: "cooldown follow-up", scope: scope)
         }
 
         // Classify the query
@@ -7014,12 +7053,13 @@ class AppState: ObservableObject, AppStateProtocol {
         }
 
         lastSmartCameraActivation = Date()
-        return await smartCameraCapture(reason: "vision query detected")
+        return await smartCameraCapture(reason: "vision query detected", scope: scope)
     }
 
     /// Attempt to activate the camera and capture a frame for smart camera.
     /// Returns nil on failure (doesn't crash the flow — text-only fallback).
-    private func smartCameraCapture(reason: String) async -> Data? {
+    private func smartCameraCapture(reason: String,
+                                    scope: PrivacyFilterScope = .directModelTurn) async -> Data? {
         PrivacyLog.camera(.glasses, .captureRequested)
 
         // If camera is already streaming, just grab the frame — but never a degenerate
@@ -7033,7 +7073,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // the same rule underneath, so the check here is about not paying for a filter pass on a
         // picture that is going to be refused anyway.
         if cameraService.readinessNow.hasFreshVisualEvidence {
-            let still = await cameraService.filteredStill(for: .directModelTurn)
+            let still = await cameraService.filteredStill(for: scope)
             if let data = still.jpegData(compressionQuality: Config.geminiLiveVideoJPEGQuality) {
                 guard !LLMImagePreparer.isDegenerate(data) else { return nil }
                 return data
@@ -7055,7 +7095,7 @@ class AppState: ObservableObject, AppStateProtocol {
             try await cameraService.startStreaming()
             // Brief wait for first frame
             try await Task.sleep(nanoseconds: 500_000_000)
-            if let data = await cameraService.filteredStill(for: .directModelTurn)
+            if let data = await cameraService.filteredStill(for: scope)
                 .jpegData(compressionQuality: Config.geminiLiveVideoJPEGQuality),
                !LLMImagePreparer.isDegenerate(data) {
                 PrivacyLog.camera(.glasses, .frameReceived)
@@ -7063,7 +7103,7 @@ class AppState: ObservableObject, AppStateProtocol {
             }
             // Try photo capture as fallback — through the same chokepoint, because it is the same
             // model turn. An unfilterable photo is no photo.
-            let captured = await cameraService.filteredStill(for: .directModelTurn,
+            let captured = await cameraService.filteredStill(for: scope,
                                                              source: .photoOnly)
             guard let photoData = captured
                 .jpegData(compressionQuality: Config.geminiLiveVideoJPEGQuality) else {
@@ -7486,15 +7526,26 @@ class AppState: ObservableObject, AppStateProtocol {
                     // bridge is the brain for the turn — it runs its own tools/memory and
                     // may request a photo mid-query. Any failure falls through to the
                     // normal local/cloud path so the bridge can never strand a turn.
-                    if hermesBridge.isEnabled, !answeredOnPhone {
+                    //
+                    // Plan JP: by connection kind. The bridge script asks for a photo when it
+                    // needs one; the API server cannot ask, so a visual turn carries one
+                    // filtered still, chosen by the same decision the cloud path makes.
+                    if hermesBridge.isEnabled || hermesAgent.isEnabled, !answeredOnPhone {
                         do {
-                            let bridged = try await hermesBridge.ask(query)
+                            let bridged: String
+                            if hermesBridge.isEnabled {
+                                bridged = try await hermesBridge.ask(query)
+                            } else {
+                                let picture = await smartCameraImageData(for: query, scope: .agentAttachment,
+                                                                         requiresVisionModel: false)
+                                bridged = try await hermesAgent.ask(query, imageJPEG: picture)
+                            }
                             nowPlayingAtStart = nil
                             return bridged
                         } catch is CancellationError {
                             throw CancellationError()
                         } catch {
-                            addDebugEvent("Hermes bridge failed (\(error.localizedDescription)) — using normal path")
+                            addDebugEvent("Hermes failed (\(error.localizedDescription)) — using normal path")
                         }
                     }
                     if useLocalAgent {

@@ -67,6 +67,17 @@ enum OutboundFrameConsumer: String, CaseIterable {
     case pinnedFrame
     /// A still attached to a delegated remote-agent task.
     case agentAttachment
+    /// Plan JP: the still attached to a visual turn sent to Hermes Agent's API server. Chosen by the
+    /// same decision as the Direct-mode turn (live frame, camera behaviour, smart-camera cooldown,
+    /// vision intent) and read the same way — the pin or the stream's frame filtered at
+    /// `AppState`'s chokepoint, else `filteredStill(for:source:)` — under `agentAttachment`, because
+    /// Hermes is a remote agent, not the turn's model.
+    case hermesAgentTurnAttachment
+    /// Plan JP: the photo the Hermes bridge script asks for mid-query (`capture_photo`). Until JP
+    /// it was `capturePhoto()` bytes sent to the bridge unfiltered — a remote-agent egress the
+    /// roster never listed. It now asks `filteredStill(for: .agentAttachment, source: .photoOnly)`
+    /// and answers `photo_error` when the picture cannot be prepared.
+    case hermesBridgePhotoRequest
 
     // MARK: - Chokepoint-filtered still readers (W04.1)
     //
@@ -274,7 +285,8 @@ enum OutboundFrameConsumer: String, CaseIterable {
         switch self {
         case .outboundRelayInput: return "OutboundFrameRelay"
         case .appRelayAttachment, .liveSessionPush, .liveSessionPollFallback,
-             .directModelTurn, .pinnedFrame, .agentAttachment: return "AppState"
+             .directModelTurn, .pinnedFrame, .agentAttachment, .hermesAgentTurnAttachment,
+             .hermesBridgePhotoRequest: return "AppState"
         case .videoRecording: return "VideoRecordingService"
         case .jobClipRecording: return "JobClipRecorder"
         case .videoRecordingTool: return "VideoRecordingTool"
@@ -336,7 +348,7 @@ enum OutboundFrameConsumer: String, CaseIterable {
         case .liveSessionPush, .liveSessionPollFallback, .lookCloselyCapture: return .liveSession
         case .directModelTurn: return .directModelTurn
         case .pinnedFrame: return .pinnedFrame
-        case .agentAttachment: return .agentAttachment
+        case .agentAttachment, .hermesAgentTurnAttachment, .hermesBridgePhotoRequest: return .agentAttachment
         case .faceRecognition: return .faceRecognition
         case .sceneNarration: return .sceneNarration
         case .livePreview: return .onDevicePreview
@@ -368,7 +380,8 @@ enum OutboundFrameConsumer: String, CaseIterable {
              .expertMeetingLinkTransport, .expertPeerTransport,
              .expertTransportProtocol: return .outboundRelay
         case .liveSessionPollFallback, .directModelTurn, .pinnedFrame, .agentAttachment,
-             .sceneNarration, .fitnessPoseFrame: return .latestFrameStill
+             .hermesAgentTurnAttachment, .sceneNarration, .fitnessPoseFrame: return .latestFrameStill
+        case .hermesBridgePhotoRequest: return .filteredStill
         case .dwellCaptureSave: return .rawCameraPublisher
         case .jobPhoneEvidence, .parkingPhonePhoto: return .heldImage
         case .structuredVisionAssessment, .safetyAssessment, .refrigerantGaugeReading,
@@ -389,7 +402,7 @@ enum OutboundFrameConsumer: String, CaseIterable {
              .expertMeetingLinkTransport, .expertPeerTransport,
              .expertTransportProtocol: return .relay
         case .liveSessionPush, .liveSessionPollFallback, .directModelTurn, .pinnedFrame,
-             .agentAttachment: return .chokepoint
+             .agentAttachment, .hermesAgentTurnAttachment, .hermesBridgePhotoRequest: return .chokepoint
         case .faceRecognition, .sceneNarration, .livePreview, .readingCompanion,
              .fingerspelling, .dwellCapture, .jobRecordingCapture: return .exemptByScope
         case .jobRecordingOfficeSync: return .organisationExit

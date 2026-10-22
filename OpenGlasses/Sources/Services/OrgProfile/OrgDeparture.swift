@@ -183,6 +183,12 @@ final class OrgDepartureService: ObservableObject {
         sessions.filter { $0.startedAt >= enrolledAt }.map { $0.id }
     }
 
+    /// The managed period and retained-record ledger establish ownership after access ends.
+    nonisolated static func ownsManagedRecord(id: String, startedAt: Date,
+                                              enrolledAt: Date?, retainedIDs: Set<String>) -> Bool {
+        retainedIDs.contains(id) || enrolledAt.map { startedAt >= $0 } == true
+    }
+
     /// A renewal was heard after a lapse erasure: the phone is the firm's again, so the records a
     /// lapse departure still owes are no longer erased. A revocation or removal is never undone.
     func cancelLapse(enrolmentId: String) {

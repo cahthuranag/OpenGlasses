@@ -1828,8 +1828,13 @@ class AppState: ObservableObject, AppStateProtocol {
     private func configureGuidedJobFlow() {
         FieldSessionService.shared.onAccessClosed = { [weak self] ended in
             guard let self else { return }
-            let withdrawing = OrgProfileManager.shared.contentLocked
-                || OrgDepartureService.loadStored()?.sessionIds.contains(ended.id) == true
+            let manager = OrgProfileManager.shared
+            let retainedIDs = FieldSessionService.shared.lockedManagedRecordIDs
+                .union(OrgDepartureService.loadStored()?.sessionIds ?? [])
+            let withdrawing = OrgDepartureService.ownsManagedRecord(id: ended.id,
+                startedAt: ended.startedAt,
+                enrolledAt: manager.contentLocked ? manager.record?.enrolledAt : nil,
+                retainedIDs: retainedIDs)
             if withdrawing { self.removeLockedOrganisationConversations() }
             self.guidedJobFlow.didCloseForAccessLoss(ended, withdrawingConversation: withdrawing)
             self.clearWithdrawnJobContext()

@@ -20,6 +20,20 @@ final class OrgDepartureTests: XCTestCase {
     private var closeFails = false
     private let enrolledAt = Date(timeIntervalSince1970: 1_789_000_000)
 
+    func testOwnershipPreservesAPersonalJobStartedBeforeEnrolment() {
+        XCTAssertFalse(OrgDepartureService.ownsManagedRecord(id: "personal",
+            startedAt: enrolledAt.addingTimeInterval(-60), enrolledAt: enrolledAt, retainedIDs: []))
+        XCTAssertTrue(OrgDepartureService.ownsManagedRecord(id: "managed",
+            startedAt: enrolledAt, enrolledAt: enrolledAt, retainedIDs: []))
+    }
+
+    func testOwnershipSurvivesProfileRemovalWithoutClaimingPersonalRecords() {
+        XCTAssertTrue(OrgDepartureService.ownsManagedRecord(id: "managed",
+            startedAt: enrolledAt, enrolledAt: nil, retainedIDs: ["managed"]))
+        XCTAssertFalse(OrgDepartureService.ownsManagedRecord(id: "personal",
+            startedAt: now, enrolledAt: nil, retainedIDs: ["managed"]))
+    }
+
     override func setUp() {
         super.setUp()
         now = Date(timeIntervalSince1970: 1_790_000_000)

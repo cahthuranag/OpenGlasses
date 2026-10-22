@@ -55,6 +55,16 @@ enum ModelSwitchNarrator {
         if lastError is RequestContextBudget.CapacityError || RequestContextBudget.isOverflow(error: lastError) {
             return "the request was too large for this model"
         }
+        // So is a model the service does not offer this sign-in, whatever status carried it (a 400
+        // from the ChatGPT backend, a 404 elsewhere): "unavailable right now" would send the wearer
+        // to wait for something that will not come back on its own.
+        if case LLMError.apiError(let provider, _, _, let rejection?) = lastError,
+           rejection.reason == .modelNotAvailable {
+            // "ChatGPT" is the label the subscription's send path throws under.
+            return provider == "ChatGPT"
+                ? "the chosen model isn't available on your ChatGPT plan, so pick another in Settings"
+                : "the chosen model isn't available on this account, so pick another in Settings"
+        }
         let reason: String
         switch ModelFallbackChain.classify(lastError) {
         case .visionUnavailable:

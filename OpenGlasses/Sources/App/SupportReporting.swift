@@ -248,6 +248,10 @@ extension AppState {
         guard let failure else { return "the AI didn't answer" }
         let category = failure.split(whereSeparator: { $0 == "(" || $0 == "#" }).first.map(String.init) ?? failure
         let reason = rejection.flatMap(ProviderRejection.Reason.init(rawValue:))
+        // Whatever status carried it: a 400 from the ChatGPT backend, a 404 from most others.
+        if reason == .modelNotAvailable {
+            return "the AI service doesn't offer this model to this account or plan — choose another model"
+        }
         switch SafeErrorSummary.Category(rawValue: category) {
         case .clientError, .unauthorized, .forbidden:
             if reason?.isModelContract == true {

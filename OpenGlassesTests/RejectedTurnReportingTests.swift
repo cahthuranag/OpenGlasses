@@ -292,6 +292,14 @@ final class RejectedTurnReportingTests: XCTestCase {
         XCTAssertEqual(AppState.plainReason("forbidden(http)#403"), "the AI service refused the key")
     }
 
+    func testTheBannerPointsAnUnofferedModelAtAnotherModelWhateverItsStatus() {
+        for failure in ["clientError(http)#400", SafeErrorSummary.http(status: 404).description] {
+            let words = AppState.plainReason(failure, rejection: "modelNotAvailable")
+            XCTAssertTrue(words.contains("doesn't offer this model"), "\(failure): \(words)")
+            XCTAssertTrue(words.contains("choose another model"), "\(failure): \(words)")
+        }
+    }
+
     func testEveryReasonGivesTheBannerAPlainSentence() {
         for reason in ProviderRejection.Reason.allCases {
             let words = AppState.plainReason("clientError(invalid_request_error)#400", rejection: reason.rawValue)
@@ -388,6 +396,43 @@ final class RejectedTurnReportingTests: XCTestCase {
             .contains("working credentials"))
         XCTAssertTrue(ModelSwitchNarrator.exhaustionPhrase(lastError: refused("messages: roles must alternate"))
             .contains("couldn't be processed"))
+    }
+
+    func testTheSpokenReasonSaysTheModelIsNotOnThePlan() {
+        let body = Data(ChatGPTModelAvailabilityTests.codexRefusal.utf8)
+        let subscription = ModelSwitchNarrator.exhaustionPhrase(lastError: LLMError.apiError(
+            provider: "ChatGPT", statusCode: 400, message: ChatGPTModelAvailabilityTests.codexRefusal,
+            rejection: ProviderRejection(status: 400, body: body, provider: .chatgpt)))
+        XCTAssertTrue(subscription.contains("isn't available on your ChatGPT plan"), subscription)
+        XCTAssertTrue(subscription.contains("pick another in Settings"), subscription)
+        XCTAssertFalse(subscription.contains("gpt-5.6-sol"), "the provider's sentence is never spoken")
+
+        // A 404 elsewhere would read as "unavailable right now" without the reason.
+        let key = ModelSwitchNarrator.exhaustionPhrase(lastError: LLMError.apiError(
+            provider: "OpenAI", statusCode: 404, message: nil,
+            rejection: ProviderRejection(status: 404, body: ProviderRejectionTests.openAIBody(
+                message: "The model `gpt-9-imaginary` does not exist.", code: "model_not_found"),
+                                         provider: .openai)))
+        XCTAssertTrue(key.contains("isn't available on this account"), key)
+        XCTAssertFalse(key.contains("right now"), key)
+    }
+
+    func testTheCascadeHopsPastAModelTheAccountDoesNotOffer() async throws {
+        let candidates = ["sol", "claude"].map {
+            ModelFallbackChain.Candidate(id: $0, isLocalMLX: false, supportsVision: true,
+                                         contextTokens: ModelFallbackChain.cloudContextTokens)
+        }
+        let refusal = LLMError.apiError(
+            provider: "ChatGPT", statusCode: 400, message: nil,
+            rejection: ProviderRejection(status: 400, body: Data(ChatGPTModelAvailabilityTests.codexRefusal.utf8),
+                                         provider: .chatgpt))
+        let answer = try await ModelCascade.run(
+            candidates: candidates, needs: .init(requiresVision: false, isBackgrounded: false),
+            maxAttempts: 3) { candidate in
+            if candidate.id == "sol" { throw refusal }
+            return "answered by \(candidate.id)"
+        }
+        XCTAssertEqual(answer, "answered by claude")
     }
 
     func testNoFixtureMessageIsSpoken() {

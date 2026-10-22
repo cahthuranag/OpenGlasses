@@ -1590,6 +1590,10 @@ enum PrivacyLog {
         // (`setting`/`contextShare`/`default`/`onDevice`), or tools added mid-conversation (`added`,
         // reason `lookup`/`undeclaredCall`). Counts and estimated tokens only, never a tool name.
         case toolExposure
+        // A ChatGPT turn sent the account catalog's default because the saved model is not in the
+        // catalog (`ChatGPTModelAvailability`): the model sent, and the saved one as the detail.
+        // Both are public catalog ids.
+        case modelSubstituted
         // Plan GE — the conversation moved onto the phone or back; route tokens and counts only.
         case offlineHandoff, offlineTurn
         case agentSelected, catalogDiscovered, catalogUnavailable

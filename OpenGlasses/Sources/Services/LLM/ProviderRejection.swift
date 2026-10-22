@@ -39,6 +39,9 @@ struct ProviderRejection: Equatable, Sendable {
         case messageShape
         /// The prompt did not fit the model's context window.
         case contextTooLong
+        /// The service does not offer the requested model to this key, account or plan: the id
+        /// is unknown to it, retired, or not part of what the sign-in may use.
+        case modelNotAvailable
         case other
 
         /// The reason belongs to one model's request contract: another model may accept the very
@@ -52,10 +55,12 @@ struct ProviderRejection: Equatable, Sendable {
             }
         }
 
-        /// The reason belongs to this candidate — its model's contract or its credential — rather
-        /// than to the request every candidate would be sent. The fallback chain reads this.
+        /// The reason belongs to this candidate — its model's contract, its credential, or whether
+        /// the service offers its model at all — rather than to the request every candidate would
+        /// be sent. The fallback chain reads this.
         var endsOnlyThisCandidate: Bool {
             isModelContract || self == .betaHeaderUnknown || self == .credentialNotAccepted
+                || self == .modelNotAvailable
         }
     }
 
@@ -150,8 +155,11 @@ struct ProviderRejection: Equatable, Sendable {
         switch type {
         case "authentication_error", "invalid_api_key": return .credentialNotAccepted
         case "invalid_function_parameters": return .toolDefinitionInvalid
+        // Anthropic answers an unknown model with a 404 whose message is the field path alone.
+        case "not_found_error" where text.hasPrefix("model:"): return .modelNotAvailable
         default: break
         }
+        if code?.lowercased() == "model_not_found" { return .modelNotAvailable }
         if let parameter = parameter?.lowercased(), samplingParameters.contains(parameter) {
             return .samplingUnsupported
         }
@@ -214,6 +222,16 @@ struct ProviderRejection: Equatable, Sendable {
         Row(reason: .contextTooLong, allOf: [
             ["prompt is too long"], ["exceed context limit"],
             ["input token count", "exceeds the maximum"],
+        ]),
+        // Below the sampling and tool-choice rows: "`temperature` is not supported for this
+        // model" refuses a parameter, not the model.
+        Row(reason: .modelNotAvailable, allOf: [
+            // The ChatGPT subscription backend, for a model outside the account's catalog.
+            ["model is not supported when using"],
+            // OpenAI and compatible services.
+            ["the model", "does not exist"],
+            // Gemini.
+            ["models/", "is not found"],
         ]),
         Row(reason: .messageShape,
             allOf: [["roles must alternate"], ["first message must use"],

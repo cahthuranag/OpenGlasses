@@ -70,6 +70,9 @@ final class ProviderRejectionTests: XCTestCase {
         (.messageShape, "messages: at least one message is required"),
         (.contextTooLong, "prompt is too long: 214032 tokens > 200000 maximum"),
         (.contextTooLong, "input length and `max_tokens` exceed context limit: 198000 + 8192 > 200000"),
+        // Not Anthropic's own sentence (its unknown model is a 404 `not_found_error`, below): the
+        // ChatGPT backend's, which is matched by its words whichever envelope carries it.
+        (.modelNotAvailable, "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."),
         (.other, "max_tokens: 99999 > 64000, which is the maximum allowed number of output tokens for this model"),
         (.other, "This model supports tools. Nothing here names an element."),
     ]
@@ -275,6 +278,39 @@ final class ProviderRejectionTests: XCTestCase {
         XCTAssertEqual(limited.summary.description, "rateLimited(RESOURCE_EXHAUSTED)#429")
     }
 
+    // MARK: - A model the service does not offer
+
+    func testEveryFamilyNamesAModelItDoesNotOffer() {
+        let codex = Data(#"{"detail":"The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."}"#.utf8)
+        XCTAssertEqual(ProviderRejection(status: 400, body: codex, provider: .chatgpt).reason, .modelNotAvailable)
+
+        let openAI = Self.openAIBody(message: "The model `gpt-9-imaginary` does not exist or you do not have access to it.",
+                                     code: "model_not_found")
+        XCTAssertEqual(ProviderRejection(status: 404, body: openAI, provider: .openai).reason, .modelNotAvailable)
+        // The code alone decides it, whatever the sentence says.
+        XCTAssertEqual(ProviderRejection(status: 404, body: Self.openAIBody(message: "a sentence this build has not seen",
+                                                                            code: "model_not_found"),
+                                         provider: .custom).reason, .modelNotAvailable)
+
+        let anthropic = Self.anthropicBody("not_found_error", "model: claude-imaginary-1")
+        XCTAssertEqual(ProviderRejection(status: 404, body: anthropic, provider: .anthropic).reason, .modelNotAvailable)
+
+        let gemini = Self.geminiBody("NOT_FOUND",
+                                     "models/gemini-imaginary is not found for API version v1beta, or is not supported for generateContent.",
+                                     code: 404)
+        XCTAssertEqual(ProviderRejection(status: 404, body: gemini, provider: .gemini).reason, .modelNotAvailable)
+    }
+
+    func testARefusedParameterIsNotAnUnofferedModel() {
+        // Each says "model" and "not supported", and each refuses a parameter of the request.
+        XCTAssertEqual(Self.anthropic("`temperature` is not supported for this model.").reason, .samplingUnsupported)
+        XCTAssertEqual(Self.anthropic(#"tool_choice: type "tool" and "any" are not supported for this model."#).reason,
+                       .toolChoiceUnsupported)
+        // Anthropic's other not-found answers are not about the model.
+        XCTAssertEqual(ProviderRejection(status: 404, body: Self.anthropicBody("not_found_error", "Not found"),
+                                         provider: .anthropic).reason, .other)
+    }
+
     // MARK: - Indexed paths
 
     func testAnIndexedPathNeedsAnIndexAndItsOwnRoot() {
@@ -292,7 +328,7 @@ final class ProviderRejectionTests: XCTestCase {
     func testTheReasonsThatBelongToOneModelOrOneCredential() {
         let candidateOnly: Set<ProviderRejection.Reason> = [
             .toolChoiceUnsupported, .thinkingConfigUnsupported, .samplingUnsupported,
-            .betaHeaderUnknown, .credentialNotAccepted,
+            .betaHeaderUnknown, .credentialNotAccepted, .modelNotAvailable,
         ]
         for reason in ProviderRejection.Reason.allCases {
             XCTAssertEqual(reason.endsOnlyThisCandidate, candidateOnly.contains(reason), reason.rawValue)

@@ -3,8 +3,8 @@ import CryptoKit
 @testable import OpenGlasses
 
 /// Plan CT PR 4 — `eraseAfterLapseDays`: the organisation's opt-in to erase its content once a lease
-/// has been lapsed that long without a renewal. Absent, a lapse only ever locks; never mid-job; and a
-/// renewal heard afterwards brings the phone back, reinstalling the pack.
+/// has been lapsed that long without a renewal. Jobs close when access locks; optional content
+/// erasure waits for its configured window. A renewal restores access and reinstalls the pack.
 @MainActor
 final class OrgLapseErasureTests: XCTestCase {
 
@@ -15,6 +15,7 @@ final class OrgLapseErasureTests: XCTestCase {
     private var departures: [OrgDeparture.Reason] = []
     private var endedLapses: [String] = []
     private var installs: [String] = []
+    private var events: [String] = []
     private var fetchResult: Result<Data, Error> = .failure(URLError(.notConnectedToInternet))
     private let issued = Date(timeIntervalSince1970: 1_790_000_000)
     private let address = URL(string: "https://config.northbridge.example/profile.txt")!
@@ -28,6 +29,7 @@ final class OrgLapseErasureTests: XCTestCase {
         departures = []
         endedLapses = []
         installs = []
+        events = []
         fetchResult = .failure(URLError(.notConnectedToInternet))
     }
 
@@ -51,13 +53,20 @@ final class OrgLapseErasureTests: XCTestCase {
         seams.clearEnvelope = {}
         seams.fetch = { [unowned self] _ in try self.fetchResult.get() }
         seams.activeJobId = { [unowned self] in self.activeJob }
+        seams.closeManagedAccess = { [unowned self] _ in
+            if self.activeJob != nil { self.events.append("close") }
+            self.activeJob = nil
+        }
         seams.withholdLicence = { _ in }
         seams.installPack = { [unowned self] packId in
             self.installs.append(packId)
             return .installed(vaultId: "hvac")
         }
         seams.forgetAdminCard = {}
-        seams.beginDeparture = { [unowned self] reason, _, _ in self.departures.append(reason) }
+        seams.beginDeparture = { [unowned self] reason, _, _ in
+            self.events.append("departure")
+            self.departures.append(reason)
+        }
         seams.endLapseDeparture = { [unowned self] in self.endedLapses.append($0) }
         return OrgProfileManager(seams: seams)
     }
@@ -112,19 +121,25 @@ final class OrgLapseErasureTests: XCTestCase {
         XCTAssertEqual(installs, [], "and not reinstalled while still lapsed")
     }
 
-    func testNeverMidJob() async throws {
+    func testTheJobClosesAtLapseBeforeTheLaterErasureWindow() async throws {
         let manager = makeManager()
         try await enrol(manager, eraseAfterLapseDays: 7)
         activeJob = "job-1"
         days(29)
         manager.evaluateLease()
-        days(40)
-        manager.evaluateLease()
-        XCTAssertEqual(departures, [], "the lapse was first seen during a job, so nothing locks or erases until it closes")
+        XCTAssertEqual(activeJob, "job-1", "The lease is still in force")
 
-        activeJob = nil
+        days(2)
+        manager.evaluateLease()
+        XCTAssertTrue(manager.contentLocked)
+        XCTAssertNil(activeJob, "An open job must not extend the lease")
+        XCTAssertEqual(events, ["close"])
+        XCTAssertEqual(departures, [], "Closing the job does not shorten the configured erasure window")
+
+        days(7)
         manager.evaluateLease()
         XCTAssertEqual(departures, [.lapsed])
+        XCTAssertEqual(events, ["close", "departure"])
     }
 
     func testARenewalBringsThePhoneBack() async throws {

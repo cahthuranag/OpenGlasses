@@ -3,7 +3,7 @@ import XCTest
 
 /// Plan CT PR 4 — leaving the firm: the organisation's content goes at once; its session logs and
 /// waiting reports go to it first and are erased once its endpoint has accepted them, or once the
-/// window has passed; nothing is erased mid-job.
+/// window has passed; the managed job is closed before cleanup.
 @MainActor
 final class OrgDepartureTests: XCTestCase {
 

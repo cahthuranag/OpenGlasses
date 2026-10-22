@@ -129,6 +129,12 @@ extension HermesBridgeService: MedicalEgressTeardown {
     func tearDownForMedicalEgress() { disconnect() }
 }
 
+// No socket to close: what is open is a request in flight. Each new one asks the guard itself.
+extension HermesAgentAPIClient: MedicalEgressTeardown {
+    var openRoutes: [NetworkRoute] { [.hermesAgentAPI] }
+    func tearDownForMedicalEgress() { cancelInFlight() }
+}
+
 extension WebRTCStreamingService: MedicalEgressTeardown {
     var openRoutes: [NetworkRoute] { [.webRTCBrowserStreaming] }
     func tearDownForMedicalEgress() { stopStreaming() }

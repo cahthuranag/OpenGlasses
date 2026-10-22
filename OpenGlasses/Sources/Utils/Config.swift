@@ -3453,7 +3453,8 @@ struct Config {
 
     // MARK: - Hermes Agent Bridge (Plan CL P5)
 
-    /// Route conversation turns through a Hermes agent bridge on the LAN.
+    /// Route conversation turns through Hermes Agent on the LAN — over its API server or the
+    /// bridge script, per `hermesConnectionKind` (Plan JP).
     /// Like every gateway feature, only effective while Agent Mode is on.
     @UserDefaultsBacked("hermesBridgeEnabled", default: false) static var hermesBridgeEnabled: Bool
     static func setHermesBridgeEnabled(_ enabled: Bool) { hermesBridgeEnabled = enabled }
@@ -3471,6 +3472,45 @@ struct Config {
 
     static func setHermesBridgeToken(_ token: String) {
         KeychainService.setString(token, for: "hermesBridgeToken")
+    }
+
+    // MARK: - Hermes Agent API server (Plan JP)
+    //
+    // The host above is shared by both connection kinds; the API server has its own port and its
+    // own credential, and the bridge's port and token are untouched.
+
+    /// Which of Hermes's two doors the app talks to. Until the wearer picks one, an install that
+    /// already has a bridge host keeps the bridge script and a fresh one starts on the API server
+    /// (`HermesConnectionKind.resolved`); `settleHermesConnectionKind()` writes that default down
+    /// at launch so typing a host later cannot flip it.
+    static var hermesConnectionKind: HermesConnectionKind {
+        get {
+            HermesConnectionKind.resolved(stored: UserDefaults.standard.string(forKey: hermesConnectionKindKey),
+                                          bridgeHost: hermesBridgeHost)
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: hermesConnectionKindKey) }
+    }
+
+    static func setHermesConnectionKind(_ kind: HermesConnectionKind) { hermesConnectionKind = kind }
+
+    static let hermesConnectionKindKey = "hermesConnectionKind"
+
+    /// Record the resolved default once, if nothing is stored yet. Idempotent.
+    static func settleHermesConnectionKind() {
+        guard UserDefaults.standard.string(forKey: hermesConnectionKindKey) == nil else { return }
+        hermesConnectionKind = hermesConnectionKind
+    }
+
+    @UserDefaultsBacked("hermesAPIPort", default: HermesAgentAPI.defaultPort) static var hermesAPIPort: Int
+    static func setHermesAPIPort(_ port: Int) { hermesAPIPort = port }
+
+    /// Hermes's `API_SERVER_KEY`, sent as `Authorization: Bearer`. Stored in the Keychain.
+    static var hermesAgentAPIKey: String {
+        KeychainService.string(for: HermesAgentAPI.keychainKey) ?? ""
+    }
+
+    static func setHermesAgentAPIKey(_ key: String) {
+        KeychainService.setString(key.trimmingCharacters(in: .whitespacesAndNewlines), for: HermesAgentAPI.keychainKey)
     }
 
     // MARK: - Privacy Filter

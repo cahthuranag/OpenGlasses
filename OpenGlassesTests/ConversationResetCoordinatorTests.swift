@@ -325,7 +325,7 @@ final class ConversationResetCoordinatorTests: XCTestCase {
             didRetireLocalContext: false)
         let line = ConversationResetCopy.confirmation(for: report)
         XCTAssertTrue(line.contains("the gateway agent"), line)
-        XCTAssertTrue(line.contains("the bridge agent"), line)
+        XCTAssertTrue(line.contains("the Hermes agent"), line)
     }
 
     // MARK: - Helpers

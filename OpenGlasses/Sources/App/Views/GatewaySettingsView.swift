@@ -101,10 +101,13 @@ struct GatewaySettingsView: View {
                     HermesBridgeSettingsView(appState: appState)
                 } label: {
                     HStack {
-                        Label("Hermes Bridge", systemImage: "laptopcomputer.and.iphone")
+                        Label("Hermes Agent", systemImage: "laptopcomputer.and.iphone")
                         Spacer()
                         if Config.hermesBridgeEnabled {
-                            Text(appState.hermesBridge.status == .connected ? "Connected" : "On")
+                            // Only the bridge script holds a socket whose state means something;
+                            // the API server is asked per turn, so "On" is all there is to say.
+                            Text(Config.hermesConnectionKind == .bridgeScript
+                                 && appState.hermesBridge.status == .connected ? "Connected" : "On")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -112,7 +115,7 @@ struct GatewaySettingsView: View {
             } header: {
                 Text("Agent Bridge")
             } footer: {
-                Text("Gateways add tools the assistant can call. The Hermes Bridge goes further: when enabled, an agent on your computer answers whole conversations with its own tools and memory.")
+                Text("Gateways add tools the assistant can call. Hermes Agent goes further: when enabled, an agent on your computer answers whole conversations with its own tools and memory.")
             }
 
             // Remote invoke (Plan BH): per-class consent for gateway-initiated device commands.

@@ -26,7 +26,8 @@ enum ConversationBackendID: String, CaseIterable, Equatable {
     case openAIRealtime
     /// The gateway agent's session, addressed by a session key.
     case openClaw
-    /// The agent bridge's session on the wearer's own network.
+    /// Hermes Agent on the wearer's own network — the bridge script's session, or the API
+    /// server's chain of stored responses (Plan JP).
     case hermes
 
     /// How the backend is named out loud. Product names the wearer already sees in Settings —
@@ -37,7 +38,7 @@ enum ConversationBackendID: String, CaseIterable, Equatable {
         case .geminiLive: return "the Gemini Live session"
         case .openAIRealtime: return "the OpenAI Realtime session"
         case .openClaw: return "the gateway agent"
-        case .hermes: return "the bridge agent"
+        case .hermes: return "the Hermes agent"
         }
     }
 }
@@ -165,7 +166,7 @@ enum ConversationResetCopy {
             + "but it doesn't confirm resets."
     }
 
-    /// "the gateway agent", "the gateway agent and the bridge agent", "a, b and c".
+    /// "the gateway agent", "the gateway agent and the Hermes agent", "a, b and c".
     private static func list(_ backends: [ConversationBackendID]) -> String {
         let names = backends.map(\.spokenName)
         switch names.count {

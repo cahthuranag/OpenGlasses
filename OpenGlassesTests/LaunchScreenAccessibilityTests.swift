@@ -19,13 +19,16 @@ final class LaunchScreenAccessibilityTests: XCTestCase {
     }
 
     /// And the audit's launch helper no longer waits on the splash *existing*, which a hidden
-    /// element never does — it waits on the app underneath having appeared.
+    /// element never does — it waits on the app underneath having appeared. The app can use
+    /// bottom tabs, a sidebar, or a vertical tab rail, so readiness cannot require a tab bar.
     func testTheAuditWaitsForTheAppRatherThanForTheSplash() throws {
         let source = try String(contentsOf: Self.uiTestFile("AccessibilityAudit.swift"),
                                 encoding: .utf8)
         let start = try XCTUnwrap(source.range(of: "private func waitForLaunchScreenToClear"))
-        let body = source[start.lowerBound...].prefix(900)
-        XCTAssertTrue(body.contains("app.tabBars.buttons.firstMatch.waitForExistence"), String(body))
+        let end = try XCTUnwrap(source.range(of: "\n    // MARK: Audit",
+                                            range: start.upperBound..<source.endIndex))
+        let body = source[start.lowerBound..<end.lowerBound]
+        XCTAssertTrue(body.contains("app.buttons.firstMatch.waitForExistence"), String(body))
     }
 
     private static func sourceFile(_ relative: String) -> URL {

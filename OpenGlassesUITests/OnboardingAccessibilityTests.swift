@@ -12,6 +12,9 @@ final class OnboardingAccessibilityTests: AccessibilityAuditCase {
     /// they commit — auditing each page as it arrives. See the note at the end of the walk for
     /// where it stops and why.
     func testOnboardingPagesPassAccessibilityAudit() {
+        // Five complete audits took six minutes on CI. Keep this multi-page walk
+        // bounded without applying the shorter single-screen timeout to it.
+        executionTimeAllowance = 600
         let app = launch([.freshInstall])
 
         // Page 1 — Welcome

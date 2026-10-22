@@ -206,7 +206,12 @@ final class JobTabAccessibilityTests: AccessibilityAuditCase {
         awaitScreen(app.staticTexts["Work record"], named: "The finished job's page")
         save(app, named: "hc-past-job-from-list")
         app.navigationBars.buttons["Jobs"].firstMatch.tap()
-        awaitScreen(app.buttons["Add new job"], named: "The list, after Back")
+        awaitScreen(app.navigationBars["Jobs"], named: "The list, after Back")
+        // Back preserves the list's scroll position at the recent job. Add new job is above
+        // it and may have been recycled by List, so reach it by scrolling toward the top.
+        scrollUntilVisible(app.buttons["Add new job"], in: app,
+                           named: "Add new job, after Back", towardTop: true)
+        save(app, named: "hc-jobs-list-after-back")
     }
 
     /// With a job open, Add new job asks — and nothing is closed by asking (Plan HC).
@@ -352,7 +357,10 @@ final class JobTabAccessibilityTests: AccessibilityAuditCase {
         awaitScreen(number, named: "The open job with photos at AX5")
 
         let close = app.buttons["Close job"]
-        scrollUntilVisible(close, in: app, named: "Close job at AX5")
+        // At AX5 the wrapping job and evidence content spans more than eight normal swipes.
+        // Still require a tappable control, open the review, and audit that review below.
+        scrollUntilVisible(close, in: app, named: "Close job at AX5", swipes: 30)
+        save(app, named: "ax5-close-control-reachable")
         close.tap()
 
         let review = app.navigationBars["Photos for the report"]
@@ -553,10 +561,11 @@ final class JobTabAccessibilityTests: AccessibilityAuditCase {
 
     private func scrollUntilVisible(_ element: XCUIElement, in app: XCUIApplication,
                                     named name: String, swipes: Int = 8,
+                                    towardTop: Bool = false,
                                     file: StaticString = #filePath, line: UInt = #line) {
         for _ in 0..<swipes {
             if element.exists && element.isHittable { return }
-            app.swipeUp()
+            if towardTop { app.swipeDown() } else { app.swipeUp() }
         }
         XCTAssertTrue(element.exists && element.isHittable,
                       "\(name) never came into reach after \(swipes) swipes", file: file, line: line)

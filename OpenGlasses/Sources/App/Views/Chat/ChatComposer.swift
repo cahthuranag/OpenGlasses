@@ -224,6 +224,7 @@ struct ChatComposer: View {
             }
 
             TextField(placeholder, text: $messageText, axis: .vertical)
+                .accessibilityIdentifier("chat-message-composer")
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
                 .focused($isTextFieldFocused)

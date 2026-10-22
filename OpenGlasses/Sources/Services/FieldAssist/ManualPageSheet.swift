@@ -307,6 +307,8 @@ final class ManualPageController: ObservableObject {
     private var origin: PageOrigin
     /// So a re-render cannot log the same page twice.
     private var viewedPages: Set<Int> = []
+    /// A sheet and pane can briefly overlap while SwiftUI moves the same controller on resize.
+    private var presentations = 0
 
     init(model: ManualPageSheetModel, session: FieldSessionService?, origin: PageOrigin = .requested) {
         self.model = model
@@ -318,15 +320,20 @@ final class ManualPageController: ObservableObject {
     /// as what it is — shown if the app put it up, opened if the technician asked. **Never as
     /// verified**: the sheet appearing is not the technician checking anything (Plan GB P1).
     func open() async {
+        presentations += 1
         if model.route == .manufacturerPDF {
             model.integrity = await ManualPageIntegrity.check(url: model.manufacturerPDF,
                                                               against: model.ledgerHash)
         }
+        guard !Task.isCancelled else { return }
         recordOnScreen()
     }
 
     /// The sheet went away. A spoken "checked" after this is about nothing on screen.
-    func close() { session?.pageDidClose() }
+    func close() {
+        presentations = max(0, presentations - 1)
+        if presentations == 0 { session?.pageDidClose() }
+    }
 
     func next() { apply { $0.paging.goForward() } }
     func previous() { apply { $0.paging.goBack() } }

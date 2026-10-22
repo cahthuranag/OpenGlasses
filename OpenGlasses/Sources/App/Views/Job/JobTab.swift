@@ -17,13 +17,16 @@ import SwiftUI
 /// shoulder, a job number the recogniser has now misheard twice.
 struct JobTab: View {
     @EnvironmentObject private var appState: AppState
+    var embedded = false
+    var focusesEvidence = false
 
     var body: some View {
         // The flow publishes the change-of-unit question and the debrief; the send service
         // publishes the queue. `AppState` does not republish its children, so the content view
         // observes both directly.
         JobTabContent(appState: appState, flow: appState.guidedJobFlow, sends: appState.jobSends,
-                      upcoming: appState.upcomingJobs)
+                      upcoming: appState.upcomingJobs, embedded: embedded,
+                      focusesEvidence: focusesEvidence)
     }
 }
 
@@ -38,12 +41,18 @@ private struct JobTabContent: View {
     /// The list's facts, composed (Plan HC).
     @StateObject private var feed: JobListFeed
     @State private var addingUpcoming = false
+    let embedded: Bool
+    let focusesEvidence: Bool
 
-    init(appState: AppState, flow: GuidedJobFlow, sends: JobSendService, upcoming: UpcomingJobStore) {
+    init(appState: AppState, flow: GuidedJobFlow, sends: JobSendService, upcoming: UpcomingJobStore,
+         embedded: Bool, focusesEvidence: Bool) {
         self.appState = appState
         self.flow = flow
         self.sends = sends
         self.upcoming = upcoming
+        self.embedded = embedded
+        self.focusesEvidence = focusesEvidence
+        _path = State(initialValue: embedded ? [.currentJob] : [])
         _feed = StateObject(wrappedValue: JobListFeed(
             sessions: .shared, flow: flow, upcoming: upcoming, sends: sends,
             // A recording not yet with the office is flagged on its job's row (Plan HE).
@@ -131,8 +140,13 @@ private struct JobTabContent: View {
         .onChange(of: search) { _, query in feed.query = query }
         // A link from elsewhere — the job-day card, a notification, the Field Assist tab — lands
         // here, against what is on the phone now (`JobListRouting`).
-        .onAppear(perform: takeRequest)
-        .onChange(of: appState.jobListRequest) { _, _ in takeRequest() }
+        .onAppear { if !embedded { takeRequest() } }
+        .onChange(of: appState.jobListRequest) { _, _ in
+            if !embedded { takeRequest() }
+        }
+        .onChange(of: focusesEvidence) { _, focus in
+            if embedded && focus { path = [.currentJob] }
+        }
         // The elapsed line is minute-grained, so it is re-read on the minute rather than on every
         // published change. A VoiceOver user focused on the row hears a value that settles.
         .onReceive(JobClock.tick) { clock = $0 }
@@ -278,6 +292,7 @@ private struct JobTabContent: View {
                           onOpenConversation: openConversation,
                           onReadBack: readBackTheJob,
                           onClose: startClosing,
+                          focusesEvidence: focusesEvidence,
                           sendCard: sendCard,
                           onSendToday: { appState.openSupportReport(.day(Date())) })
                 .navigationTitle(job.jobNumber.map { "Job \($0)" } ?? "Open job")

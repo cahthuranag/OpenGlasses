@@ -58,7 +58,7 @@ final class FieldAssistModeUITests: AccessibilityAuditCase {
 
     // MARK: - Field Assist on
 
-    func testTheModesTabBecomesFieldAssist() {
+    func testTheModesTabBecomesFieldAssist() throws {
         let app = launch([.configured, .fieldAssist])
         let tab = app.tabBars.buttons["Field Assist"]
         awaitScreen(tab, named: "The Field Assist tab", timeout: 90)
@@ -76,11 +76,26 @@ final class FieldAssistModeUITests: AccessibilityAuditCase {
         XCTAssertEqual(other.value as? String, "Collapsed", "the other modes rest minimised")
         save(app, named: "hb-field-assist-other-modes-collapsed")
 
+        awaitStableFrame(of: other, named: "Other modes before expanding")
         other.tap()
-        let personas = app.staticTexts.matching(NSPredicate(format: "label IN %@",
-            ["Active Personas", "ACTIVE PERSONAS", "Available Modes", "AVAILABLE MODES", "No Personas"])).firstMatch
-        scrollUntilVisible(personas, in: app, named: "The persona picker under Other modes")
+        XCTAssertEqual(other.value as? String, "Expanded")
+        // Expansion can leave a section heading above the viewport. Exercise a visible mode
+        // control rather than continually scrolling away from a noninteractive heading.
+        let modes = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", ". Say "))
+        var visibleMode: XCUIElement?
+        for swipe in 0...8 {
+            visibleMode = modes.allElementsBoundByIndex.first { $0.isHittable }
+            if visibleMode != nil { break }
+            if swipe < 8 { app.swipeUp() }
+        }
+        let mode = try XCTUnwrap(visibleMode, "No mode control is reachable under Other modes")
         save(app, named: "hb-field-assist-other-modes-expanded")
+        let modeName = String(mode.label.components(separatedBy: ". Say ")[0])
+        mode.tap()
+        awaitScreen(app.navigationBars["Mode Preview"], named: "The mode selected under Other modes")
+        XCTAssertTrue(app.staticTexts[modeName].exists, "The preview must show the selected mode")
+        XCTAssertTrue(app.tabBars.buttons["Field Assist"].isSelected)
+        save(app, named: "hb-field-assist-mode-preview")
     }
 
     // MARK: - The job-day card

@@ -121,11 +121,11 @@ final class OpenGlassesAppDelegate: NSObject, UIApplicationDelegate {
         return false
     }
 
-    /// Lock the app to portrait — Info.plist declares all orientations (required on iOS 26
-    /// without UIRequiresFullScreen), but we enforce portrait-only here.
+    /// Match the orientations declared in Info.plist. The workspace adapts to the scene's
+    /// usable bounds, including normal iPhone landscape and iPad window resizing.
     func application(_ application: UIApplication,
                      supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
-        return [.portrait, .portraitUpsideDown]
+        return .all
     }
 
     /// Handle background URLSession events (model downloads completing while app is suspended).

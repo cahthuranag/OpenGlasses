@@ -10,6 +10,8 @@ struct MainView: View {
     @StateObject private var store = StoreKitService.shared
     @StateObject private var sessions = FieldSessionService.shared
     @State private var selectedTab: MainTab = .voice
+    @StateObject private var workspace = AdaptiveWorkspaceState()
+    @StateObject private var manualPresentation = ManualFigurePresentation()
     @State private var showOnboarding = Config.needsOnboarding
     /// The wearer's own Field Assist switch. Read reactively so turning it off in Settings takes
     /// the tab away in the same breath.
@@ -116,7 +118,7 @@ struct MainView: View {
                     }
                 }
             }
-            .tabViewStyle(.tabBarOnly)
+            .tabViewStyle(.sidebarAdaptable)
             .tabBarMinimizeBehavior(.onScrollDown)
             .tint(accent)
             // Onboarding is drawn *over* the tabs, not instead of them, so without this the whole
@@ -205,8 +207,8 @@ struct MainView: View {
         }
         // The manual page a Field Assist turn pointed at (Plan EK). Presented from here because a
         // figure can be staged by a spoken turn on any tab, and the drawing is the answer.
-        .sheet(item: $appState.manualFigureRequest) { request in
-            ManualFigureSheet(request: request)
+        .sheet(item: manualSheetRequest) { request in
+            ManualFigureSheet(request: request, onClose: { appState.manualFigureRequest = nil })
         }
         // The vault's own core file, opened from a citation chip (Plan EK P3) — checkable by the
         // technician and correctable by an author without leaving the answer.
@@ -239,5 +241,29 @@ struct MainView: View {
             SupportReportSheet(request: request)
                 .environmentObject(appState)
         }
+        .environmentObject(workspace)
+        .environmentObject(manualPresentation)
+        .onChange(of: appState.manualFigureRequest?.id) { _, requestID in
+            if requestID == nil {
+                manualPresentation.reset()
+                if workspace.section == .reference { workspace.section = .job }
+            } else {
+                workspace.section = .reference
+            }
+        }
+    }
+
+    private var manualSheetRequest: Binding<AppState.ManualFigureRequest?> {
+        return Binding(
+            get: { presentsManualInline ? nil : appState.manualFigureRequest },
+            set: { request in
+                // Expanding dismisses the system sheet in favour of the pane. That dismissal
+                // must not clear the citation that the pane is about to display.
+                if request != nil || !presentsManualInline { appState.manualFigureRequest = request }
+            })
+    }
+
+    private var presentsManualInline: Bool {
+        workspace.isExpanded && selectedTab == .voice && !showOnboarding
     }
 }

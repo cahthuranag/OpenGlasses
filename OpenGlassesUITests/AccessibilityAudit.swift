@@ -254,10 +254,33 @@ struct AuditDeferral {
 /// does catch the failures that regress silently: an unlabeled control, a missing trait, text that
 /// clips at large sizes, a target under 44pt, a colour pair under AA.
 class AccessibilityAuditCase: XCTestCase {
+    private var permissionMonitor: NSObjectProtocol?
 
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
+        permissionMonitor = addUIInterruptionMonitor(withDescription: "Decline unused system permissions") {
+            Self.declineUnusedPermission($0)
+        }
+    }
+
+    override func tearDown() {
+        if let permissionMonitor { removeUIInterruptionMonitor(permissionMonitor) }
+        permissionMonitor = nil
+        super.tearDown()
+    }
+
+    private static func declineUnusedPermission(_ alert: XCUIElement) -> Bool {
+        // These workflows use seeded media and never need live audio or HomeKit.
+        // A fresh Jobs runner can show microphone permission after the HomeKit alert.
+        let known = alert.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "Home data", "microphone"))
+        guard known.firstMatch.exists else { return false }
+        let decline = alert.buttons.matching(NSPredicate(
+            format: "label IN %@", ["Don’t Allow", "Don't Allow"])).firstMatch
+        guard decline.exists else { return false }
+        decline.tap()
+        return true
     }
 
     // MARK: Launch
@@ -313,10 +336,9 @@ class AccessibilityAuditCase: XCTestCase {
         // HomeKit may ask on a fresh test simulator before any app controls are hittable.
         // These UI workflows use synthetic data and do not need access to a home.
         let systemAlert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
-        if systemAlert.waitForExistence(timeout: 2),
-           systemAlert.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Home data")).firstMatch.exists {
-            let decline = systemAlert.buttons.matching(NSPredicate(format: "label IN %@", ["Don’t Allow", "Don't Allow"])).firstMatch
-            if decline.exists { decline.tap() }
+        for _ in 0..<3 {
+            guard systemAlert.waitForExistence(timeout: 2),
+                  Self.declineUnusedPermission(systemAlert) else { break }
         }
         let splash = app.staticTexts["Voice & Vision AI Assistant"]
         if splash.exists {

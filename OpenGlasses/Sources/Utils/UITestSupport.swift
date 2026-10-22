@@ -146,6 +146,7 @@ enum UITestSupport {
         // Every run starts from the same defaults, whatever the simulator was left holding.
         if let domain = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: domain)
+            UserDefaults.standard.synchronize()
         }
         // Saved models live in the Keychain, which outlives an app delete on a simulator — so
         // wiping the defaults domain is not on its own enough to produce a first-run app. One
@@ -212,6 +213,9 @@ enum UITestSupport {
             }
             applyFieldAssistSwitch()
         }
+        // Finish the fixture transaction before MainView reads its initial onboarding state.
+        // A fresh-install launch after a configured run must not observe the previous defaults.
+        UserDefaults.standard.synchronize()
     }
 
     /// Turn Field Assist on, and make sure the write has actually landed.

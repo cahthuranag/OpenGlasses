@@ -13,17 +13,20 @@ import SwiftUI
 /// `ManualPageSheetModel` / `ManualPageController`, which are tested without a screen.
 struct ManualFigureSheet: View {
     let request: AppState.ManualFigureRequest
+    var onClose: (() -> Void)? = nil
+    @EnvironmentObject private var presentation: ManualFigurePresentation
     /// Which of the request's pages is up, when "show me the relevant pages" opened several
     /// (Plan IN P2). Each page gets its own controller, so its audit trail is its own.
-    @State private var stopIndex = 0
 
     var body: some View {
         let stops = request.stops
-        let index = min(stopIndex, stops.count - 1)
+        let index = presentation.index(for: request)
         ManualSourcePage(stop: stops[index], position: stops.count > 1 ? (index + 1, stops.count) : nil,
-                         onPreviousSource: { stopIndex = max(index - 1, 0) },
-                         onNextSource: { stopIndex = min(index + 1, stops.count - 1) })
-            .id(index)
+                         onPreviousSource: { presentation.select(index - 1, in: request) },
+                         onNextSource: { presentation.select(index + 1, in: request) },
+                         controller: presentation.controller(for: request, at: index),
+                         onClose: onClose)
+            .id("\(request.id):\(index)")
     }
 }
 
@@ -34,23 +37,13 @@ private struct ManualSourcePage: View {
     let position: (current: Int, count: Int)?
     let onPreviousSource: () -> Void
     let onNextSource: () -> Void
-    @StateObject private var controller: ManualPageController
+    @ObservedObject var controller: ManualPageController
+    var onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     /// What marking the PDF page on screen came to, reported by the viewer (Plan IN P1).
     @State private var pdfMarks: PassageMarks?
     @State private var pdfPageText: String?
-
-    init(stop: AppState.ManualFigureRequest.Stop, position: (current: Int, count: Int)?,
-         onPreviousSource: @escaping () -> Void, onNextSource: @escaping () -> Void) {
-        self.stop = stop
-        self.position = position
-        self.onPreviousSource = onPreviousSource
-        self.onNextSource = onNextSource
-        _controller = StateObject(wrappedValue: ManualPageController(model: stop.sheet,
-                                                                     session: FieldSessionService.shared,
-                                                                     origin: stop.presenter.figure.origin))
-    }
 
     private var model: ManualPageSheetModel { controller.model }
 
@@ -83,7 +76,9 @@ private struct ManualSourcePage: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        if let onClose { onClose() } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .bottomBar) { bottomControls }
             }

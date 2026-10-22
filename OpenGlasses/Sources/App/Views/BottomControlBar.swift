@@ -60,7 +60,7 @@ struct BottomControlBar: View {
     var heightAboveDock: CGFloat? = nil
 
     @State private var runningActionId: String?
-    @State private var pager = DockPagerState()
+    @Binding var pager: DockPagerState
     /// The home screen's editor, presented from the cog (or the long press on the grid's gaps).
     @State private var showEditor = false
 
@@ -301,6 +301,15 @@ struct BottomControlBar: View {
                     showEditor = true
                 }
                 .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            cornerButton(icon: currentGridPage == nil ? "square.grid.2x2" : "text.bubble",
+                         label: currentGridPage == nil ? DockPage.actions.showActionName
+                            : DockPage.conversation.showActionName,
+                         hint: "Switch between your actions and the conversation.") {
+                move { DockPagerPolicy.userMoved(
+                    pager, to: currentGridPage == nil ? .actions : .conversation) }
             }
         }
         // **Deliberately not animated here.** The frame tracks the measurement directly, and that

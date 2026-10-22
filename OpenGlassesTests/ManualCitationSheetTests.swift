@@ -283,6 +283,23 @@ final class ManualCitationSheetTests: XCTestCase {
 
     // MARK: - The audit trail
 
+    func testMovingTheSamePageFromSheetToPaneKeepsItOpenUntilBothPresentationsClose() async throws {
+        let service = try await startSession(store: makeStore())
+        let staged = try XCTUnwrap(service.stagedFigure(for: citation(Self.textManual, page: 2)))
+        let controller = ManualPageController(model: service.manualPageSheet(for: staged), session: service)
+        await controller.open()
+        await controller.open()
+
+        controller.close()
+        XCTAssertEqual(service.openPage?.page, 2,
+                       "Dismissing the sheet must not close the page now shown in the pane")
+        XCTAssertFalse(try logLines(of: service).contains("page_verified"),
+                       "Moving a reference is not the technician verifying it")
+
+        controller.close()
+        XCTAssertNil(service.openPage, "A spoken confirmation must not refer to a closed page")
+    }
+
     func testTheAuditRecordsWhatWasOpenedTurnedToAndVerified() async throws {
         let service = try await startSession(store: makeStore())
         let cited = citation(Self.pdfManual, page: 2)

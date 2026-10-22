@@ -10,6 +10,7 @@ struct StatusIndicator: View {
     @ObservedObject var session: GeminiLiveSessionManager
     @ObservedObject var openAISession: OpenAIRealtimeSessionManager
     @ObservedObject var openClawBridge: OpenClawBridge
+    var compact = false
     @Environment(\.appAccent) private var accent
     @Environment(\.dynamicTypeSize) private var typeSize
     /// The assistant's chosen name (Plan FE P6) — empty when the wearer never set one.
@@ -18,6 +19,7 @@ struct StatusIndicator: View {
     /// off is the wearer's choice and the card does not mention it.
     @AppStorage("silentMode") private var pushToTalk = false
     @State private var showDisconnectConfirm = false
+    @State private var showDetails = false
     /// The open Field Assist job, for the job pill. Observed so pausing, resuming or ending the
     /// job from anywhere — the Job tab, a voice turn, a relaunch — redraws the card.
     @ObservedObject private var fieldSessions = FieldSessionService.shared
@@ -35,7 +37,80 @@ struct StatusIndicator: View {
     private var isOpenAI: Bool { appState.currentMode.usesOpenAIRealtimeTransport }
     private var isRealtime: Bool { appState.currentMode.isRealtime }
 
+    @ViewBuilder
     var body: some View {
+        Group {
+            if compact || showDetails {
+                compactCard
+            } else {
+                fullCard
+            }
+        }
+        .sheet(isPresented: $showDetails) { details }
+    }
+
+    private var compactCard: some View {
+        let wakeOff = SessionCardWakeWordNotice.shows(
+            listeningEnabled: appState.listeningEnabled, pushToTalk: pushToTalk)
+        return Button { showDetails = true } label: {
+            HStack(spacing: 10) {
+                Group {
+                    if iconName == "AvenkinMark" { LogoIcon(size: 24) }
+                    else { Image(systemName: iconName).font(.title3) }
+                }
+                .foregroundStyle(OGTheme.tintedAccentLabel(ringColor))
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusLabel).font(.headline)
+                    Group {
+                        if wakeOff { Text("Wake phrase off") }
+                        else { Text(liveEndNotice ?? modeLabel) }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(OGTheme.secondaryLabel)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                if isRealtime, let chip = appState.cameraService.readiness.statusChip {
+                    Text(chip.label)
+                        .font(.system(.caption, design: .monospaced).weight(.bold))
+                        .foregroundStyle(chip.isHealthy ? OGTheme.okLabel : OGTheme.warnLabel)
+                }
+                Image(systemName: "chevron.right").font(.caption)
+                    .foregroundStyle(OGTheme.secondaryLabel)
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(Color.primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: OGMetrics.minTouchTarget, alignment: .leading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(in: .rect(cornerRadius: 16))
+        .padding(.horizontal, 20)
+        .accessibilityLabel(spokenStatus)
+        .accessibilityValue(wakeOff ? "Wake phrase off" : (liveEndNotice ?? ""))
+        .accessibilityHint("Opens session details and connection controls.")
+        .accessibilityAddTraits(.updatesFrequently)
+        .accessibilityIdentifier("compact-session-status")
+    }
+
+    private var details: some View {
+        NavigationStack {
+            ScrollView { fullCard.padding(.vertical, 12) }
+                .navigationTitle("Session status")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showDetails = false }
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private var fullCard: some View {
         VStack(spacing: 0) {
             // Status row
             HStack(spacing: 14) {

@@ -32,6 +32,7 @@ struct ActiveJobView: View {
     let onOpenConversation: () -> Void
     let onReadBack: () -> Void
     let onClose: () -> Void
+    var focusesEvidence = false
     /// Reports asked for by voice and waiting for a thumb (Plan FO P3b). Above the job itself for
     /// the same reason the empty state puts it first.
     var sendCard: JobSendQueueSection?
@@ -44,12 +45,13 @@ struct ActiveJobView: View {
     @State private var expandedTaskId: String?
 
     var body: some View {
+        ScrollViewReader { proxy in
         List {
             sendCard
             if let unitQuestion { questionCard(unitQuestion) }
             if let leaveThread { threadQuestionCard(leaveThread) }
             JobUpdatesSection(jobID: FieldSessionService.shared.activeSession?.jobFile?.identity?.jobID)
-            jobNumberSection
+            jobNumberSection.id("job-overview")
             JobNeedsSection(needs: FieldSessionService.shared.activeSession?.jobNeeds)
             timeSection
             unitSection
@@ -76,6 +78,7 @@ struct ActiveJobView: View {
                                      chosen.decide(itemId, included: include)
                                      evidenceSelection = chosen
                                  })
+                    .id("job-evidence")
             }
             // "Record this job" for the office, and where that recording stands (Plan HE). Draws
             // nothing on a phone with no office to record for.
@@ -83,6 +86,18 @@ struct ActiveJobView: View {
             actionsSection
         }
         .ogFormStyle()
+        .task(id: focusesEvidence) {
+            guard focusesEvidence else { return }
+            // The embedded navigation destination needs one layout pass before List can
+            // resolve its evidence section, including when it reappears after resizing.
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            proxy.scrollTo("job-evidence", anchor: .top)
+        }
+        .onChange(of: focusesEvidence) { _, focus in
+            if !focus { proxy.scrollTo("job-overview", anchor: .top) }
+        }
+        }
         // Asked here rather than by the section, which draws nothing until it knows the answer.
         .task { await appState.jobRecordings?.refresh() }
     }

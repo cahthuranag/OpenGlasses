@@ -277,6 +277,9 @@ class AccessibilityAuditCase: XCTestCase {
         if let contentSizeCategory {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", contentSizeCategory]
         }
+        // A simulator can retain an app started outside this runner. Always start a fresh
+        // process so this test's launch arguments seed the intended state.
+        app.terminate()
         app.launch()
         waitForLaunchScreenToClear(app)
         relaunchIfTheUINeverCameUp(app)
@@ -303,17 +306,25 @@ class AccessibilityAuditCase: XCTestCase {
     /// Two halves fix it. The screen is now `accessibilityHidden`, so it cannot be audited at all;
     /// and the wait no longer depends on a decorative string being *present*, because a hidden
     /// element is not in the tree to wait for. What is waited on instead is the app underneath:
-    /// `RootView` hides `MainView` while the splash is up, so the tab bar existing *is* the splash
-    /// having gone. The old text wait is kept ahead of it as a belt, for any build where the splash
-    /// is still in the tree.
+    /// `RootView` hides `MainView` while the splash is up, so an app button existing means the
+    /// splash has gone. Match buttons across native navigation presentations, including a
+    /// sidebar or vertical tab rail. The old text wait covers builds with an accessible splash.
     private func waitForLaunchScreenToClear(_ app: XCUIApplication) {
+        // HomeKit may ask on a fresh test simulator before any app controls are hittable.
+        // These UI workflows use synthetic data and do not need access to a home.
+        let systemAlert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
+        if systemAlert.waitForExistence(timeout: 2),
+           systemAlert.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Home data")).firstMatch.exists {
+            let decline = systemAlert.buttons.matching(NSPredicate(format: "label IN %@", ["Don’t Allow", "Don't Allow"])).firstMatch
+            if decline.exists { decline.tap() }
+        }
         let splash = app.staticTexts["Voice & Vision AI Assistant"]
         if splash.exists {
             let gone = expectation(for: NSPredicate(format: "exists == false"),
                                    evaluatedWith: splash)
             wait(for: [gone], timeout: 20)
         }
-        _ = app.tabBars.buttons.firstMatch.waitForExistence(timeout: 45)
+        _ = app.buttons.firstMatch.waitForExistence(timeout: 45)
     }
 
     // MARK: Audit

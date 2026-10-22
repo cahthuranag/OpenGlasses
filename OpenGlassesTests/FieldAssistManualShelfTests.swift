@@ -38,6 +38,18 @@ final class FieldAssistManualShelfTests: XCTestCase {
                        ["AHU Install Guide"])
     }
 
+    /// A manifest that lists a file twice, or a vault seen twice, gives one row: the `List` the
+    /// shelf feeds is keyed by `Manual.id` and asserts on a repeated one.
+    func testEachManualIsListedOnce() {
+        let twice = Shelf.Vault(
+            id: "refrigeration", name: "Refrigeration", unlocked: true,
+            documents: refrigeration.documents + [VaultDocument(file: "rtu500.txt", title: "RTU-500 (again)")])
+        let manuals = Shelf.manuals(vaults: [twice, network, network], activeVaultId: "refrigeration")
+        XCTAssertEqual(manuals.map(\.id),
+                       ["refrigeration/ahu.pdf", "refrigeration/rtu500.txt", "it_network/switch.pdf"])
+        XCTAssertEqual(Set(manuals.map(\.id)).count, manuals.count)
+    }
+
     func testSearchMatchesTitleVaultAndKindIgnoringCaseAndAccents() {
         let all = [network, refrigeration]
         XCTAssertEqual(Shelf.manuals(vaults: all, activeVaultId: "x", query: "rtu").map(\.title),

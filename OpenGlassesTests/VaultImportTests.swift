@@ -102,6 +102,36 @@ final class VaultImportTests: XCTestCase {
         XCTAssertTrue(result.issues.contains { $0.lowercased().contains("fabricate") || $0.lowercased().contains("cite") })
     }
 
+    /// Two procedure files declaring one id: only one could ever be listed or started, so the
+    /// vault is refused with both file names.
+    func testTwoProceduresWithOneIdFail() throws {
+        let dir = tempRoot.appendingPathComponent("custom_test", isDirectory: true)
+        let proceduresDir = dir.appendingPathComponent("procedures", isDirectory: true)
+        try FileManager.default.createDirectory(at: proceduresDir, withIntermediateDirectories: true)
+        let manifest = VaultManifest(id: "custom_test", name: "Custom Test", version: "1.0.0",
+                                     files: ["info.md"], proceduresDir: "procedures",
+                                     gating: .init(iap: "enterprise"),
+                                     promptRules: ["Never fabricate data.", "Cite the source file."])
+        try JSONEncoder().encode(manifest).write(to: dir.appendingPathComponent("manifest.json"))
+        try "# Info\n\nSome grounded content.".write(to: dir.appendingPathComponent("info.md"),
+                                                    atomically: true, encoding: .utf8)
+        func write(_ file: String, id: String) throws {
+            try Data("""
+            {"id": "\(id)", "title": "\(file)", "version": "1.0.0", "safety_notes": [], "entry_step": "done",
+             "steps": [{"id": "done", "title": "Done", "instruction": "Finished.", "terminal": true}]}
+            """.utf8).write(to: proceduresDir.appendingPathComponent(file))
+        }
+        try write("leak_a.json", id: "leak_check")
+        try write("airflow.json", id: "airflow")
+        XCTAssertTrue(VaultValidator.validate(directory: dir).isValid,
+                      "Issues: \(VaultValidator.validate(directory: dir).issues)")
+
+        try write("leak_b.json", id: "leak_check")
+        let result = VaultValidator.validate(directory: dir)
+        XCTAssertFalse(result.isValid)
+        XCTAssertEqual(result.issues, ["procedure id leak_check is declared by both leak_a.json and leak_b.json"])
+    }
+
     // MARK: - Importer round-trip
 
     func testInstallMakesVaultDiscoverable() throws {

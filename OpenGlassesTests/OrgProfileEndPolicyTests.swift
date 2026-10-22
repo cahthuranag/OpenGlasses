@@ -71,11 +71,9 @@ final class OrgProfileEndPolicyTests: XCTestCase {
 
     // MARK: - A job open
 
-    func testQuietWhileAJobIsOpenAndShownOnceItCloses() {
+    func testAnOpenJobCannotHideThatOrganisationalAccessHasEnded() {
         let after = expiry.addingTimeInterval(day)
-        XCTAssertEqual(OrgProfileEndPolicy.decide(input(now: after, expiry: expiry, jobOpen: true)),
-                       .endedDuringJob(endedOn: expiry))
-        XCTAssertNil(OrgProfileEndPolicy.decide(input(now: after, expiry: expiry, jobOpen: true)).notice)
+        XCTAssertNotNil(OrgProfileEndPolicy.decide(input(now: after, expiry: expiry, jobOpen: true)).notice)
         XCTAssertNotNil(OrgProfileEndPolicy.decide(input(now: after, expiry: expiry, jobOpen: false)).notice)
     }
 

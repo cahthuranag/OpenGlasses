@@ -47,13 +47,20 @@ final class OrgProfileLeaseTests: XCTestCase {
                        .revoked)
     }
 
-    // MARK: - Mid-job grace (pure)
+    func testRevocationLocksImmediatelyEvenWhenALapseHadGrantedJobGrace() {
+        var lock = ProfileLease.Lock(lapseObserved: true, deferredForJob: "job-1")
+        XCTAssertTrue(lock.isLocked(status: .revoked, activeJob: "job-1"))
+        XCTAssertNil(lock.deferredForJob)
+        XCTAssertTrue(lock.isLocked(status: .revoked, activeJob: "job-2"))
+    }
 
-    func testALapseDuringAJobLocksWhenThatJobCloses() {
+    // MARK: - Immediate lease lock (pure)
+
+    func testALapseLocksEvenWhenAJobWasLeftOpen() {
         var lock = ProfileLease.Lock()
         let lapsed = ProfileLease.Status.lapsed(since: start)
-        XCTAssertFalse(lock.isLocked(status: lapsed, activeJob: "job-1"), "never mid-repair")
-        XCTAssertFalse(lock.isLocked(status: lapsed, activeJob: "job-1"))
+        XCTAssertTrue(lock.isLocked(status: lapsed, activeJob: "job-1"))
+        XCTAssertTrue(lock.isLocked(status: lapsed, activeJob: "job-1"))
         XCTAssertTrue(lock.isLocked(status: lapsed, activeJob: nil), "the job closed")
         XCTAssertTrue(lock.isLocked(status: lapsed, activeJob: "job-2"), "a job started after the lapse gets no grace")
     }
@@ -62,8 +69,8 @@ final class OrgProfileLeaseTests: XCTestCase {
         var lock = ProfileLease.Lock()
         XCTAssertTrue(lock.isLocked(status: .lapsed(since: start), activeJob: nil))
         XCTAssertFalse(lock.isLocked(status: .live(renewBy: start), activeJob: nil))
-        // A later lapse is a new one: a job running then gets its grace again.
-        XCTAssertFalse(lock.isLocked(status: .lapsed(since: start), activeJob: "job-3"))
+        // A later lapse locks too, even if another job is open.
+        XCTAssertTrue(lock.isLocked(status: .lapsed(since: start), activeJob: "job-3"))
     }
 
     // MARK: - Renewal and revocation (manager)
@@ -78,6 +85,7 @@ final class OrgProfileLeaseTests: XCTestCase {
     private var fetches = 0
     private var activeJob: String?
     private var licenceCode: String?
+    private var managedClosures = 0
 
     override func setUp() {
         super.setUp()
@@ -91,6 +99,7 @@ final class OrgProfileLeaseTests: XCTestCase {
         fetches = 0
         activeJob = nil
         licenceCode = nil
+        managedClosures = 0
     }
 
     private var privateKeyBase64: String { signingKey.rawRepresentation.base64EncodedString() }
@@ -116,6 +125,10 @@ final class OrgProfileLeaseTests: XCTestCase {
             return try self.fetchResult.get()
         }
         seams.activeJobId = { [unowned self] in self.activeJob }
+        seams.closeManagedAccess = { [unowned self] _ in
+            self.managedClosures += 1
+            self.activeJob = nil
+        }
         seams.withholdLicence = { [unowned self] in self.withheld = .some($0) }
         return OrgProfileManager(seams: seams)
     }
@@ -241,13 +254,15 @@ final class OrgProfileLeaseTests: XCTestCase {
         XCTAssertEqual(settings[.fieldAssistDefaultMode], .string("ai_only"), "a key new in the renewal is written")
     }
 
-    func testALapseDuringAJobWaitsForTheJob() throws {
+    func testALapseDuringAJobLocksAtOnce() throws {
         let manager = try enrolled(licence: try licence())
         activeJob = "job-1"
         now = start.addingTimeInterval(31 * day)
         manager.evaluateLease()
-        XCTAssertFalse(manager.contentLocked)
-        XCTAssertEqual(withheld, .some(nil))
+        XCTAssertTrue(manager.contentLocked)
+        XCTAssertNotEqual(withheld, .some(nil))
+        XCTAssertNil(activeJob)
+        XCTAssertEqual(managedClosures, 1)
 
         activeJob = nil
         manager.evaluateLease()

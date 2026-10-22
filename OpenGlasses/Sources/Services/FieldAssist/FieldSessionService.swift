@@ -37,6 +37,33 @@ final class FieldSessionService: ObservableObject {
     }
     private var conversationSourceIDs: Set<String>?
     private var lastResumeAt: Date?
+    private var accessExpiryTask: Task<Void, Never>?
+    /// App teardown and delivery after an access loss has durably closed the job.
+    var onAccessClosed: ((FieldSession) -> Void)?
+    private var lockedSessionIDs: Set<String> = {
+        guard let departure = OrgDepartureService.loadStored(), departure.reason != .lapsed else { return [] }
+        return Set(departure.sessionIds)
+    }()
+    var lockedManagedRecordIDs: Set<String> { lockedSessionIDs }
+
+    func managedRecordIDs(since enrolledAt: Date) -> [String] {
+        let held = history + lockedSessionIDs.compactMap { storedSession(id: $0) }
+        return Array(Set(held.filter { $0.startedAt >= enrolledAt }.map(\.id))).sorted()
+    }
+
+    func restoreRecordsAfterRenewal() {
+        guard OrgProfileManager.shared.lease?.isInForce == true else { return }
+        if let departure = OrgDepartureService.loadStored(), departure.reason != .lapsed {
+            lockedSessionIDs = Set(departure.sessionIds)
+        } else {
+            lockedSessionIDs = []
+        }
+        loadHistory()
+    }
+
+    private var hasCurrentWorkAccess: Bool {
+        FieldAssistEntitlement.shared.isGranted && !OrgProfileManager.shared.contentLocked
+    }
 
     /// Procedures available in the active session's vault.
     private var library: ProcedureLibrary?
@@ -120,7 +147,7 @@ final class FieldSessionService: ObservableObject {
         guard let manifest = VaultRegistry.shared.manifest(id: vaultId) else {
             throw FieldSessionError.unknownVault(vaultId)
         }
-        guard VaultRegistry.shared.isUnlocked(manifest) else {
+        guard hasCurrentWorkAccess, VaultRegistry.shared.isUnlocked(manifest) else {
             throw FieldSessionError.vaultLocked(vaultId)
         }
 
@@ -171,6 +198,7 @@ final class FieldSessionService: ObservableObject {
         EscalationCoordinator.shared.reset()
         lastResumeAt = Date()
         history.insert(session, at: 0)
+        scheduleAccessCheck()
         // A work order that names the machine has already done the recognition. One model and one
         // only: an asset id that matches several is not an identification.
         if let assetId, case let matches = modelIndex.match(text: assetId), matches.count == 1 {
@@ -203,6 +231,10 @@ final class FieldSessionService: ObservableObject {
         guard var session = activeSession, let logger else {
             throw FieldSessionError.noActiveSession
         }
+        guard hasCurrentWorkAccess, VaultRegistry.shared.isUnlocked(session.vaultId) else {
+            reconcileAccess()
+            throw FieldSessionError.vaultLocked(session.vaultId)
+        }
         guard session.pausedAt != nil else { return session }
         session.pausedAt = nil
         session.appClosedPause = nil
@@ -213,7 +245,132 @@ final class FieldSessionService: ObservableObject {
         logger.updateSession { $0 = session }
         logger.appendLifecycle(.sessionResumed)
         lastResumeAt = Date()
+        scheduleAccessCheck()
         return session
+    }
+
+    /// Check verified access, never the fact that a job happened to be left open. A receipt
+    /// still being restored is unknown; it must not close a legitimate subscriber's job.
+    func reconcileAccess() {
+        for id in lockedSessionIDs {
+            if let closed = storedSession(id: id), closed.accessClosureReason != nil {
+                try? ensureHandoverQueued(closed)
+            }
+        }
+        for closed in history where closed.accessClosureReason != nil && closed.endedAt != nil {
+            try? ensureHandoverQueued(closed)
+        }
+        guard let session = activeSession else { return }
+        let decision = FieldAssistEntitlement.shared.decision()
+        let expired: Bool
+        if case .expired = decision.denial { expired = true } else { expired = false }
+        guard decision.isGranted || expired || StoreKitService.shared.hasCheckedEntitlements else { return }
+        if !hasCurrentWorkAccess || !VaultRegistry.shared.isUnlocked(session.vaultId) {
+            _ = try? closeForAccessLoss(reason: "Field Assist access ended. The job was automatically closed for handover.")
+        } else {
+            if activeVault == nil, let manifest = VaultRegistry.shared.manifest(id: session.vaultId) {
+                let store = VaultRegistry.shared.store(for: manifest)
+                activeVault = store
+                modelIndex = VaultModelIndex(store: store)
+                partsIndex = VaultPartsIndex(store: store)
+                activeEquipment = session.equipment
+                library = ProcedureLibrary(store: store)
+                if let logger { reconstructRunner(from: logger.readEvents(), logger: logger) }
+            }
+            scheduleAccessCheck()
+        }
+    }
+
+    /// Security closure is not a claim that the work passed inspection or that a customer
+    /// signed it. Preserve open tasks and evidence, record the reason and queue a deferred record.
+    @discardableResult
+    func closeForAccessLoss(reason: String) throws -> FieldSession {
+        guard activeSession != nil else { throw FieldSessionError.noActiveSession }
+        mutateSession { $0.accessClosureReason = reason; return () }
+        recordEscalation(reason: reason)
+        let ended = try endSession(outcome: .deferred)
+        onAccessClosed?(ended)
+        return ended
+    }
+
+    /// The departure can restart before this service restores a job. Close directly from its
+    /// saved metadata in that case, without loading the withdrawn vault or exposing its history.
+    func closeManagedRecordForDeparture(id: String, reason: String) throws {
+        if activeSession?.id == id {
+            let ended = try closeForAccessLoss(reason: reason)
+            try ensureHandoverQueued(ended)
+            return
+        }
+        guard var session = storedSession(id: id) else { return }
+        if session.endedAt != nil {
+            if session.accessClosureReason != nil { try ensureHandoverQueued(session) }
+            return
+        }
+        let directory = sessionDirectory(sessionId: id)
+        let log = SessionLogger(session: session, root: directory)
+        let recovery = BillableClock.recover(session: session,
+            lastEvidenceOfLife: log.readEvents().map(\.timestamp).max(), now: Date())
+        session.billableSeconds += recovery.creditedSeconds
+        session.endedAt = Date()
+        session.outcome = .deferred
+        session.accessClosureReason = reason
+        session.escalations.append(.init(timestamp: Date(), reason: reason, resolvedAt: nil))
+        session.dropOfficeSuppliedContext()
+        log.updateSession { $0 = session }
+        log.appendLifecycle(.sessionEnded, note: reason)
+        try ensureHandoverQueued(session)
+    }
+
+    private func ensureHandoverQueued(_ session: FieldSession) throws {
+        guard let offlineQueue else { throw CocoaError(.fileWriteUnknown) }
+        guard !offlineQueue.containsWorkRecord(sessionId: session.id) else { return }
+        let record = WorkRecord(session: session, vaultName: session.vaultId,
+                                usage: jobUsage(sessionId: session.id))
+        offlineQueue.enqueue(QueuedOp.make(workRecord: record))
+        guard offlineQueue.containsWorkRecord(sessionId: session.id) else { throw CocoaError(.fileWriteUnknown) }
+    }
+
+    /// Delivery retains the original files; interactive job/history/export paths lose access.
+    func lockManagedRecords(ids: Set<String>) {
+        lockedSessionIDs.formUnion(ids)
+        history.removeAll { ids.contains($0.id) }
+    }
+
+    private func storedSession(id: String) -> FieldSession? {
+        guard UUID(uuidString: id) != nil else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let data = try? Data(contentsOf: sessionDirectory(sessionId: id).appendingPathComponent("session.json")) else { return nil }
+        return try? decoder.decode(FieldSession.self, from: data)
+    }
+
+    /// Narrow delivery-only read for the already queued report; never a model or UI history read.
+    func handoverWorkRecord(sessionId: String) -> WorkRecord? {
+        guard let session = storedSession(id: sessionId) else { return nil }
+        return WorkRecord(session: session, vaultName: session.vaultId,
+                          usage: jobUsage(sessionId: sessionId))
+    }
+
+    func departureThreadID(sessionId: String) -> String? {
+        storedSession(id: sessionId)?.conversationThreadId
+    }
+
+    private func scheduleAccessCheck() {
+        accessExpiryTask?.cancel()
+        guard let expiry = FieldAssistEntitlement.shared.nextExpiration else {
+            // The last grant may have expired while the vault was being loaded. Do not lose
+            // the deadline just because it is no longer in the future when scheduling finishes.
+            if let session = activeSession,
+               !hasCurrentWorkAccess || !VaultRegistry.shared.isUnlocked(session.vaultId) {
+                accessExpiryTask = Task { @MainActor [weak self] in self?.reconcileAccess() }
+            }
+            return
+        }
+        let delay = max(0, expiry.timeIntervalSince(FieldAssistEntitlement.shared.clock()))
+        accessExpiryTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            self?.reconcileAccess()
+        }
     }
 
     /// End the active session with an outcome.
@@ -242,6 +399,8 @@ final class FieldSessionService: ObservableObject {
                                 usage: jobUsage(sessionId: session.id),capturedManuals:capturedManualReferences(for:session))
         offlineQueue?.enqueue(QueuedOp.make(workRecord: record))
         activeSession = nil
+        accessExpiryTask?.cancel()
+        accessExpiryTask = nil
         activeVault = nil
         activeEquipment = nil
         modelIndex = VaultModelIndex(vaultName: "", files: [])
@@ -1627,7 +1786,8 @@ final class FieldSessionService: ObservableObject {
     }
 
     func promptContext(turn: String? = nil) -> String? {
-        guard let store = activeVault else { return nil }
+        guard let store = activeVault, hasCurrentWorkAccess,
+              VaultRegistry.shared.isUnlocked(store.manifest) else { return nil }
         // What this turn is, for the page rules below and for `manual_figure` later in the turn.
         // Set on every turn, so a kind never outlives the turn it was read from (Plan GB P1).
         lastTurnKind = turn.map(ManualTurnClassifier.classify)
@@ -3561,6 +3721,7 @@ final class FieldSessionService: ObservableObject {
         guard let sessionId = id ?? activeSession?.id ?? history.first?.id else {
             throw FieldSessionError.noActiveSession
         }
+        guard !lockedSessionIDs.contains(sessionId) else { throw FieldSessionError.vaultLocked(sessionId) }
         let dir = sessionsRoot.appendingPathComponent(sessionId, isDirectory: true)
         let liveSnapshot = activeSession?.id == sessionId ? activeSessionSnapshot() : nil
         let leases = try SessionExporter.export(sessionDir: dir, formats: formats,
@@ -3596,22 +3757,24 @@ final class FieldSessionService: ObservableObject {
                 loaded.append(session)
             }
         }
-        history = loaded.sorted { $0.startedAt > $1.startedAt }
+        history = loaded.filter { !lockedSessionIDs.contains($0.id) }.sorted { $0.startedAt > $1.startedAt }
     }
 
     /// If the previous app run was interrupted (in_progress session left behind), pick it up.
     private func restoreInProgressSessionIfAny() {
         guard let inProgress = history.first(where: { $0.endedAt == nil && $0.outcome != .cancelled }) else { return }
         guard let manifest = VaultRegistry.shared.manifest(id: inProgress.vaultId) else { return }
-        let store = VaultRegistry.shared.store(for: manifest)
         activeSession = inProgress
-        activeVault = store
-        modelIndex = VaultModelIndex(store: store)
-        partsIndex = VaultPartsIndex(store: store)
+        if hasCurrentWorkAccess, VaultRegistry.shared.isUnlocked(manifest) {
+            let store = VaultRegistry.shared.store(for: manifest)
+            activeVault = store
+            modelIndex = VaultModelIndex(store: store)
+            partsIndex = VaultPartsIndex(store: store)
+            library = ProcedureLibrary(store: store)
+        }
         // The machine is part of the session record, so a crash-restored session still knows what
         // it is standing in front of.
-        activeEquipment = inProgress.equipment
-        library = ProcedureLibrary(store: store)
+        activeEquipment = activeVault == nil ? nil : inProgress.equipment
         let restoredLogger = SessionLogger(session: inProgress, root: sessionsRoot.appendingPathComponent(inProgress.id, isDirectory: true))
         logger = restoredLogger
         let events = restoredLogger.readEvents()
@@ -3621,6 +3784,7 @@ final class FieldSessionService: ObservableObject {
         // "now" with nothing to count from is how job 1011 lost twenty minutes.
         lastResumeAt = nil
         recoverBillableTime(lastEvidenceOfLife: events.map(\.timestamp).max(), now: Date())
+        scheduleAccessCheck()
     }
 
     /// Credit the time worked before the app died, and pause the job at its last sign of life.

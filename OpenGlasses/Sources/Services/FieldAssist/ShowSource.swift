@@ -286,6 +286,12 @@ final class ShowSourceCenter: ObservableObject {
 
     // MARK: Memory
 
+    func clearForAccessLoss() {
+        memory = AnswerSourceMemory()
+        presented = nil
+        waiting = nil
+    }
+
     func noteRetrieved(_ passages: [VaultRetriever.Passage], sessionId: String?) {
         memory.noteRetrieved(passages.compactMap(Self.retrieved), sessionId: sessionId)
     }

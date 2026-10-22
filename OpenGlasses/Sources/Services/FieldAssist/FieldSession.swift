@@ -13,6 +13,8 @@ struct FieldSession: Codable, Identifiable, Equatable {
     var pausedAt: Date?
     var resumedAt: Date?
     var outcome: Outcome
+    /// Security closure, kept so a crash between closing and enqueueing can repair the handover.
+    var accessClosureReason: String?
     var startLocation: GeoPoint?
     var endLocation: GeoPoint?
     var escalations: [Escalation]
@@ -251,6 +253,7 @@ struct FieldSession: Codable, Identifiable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, vaultId, assetId, mode, startedAt, endedAt, pausedAt, resumedAt, outcome
+        case accessClosureReason
         case startLocation, endLocation, escalations, billableSeconds, billingBasis
         case minutesPerBillingUnit, equipment
         case jobReference, tasks, partsRequests, identityFields, jobEvidence
@@ -289,6 +292,7 @@ extension FieldSession {
         pausedAt = try c.decodeIfPresent(Date.self, forKey: .pausedAt)
         resumedAt = try c.decodeIfPresent(Date.self, forKey: .resumedAt)
         outcome = try c.decode(Outcome.self, forKey: .outcome)
+        accessClosureReason = try c.decodeIfPresent(String.self, forKey: .accessClosureReason)
         startLocation = try c.decodeIfPresent(GeoPoint.self, forKey: .startLocation)
         endLocation = try c.decodeIfPresent(GeoPoint.self, forKey: .endLocation)
         escalations = try c.decodeIfPresent([Escalation].self, forKey: .escalations) ?? []

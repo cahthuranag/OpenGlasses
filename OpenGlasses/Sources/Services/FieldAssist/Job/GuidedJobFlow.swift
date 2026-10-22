@@ -160,6 +160,16 @@ final class GuidedJobFlow: ObservableObject {
         return ended
     }
 
+    /// Access withdrawal has already closed the record, without pretending the required
+    /// checks or sign-off happened. Release the old conversation and every held question.
+    func didCloseForAccessLoss(_ ended: FieldSession) {
+        if store.activeThreadId == ended.conversationThreadId { store.endThread() }
+        seams.clearHistory()
+        pendingUnitQuestion = nil
+        endEvidenceReview()
+        debrief = nil
+    }
+
     /// A number arriving by a route that needs no read-back: typed on the Job tab, or handed to
     /// `field_session set_job_reference`.
     func supplyJobReference(_ text: String) {

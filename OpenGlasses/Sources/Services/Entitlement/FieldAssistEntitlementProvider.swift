@@ -216,6 +216,13 @@ final class FieldAssistEntitlement: @unchecked Sendable {
 
     var isGranted: Bool { decision().isGranted }
 
+    /// Recheck at every evidence boundary: a subscription can expire before a separate
+    /// licence, changing vault capabilities without removing every entitlement.
+    var nextExpiration: Date? {
+        let (set, now) = read()
+        return set.evidence.compactMap(\.expiration).filter { $0 > now }.min()
+    }
+
     /// Vault packs every live licence includes (Plan EG).
     func grantedPacks() -> Set<String> {
         lock.lock()

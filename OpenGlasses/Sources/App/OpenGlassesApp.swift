@@ -648,6 +648,8 @@ struct OpenGlassesApp: App {
                 if Config.hipaaMode { isHipaaLocked = true }
             case .active:
                 PrivacyLog.app(.becameActive)
+                _ = OrgProfileManager.shared.evaluateLease()
+                FieldSessionService.shared.reconcileAccess()
                 appState.restoreFromBackground()
                 // A paired phone reconnects to its office whenever the app is open.
                 appState.officeField.appBecameActive()
@@ -1362,7 +1364,7 @@ class AppState: ObservableObject, AppStateProtocol {
     /// the managed folders, and waits for the office's receipt. Any other phone, and any build
     /// without the office transport, sends as it did before.
     private func makeSyncSink() -> SyncSink {
-        let endpoint = EndpointSyncSink(fallback: LocalSyncSink())
+        let endpoint = EndpointSyncSink(fallback: UndeliveredHandoverSink(fallback: LocalSyncSink()))
         // A team-learning bundle the endpoint accepted has left the phone: its candidates are
         // `sent` (Plan FP P3). Only this sink's own deliveries count — never the local fallback's.
         endpoint.onDelivered = { op in LearningBundleOutbox.shared.delivered(op) }
@@ -1680,11 +1682,24 @@ class AppState: ObservableObject, AppStateProtocol {
             load: { OrgDepartureService.loadStored() },
             save: { OrgDepartureService.saveStored($0) },
             sessionIds: { since in
-                OrgDepartureService.managedSessionIds(FieldSessionService.shared.history, since: since)
+                FieldSessionService.shared.managedRecordIDs(since: since)
             },
             activeJobId: { FieldSessionService.shared.activeSession?.id },
+            closeJobs: { [weak self] ids, reason in
+                guard let self else { return }
+                let sessions = FieldSessionService.shared
+                let threads = ids.compactMap { sessions.departureThreadID(sessionId: $0) }
+                for id in ids {
+                    try sessions.closeManagedRecordForDeparture(id: id,
+                        reason: "Organisational access was \(reason.rawValue). Automatically closed for handover; outstanding checks remain unverified.")
+                }
+                sessions.lockManagedRecords(ids: Set(ids))
+                self.jobSends.queue.remove(sessionIDs: Set(ids))
+                for thread in threads { self.conversationStore.deleteThread(thread) }
+            },
             eraseContent: { [weak self] packId in
                 guard let self else { return }
+                self.clearWithdrawnJobContext()
                 if let packId {
                     for manifest in VaultImporter.installedManifests()
                     where VaultImporter.installedPack(for: manifest.id)?.id == packId {
@@ -1811,6 +1826,34 @@ class AppState: ObservableObject, AppStateProtocol {
     }
 
     private func configureGuidedJobFlow() {
+        FieldSessionService.shared.onAccessClosed = { [weak self] ended in
+            guard let self else { return }
+            if OrgProfileManager.shared.contentLocked { self.removeLockedOrganisationConversations() }
+            self.guidedJobFlow.didCloseForAccessLoss(ended)
+            self.clearWithdrawnJobContext()
+            if Config.deliverySettings.hasEndpoint || AppState.officeIsReportDestination {
+                Task { _ = await self.syncEngine.flush() }
+            }
+        }
+        let entitlementToken = StoreKitService.shared.$hasCheckedEntitlements
+            .receive(on: RunLoop.main)
+            .sink { checked in
+                if checked { FieldSessionService.shared.reconcileAccess() }
+            }
+        cancellables.append(entitlementToken)
+        let organisationLockToken = OrgProfileManager.shared.$contentLocked
+            .receive(on: RunLoop.main)
+            .sink { [weak self] locked in
+                guard let self else { return }
+                if locked {
+                    self.removeLockedOrganisationConversations()
+                    self.clearWithdrawnJobContext()
+                } else {
+                    FieldSessionService.shared.restoreRecordsAfterRenewal()
+                }
+            }
+        cancellables.append(organisationLockToken)
+        if OrgProfileManager.shared.contentLocked { removeLockedOrganisationConversations() }
         guidedJobFlow.connect(.init(
             speak: { [weak self] line in await self?.speechService.speak(line, urgency: .low) },
             loadHistory: { [weak self] history in self?.llmService.loadConversationHistory(history) },
@@ -1884,6 +1927,37 @@ class AppState: ObservableObject, AppStateProtocol {
             self.addDebugEvent("Job clip saved (\(Int(finished.duration.rounded()))s).")
             Task { await self.speechService.speak(finished.spoken) }
         }
+    }
+
+    private func clearWithdrawnJobContext() {
+        currentLLMTask?.cancel()
+        currentLLMTask = nil
+        speechService.stopSpeaking()
+        llmService.clearHistory()
+        liveActivator.stop(currentMode, source: .appUI)
+        manualFigureRequest = nil
+        vaultFileRequest = nil
+        deliveryComposerRequest = nil
+        streamingTurn = nil
+        pendingTranscript = nil
+        transcriptionService.stopRecording()
+        isProcessing = false
+        isListening = false
+        inConversation = false
+        lastResponse = ""
+        ShowSourceCenter.shared.clearForAccessLoss()
+    }
+
+    private func removeLockedOrganisationConversations() {
+        let sessions = FieldSessionService.shared
+        var ids = sessions.lockedManagedRecordIDs
+        if let record = OrgProfileManager.shared.record {
+            ids.formUnion(sessions.managedRecordIDs(since: record.enrolledAt))
+        }
+        for id in ids {
+            if let thread = sessions.departureThreadID(sessionId: id) { conversationStore.deleteThread(thread) }
+        }
+        jobSends.queue.remove(sessionIDs: ids)
     }
 
     /// Give both live backends the same guided-job seam (Plan FO P3a).

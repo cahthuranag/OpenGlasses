@@ -8,6 +8,13 @@ import Foundation
 /// with the same tasks and the same evidence produce the same lines, which is what makes the
 /// read-back something a technician can confirm and a reviewer can check.
 struct WorkRecord: Codable, Equatable {
+    struct AccessClosure: Codable, Equatable {
+        let outcome: FieldSession.Outcome
+        let reason: String
+    }
+
+    /// Present only for an enforced access withdrawal, never inferred as completed work.
+    let accessClosure: AccessClosure?
     struct CapturedManualReference: Codable, Equatable {
         let captureID: String
         let captureRevision: Int64
@@ -131,6 +138,7 @@ struct WorkRecord: Codable, Equatable {
     var capturedManuals: [CapturedManualReference]?
 
     enum CodingKeys: String, CodingKey {
+        case accessClosure = "access_closure"
         case sessionId = "session_id"
         case jobReference = "job_reference"
         case vaultId = "vault"
@@ -172,6 +180,7 @@ struct WorkRecord: Codable, Equatable {
     /// same session always renders the same record.
     init(session: FieldSession, vaultName: String, vaultSourceNote: String? = nil,
          usage: JobUsageSummary? = nil, capturedManuals: [CapturedManualReference]? = nil) {
+        accessClosure = session.accessClosureReason.map { AccessClosure(outcome: session.outcome, reason: $0) }
         self.capturedManuals = capturedManuals?.isEmpty == false ? capturedManuals : nil
         self.sessionId = session.id
         self.jobReference = session.jobReference
@@ -221,6 +230,7 @@ struct WorkRecord: Codable, Equatable {
     /// older job is.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        accessClosure = try c.decodeIfPresent(AccessClosure.self, forKey: .accessClosure)
         sessionId = try c.decode(String.self, forKey: .sessionId)
         jobReference = try c.decodeIfPresent(String.self, forKey: .jobReference)
         vaultId = try c.decode(String.self, forKey: .vaultId)
@@ -349,6 +359,9 @@ struct WorkRecord: Codable, Equatable {
                          + "\u{201C}\(faultReport.text)\u{201D}")
         }
         if let jobFile { lines.append(jobFile.recordLine) }
+        if let accessClosure {
+            lines.append("Automatically closed (\(accessClosure.outcome.displayName)): \(accessClosure.reason)")
+        }
         if let units, units.count >= 2 {
             // Several machines (Plan GB P2): each unit's work under its own heading, so two
             // furnaces do not read as one.

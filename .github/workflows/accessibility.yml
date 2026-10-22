@@ -1,8 +1,6 @@
 name: Accessibility Audit
 
-# The complete suite is split into four groups balanced from measured CI durations.
-# Each group uses a separate macOS runner and one simulator. A stalled test cannot
-# hold the remaining groups open, and every group retains its raw build/test logs.
+# Compile once, then run every UI test across four independent simulator jobs.
 on:
   workflow_dispatch:
   schedule:
@@ -34,46 +32,83 @@ jobs:
           echo "matrix=$audit_matrix" >> "$GITHUB_OUTPUT"
           python3 Scripts/accessibility-groups.py --check
 
+  build:
+    needs: plan
+    runs-on: macos-26
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Prepare the Xcode project
+        id: project
+        uses: ./.github/actions/xcode-project
+      - name: Build UI tests with resource and target timings
+        # One measured runner needed over 40 minutes while still making progress.
+        # Record why, and leave time for diagnostics rather than losing the whole run.
+        timeout-minutes: 55
+        run: |
+          set -o pipefail
+          python3 Scripts/measure-xcode-build.py build-resources.jsonl \
+            xcodebuild build-for-testing \
+            -project OpenGlasses.xcodeproj \
+            -scheme OpenGlassesUITests \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${{ steps.project.outputs.simulator-udid }}" \
+            -derivedDataPath AccessibilityDerivedData \
+            -jobs 2 \
+            -showBuildTimingSummary \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            -clonedSourcePackagesDirPath .spm-checkouts \
+            -onlyUsePackageVersionsFromResolvedFile \
+            SWIFT_EMIT_LOC_STRINGS=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            2>&1 | tee xcodebuild-build.log \
+            | grep --line-buffered -E '^Build|^SwiftCompile|^CompileC|error:|seconds|\*\* TEST BUILD' \
+            || { tail -160 xcodebuild-build.log; exit 1; }
+      - name: Package portable test products
+        timeout-minutes: 5
+        run: |
+          python3 Scripts/accessibility-test-products.py package \
+            --products AccessibilityDerivedData/Build/Products \
+            --simulator "${{ steps.project.outputs.simulator-udid }}" \
+            --output AccessibilityTestProducts.tar.gz
+      - name: Upload portable test products
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AccessibilityTestProducts
+          path: AccessibilityTestProducts.tar.gz
+          compression-level: 0
+          retention-days: 2
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AccessibilityBuildDiagnostics
+          path: |
+            xcodebuild-build.log
+            build-resources.jsonl
+          retention-days: 7
+
   audit_group:
     name: audit (${{ matrix.group }})
-    needs: plan
-    if: needs.plan.result == 'success'
+    needs: [plan, build]
     runs-on: macos-26
-    # Build/test steps have their own bounds; leave time here for diagnostic upload.
-    timeout-minutes: 85
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       max-parallel: 4
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Show toolchain
+      - name: Download this run's test products
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: AccessibilityTestProducts
+      - name: Prepare matching toolchain and fresh simulator
+        timeout-minutes: 6
         run: |
-          xcodebuild -version
-          sw_vers
-      - name: Prepare the Xcode project
-        id: project
-        uses: ./.github/actions/xcode-project
-
-      - name: Build UI tests
-        timeout-minutes: 40
-        run: |
-          set -o pipefail
-          xcodebuild build-for-testing \
-            -project OpenGlasses.xcodeproj \
-            -scheme OpenGlassesUITests \
-            -destination "platform=iOS Simulator,id=${{ steps.project.outputs.simulator-udid }}" \
-            -derivedDataPath AccessibilityDerivedData \
-            -jobs 2 \
-            -skipPackagePluginValidation \
-            -skipMacroValidation \
-            -clonedSourcePackagesDirPath .spm-checkouts \
-            -onlyUsePackageVersionsFromResolvedFile \
-            SWIFT_EMIT_LOC_STRINGS=NO \
-            2>&1 | tee xcodebuild-build.log \
-            | grep --line-buffered -E '^Build|^SwiftCompile|^CompileC|error:|\*\* BUILD' \
-            || { tail -160 xcodebuild-build.log; exit 1; }
-
+          python3 Scripts/accessibility-test-products.py prepare \
+            --archive AccessibilityTestProducts.tar.gz --directory AuditProducts
       - name: Run accessibility group
         timeout-minutes: 35
         env:
@@ -82,45 +117,37 @@ jobs:
           set -o pipefail
           python3 Scripts/accessibility-groups.py --group "$AUDIT_GROUP" -- \
             xcodebuild test-without-building \
-            -project OpenGlasses.xcodeproj \
-            -scheme OpenGlassesUITests \
-            -destination "platform=iOS Simulator,id=${{ steps.project.outputs.simulator-udid }}" \
-            -derivedDataPath AccessibilityDerivedData \
+            -xctestrun "$AUDIT_XCTESTRUN" \
+            -destination "platform=iOS Simulator,id=$AUDIT_SIMULATOR" \
             -resultBundlePath "AccessibilityResults-$AUDIT_GROUP.xcresult" \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -test-timeouts-enabled YES \
-            -default-test-execution-time-allowance 180 \
+            -default-test-execution-time-allowance 300 \
             -maximum-test-execution-time-allowance 600 \
-            -skipPackagePluginValidation \
-            -skipMacroValidation \
-            -clonedSourcePackagesDirPath .spm-checkouts \
-            -onlyUsePackageVersionsFromResolvedFile \
-            SWIFT_EMIT_LOC_STRINGS=NO \
             2>&1 | tee xcodebuild-tests.log \
             | grep --line-buffered -E 'Test Suite|Test Case.*(started|passed|failed)|a11y-audit|error:|\*\* TEST' \
             || { tail -160 xcodebuild-tests.log; exit 1; }
-
-      - name: Upload results and unfiltered logs
+      - name: Upload results and unfiltered test log
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: AccessibilityResults-${{ matrix.group }}
           path: |
             AccessibilityResults-${{ matrix.group }}.xcresult
-            xcodebuild-build.log
             xcodebuild-tests.log
           retention-days: 7
 
-  # Keep the existing single "audit" check for branch protection and PR review.
+  # Preserve the existing single required check; every group and the build must pass.
   audit:
-    needs: [plan, audit_group]
+    needs: [plan, build, audit_group]
     if: always() && needs.plan.result != 'skipped'
     runs-on: ubuntu-latest
     steps:
-      - name: Require every group to pass
+      - name: Require the build and every group to pass
         env:
           PLAN_RESULT: ${{ needs.plan.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
           AUDIT_RESULT: ${{ needs.audit_group.result }}
         run: |
-          test "$PLAN_RESULT" = success && test "$AUDIT_RESULT" = success
+          test "$PLAN_RESULT" = success && test "$BUILD_RESULT" = success && test "$AUDIT_RESULT" = success

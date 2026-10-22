@@ -43,6 +43,9 @@ final class AdaptiveWorkspaceUITests: AccessibilityAuditCase {
         awaitScreen(jobRow, named: "The unfinished job row")
         jobRow.tap()
         awaitScreen(app.textFields["Job number"], named: "Seeded unfinished job")
+        let recordedReference = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label == %@", "Job number 1005. Tap to change it.")).firstMatch
+        awaitScreen(recordedReference, named: "The job's recorded reference before switching off")
 
         openTab("Settings", in: app)
         let row = app.scrollViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Field Assist")).firstMatch
@@ -75,7 +78,7 @@ final class AdaptiveWorkspaceUITests: AccessibilityAuditCase {
         add(attachment)
         openJob.tap()
         awaitScreen(app.textFields["Job number"], named: "The unfinished job is still accessible")
-        XCTAssertEqual(app.textFields["Job number"].value as? String, "1005")
+        awaitScreen(recordedReference, named: "The same recorded job reference after recovery")
     }
 
     func testRotationPreservesTheDockPageAndConversation() {

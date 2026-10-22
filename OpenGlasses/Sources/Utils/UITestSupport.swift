@@ -145,7 +145,10 @@ enum UITestSupport {
 
         // Every run starts from the same defaults, whatever the simulator was left holding.
         if let domain = Bundle.main.bundleIdentifier {
-            UserDefaults.standard.removePersistentDomain(forName: domain)
+            // Keep removals and the fixture writes on the same per-key preferences path.
+            // A whole-domain reset can arrive after new writes and swallow the requested state.
+            let keys = UserDefaults.standard.persistentDomain(forName: domain)?.keys.map { $0 } ?? []
+            for key in keys { UserDefaults.standard.removeObject(forKey: key) }
             UserDefaults.standard.synchronize()
         }
         // Saved models live in the Keychain, which outlives an app delete on a simulator — so
@@ -220,10 +223,10 @@ enum UITestSupport {
 
     /// Turn Field Assist on, and make sure the write has actually landed.
     ///
-    /// Written last and flushed on purpose. `removePersistentDomain` above is not ordered against
-    /// the writes that follow it, and a launch where this one was swallowed comes up with no Job
-    /// tab at all — which looked exactly like a bug in the tab's own visibility rule until the
-    /// failing run's accessibility tree showed four tabs and a `fieldAssistEnabled` of false.
+    /// Written last and flushed on purpose. A launch where this setting is lost comes up with
+    /// no Job tab — which looked like a visibility bug until the failing accessibility tree
+    /// showed the four personal tabs. Clear individual preferences above and reassert this
+    /// after migrations have finished.
     /// `seedRuntime` asserts it a second time, once `AppState` exists.
     private static func applyFieldAssistSwitch() {
         Config.setFieldAssistEnabled(true)

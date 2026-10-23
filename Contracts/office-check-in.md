@@ -75,7 +75,7 @@ extended by anything here (§10).
 Every message is the JSON envelope the other contracts use: two standard-alphabet, padded base64
 strings, `payload` and `signature`. Ed25519 signs the UTF-8 bytes of the message's domain, one
 zero byte, then the exact decoded payload bytes; nothing is re-encoded at verification. Envelope
-and payload are closed, flat JSON objects: every listed field is present exactly once; duplicate
+and payload are closed JSON objects (flat except for the optional `fsmDirect` member): every required field is present exactly once; duplicate
 or unknown keys, nested values, booleans, nulls and fractional or exponent numbers are refused,
 as is trailing data. A field with nothing to say is the empty string, never absent.
 
@@ -141,6 +141,13 @@ removes the old file, and a check-in for it no longer renews.
 | `leaseRenewBy` | When the phone's lease ends as it stands, phone clock. Informational: it lets the office list each phone's date |
 | `appVersion`, `appBuild` | Up to 64 printable characters each, for the office's register |
 | `createdAt` | Phone clock, informational only |
+| `fsmDirect` | Optional closed object: `system` is `workiz`, `state` is `on` or `off`. Absence means unknown (an older app). Covered by the same signature. |
+
+The office routes Workiz jobs only after a check-in reports `off` under the office-route profile.
+`on` means a key is stored and the direct connector is running. The phone stops the connector,
+erases its key and technician choice and terminates pending direct deliveries before reporting
+`off`. A previously answered challenge retains its exact payload; issue a fresh challenge after a
+route change. See [the shared Workiz contract](fsm-workiz.md).
 
 The phone answers a challenge only when all of these hold, checked at that moment:
 
@@ -358,6 +365,7 @@ In `Contracts/fixtures/`, made by `checkin.Fixtures()` and kept current by that 
 with fictional keys derived from public labels (the office and phone keys are the commissioning
 fixtures' own) and the clock at 1800000000: `office-check-in-binding-v1.json` (generation 1),
 `office-check-in-challenge-v1.json`, `office-check-in-v1.json`, `office-check-in-result-v1.json`
+and the optional-member variants `office-check-in-workiz-on-v1.json` and `office-check-in-workiz-off-v1.json`
 (carrying the same binding at generation 2), `office-removal-v1.json`,
 `office-removal-receipt-v1.json` and `office-check-in-fixture-keys.json`.
 

@@ -122,6 +122,7 @@ struct PastJobView: View {
     @ViewBuilder
     private func content(_ job: JobTabModel.PastJob) -> some View {
         List {
+            WorkizDeliveryStatus(appState: appState, sessionID: sessionId)
             Section {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(job.jobNumber)

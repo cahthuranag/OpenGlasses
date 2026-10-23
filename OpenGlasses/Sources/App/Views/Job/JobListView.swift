@@ -27,6 +27,8 @@ struct JobListView: View {
     var onExportDay: ((Date) -> Void)?
     var onReportDay: ((Date) -> Void)?
     var onSendToday: (() -> Void)?
+    var deliveryStatus: (JobRoute) -> String? = { _ in nil }
+    var workizStatus: WorkizJobsStatus? = nil
 
     /// Folded by default: older jobs are found by searching far more often than by scrolling.
     @State private var showsOlder = false
@@ -36,6 +38,7 @@ struct JobListView: View {
 
     var body: some View {
         List {
+            if let workizStatus { Section { workizStatus } }
             if let notice { noticeSection(notice) }
             sendCard
             if let results = list.results {
@@ -110,8 +113,10 @@ struct JobListView: View {
     private var addSection: some View {
         Section {
             Button(action: onAdd) {
-                Label("Add new job", systemImage: "plus")
-                    .frame(maxWidth: .infinity, minHeight: 32)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "plus").accessibilityHidden(true)
+                    Text("Add new job").fixedSize(horizontal: false, vertical: true)
+                }.frame(maxWidth: .infinity, minHeight: 32)
             }
             // Prominent while nothing is open — it is the thing to do; quieter beside an open job,
             // where it asks before it does anything.
@@ -135,8 +140,10 @@ struct JobListView: View {
             .padding(.vertical, 6)
             .accessibilityElement(children: .combine)
             Button(action: onAdd) {
-                Label("Add new job", systemImage: "plus")
-                    .frame(maxWidth: .infinity, minHeight: 32)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "plus").accessibilityHidden(true)
+                    Text("Add new job").fixedSize(horizontal: false, vertical: true)
+                }.frame(maxWidth: .infinity, minHeight: 32)
             }
             .buttonStyle(.ogProminent)
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -246,7 +253,10 @@ struct JobListView: View {
             notice = nil
             onOpen(item.route)
         } label: {
-            JobListRowView(item: item)
+            VStack(alignment: .leading, spacing: 4) {
+                JobListRowView(item: item)
+                if let status = deliveryStatus(item.route) { Text(status).font(.caption).foregroundStyle(.secondary) }
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(item.spoken)

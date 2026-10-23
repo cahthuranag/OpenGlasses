@@ -68,7 +68,28 @@ struct UpcomingJobView: View {
             row("Job number", job.jobReference ?? JobTabModel.noJobNumber)
             if let customer = job.site.customer { row("Customer", customer) }
             if let address = job.site.address { row("Address", address) }
-            if let contact = job.site.contact { row("Contact", contact) }
+            if let contact = job.site.contact {
+                row("Contact", contact)
+                if job.origin == .connector {
+                    let digits = contact.filter { $0.isNumber || $0 == "+" }
+                    if !digits.isEmpty, let url = URL(string: "tel:" + digits) {
+                        Link(destination: url) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Image(systemName: "phone").accessibilityHidden(true)
+                                Text("Call customer").fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }.accessibilityIdentifier("workiz.callCustomer")
+                    }
+                }
+            }
+            if job.origin == .connector {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "arrow.triangle.2.circlepath").accessibilityHidden(true)
+                    Text("Workiz").fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.font(.caption)
+            }
             if let scheduled = job.scheduledFor {
                 row("Booked for", scheduled.formatted(date: .abbreviated, time: .shortened))
             }

@@ -80,6 +80,7 @@ enum SensitiveStore: String, CaseIterable {
     case fieldDeliverySettings
     case jobDeliveryQueue
     case upcomingJobs
+    case workizConnection
     case vanStock
     case learningCandidates
     case capturedManuals
@@ -623,6 +624,13 @@ enum SensitiveStore: String, CaseIterable {
                           ownerPaths: ["OpenGlasses/Sources/Services/FieldAssist/Job/DeliveryQueue.swift"],
                           location: "Application Support/FieldAssist/delivery-queue.json")
 
+        case .workizConnection:
+            return Record(store: self, dataClass: .credential, subjectLinkage: .wearer,
+                          protection: .keychainAfterFirstUnlockThisDeviceOnly, backupExcluded: true,
+                          retention: .none, deleteAll: .api("WorkizConnection.remove()"),
+                          deleteSubject: .notSubjectLinked, owner: "WorkizConnection",
+                          ownerPaths: ["OpenGlasses/Sources/Services/FieldAssist/Workiz/WorkizConnection.swift"],
+                          location: "Keychain workizDirectCredential: key, generation and selected technician; options in UserDefaults")
         case .upcomingJobs:
             // Jobs ahead of the technician (Plan FO P3c): typed, spoken, or opened from an `.ogjob`
             // file the office sent. It carries the customer's name, the site address and a contact

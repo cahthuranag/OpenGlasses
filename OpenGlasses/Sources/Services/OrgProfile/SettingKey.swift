@@ -15,6 +15,10 @@ import CryptoKit
 /// capability ceilings, and the Field Assist selection. Adding a key is one case and its `kind`.
 enum SettingKey: String, CaseIterable, Codable, Sendable {
     // Organisation identity — written only by a profile.
+    case organizationFieldServiceRoute
+    case workizEnabled
+    case workizReportFieldName
+    case workizClientNotes
     case organizationDisplayName
     case organizationJobSigningKey
     case organizationJobReportChannel
@@ -107,12 +111,16 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
         case profileOwned(ValueType)
         /// A ceiling that may only pin the flag to this value — never away from it.
         case ceiling(pinnedTo: Bool)
+        case stringCeiling(pinnedTo: String)
         /// A starting value, written once, that the person may change afterwards.
         case startingValue(ValueType)
     }
 
     var kind: Kind {
         switch self {
+        case .organizationFieldServiceRoute: return .stringCeiling(pinnedTo: "office")
+        case .workizEnabled, .workizClientNotes: return .profileOwned(.bool)
+        case .workizReportFieldName: return .profileOwned(.string)
         case .organizationDisplayName, .organizationJobSigningKey, .organizationJobReportChannel,
              .organizationReportTranscriptInternal, .organizationAccentColor, .technicianDisplayName, .capturedManualsPolicy,
              .organizationToolDefinitionsMode, .technicianFullName, .technicianID:
@@ -148,6 +156,8 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     /// direction are checked by the applier; this is the per-key content check.
     func contentProblem(_ value: ProfileValue, resolvableVaultIds: Set<String>) -> String? {
         switch (self, value) {
+        case (.workizReportFieldName, .string(let name)):
+            return name.isEmpty || name.count > 120 || name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) ? "provide a report field name of at most 120 printable characters" : nil
         case (.organizationDisplayName, .string(let name)):
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { return "the organisation name is empty" }

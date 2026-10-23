@@ -238,6 +238,8 @@ enum JobBriefAssembler {
             let name = job.provenance?.fileName ?? "the job file"
             if let signer = job.provenance?.signer { return "Job file \(name), signed by \(signer)" }
             return "Job file \(name) (not signed)"
+        case .connector:
+            return "Workiz snapshot"
         case .spoken:
             return "Said when the job was added"
         case .typed:

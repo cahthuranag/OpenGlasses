@@ -91,6 +91,7 @@ final class OfficeCheckInService: ObservableObject {
         var leaseRenewBy: @MainActor () -> Date? = { nil }
         var appVersion: () -> String = { "" }
         var appBuild: () -> String = { "" }
+        var fsmDirect: () -> OfficeCheckIn.FSMDirect? = { nil }
         /// The saved binding has been replaced: the folders start again under the new generation.
         var bindingChanged: @MainActor () -> Void = {}
         var clock: () -> Date = Date.init
@@ -309,7 +310,7 @@ final class OfficeCheckInService: ObservableObject {
         }
         let offered = try await seams.transport.checkInPayload(
             challengeID: id, leaseRenewBy: Self.leaseRenewBy(seams.leaseRenewBy(), now: now),
-            appVersion: seams.appVersion(), appBuild: seams.appBuild())
+            appVersion: seams.appVersion(), appBuild: seams.appBuild(), fsmDirect: seams.fsmDirect())
         guard let payload = Data(base64Encoded: offered),
               let checkIn = OfficeCheckIn.checkInPayload(payload),
               OfficeCheckIn.answers(checkIn, challenge: challenge, held: held) else {
@@ -334,7 +335,7 @@ final class OfficeCheckInService: ObservableObject {
         let offered = try await seams.transport.checkInPayload(
             challengeID: waiting.challengeID,
             leaseRenewBy: Self.leaseRenewBy(seams.leaseRenewBy(), now: Int64(seams.clock().timeIntervalSince1970)),
-            appVersion: seams.appVersion(), appBuild: seams.appBuild())
+            appVersion: seams.appVersion(), appBuild: seams.appBuild(), fsmDirect: seams.fsmDirect())
         guard Data(base64Encoded: offered) == waiting.payload else { throw Failure.notWhatWasAskedFor }
         let signature: String
         if let kept = waiting.signature {
@@ -458,6 +459,12 @@ extension OfficeCheckInService.Seams {
         }
         seams.appVersion = { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "" }
         seams.appBuild = { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "" }
+        seams.fsmDirect = {
+            // Policy/credential cleanup runs synchronously before the phone reports off.
+            guard let app = AppStateProvider.shared else { return nil }
+            app.enforceWorkizRoute()
+            return OfficeCheckIn.FSMDirect(system: "workiz", state: app.workizConnection.isRunning ? "on" : "off")
+        }
         if let ledgerFile {
             seams.load = { OfficeCheckInService.readLedger(ledgerFile) }
             seams.save = { try OfficeCheckInService.writeLedger($0, to: ledgerFile) }

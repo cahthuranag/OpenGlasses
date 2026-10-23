@@ -42,6 +42,11 @@ enum OfficeManagedFolderMobilecoreTransport {
                 challengeID: challengeID, leaseRenewBy: leaseRenewBy, appVersion: appVersion, appBuild: appBuild)
         }
 
+        func checkInPayload(challengeID: String, leaseRenewBy: Int64, appVersion: String,
+                            appBuild: String, fsmDirect: OfficeCheckIn.FSMDirect?) async throws -> String {
+            try await OfficeTransportIdentity.shared.managedCheckInPayload(challengeID: challengeID,
+                leaseRenewBy: leaseRenewBy, appVersion: appVersion, appBuild: appBuild, fsmDirect: fsmDirect)
+        }
         func publishCheckIn(challengeID: String, signatureBase64: String) async throws -> String {
             try await OfficeTransportIdentity.shared.publishManagedCheckIn(
                 challengeID: challengeID, signatureBase64: signatureBase64)

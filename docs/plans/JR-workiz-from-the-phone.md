@@ -1,9 +1,11 @@
 # Plan JR — Workiz From the Phone
 
-**Status:** 📝 Drafted 2026-10-23 — nothing implemented. **Amended the same day** for the hand-over
-to an office (*When the firm gets Avenkin Office*): a route key, a check-in member, and shared
-Workiz fixtures with a short contract, so the office's own Workiz connector (office plans FX24 and
-FX29, private) reads what the phone wrote.
+**Status:** Implemented against synthetic fixtures on 2026-10-23, based on merged Plan JQ (#835). Live Workiz
+qualification is deferred by the owner: **“Build and test with fixtures; validate live later.”**
+The company-wide-key risk and proposed defaults below govern this implementation: local key paste
+behind the administrator gate when managed, report-only writes, customer primary phone, Office-only
+routing under its profile, and the newest five read-only notes. No live account or credential was used.
+
 **Origin:** an appliance-repair tester that runs its business on Workiz asked, through the pilot
 partner, whether the app could connect to it. Its owner wants to start with refrigerators, and the
 firm has no office computer running Avenkin Office.
@@ -129,8 +131,12 @@ office (`organizationFieldServiceRoute`, see *When the firm gets Avenkin Office*
    tested without writing, so it is confirmed on the first send, and a `403` then says which
    permission to add.
 3. **Who are you in Workiz?** A list of active field technicians from `GET /users`, with the one
-   whose email or name matches Plan JQ's technician details preselected. The choice stores the
-   `USR-` ID, shown as *"You're Jamie Lee in Workiz."*
+   whose full name uniquely matches Plan JQ's technician details preselected. The choice stores the
+   `USR-` ID and display name in the device-only Keychain, shown as *"You're Jamie Lee in Workiz."*
+   It persists across app launches and key rotation. Normal job refreshes do not fetch the users
+   list or ask again; Test connection fetches it again and clears an inactive or missing choice.
+   Plan JQ's names and company still supply the human report identity; Workiz supplies its external
+   technician ID.
 4. **What goes back.** Report field name (default *Field Assist report*), client notes on or off,
    and a sub-status if decision 3 allows one.
 5. **Remove Workiz key.**
@@ -299,3 +305,50 @@ feedback comes through the partner. Plan JQ's daily report carries the evidence.
 - `NetworkRouteRegistry`, `DataStoreRegistry` and telemetry guards updated for the new route, the
   key and the stored user ID.
 - A UI test over the stub that walks P1–P3 and takes the screenshots above.
+
+## Implementation and validation — 2026-10-23
+
+P0–P3 are wired into the phone. `Services/FieldAssist/Workiz/` contains the bounded v2 API,
+closed values, assignment/window filter, mapper, report-block writer, protected connection,
+transport seam, refresh controller and durable sink. Workiz jobs use the existing ahead store,
+brief/start/next-job/directions paths. Started visits keep their external identity and note snapshot.
+The cached pull stamp is protected and excluded from backup beside the ahead store.
+
+The dedicated ephemeral transport rejects redirects and arbitrary hosts, caps response bytes and
+checks Medical Local Only and the live Field Assist licence before every request, including retries.
+A licence lapse stops requests while preserving local records and the saved key for renewal. The request builder permits only reads, the
+report-field-only PUT and optional note-only POST. Attachment URLs and customer email are discarded.
+Malformed, duplicate-ID or over-budget custom-field snapshots are refused before any PUT so an
+existing report is never treated as an empty field after truncation. The queue persists field progress, the client-note write-ahead flag/receipt, authentication generation,
+backoff date and terminal Office handover. Foreground timers re-arm persisted retries; no background
+job polling was added. The usual PDF/email route stays in place. A report marker hashes the exact
+confirmed work-record bytes, including Plan JQ's identity.
+
+The profile's `organizationFieldServiceRoute` is a string ceiling accepting only `office`.
+Workiz options can be profile-owned and locked; the key cannot be carried by a profile.
+Handover clears the device-only key and selected technician, removes unstarted Workiz jobs and
+terminates direct deliveries. A durable revocation flag prevents a failed Keychain erase from
+re-enabling the connector on relaunch. The optional signed check-in state is implemented in Swift
+and the public Go transport, with new on/off golden fixtures and strict nested-field validation.
+
+Validation:
+
+- Final selected iOS run: 260 tests, zero failures, one existing optional-manual test skipped
+  because its local manuals are absent. Includes all 33 Workiz tests, job briefs/lists/external
+  references/work records, store and route inventories, manifest reconciliation, profile policy,
+  offline queue, JQ identity and signed check-in/service tests.
+- Full `go test -tags noassets ./...` passed, including signed direct-state rejection cases.
+  The changed check-in package also passed `go test -race -tags noassets ./checkin`.
+- Public portable suites: 72 manual-contract, 16 entitlement/pairing and 221 recording-contract
+  tests passed. The Swift call to the new optional bridge method type-checks against freshly
+  generated Objective-C bindings.
+- Privacy logging gate passed. The privacy inventory's generated table includes Workiz.
+- All 12 fixture UI walks passed, with zero failures, in light/dark mode at default and largest
+  Dynamic Type. The accessibility audit ran on all 60 captured viewports. The
+  [screenshot matrix and exact audit exceptions](evidence/JR/README.md) are committed for review.
+  The Workiz status scrolls with the Jobs list, and status/action labels wrap at accessibility sizes.
+
+Live qualification remains **unrun**. In particular, do not infer from fixtures that a
+`customFields`-only PUT preserves every other field in a real account, that created-date scanning
+covers every unscheduled job, or that the report field is visible in Workiz mobile. The timed
+11-step walkthrough and subsequent tester week above are still owed before production rollout.

@@ -37,6 +37,7 @@ private struct JobTabContent: View {
     /// Jobs ahead (Plan FO P3c). Observed here because a job file accepted from Mail, or a job
     /// said out loud, has to appear on this screen without a navigation.
     @ObservedObject var upcoming: UpcomingJobStore
+    @ObservedObject var workizDeliveries: WorkizSyncSink
     @StateObject private var sessions = FieldSessionService.shared
     /// The list's facts, composed (Plan HC).
     @StateObject private var feed: JobListFeed
@@ -50,6 +51,7 @@ private struct JobTabContent: View {
         self.flow = flow
         self.sends = sends
         self.upcoming = upcoming
+        workizDeliveries = appState.workizSink
         self.embedded = embedded
         self.focusesEvidence = focusesEvidence
         _path = State(initialValue: embedded ? [.currentJob] : [])
@@ -131,7 +133,13 @@ private struct JobTabContent: View {
                         transcriptDays: appState.reportActivityDays,
                         onExportDay: exportDay,
                         onReportDay: { appState.openSupportReport(.day($0)) },
-                        onSendToday: { appState.openSupportReport(.day(Date())) })
+                        onSendToday: { appState.openSupportReport(.day(Date())) },
+                        deliveryStatus: { route in
+                            if case .pastJob(let id) = route { return workizDeliveries.status(sessionID: id) }
+                            return nil
+                        }, workizStatus: WorkizJobsStatus(controller: appState.workiz, store: upcoming))
+                .refreshable { await appState.workiz.refresh(force: true) }
+                .task { await appState.workiz.refresh() }
                 .navigationTitle("Jobs")
                 .navigationDestination(for: JobRoute.self) { route in
                     destination(route)

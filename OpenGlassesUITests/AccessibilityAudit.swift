@@ -6,6 +6,7 @@ import XCTest
 /// target). They seed persisted state and nothing else — no screen behaves differently under
 /// them, and none of this compiles into a Release build.
 enum LaunchState: String {
+    case workizFixture = "-UITestWorkizFixture"
     case freshInstall = "-OGUITestFreshInstall"
     case configured = "-OGUITestConfigured"
     case seedCaptions = "-OGUITestSeedCaptions"

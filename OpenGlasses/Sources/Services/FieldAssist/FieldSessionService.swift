@@ -724,6 +724,7 @@ final class FieldSessionService: ObservableObject {
         mutateSession { session in
             session.site = job.site.isEmpty ? nil : job.site
             session.faultReport = job.faultReport
+            session.connectorNotes = job.origin == .connector ? job.notes : nil
             session.brief = job.brief
             session.jobFile = job.provenance
             session.jobNeeds = job.needs

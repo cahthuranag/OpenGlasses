@@ -196,6 +196,18 @@ enum ProfileApplier {
                 }
                 result.ceilings[key] = value
 
+            case .stringCeiling(let pinnedTo):
+                guard let disposition = readDisposition(raw, name: name, into: &result) else { continue }
+                guard disposition == .ceiling else {
+                    result.drops.append(Drop(key: name, reason: .dispositionNotAllowed(disposition))); continue
+                }
+                guard case .string(let text) = value else {
+                    result.drops.append(Drop(key: name, reason: .wrongType(expected: .string))); continue
+                }
+                guard text == pinnedTo else {
+                    result.drops.append(Drop(key: name, reason: .wrongDirection)); continue
+                }
+                result.ceilings[key] = value
             case .startingValue(let type):
                 guard let disposition = readDisposition(raw, name: name, into: &result) else { continue }
                 guard disposition == .default else {

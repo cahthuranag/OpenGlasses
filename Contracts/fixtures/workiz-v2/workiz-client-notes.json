@@ -1,0 +1,14 @@
+{
+  "pageSize": 100,
+  "page": 1,
+  "totalResults": 1,
+  "hasMore": false,
+  "data": [
+    {
+      "id": "CLN-fixture",
+      "note": "Job 1234 \u2014 23 Oct 2026\nAvenkin ref 01234567\nPhone visit one.",
+      "techName": "Jamie Lee",
+      "createdAt": "2026-10-23 11:00:00"
+    }
+  ]
+}

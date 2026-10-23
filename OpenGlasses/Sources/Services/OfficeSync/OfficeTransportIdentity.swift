@@ -117,6 +117,19 @@ actor OfficeTransportIdentity {
         #endif
     }
 
+    func managedCheckInPayload(challengeID: String, leaseRenewBy: Int64, appVersion: String,
+                               appBuild: String, fsmDirect: OfficeCheckIn.FSMDirect?) throws -> String {
+        #if AVENKIN_OFFICE_TRANSPORT
+        let value = fsmDirect.map { "{\"system\":\"workiz\",\"state\":\"\($0.state)\"}" } ?? ""
+        var error: NSError?
+        let payload = try preparedClient().managedCheckInPayload(withFSMDirect: challengeID,
+            leaseRenewBy: leaseRenewBy, appVersion: appVersion, appBuild: appBuild, fsmDirect: value, error: &error)
+        if let error { throw error }
+        return payload
+        #else
+        throw Refusal.unavailable
+        #endif
+    }
     func publishManagedCheckIn(challengeID: String, signatureBase64: String) throws -> String {
         #if AVENKIN_OFFICE_TRANSPORT
         var error: NSError?

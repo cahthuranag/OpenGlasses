@@ -28,7 +28,7 @@ final class TerminalTests: XCTestCase {
         let key = Curve25519.Signing.PrivateKey(), keyFile = tmp.appendingPathComponent("synthetic-key.txt")
         try key.rawRepresentation.base64EncodedString().write(to: keyFile, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyFile.path)
-        let result = try run("generate-field-license", ["Fixture Ltd", "--key-file", keyFile.path, "--issued-at", "2027-01-15T08:00:00Z", "--days", "365", "--tier", "team", "--plan", "team", "--seats", "2", "--reference", "fixture-order", "--pack", "electrical", "--pack", "hvac", "--profile", "https://fixture.invalid/p/customer"])
+        let result = try run("generate-field-license", ["Fixture Ltd", "--key-file", keyFile.path, "--issued-at", "2027-01-15T08:00:00Z", "--days", "365", "--tier", "team", "--plan", "team", "--seats", "2", "--reference", "fixture-order", "--pack", "hvac", "--pack", "electrical", "--profile", "https://fixture.invalid/p/customer"])
         XCTAssertEqual(result.0, 0)
         let parts = result.1.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".")
         XCTAssertEqual(parts.count, 2); guard parts.count == 2 else { return }

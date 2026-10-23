@@ -295,7 +295,7 @@ do {
     let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: keyData)
     let payload = LicensePayload(feature: "field_assist", licensee: licensee, issued: issuedAt, expires: expires,
                                  tier: tier, plan: plan, seats: seats, reference: reference,
-                                 packs: packs.isEmpty ? nil : packs,
+                                 packs: packs.isEmpty ? nil : packs.sorted(),
                                  profile: profileAddress,
                                  organizationID: organizationID, profileID: profileID)
 

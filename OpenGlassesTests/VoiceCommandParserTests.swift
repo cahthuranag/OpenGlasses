@@ -83,6 +83,35 @@ final class VoiceCommandParserTests: XCTestCase {
         XCTAssertEqual(match?.query, "Claude")
     }
 
+    func testDetectPersonaStripsPrefixAfterLeadingWhitespace() {
+        let match = parser.detectPersona(in: " \n\tHey Claude, what's the weather", personas: personas)
+        XCTAssertEqual(match, .init(personaId: "claude", query: "what's the weather"))
+    }
+
+    func testDetectPersonaKeepsOriginalWhenUnicodeCaseExpansionPrecedesFinalPhrase() {
+        // U+0130 lowercases to two scalars. Reusing the lowercased string's end index in
+        // the original transcript trapped in build 562.
+        let text = "\u{0130} hey claude"
+        let match = parser.detectPersona(in: text, personas: personas)
+        XCTAssertEqual(match, .init(personaId: "claude", query: text))
+    }
+
+    func testDetectPersonaPreservesQueryAfterUnicodeCaseExpansion() {
+        let match = parser.detectPersona(in: "\u{0130} hey claude Read This", personas: personas)
+        XCTAssertEqual(match, .init(personaId: "claude", query: "Read This"))
+    }
+
+    func testDetectPersonaPreservesUnicodeQueryAndCase() {
+        let match = parser.detectPersona(in: "🛠️ HEY CLAUDE, Read Café 👩🏽‍🔧", personas: personas)
+        XCTAssertEqual(match, .init(personaId: "claude", query: "Read Café 👩🏽‍🔧"))
+    }
+
+    func testDetectPersonaKeepsOriginalWhenPaddedPhraseIsWholeUtterance() {
+        let text = " \tHey Claude, \n"
+        let match = parser.detectPersona(in: text, personas: personas)
+        XCTAssertEqual(match, .init(personaId: "claude", query: text))
+    }
+
     func testDetectPersonaPicksFirstMatchInOrder() {
         let match = parser.detectPersona(in: "hey chef, what's for dinner", personas: personas)
         XCTAssertEqual(match?.personaId, "chef")

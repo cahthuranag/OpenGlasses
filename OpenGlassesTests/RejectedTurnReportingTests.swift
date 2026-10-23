@@ -295,7 +295,8 @@ final class RejectedTurnReportingTests: XCTestCase {
     func testTheBannerPointsAnUnofferedModelAtAnotherModelWhateverItsStatus() {
         for failure in ["clientError(http)#400", SafeErrorSummary.http(status: 404).description] {
             let words = AppState.plainReason(failure, rejection: "modelNotAvailable")
-            XCTAssertTrue(words.contains("doesn't offer this model"), "\(failure): \(words)")
+            XCTAssertTrue(words.contains("didn't offer this model right now"), "\(failure): \(words)")
+            XCTAssertTrue(words.contains("usage limit"), "\(failure): \(words)")
             XCTAssertTrue(words.contains("choose another model"), "\(failure): \(words)")
         }
     }
@@ -398,13 +399,14 @@ final class RejectedTurnReportingTests: XCTestCase {
             .contains("couldn't be processed"))
     }
 
-    func testTheSpokenReasonSaysTheModelIsNotOnThePlan() {
+    func testTheSpokenReasonAllowsForAUsedUpAllowance() {
         let body = Data(ChatGPTModelAvailabilityTests.codexRefusal.utf8)
         let subscription = ModelSwitchNarrator.exhaustionPhrase(lastError: LLMError.apiError(
             provider: "ChatGPT", statusCode: 400, message: ChatGPTModelAvailabilityTests.codexRefusal,
             rejection: ProviderRejection(status: 400, body: body, provider: .chatgpt)))
-        XCTAssertTrue(subscription.contains("isn't available on your ChatGPT plan"), subscription)
-        XCTAssertTrue(subscription.contains("pick another in Settings"), subscription)
+        XCTAssertTrue(subscription.contains("isn't available on your ChatGPT account right now"), subscription)
+        XCTAssertTrue(subscription.contains("usage limit"), subscription)
+        XCTAssertTrue(subscription.contains("try again later or pick another model"), subscription)
         XCTAssertFalse(subscription.contains("gpt-5.6-sol"), "the provider's sentence is never spoken")
 
         // A 404 elsewhere would read as "unavailable right now" without the reason.

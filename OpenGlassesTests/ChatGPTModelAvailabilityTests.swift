@@ -81,6 +81,8 @@ final class ChatGPTModelAvailabilityTests: XCTestCase {
         let logged = lock.withLock { lines }
         XCTAssertEqual(logged.count, 1)
         XCTAssertTrue(logged.first?.contains("reason=modelNotAvailable") ?? false, "\(logged)")
+        XCTAssertTrue(logged.first?.contains("detail=limitHeadersAbsent") ?? false,
+                      "the stub sends no usage headers: \(logged)")
         XCTAssertFalse(logged.first?.contains("gpt-5.6-sol") ?? true, "the body never reaches the log")
         XCTAssertTrue(ChatGPTContextCatalog.needsRefresh(accountID: "account-a", now: fetched),
                       "a catalog known to be wrong is fetched again on the next turn")
@@ -123,9 +125,56 @@ final class ChatGPTModelAvailabilityTests: XCTestCase {
 
     func testTheNoticeNamesNoModelAndPointsAtSettings() {
         let notice = ChatGPTModelAvailability.substitutionNotice
-        XCTAssertTrue(notice.contains("ChatGPT plan"))
+        XCTAssertTrue(notice.contains("isn't available on your ChatGPT account right now"))
+        XCTAssertTrue(notice.contains("usage limit"), "a used-up allowance is the likelier cause")
         XCTAssertTrue(notice.contains("Settings"))
         XCTAssertFalse(notice.lowercased().contains("gpt-"))
+    }
+
+    // MARK: - The usage headers on a refusal
+
+    func testAUsageHeaderAtItsLimitReadsAsExhausted() {
+        XCTAssertEqual(ChatGPTModelAvailability.limitReading(headers: [
+            "x-codex-primary-used-percent": "100", "x-codex-secondary-used-percent": "12"]), .exhausted)
+        XCTAssertEqual(ChatGPTModelAvailability.limitReading(headers: [
+            "X-Codex-Secondary-Used-Percent": "100.0"]), .exhausted, "names are matched without case")
+        // A separately metered limit carries its own prefix.
+        XCTAssertEqual(ChatGPTModelAvailability.limitReading(headers: [
+            "x-codex-sol-primary-used-percent": "100", "x-codex-primary-used-percent": "40"]), .exhausted)
+    }
+
+    func testUsageHeadersBelowTheirLimitReadAsBelow() {
+        XCTAssertEqual(ChatGPTModelAvailability.limitReading(headers: [
+            "x-codex-primary-used-percent": "99.5", "x-codex-secondary-used-percent": " 40 "]), .belowLimit)
+    }
+
+    func testWithNoReadableUsageHeaderTheReadingIsAbsent() {
+        XCTAssertEqual(ChatGPTModelAvailability.limitReading(headers: ["Content-Type": "application/json"]), .absent)
+        XCTAssertEqual(ChatGPTModelAvailability.limitReading(headers: [
+            "x-codex-primary-used-percent": "lots", "x-codex-primary-window-minutes": "300"]), .absent,
+            "a value that is not a number, or a header that is not a percentage, is not a reading")
+    }
+
+    // MARK: - A turn
+
+    func testATurnOnAnUnlistedModelSubstitutesAndAsksForAFreshCatalog() {
+        let fetched = Date()
+        ChatGPTContextCatalog.update(data: payload, accountID: "account-a", now: fetched)
+        XCTAssertFalse(ChatGPTContextCatalog.needsRefresh(accountID: "account-a", now: fetched))
+
+        XCTAssertNil(ChatGPTModelAvailability.modelForTurn("gpt-5.5", accountID: "account-a", now: fetched))
+        XCTAssertFalse(ChatGPTContextCatalog.needsRefresh(accountID: "account-a", now: fetched),
+                       "a listed model leaves the catalog alone")
+
+        XCTAssertEqual(ChatGPTModelAvailability.modelForTurn("gpt-5.6-sol", accountID: "account-a", now: fetched),
+                       "gpt-6-astra")
+        XCTAssertTrue(ChatGPTContextCatalog.needsRefresh(accountID: "account-a", now: fetched),
+                      "the saved model may come back when its allowance does")
+
+        // Listed again: the saved model is sent as saved.
+        let restored = Data(#"{"models":[{"slug":"gpt-6-astra","is_default":true},{"slug":"gpt-5.6-sol"}]}"#.utf8)
+        ChatGPTContextCatalog.update(data: restored, accountID: "account-a", now: fetched)
+        XCTAssertNil(ChatGPTModelAvailability.modelForTurn("gpt-5.6-sol", accountID: "account-a", now: fetched))
     }
 
     // MARK: - The stored catalog

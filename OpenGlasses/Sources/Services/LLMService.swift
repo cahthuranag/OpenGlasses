@@ -1019,9 +1019,8 @@ class LLMService: ObservableObject {
         // This turn sends the catalog's default instead; the saved setting is left as it is.
         var modelNotice: String?
         if modelConfig.llmProvider == .chatgpt,
-           case .substitute(let offered) = ChatGPTModelAvailability.decide(
-               model: modelConfig.model,
-               catalog: ChatGPTContextCatalog.offered(accountID: chatGPTAccount.accountID)) {
+           let offered = ChatGPTModelAvailability.modelForTurn(modelConfig.model,
+                                                               accountID: chatGPTAccount.accountID) {
             PrivacyLog.model(.modelSubstituted, provider: PrivacyToken(LLMProvider.chatgpt.rawValue),
                              model: PrivacyToken(offered), detail: PrivacyToken(modelConfig.model))
             if Self.announcedModelSubstitutions.insert(modelConfig.model).inserted {
@@ -3615,12 +3614,21 @@ class LLMService: ObservableObject {
             let text = String(data: errorBody, encoding: .utf8) ?? ""
             let rejection = ProviderRejection(response: response, body: errorBody,
                                               provider: LLMProvider(rawValue: providerToken) ?? .openai)
-            // The classified reason rides the log line, so a support report can say why.
+            let unservedOnSubscription = providerToken == LLMProvider.chatgpt.rawValue
+                && rejection.reason == .modelNotAvailable
+            // The classified reason rides the log line, so a support report can say why. On the
+            // subscription the same refusal means "not in the catalog" or "allowance used up";
+            // whether the usage headers were at their limit tells them apart.
+            let limitReading = unservedOnSubscription
+                ? ChatGPTModelAvailability.limitReading(
+                    headers: (response as? HTTPURLResponse)?.allHeaderFields ?? [:])
+                : nil
             PrivacyLog.modelRejected(rejection, provider: PrivacyToken(providerToken),
-                                     bytes: errorBody.count)
-            // The account's catalog no longer lists this model: fetch it again on the next turn,
-            // which can then send one the account does offer (`ChatGPTModelAvailability`).
-            if providerToken == LLMProvider.chatgpt.rawValue, rejection.reason == .modelNotAvailable {
+                                     bytes: errorBody.count,
+                                     detail: limitReading.map { PrivacyToken($0.rawValue) })
+            // Fetch the catalog again on the next turn, which can then send a model the account
+            // does serve (`ChatGPTModelAvailability`).
+            if unservedOnSubscription {
                 ChatGPTContextCatalog.markStale()
             }
             throw LLMError.apiError(provider: providerLabel, statusCode: status, message: text,

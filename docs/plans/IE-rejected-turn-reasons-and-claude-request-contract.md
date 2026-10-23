@@ -127,8 +127,11 @@ Deterministic, headless.
   account", OpenAI's `model_not_found`, Anthropic's 404 `model:`, Gemini's `models/… is not
   found`). It ends the candidate, not the turn. A tester's turn on a model their ChatGPT
   account's catalog no longer listed came back as `other` and ended the turn without trying
-  another model. The ChatGPT send path now also sends the account catalog's default in place of
-  an unlisted saved model (`ChatGPTModelAvailability`).
+  another model. The ChatGPT backend has also been seen to send this refusal for a listed model
+  whose allowance was used up, so the wording allows for a usage limit, and the log line records
+  whether the refusal's usage headers were at their limit. The ChatGPT send path also sends the
+  account catalog's default in place of an unlisted saved model, and asks for a fresh catalog on
+  every turn that does (`ChatGPTModelAvailability`).
 - **`SafeErrorSummary`** gains an `LLMError` rung: `.apiError` maps through `http(status:)` with
   the provider's error type as the detail, so the line reads
   `clientError(invalid_request_error)#400`.

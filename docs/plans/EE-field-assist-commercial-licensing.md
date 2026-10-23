@@ -145,7 +145,9 @@ issued keeps verifying:
 **What seats mean.** The code is device-scoped and offline; there is no server, so seats are not
 enforced. The number is recorded so the status screen can show "20 seats" and the vendor and the
 customer agree on what was bought. Enforcement, if ever, is a Plan CT profile concern. The plan says
-this plainly rather than implying a control that does not exist.
+this plainly rather than implying a control that does not exist. *(2026-10-23: Plan
+[JS](JS-licence-sales-and-device-seats.md) P2 plans enforcement through a vendor seat server, for
+licences carrying its `seatCheck` claim only. Until it ships, this paragraph stands.)*
 
 The generator gains `--tier`, `--plan`, `--seats`, `--reference`, `--days` (expiry from now) and prints the
 decoded payload it just signed so the vendor can eyeball it before sending. Signing key handling is

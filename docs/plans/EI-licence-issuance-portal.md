@@ -1,6 +1,9 @@
 # Plan EI — Licence Issuance Portal (a partner issues and renews team codes without the vendor)
 
-**Status:** 📋 Planned 2026-09-03
+**Status:** 📋 Planned 2026-09-03 · **2026-10-23: taken forward by Plan
+[JS](JS-licence-sales-and-device-seats.md),** which adopts design (A) and this plan's P1 core
+unchanged, adds bank-transfer invoicing with a 35-day provisional code, and in its P2 amends the
+non-goal on seat servers for licences carrying its `seatCheck` claim.
 **Origin:** Every Field Assist team code that exists was minted by hand, on the vendor's machine, by
 the one person holding the Ed25519 private key
 ([`Scripts/generate-field-license.swift`](../../Scripts/generate-field-license.swift)). That is fine

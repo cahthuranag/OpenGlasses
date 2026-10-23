@@ -185,9 +185,9 @@ enum DATCompatibilityMessage {
             // Device-traced 2026-08-23: this used to say "open the Meta AI app and install the
             // pending update", and Meta AI showed no pending update — because the glasses-side DAT
             // app is a different artefact from the phone app and the firmware. Point at the screen
-            // that actually opens it (Settings → Hardware & Privacy → Update Glasses App, which
+            // that actually opens it (Settings → Devices & Privacy → Glasses → Update Glasses App, which
             // deep-links via the SDK) rather than sending the user hunting.
-            return "The glasses' companion app needs updating — Settings › Hardware & Privacy › Update Glasses App."
+            return "The glasses' companion app needs updating — Settings › Devices & Privacy › Glasses › Update Glasses App."
         case .insufficientSDKVersion:
             // DAT 1.0, terminal: the glasses need an app built against a newer SDK. Nothing on
             // the glasses or in Meta AI fixes this — only an OpenGlasses update does.

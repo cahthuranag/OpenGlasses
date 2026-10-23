@@ -60,12 +60,14 @@ final class DiagnosticRing: @unchecked Sendable {
         case corrupt
     }
 
-    /// A count bound well above a session's worth of events at the rate the app actually logs; the
-    /// age bound (`defaultMaxAge`) is the one a long day normally meets first.
-    static let defaultCapacity = 2000
+    /// Plan JQ: measured on an iPhone Air before raising from 2,000. The doubled persisted
+    /// history (28,000 synthetic 300-character events, 10.9 MB) loaded in at most 78.1 ms.
+    /// See docs/plans/JQ-pilot-identity-and-daily-reports.md. Count can still evict before age.
+    static let defaultCapacity = 14_000
 
     /// How far back the ring, and the history saved for later runs, reaches.
-    static let defaultMaxAge: TimeInterval = 48 * 60 * 60
+    static let retentionDays = 7
+    static let defaultMaxAge: TimeInterval = TimeInterval(retentionDays * 24 * 60 * 60)
 
     /// How many of a run's first events are kept however long the run goes on: the launch, and the
     /// minutes after it, which are where "it never started listening" is answered.
@@ -389,7 +391,7 @@ final class DiagnosticBreadcrumbStore: @unchecked Sendable {
 
     /// A file larger than this is not something this store wrote. Room for the ring and the
     /// history at their default bounds with plenty to spare.
-    static let maxFileSize = 4_000_000
+    static let maxFileSize = 16_000_000
 
     private let url: URL
     private let writeDelay: TimeInterval

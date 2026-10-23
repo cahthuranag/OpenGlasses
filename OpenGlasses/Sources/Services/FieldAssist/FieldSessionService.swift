@@ -172,6 +172,7 @@ final class FieldSessionService: ObservableObject {
         // "Start job 1005" is one step; starting without a number leaves the intake owing one, and
         // the app — not the model — asks for it (Plan FO P1).
         let intake = JobIntakeState.needsReference.advance(.jobStarted(reference: jobReference))
+        session.reportedBy = Config.reportIdentity
         session.jobReference = intake.recordedReference
         session.jobIntake = intake.state
 

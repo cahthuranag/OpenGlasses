@@ -474,7 +474,8 @@ extension WorkRecord {
     /// files take so an inbox does not fill with `work_order.pdf`.
     var reportSubject: String {
         let job = jobReference.flatMap { $0.isEmpty ? nil : $0 }
-        return job.map { "Job \($0) — \(vaultName)" } ?? "\(vaultName) — job record \(sessionId.prefix(8))"
+        let subject = job.map { "Job \($0) — \(vaultName)" } ?? "\(vaultName) — job record \(sessionId.prefix(8))"
+        return reportedBy?.customerLine.map { subject + " — " + $0 } ?? subject
     }
 
     /// A file name safe for a mail attachment: the job reference where there is one, else the

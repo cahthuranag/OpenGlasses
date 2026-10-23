@@ -359,3 +359,25 @@ round trip. Existing v1 report fixtures and signing domains are unchanged.
 7. **Attachment bytes on the phone.** The work-order document is rendered when it is sent and
    photographs are stored without a digest, so the phone has to keep the exact bytes it named
    until they are receipted. That is the phone's to build; nothing here depends on how.
+
+
+## Report attribution (Plan JQ, additive v1 extension)
+
+A work record may carry `reported_by`, an object with four string members: `company`,
+`fullName`, `shortName`, and `technicianID`. Empty strings mean unset. The phone snapshots
+company and person at job start; an old job without attribution omits the object.
+`Contracts/fixtures/report-identity-v1.json` is the canonical fictional example. The
+`SessionExport` audit JSON uses the same object under `reported_by`.
+
+These are display labels, never authorisation or join keys. The office continues to map a
+phone to an FSM technician by its enrolment. On a job received from an FSM,
+`job_file.external.technician_id` takes precedence over the phone's label in internal
+attribution. Customer PDFs and email subjects print company and full name (short name if
+no full name), and never either technician ID. Attribution carries no licence code.
+The outer signed report format and its signing domain are unchanged: the record digest
+covers this field like every other record byte. Readers accept records without it and
+ignore unknown additive fields. Existing golden signed envelopes remain valid.
+
+`office-report-record-identity-v1.json` adds this attribution to the existing fictional work
+record. The envelope's digest changes with any change to `reported_by`; its outer format and
+application-signature checks remain the v1 checks above.

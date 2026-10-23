@@ -224,7 +224,7 @@ struct JobListView: View {
                         Button("Support report with troubleshooting details") { onReportDay(entry.day) }
                     }
                 } label: {
-                    Text(verbatim: Self.dayLabel(entry.day, jobCount: entry.jobCount))
+                    Text(verbatim: entry.day.formatted(date: .abbreviated, time: .omitted) + " — " + entry.summary)
                 }
             }
         } label: {

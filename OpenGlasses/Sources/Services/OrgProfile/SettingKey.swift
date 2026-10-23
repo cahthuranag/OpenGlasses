@@ -27,6 +27,8 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     case organizationAccentColor
     /// The technician's name as their team sees it (Plan FP P3), on a phone the organisation
     /// enrols per person. Set and locked by the profile; the technician sets it otherwise.
+    case technicianFullName
+    case technicianID
     case technicianDisplayName
     /// When tool definitions go on demand (Plan IU): `automatic`, `always` or `never`. Set and
     /// locked by the profile — the Settings row is then not the technician's to change.
@@ -78,6 +80,9 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
     case fieldAssistEnabled
     case fieldAssistDefaultVaultId
     case fieldAssistDefaultMode
+    /// Pilot reporting is a starting preference, never a ceiling or a locked value.
+    case pilotReportsEnabled
+    case pilotReportRecipients
     case supportReportEmail
     /// The accent colour the phone starts with; the technician may pick another afterwards.
     case accentColorName
@@ -110,7 +115,7 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
         switch self {
         case .organizationDisplayName, .organizationJobSigningKey, .organizationJobReportChannel,
              .organizationReportTranscriptInternal, .organizationAccentColor, .technicianDisplayName, .capturedManualsPolicy,
-             .organizationToolDefinitionsMode:
+             .organizationToolDefinitionsMode, .technicianFullName, .technicianID:
             return .profileOwned(.string)
         case .organizationReportRecipients:
             return .profileOwned(.strings)
@@ -127,7 +132,9 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
              .mcpServerEnabled, .agentModeEnabled, .faceRecognitionEnabled, .teamLearningReviewerDevice,
              .cloudDictationEnabled:
             return .ceiling(pinnedTo: false)
-        case .fieldAssistEnabled:
+        case .pilotReportRecipients:
+            return .startingValue(.strings)
+        case .pilotReportsEnabled, .fieldAssistEnabled:
             return .startingValue(.bool)
         case .fieldAssistDefaultVaultId, .fieldAssistDefaultMode, .supportReportEmail, .accentColorName,
              .refrigerationUnits:
@@ -171,7 +178,11 @@ enum SettingKey: String, CaseIterable, Codable, Sendable {
                     || recipient.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
             }
             return bad ? "a recipient is empty, too long, or contains whitespace" : nil
-        case (.technicianDisplayName, .string(let name)):
+        case (.pilotReportRecipients, .strings(let addresses)):
+            return PilotReportRecipients.validated(addresses) == nil ? "provide one to three email addresses" : nil
+        case (.technicianID, .string(let value)):
+            return value == TechnicianID.clean(value) && !value.isEmpty ? nil : "provide a printable technician ID of at most 40 characters"
+        case (.technicianDisplayName, .string(let name)), (.technicianFullName, .string(let name)):
             // The contract's author rule: plain text, 1–120 characters once trimmed.
             if name.unicodeScalars.contains(where: LearningCandidateText.isRefused) {
                 return "the name contains a control character"

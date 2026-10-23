@@ -1,0 +1,168 @@
+{
+  "device": "iPhone Air (iPhone18,4)",
+  "os": "iOS 27.0.1",
+  "date": "2026-10-23",
+  "method": "Production DiagnosticRing, DiagnosticBreadcrumbStore and StoreProtection; synthetic entries; only logger value types stubbed; candidate maxFileSize 16000000; nine loads per shape; measured ring initialization and retained count, not total app launch or a cold filesystem read.",
+  "results": [
+    {
+      "bytes": 376001,
+      "capacity": 2000,
+      "firstLoadMilliseconds": 3.742916,
+      "lineCharacters": 100,
+      "maximumMilliseconds": 4.489125,
+      "medianMilliseconds": 3.896583,
+      "persistedEntries": 2000,
+      "samples": [
+        3.742916,
+        4.367458,
+        4.489125,
+        4.461708,
+        3.896583,
+        3.761875,
+        3.41775,
+        4.222666,
+        3.743459
+      ]
+    },
+    {
+      "bytes": 776001,
+      "capacity": 2000,
+      "firstLoadMilliseconds": 4.171625,
+      "lineCharacters": 300,
+      "maximumMilliseconds": 4.49525,
+      "medianMilliseconds": 4.171625,
+      "persistedEntries": 2000,
+      "samples": [
+        4.171625,
+        4.047542,
+        4.311,
+        4.266875,
+        4.49525,
+        4.335375,
+        4.128083,
+        4.038209,
+        3.99725
+      ]
+    },
+    {
+      "bytes": 752001,
+      "capacity": 2000,
+      "firstLoadMilliseconds": 7.592042,
+      "lineCharacters": 100,
+      "maximumMilliseconds": 8.721208,
+      "medianMilliseconds": 8.077792,
+      "persistedEntries": 4000,
+      "samples": [
+        7.592042,
+        8.624958,
+        8.721208,
+        8.088208,
+        8.088125,
+        8.003084,
+        8.05925,
+        8.077792,
+        8.062959
+      ]
+    },
+    {
+      "bytes": 1552001,
+      "capacity": 2000,
+      "firstLoadMilliseconds": 8.892541,
+      "lineCharacters": 300,
+      "maximumMilliseconds": 11.23075,
+      "medianMilliseconds": 9.673,
+      "persistedEntries": 4000,
+      "samples": [
+        8.892541,
+        8.62025,
+        8.649667,
+        9.09625,
+        10.587875,
+        9.673,
+        10.501292,
+        9.790042,
+        11.23075
+      ]
+    },
+    {
+      "bytes": 2632001,
+      "capacity": 14000,
+      "firstLoadMilliseconds": 28.763209,
+      "lineCharacters": 100,
+      "maximumMilliseconds": 31.207875,
+      "medianMilliseconds": 27.898958,
+      "persistedEntries": 14000,
+      "samples": [
+        28.763209,
+        31.207875,
+        30.819083,
+        29.12,
+        27.402542,
+        27.62825,
+        27.489709,
+        27.465542,
+        27.898958
+      ]
+    },
+    {
+      "bytes": 5432001,
+      "capacity": 14000,
+      "firstLoadMilliseconds": 28.221958,
+      "lineCharacters": 300,
+      "maximumMilliseconds": 35.281667,
+      "medianMilliseconds": 29.910375,
+      "persistedEntries": 14000,
+      "samples": [
+        28.221958,
+        30.194375,
+        31.692042,
+        29.566834,
+        29.623792,
+        29.504959,
+        29.910375,
+        35.281667,
+        32.744417
+      ]
+    },
+    {
+      "bytes": 5264001,
+      "capacity": 14000,
+      "firstLoadMilliseconds": 64.8275,
+      "lineCharacters": 100,
+      "maximumMilliseconds": 66.821458,
+      "medianMilliseconds": 59.445584,
+      "persistedEntries": 28000,
+      "samples": [
+        64.8275,
+        66.821458,
+        64.950417,
+        60.258083,
+        59.445584,
+        58.830583,
+        56.876791,
+        55.427459,
+        55.386583
+      ]
+    },
+    {
+      "bytes": 10864001,
+      "capacity": 14000,
+      "firstLoadMilliseconds": 69.026625,
+      "lineCharacters": 300,
+      "maximumMilliseconds": 78.014667,
+      "medianMilliseconds": 71.045916,
+      "persistedEntries": 28000,
+      "samples": [
+        69.026625,
+        75.469834,
+        71.83225,
+        71.045916,
+        67.1425,
+        67.831625,
+        78.014667,
+        68.53825,
+        75.03
+      ]
+    }
+  ]
+}

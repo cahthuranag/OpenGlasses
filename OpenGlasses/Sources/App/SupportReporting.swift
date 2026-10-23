@@ -21,6 +21,9 @@ struct SupportReportRequest: Identifiable {
     /// The day this report can be widened to on the sheet, when it opened on one conversation
     /// after a failed turn. Nil everywhere else: the other entry points each name their scope.
     var widerDay: Date? = nil
+    var pilotDay: Date? = nil
+    var pilotEnrolment: String? = nil
+    var recipients: [String]? = nil
 
     /// From Settings or the Job tab: the scope asked for, with the troubleshooting layer. A day
     /// carries the conversations outside its jobs unless the person turns that off on the sheet.
@@ -137,6 +140,11 @@ extension AppState {
     /// Build the report for the review sheet. Unlocks encrypted conversations first (Face ID).
     func buildSupportReport(_ request: SupportReportRequest) async
         -> Result<JobTranscriptExport.Document, JobTranscriptExporter.Failure> {
+        if request.pilotDay != nil {
+            guard PilotReportStore.shared.enabled,
+                  request.pilotEnrolment == OrgProfileManager.shared.record?.enrolmentId,
+                  request.recipients == PilotReportStore.shared.recipients else { return .failure(.nothingToExport) }
+        }
         if conversationStore.isLocked {
             _ = await conversationStore.unlock()
         }
@@ -194,6 +202,7 @@ extension AppState {
             Self.activeModelReportLine(Config.activeModel),
             "Transcription preference: \(Config.asrEnginePreference.rawValue)",
         ]
+        phone += Config.reportSupportLines
         if isConnected {
             var glasses = "Glasses: connected"
             // A pair the SDK has not named yet reports an empty name, not a missing one.
@@ -225,7 +234,8 @@ extension AppState {
         let events = DiagnosticRing.shared.timeline.map {
             JobTranscriptExport.AppEvent(at: $0.at, line: $0.line)
         }
-        return .init(phone: phone, app: app.summary, appEvents: events, debugLog: Array(debugEvents.suffix(60)),
+        return .init(from: Config.reportIdentity?.fromLine, activity: ActivityStore.shared.entries,
+                     phone: phone, app: app.summary, appEvents: events, debugLog: Array(debugEvents.suffix(60)),
                      secrets: Config.knownSecretValues)
     }
 
@@ -289,5 +299,53 @@ extension AppState {
             String(cString: raw.baseAddress!.assumingMemoryBound(to: CChar.self))
         }
         return identifier.isEmpty ? "unknown" : identifier
+    }
+}
+
+
+extension AppState {
+    var reportActivityDays: [JobTranscriptExport.Day] {
+        JobTranscriptExport.activityDays(sessions: FieldSessionService.shared.history,
+            conversations: conversationStore.threads.map { JobTranscriptExport.lines(of: $0.messages).map(\.timestamp) },
+            traces: TurnTraceStore.shared.all.map(\.at), activity: ActivityStore.shared.entries.map(\.at),
+            now: Date(), calendar: .current)
+    }
+    var mayShowPilotReports: Bool {
+        let store = PilotReportStore.shared
+        return store.enabled && store.recipients != nil && !OrgProfileManager.shared.contentLocked
+            && FieldSessionService.shared.activeSession == nil
+            && !geminiLiveSession.isActive && !openAIRealtimeSession.isActive && !carPlayConnected
+    }
+    func offerPilotReports() {
+        let store = PilotReportStore.shared
+        let now = Date()
+        // A card left open before a long background stay must not outlive its seven-day window.
+        pilotReportDays = PilotReportPromptPolicy.daysToOffer(now: now, activityDays: pilotReportDays,
+            sentDays: store.sentDays, lastPromptDay: nil, enabled: store.enabled,
+            jobOpen: false, live: false, carPlay: false, calendar: .current)
+        guard !Config.needsOnboarding, mayShowPilotReports, supportReportRequest == nil, supportPrompt == nil else { return }
+        let days = PilotReportPromptPolicy.daysToOffer(now: now, activityDays: reportActivityDays.map(\.day),
+            sentDays: store.sentDays, lastPromptDay: store.lastPromptDay, enabled: store.enabled,
+            jobOpen: FieldSessionService.shared.activeSession != nil,
+            live: geminiLiveSession.isActive || openAIRealtimeSession.isActive,
+            carPlay: carPlayConnected, calendar: .current)
+        guard !days.isEmpty else { return }
+        pilotReportDays = days
+        store.prompted(at: now, calendar: .current)
+    }
+    func openPilotReport(_ day: Date) {
+        guard mayShowPilotReports, let recipients = PilotReportStore.shared.recipients else { return }
+        var request = SupportReportRequest.named(.day(day))
+        request.pilotDay = day
+        request.pilotEnrolment = OrgProfileManager.shared.record?.enrolmentId
+        request.recipients = recipients
+        supportReportRequest = request
+    }
+    func finishPilotReport(_ request: SupportReportRequest, completed: Bool) {
+        guard completed, let day = request.pilotDay,
+              request.pilotEnrolment == OrgProfileManager.shared.record?.enrolmentId,
+              PilotReportStore.shared.enabled else { return }
+        PilotReportStore.shared.sent(day: day)
+        pilotReportDays.removeAll { Calendar.current.isDate($0, inSameDayAs: day) }
     }
 }

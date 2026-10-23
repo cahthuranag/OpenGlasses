@@ -128,7 +128,7 @@ private struct JobTabContent: View {
                         showsVanStock: !Config.organizationForbidsVanStock,
                         onAdd: addNewJob,
                         onAnswer: answer,
-                        transcriptDays: model.transcriptDays,
+                        transcriptDays: appState.reportActivityDays,
                         onExportDay: exportDay,
                         onReportDay: { appState.openSupportReport(.day($0)) },
                         onSendToday: { appState.openSupportReport(.day(Date())) })

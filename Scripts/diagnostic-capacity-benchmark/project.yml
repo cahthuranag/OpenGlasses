@@ -1,0 +1,22 @@
+name: JQBenchmark
+options:
+  deploymentTarget:
+    iOS: '26.0'
+targets:
+  JQBenchmark:
+    type: application
+    platform: iOS
+    sources:
+      - App.swift
+      - LogTypes.swift
+      - ../../OpenGlasses/Sources/Services/Diagnostics/DiagnosticRing.swift
+      - ../../OpenGlasses/Sources/Services/Privacy/StoreProtection.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openglasses.jqbenchmark
+        DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        SWIFT_VERSION: '5.0'

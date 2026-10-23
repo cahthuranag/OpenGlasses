@@ -26,7 +26,7 @@ struct ExternalJobReference: Codable, Equatable, Sendable {
     let appointmentID: String?
     let locationID: String?
     let customerID: String?
-    /// Echoed only. The phone stores no technician identifier of its own.
+    /// Source-system label; Plan JQ prefers it over the phone label in internal report attribution.
     let technicianID: String?
     /// The system's identifier for each machine on the job, keyed by the machine's `unit_key`
     /// when it has one and by its serial otherwise.

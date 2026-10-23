@@ -82,6 +82,8 @@ struct SupportReportSheet: View {
         return false
     }
 
+    private var recipients: [String] { request.recipients ?? appState.supportReportRecipient.map { [$0] } ?? [] }
+
     private var isConversation: Bool {
         if case .conversation = request.scope { return true }
         return false
@@ -156,9 +158,10 @@ struct SupportReportSheet: View {
             .sheet(isPresented: $showingMail) {
                 if let document {
                     SupportReportMailComposer(document: document, reason: request.reason,
-                                              recipient: appState.supportReportRecipient ?? "") { outcome in
+                                              recipients: recipients) { outcome in
                         showingMail = false
                         status = .finished(outcome)
+                        appState.finishPilotReport(request, completed: outcome == .sent)
                     }
                     .ignoresSafeArea()
                 }
@@ -176,6 +179,7 @@ struct SupportReportSheet: View {
     private func content(_ document: JobTranscriptExport.Document) -> some View {
         OGNotice(text: maskingSummary(document), systemImage: "eye.slash")
 
+        OGNotice(text: "Includes company, technician name and ID, licence details and enrolment when configured.", systemImage: "person.text.rectangle")
         OGSection(header: "What's in it") {
             Text(verbatim: summary(document))
                 .font(.callout)
@@ -183,8 +187,8 @@ struct SupportReportSheet: View {
                 .padding(14)
         }
 
-        if let recipient = appState.supportReportRecipient {
-            emailSection(to: recipient)
+        if !recipients.isEmpty {
+            emailSection(to: recipients.joined(separator: ", "))
         } else {
             // An organisation phone with nowhere to send it: never the developer (see
             // `SupportReportRecipient`). Share still works, so the report is not stuck.
@@ -280,6 +284,7 @@ struct SupportReportSheet: View {
         shareItem = ShareItem(
             items: [ProtectedExportActivityItem(fileURL: made.fileURL, displayName: made.displayName)]
         ) { completed in
+            appState.finishPilotReport(request, completed: completed)
             coordinator.finishShare(made, outcome: completed ? .completed : .cancelled)
             lease = nil
         }
@@ -348,13 +353,13 @@ struct SupportReportSheet: View {
 struct SupportReportMailComposer: UIViewControllerRepresentable {
     let document: JobTranscriptExport.Document
     let reason: String?
-    let recipient: String
+    let recipients: [String]
     let onFinish: (DiagnosticsEmailOutcome) -> Void
 
     func makeUIViewController(context: Context) -> MFMailComposeViewController {
         let controller = MFMailComposeViewController()
         controller.mailComposeDelegate = context.coordinator
-        controller.setToRecipients([recipient])
+        controller.setToRecipients(recipients)
         controller.setSubject(document.title)
         var body = [String]()
         if let reason { body.append(reason) }

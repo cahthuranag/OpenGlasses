@@ -5147,6 +5147,7 @@ class AppState: ObservableObject, AppStateProtocol {
     @Published var supportPrompt: SupportPrompt?
     /// The support report being reviewed before it is sent.
     @Published var supportReportRequest: SupportReportRequest?
+    @Published var pilotReportDays: [Date] = []
     /// When the wearer last dismissed the offer — it is not raised again for a while after that.
     var supportPromptDismissedAt: Date?
 
@@ -5425,7 +5426,8 @@ class AppState: ObservableObject, AppStateProtocol {
         }
         let document: JobTranscriptExport.Document
         switch JobTranscriptExporter.document(scope, sessions: FieldSessionService.shared,
-                                              store: conversationStore) {
+                                              store: conversationStore,
+                                              environment: .init(from: Config.reportIdentity?.fromLine)) {
         case .success(let built): document = built
         case .failure(let failure): return failure.message
         }

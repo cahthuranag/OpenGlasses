@@ -100,6 +100,8 @@ enum JobTranscriptExport {
         /// they are already in the transcript.
         var jobEvents: [String: [SessionLogger.Event]] = [:]
         /// The phone, app and glasses, one fact per line.
+        var from: String?
+        var activity: [ActivityEntry] = []
         var phone: [String] = []
         /// Which copy of the app wrote this (`AppBuildIdentity.summary`), for the header: the
         /// first thing anyone reading a report needs, and it used to sit below the transcript.
@@ -158,6 +160,17 @@ enum JobTranscriptExport {
         /// The start of the day, in the calendar it was grouped with.
         let day: Date
         let jobCount: Int
+        var conversationCount: Int = 0
+        var traceCount: Int = 0
+        var activityCount: Int = 0
+        var summary: String {
+            var parts: [String] = []
+            if jobCount > 0 { parts.append("\(jobCount) \(jobCount == 1 ? "job" : "jobs")") }
+            if conversationCount > 0 { parts.append("\(conversationCount) \(conversationCount == 1 ? "conversation" : "conversations")") }
+            if traceCount > 0 { parts.append("\(traceCount) AI turns") }
+            if activityCount > 0 { parts.append("\(activityCount) activities") }
+            return parts.joined(separator: ", ")
+        }
         var id: Date { day }
     }
 
@@ -166,6 +179,32 @@ enum JobTranscriptExport {
         Dictionary(grouping: sessions) { calendar.startOfDay(for: $0.startedAt) }
             .map { Day(day: $0.key, jobCount: $0.value.count) }
             .sorted { $0.day > $1.day }
+    }
+
+    /// All retained activity days, not only visits. Count a conversation once per day it spoke.
+    static func activityDays(sessions: [FieldSession], conversations: [[Date]], traces: [Date],
+                             activity: [Date], now: Date, calendar: Calendar) -> [Day] {
+        let today = calendar.startOfDay(for: now)
+        let oldest = calendar.date(byAdding: .day, value: -13, to: today) ?? today
+        var days: [Date: Day] = [:]
+        func add(_ date: Date, job: Int = 0, conversation: Int = 0, trace: Int = 0, entry: Int = 0) {
+            let day = calendar.startOfDay(for: date)
+            guard day >= oldest, day <= today, date <= now else { return }
+            let old = days[day]
+            days[day] = Day(day: day, jobCount: (old?.jobCount ?? 0) + job,
+                            conversationCount: (old?.conversationCount ?? 0) + conversation,
+                            traceCount: (old?.traceCount ?? 0) + trace,
+                            activityCount: (old?.activityCount ?? 0) + entry)
+        }
+        for session in sessions { add(session.startedAt, job: 1) }
+        for conversation in conversations {
+            for day in Set(conversation.filter { $0 <= now }.map { calendar.startOfDay(for: $0) }) {
+                add(day, conversation: 1)
+            }
+        }
+        for date in traces { add(date, trace: 1) }
+        for date in activity { add(date, entry: 1) }
+        return days.values.sorted { $0.day > $1.day }
     }
 
     /// The half-open window a day scope covers.
@@ -437,7 +476,7 @@ enum JobTranscriptExport {
     /// `secrets` plus the shared patterns.
     static func document(scope: Scope, jobs: [Job], exportedAt: Date, timeZone: TimeZone,
                          conversations: [Conversation] = [], details: Details? = nil,
-                         secrets: [String] = []) -> Document {
+                         secrets: [String] = [], from: String? = nil) -> Document {
         let format = Format(timeZone: timeZone)
         let troubleshooting = details != nil
         let kind = troubleshooting ? "support report" : "transcript"
@@ -478,6 +517,7 @@ enum JobTranscriptExport {
             "Avenkin — \(title)",
             "Exported \(format.dateTime(exportedAt)) (\(format.offset(exportedAt)))",
         ]
+        if let from = from ?? details?.from { out.append("From: " + from) }
         if let app = details?.app { out.append("App \(app)") }
         out += ["", aboutOneConversation ? conversationPreamble : preamble]
         if troubleshooting {
@@ -561,12 +601,18 @@ enum JobTranscriptExport {
 
             out += ["", rule("="), "App events (\(details.appEvents.count))", rule("-")]
             if details.appEvents.isEmpty {
-                out.append("None in this period — the app keeps its own events for up to two days.")
+                out.append("None in this period — the app keeps its own events for up to \(DiagnosticRing.retentionDays) days; the \(DiagnosticRing.defaultCapacity)-event capacity may be reached sooner.")
             }
             for event in details.appEvents {
                 out.append("\(format.time(event.at, seconds: true))  \(event.line)")
             }
 
+            if !details.activity.isEmpty {
+                out += ["", rule("="), "Activity trail (\(details.activity.count))", rule("-")]
+                for entry in details.activity {
+                    out.append("\(format.time(entry.at, seconds: true))  \(entry.title)" + (entry.detail.map { " — " + $0 } ?? ""))
+                }
+            }
             if !details.debugLog.isEmpty {
                 let which = aboutOneConversation
                     ? "\(details.debugLog.count) from this period"
@@ -832,6 +878,8 @@ enum JobTranscriptExporter {
     /// What only the app can supply: the phone and glasses, the app's event log, the debug log and
     /// the configured secrets to mask.
     struct Environment {
+        var from: String?
+        var activity: [ActivityEntry] = []
         var phone: [String] = []
         var app: String?
         var appEvents: [JobTranscriptExport.AppEvent] = []
@@ -949,6 +997,10 @@ enum JobTranscriptExporter {
             details = .init(
                 traces: scoped,
                 jobEvents: events,
+                from: environment.from,
+                activity: { if case .day = scope {
+                    return environment.activity.filter { $0.at >= window.start && $0.at < window.end }
+                }; return [] }(),
                 phone: environment.phone,
                 app: environment.app,
                 appEvents: environment.appEvents.filter { $0.at >= window.start && $0.at < window.end },
@@ -966,7 +1018,7 @@ enum JobTranscriptExporter {
 
         return .success(JobTranscriptExport.document(
             scope: scope, jobs: jobs, exportedAt: now, timeZone: calendar.timeZone,
-            conversations: conversations, details: details, secrets: environment.secrets))
+            conversations: conversations, details: details, secrets: environment.secrets, from: environment.from))
     }
 
     /// Write the document to a protected, short-lived file. The lease is released when the share

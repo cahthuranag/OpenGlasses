@@ -113,6 +113,7 @@ enum SensitiveStore: String, CaseIterable {
     case debugEventLog
     case diagnosticBreadcrumbs
     case turnTraces
+    case pilotReports
     case activityTrail
     case spotlightIndex
 
@@ -1038,7 +1039,7 @@ enum SensitiveStore: String, CaseIterable {
             return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,
                           protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
                           retention: .policy("up to \(DiagnosticRing.defaultCapacity) events per run "
-                                             + "and 48 hours, earlier runs included; a run's first "
+                                             + "and \(DiagnosticRing.retentionDays) days, earlier runs included; a run's first "
                                              + "\(DiagnosticRing.defaultLaunchLimit) events kept"),
                           deleteAll: .api("DiagnosticRing.shared.clear()"),
                           deleteSubject: .notSubjectLinked,
@@ -1110,6 +1111,17 @@ enum SensitiveStore: String, CaseIterable {
                           ownerPaths: ["OpenGlasses/Sources/Services/Diagnostics/DiagnosticExportCoordinator.swift"],
                           location: "Caches/DiagnosticExports/{session}")
 
+        case .pilotReports:
+            return Record(store: self, dataClass: .preference, subjectLinkage: .wearer,
+                          protection: .platformDefault, backupExcluded: false,
+                          retention: .policy("recipient addresses and calendar dates only; up to eight sent-day markers pruned on successful send; cleared on organisation departure"),
+                          deleteAll: .api("PilotReportStore.clear()"),
+                          deleteSubject: .notSubjectLinked,
+                          owner: "PilotReportStore",
+                          ownerPaths: ["OpenGlasses/Sources/Services/Diagnostics/PilotReports.swift",
+                                       "OpenGlasses/Sources/App/Views/PilotReportViews.swift"],
+                          location: "UserDefaults pilotReportsEnabled, pilotReportRecipients, pilotReportSentDays, pilotReportLastPromptDay")
+
         case .preferences:
             return Record(store: self, dataClass: .preference, subjectLinkage: .wearer,
                           protection: .platformDefault, backupExcluded: false, retention: .none,
@@ -1117,6 +1129,7 @@ enum SensitiveStore: String, CaseIterable {
                           deleteSubject: .notSubjectLinked,
                           owner: "Config",
                           ownerPaths: ["OpenGlasses/Sources/Utils/Config.swift",
+                                       "OpenGlasses/Sources/Services/FieldAssist/ReportIdentity.swift",
                                        "OpenGlasses/Sources/Services/Realtime/RealtimeProviderCatalog.swift"],
                           location: "UserDefaults; the content-bearing keys are registered separately above")
 

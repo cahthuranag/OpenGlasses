@@ -91,14 +91,18 @@ final class DiagnosticRingTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("breadcrumbs.json")
-        let now = Date()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let maxAge = DiagnosticRing.defaultMaxAge
         let store = DiagnosticBreadcrumbStore(url: url)
         store.schedule([
-            .init(timestamp: now.addingTimeInterval(-49 * 3600), category: .lifecycle, name: .app, line: "old"),
+            .init(timestamp: now.addingTimeInterval(-maxAge - 1), category: .lifecycle, name: .app, line: "expired"),
+            .init(timestamp: now.addingTimeInterval(-maxAge), category: .lifecycle, name: .app, line: "at-boundary"),
+            .init(timestamp: now.addingTimeInterval(-49 * 3600), category: .lifecycle, name: .app, line: "within-seven-days"),
             .init(timestamp: now, category: .lifecycle, name: .app, line: "recent")
         ])
         store.waitForPendingWrites()
-        XCTAssertEqual(store.read(capacity: 10, now: now).map(\.line), ["recent"])
+        XCTAssertEqual(store.read(capacity: 10, now: now).map(\.line),
+                       ["at-boundary", "within-seven-days", "recent"])
         try Data("partial-json".utf8).write(to: url)
         XCTAssertTrue(store.read(capacity: 10, now: now).isEmpty)
     }

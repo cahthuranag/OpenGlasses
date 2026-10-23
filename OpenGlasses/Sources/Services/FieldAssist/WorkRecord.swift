@@ -137,7 +137,10 @@ struct WorkRecord: Codable, Equatable {
     /// Office-only references. Source serial, images and recognised text are never embedded.
     var capturedManuals: [CapturedManualReference]?
 
+    var reportedBy: ReportIdentity? = nil
+
     enum CodingKeys: String, CodingKey {
+        case reportedBy = "reported_by"
         case accessClosure = "access_closure"
         case sessionId = "session_id"
         case jobReference = "job_reference"
@@ -180,6 +183,7 @@ struct WorkRecord: Codable, Equatable {
     /// same session always renders the same record.
     init(session: FieldSession, vaultName: String, vaultSourceNote: String? = nil,
          usage: JobUsageSummary? = nil, capturedManuals: [CapturedManualReference]? = nil) {
+        reportedBy = session.reportIdentity
         accessClosure = session.accessClosureReason.map { AccessClosure(outcome: session.outcome, reason: $0) }
         self.capturedManuals = capturedManuals?.isEmpty == false ? capturedManuals : nil
         self.sessionId = session.id
@@ -230,6 +234,7 @@ struct WorkRecord: Codable, Equatable {
     /// older job is.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        reportedBy = try c.decodeIfPresent(ReportIdentity.self, forKey: .reportedBy)
         accessClosure = try c.decodeIfPresent(AccessClosure.self, forKey: .accessClosure)
         sessionId = try c.decode(String.self, forKey: .sessionId)
         jobReference = try c.decodeIfPresent(String.self, forKey: .jobReference)

@@ -92,7 +92,7 @@ struct FieldAssistSettingsView: View {
         if !appState.listeningEnabled {
             return wakeWordEditable
                 ? "Listening is switched off, so this phrase won't start a turn. Turn on Listen "
-                    + "for Wake Phrase in Settings › Voice."
+                    + "for Wake Phrase in Settings › Voice & Triggers."
                 : "Listening is switched off, so this phrase won't start a turn. Your administrator "
                     + "can turn it on."
         }

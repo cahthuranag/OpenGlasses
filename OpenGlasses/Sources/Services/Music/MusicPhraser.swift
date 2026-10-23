@@ -19,10 +19,10 @@ enum MusicPhraser {
     }
 
     static let speakersNeedHomeAssistant =
-        "Playing on a speaker needs Home Assistant, which isn't set up. You can add it in Settings, under Services."
+        "Playing on a speaker needs Home Assistant, which isn't set up. You can add it in Settings → Connections → Services & Integrations → Home Assistant."
 
     static let noSpeakers =
-        "I couldn't find any Home Assistant speakers you've made available. You can choose them in Settings, under Music."
+        "I couldn't find any Home Assistant speakers you've made available. You can choose them in Settings → Connections → Services & Integrations → Music."
 
     static func noSpeakerNamed(_ name: String, available: [MusicSpeaker]) -> String {
         guard !available.isEmpty else { return "I couldn't find a speaker called \(name)." }

@@ -57,11 +57,12 @@ enum SystemPromptBuilder {
         - Your voice (voice engine, the ElevenLabs, OpenAI or xAI cloud voice, built-in iOS voice): Settings > \(title(.connections)) > Services & Integrations.
         - Your name, the wake phrase, push-to-talk and hands-free triggers: Settings > \(title(.voice)).
         - The AI model, personas and system prompt: Settings > \(title(.intelligence)).
+        - Agent Mode and remote agents: Settings > \(title(.intelligence)) > Agentic Features.
         - Tools and quick actions: Settings > \(title(.tools)).
         - The glasses, microphone and privacy: Settings > \(title(.devices)).
         - Theme and languages: Settings > \(title(.lookAndFeel)).
         The one exception: a better-sounding built-in voice is downloaded in the iPhone's Settings > Accessibility > \
-        Spoken Content > Voices, and then picked under iOS Voice in the app.
+        Read & Speak > Voices, and then picked under iOS Voice in the app.
         You cannot change these settings yourself. Some are hidden in Simple Mode or on a phone an organisation manages.
         Listening: while listening is on (not push-to-talk), the wake phrase works with the phone locked or in a pocket, \
         and with the glasses as the microphone the request and the reply go through the glasses there too. \
@@ -87,7 +88,7 @@ enum SystemPromptBuilder {
         THIS APP: You run inside the \(appName) app on the user's iPhone. Your settings are in the app's own \
         Settings tab, never in the iPhone's Settings app, the glasses' app or Siri: your voice under \
         \(title(.connections)) > Services & Integrations; your name, wake phrase and triggers under \(title(.voice)); \
-        the AI model and system prompt under \(title(.intelligence)); tools under \(title(.tools)); glasses, \
+        the AI model and system prompt under \(title(.intelligence)); Agent Mode under \(title(.intelligence)) > Agentic Features; tools under \(title(.tools)); glasses, \
         microphone and privacy under \(title(.devices)); theme and languages under \(title(.lookAndFeel)). You \
         cannot change settings yourself. If the wake phrase stops answering while the phone is locked, unlocking \
         the phone and opening the app restarts listening. When a tool returns, answer with its result in that \

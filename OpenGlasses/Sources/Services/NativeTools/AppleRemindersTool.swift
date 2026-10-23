@@ -41,7 +41,7 @@ final class AppleRemindersTool: NativeTool, @unchecked Sendable {
 
     func execute(args: [String: Any]) async throws -> String {
         guard try await eventStore.requestRemindersAccess() else {
-            return "Reminders access denied. Please enable it in Settings > Privacy > Reminders."
+            return "Reminders access denied. Please enable it in iPhone Settings > Privacy & Security > Reminders."
         }
 
         switch (args["action"] as? String ?? "create").lowercased() {

@@ -39,7 +39,7 @@ struct OrgCodeScannerView: View {
                             .accessibilityHidden(true)
                         // No Camera-app suggestion: an office's code is plain text the system
                         // camera does nothing with; only this scanner reads it.
-                        Text("Camera access is off for Avenkin. Turn it on in Settings to scan a code.")
+                        Text("Camera access is off for Avenkin. Turn it on in iPhone Settings → Apps → Avenkin → Camera to scan a code.")
                             .multilineTextAlignment(.center)
                         Button("Open Settings") {
                             if let url = URL(string: UIApplication.openSettingsURLString) {

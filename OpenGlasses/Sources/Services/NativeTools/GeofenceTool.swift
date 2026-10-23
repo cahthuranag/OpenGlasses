@@ -196,7 +196,7 @@ final class GeofenceTool: NativeTool, @unchecked Sendable {
                 regionMonitor.requestAlwaysAuthorization()
                 return "To alert you at '\(name)' I need \"Always\" location access. I've asked for it — grant Always and I'll start watching for it."
             case .denied:
-                return "I can't set a location reminder for '\(name)' — geofence alerts need \"Always\" location access, which isn't granted. Enable it in Settings → Avenkin → Location."
+                return "I can't set a location reminder for '\(name)' — geofence alerts need \"Always\" location access, which isn't granted. Enable it in iPhone Settings → Apps → Avenkin → Location."
             case .unavailable:
                 return "This device can't monitor geofence regions, so I can't set a location reminder."
             case .atCapacity:

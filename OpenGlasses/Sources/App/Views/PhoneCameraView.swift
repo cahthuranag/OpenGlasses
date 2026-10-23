@@ -199,7 +199,7 @@ final class PhoneCameraController: NSObject, ObservableObject, @unchecked Sendab
             let granted = await AVCaptureDevice.requestAccess(for: .video)
             if !granted { await setError("Camera access is needed to take a photo."); return }
         case .denied, .restricted:
-            await setError("Camera access is off. Enable it in Settings → Avenkin.")
+            await setError("Camera access is off. Enable it in iPhone Settings → Apps → Avenkin → Camera.")
             return
         default:
             break

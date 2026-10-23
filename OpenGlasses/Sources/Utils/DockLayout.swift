@@ -1,8 +1,8 @@
 import Foundation
 
 /// The bottom dock's reorderable items (Plan CL follow-up). Every button in the
-/// scrolling row is one of these; the user arranges them in Settings → Quick
-/// Actions → Bar Layout. Contextual items (camera preview, the on-device model
+/// scrolling row is one of these; the user arranges them in Settings → Tools & Actions → Quick
+/// Actions → Actions & Bar Layout. Contextual items (camera preview, the on-device model
 /// chip) still only *appear* when relevant — ordering decides where they appear.
 ///
 /// The dock carries controls only. The `quickActions` slot that used to sit here

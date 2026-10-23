@@ -55,7 +55,7 @@ struct WorkizSettingsView: View {
                         .accessibilityIdentifier("workiz.test")
                     if let line = problem ?? connection.problem ?? controller.message ?? controller.connectionMessage { Text(line).accessibilityIdentifier("workiz.message") }
                 } header: { Text("Workiz API key") } footer: {
-                    Text("Feature center → Developer API. Settings → Developer → v2 → Create New API Key. Allow Jobs: Read & Write, Users: Read, Custom fields: Read. Allow Clients: Read & Write only for client notes. Set an expiry. The key stays in this phone's device-only Keychain.")
+                    Text("In Workiz, open Feature center → Developer API, then Settings → Developer → v2 → Create New API Key. Allow Jobs: Read & Write, Users: Read, Custom fields: Read. Allow Clients: Read & Write only for client notes. Set an expiry. The key stays in this phone's device-only Keychain.")
                 }
                 if !controller.users.isEmpty || connection.credential?.technicianID != nil {
                     Section("Who are you in Workiz?") {

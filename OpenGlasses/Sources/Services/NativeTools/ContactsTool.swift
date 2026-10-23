@@ -33,7 +33,7 @@ final class ContactsTool: NativeTool, @unchecked Sendable {
         }
 
         guard granted else {
-            return "Contacts access denied. Please enable it in Settings > Privacy > Contacts."
+            return "Contacts access denied. Please enable it in iPhone Settings > Privacy & Security > Contacts."
         }
 
         let keysToFetch: [CNKeyDescriptor] = [

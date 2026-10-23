@@ -39,7 +39,7 @@ enum TTSVoiceResolver {
     /// The case for downloading a better system voice, when there is one to make.
     ///
     /// iOS ships every language with a compact voice and keeps the Enhanced and Premium ones as
-    /// downloads under Accessibility › Spoken Content › Voices. A tester on an iPhone 17 Pro
+    /// downloads under Accessibility › Read & Speak › Voices. A tester on an iPhone 17 Pro
     /// reported the on-device voice as "too slow" when the fast, natural answer was one download
     /// away; nothing in the app said so. This names the language the app would speak in and how
     /// good the voice it would use is, so the settings screen can say exactly what to fetch.

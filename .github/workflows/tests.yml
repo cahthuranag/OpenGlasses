@@ -172,11 +172,33 @@ jobs:
             done
           } | tee provenance.txt
 
+      - name: Build unit tests
+        # Run 40017646633 spent ~27.5 minutes building, then ~21 minutes testing. A shared
+        # 50-minute limit killed the step after all tests passed. Bound these phases separately
+        # so a cold build cannot consume the test runner's time for results and shutdown.
+        timeout-minutes: 45
+        run: |
+          set -o pipefail
+          python3 Scripts/measure-xcode-build.py build-resources.jsonl \
+            xcodebuild build-for-testing \
+            -project OpenGlasses.xcodeproj \
+            -scheme OpenGlasses \
+            -destination "platform=iOS Simulator,id=${{ steps.project.outputs.simulator-udid }}" \
+            -derivedDataPath UnitTestDerivedData \
+            -showBuildTimingSummary \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            -clonedSourcePackagesDirPath .spm-checkouts \
+            -onlyUsePackageVersionsFromResolvedFile \
+            SWIFT_EMIT_LOC_STRINGS=NO \
+            2>&1 | tee xcodebuild-build.log \
+            | grep --line-buffered -E '^Build|^SwiftCompile|^CompileC|error:|seconds|\*\* TEST BUILD' \
+            || { tail -100 xcodebuild-build.log; exit 1; }
+
       - name: Run unit tests
-        # Below the job's 90-minute cap so a hung run fails while there is still budget to
-        # report it. Healthy runs have measured 16-24 minutes, so this is about twice the
-        # slowest of them: a run past it has hung, and both hangs so far ran to the cap.
-        timeout-minutes: 50
+        # Tests took ~21 minutes in the run above. Leave time for Xcode's result finalization
+        # while keeping this phase and the whole job bounded; a success line alone is not a pass.
+        timeout-minutes: 35
         run: |
           set -o pipefail
           # -skipPackagePluginValidation/-skipMacroValidation: a fresh runner has trusted no
@@ -190,10 +212,11 @@ jobs:
           # stalling the whole run behind it. No test here runs anywhere near 120s.
           # grep --line-buffered: without it the log streams a 4KB block at a time, so when a
           # run does stall the last visible line is minutes behind where it stopped.
-          xcodebuild test \
+          xcodebuild test-without-building \
             -project OpenGlasses.xcodeproj \
             -scheme OpenGlasses \
             -destination "platform=iOS Simulator,id=${{ steps.project.outputs.simulator-udid }}" \
+            -derivedDataPath UnitTestDerivedData \
             -resultBundlePath TestResults.xcresult \
             -skipPackagePluginValidation \
             -skipMacroValidation \
@@ -212,6 +235,18 @@ jobs:
           name: provenance
           path: provenance.txt
           retention-days: 90
+
+      - name: Upload build and test diagnostics
+        if: always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: UnitTestDiagnostics
+          path: |
+            xcodebuild-build.log
+            xcodebuild.log
+            build-resources.jsonl
+          retention-days: 7
 
       - name: Upload result bundle on failure
         if: failure()

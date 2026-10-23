@@ -1,0 +1,36 @@
+{
+  "pageSize": 100,
+  "page": 1,
+  "totalResults": 4,
+  "hasMore": false,
+  "data": [
+    {
+      "id": "USR-jamie",
+      "name": "Jamie Lee",
+      "emailAddress": "jamie@example.invalid",
+      "role": "tech",
+      "fieldTech": true,
+      "active": true
+    },
+    {
+      "id": "USR-other",
+      "name": "Alex Rivera",
+      "emailAddress": "alex@example.invalid",
+      "role": "tech",
+      "fieldTech": true,
+      "active": true
+    },
+    {
+      "id": "USR-disabled",
+      "name": "Former Technician",
+      "active": false,
+      "fieldTech": true
+    },
+    {
+      "id": "USR-admin",
+      "name": "Office Admin",
+      "active": true,
+      "fieldTech": false
+    }
+  ]
+}

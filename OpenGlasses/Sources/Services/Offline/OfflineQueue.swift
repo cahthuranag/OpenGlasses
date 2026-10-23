@@ -103,11 +103,23 @@ final class OfflineQueue: ConflictBaselineStore {
 
     /// Delete delivered (tombstone) ops to reclaim DB space. Excludes `photoUpload` — those keep
     /// their delivered tombstone so `prunePhotoEvidence` can bound the on-disk photo cache and
-    /// evict the actual files; dropping their rows here would orphan the images on disk.
+    /// evict the actual files; dropping their rows here would orphan the images on disk. Workiz
+    /// report tombstones also stay: their marker and note receipt prevent duplicate client notes.
     func purgeDone() {
-        exec("DELETE FROM ops WHERE state = 'done' AND kind != 'photoUpload'")
+        exec("DELETE FROM ops WHERE state = 'done' AND kind NOT IN ('photoUpload', 'workizReport')")
     }
 
+    @discardableResult
+    func replacePayload(_ id: String, data: Data) -> Bool {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "UPDATE ops SET payload = ? WHERE id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        data.withUnsafeBytes { raw in
+            _ = sqlite3_bind_blob(stmt, 1, raw.baseAddress, Int32(data.count), Self.transient)
+        }
+        bindText(stmt, 2, id)
+        return sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(db) == 1
+    }
     /// Delete a single op by id.
     func delete(id: String) {
         var stmt: OpaquePointer?

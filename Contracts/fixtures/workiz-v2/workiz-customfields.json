@@ -1,0 +1,20 @@
+{
+  "pageSize": 100,
+  "page": 1,
+  "totalResults": 2,
+  "hasMore": false,
+  "data": [
+    {
+      "id": "CF-report",
+      "name": "Field Assist report",
+      "type": "Large Text",
+      "entityType": "JOB"
+    },
+    {
+      "id": "CF-other",
+      "name": "Dispatch instructions",
+      "type": "Text",
+      "entityType": "JOB"
+    }
+  ]
+}

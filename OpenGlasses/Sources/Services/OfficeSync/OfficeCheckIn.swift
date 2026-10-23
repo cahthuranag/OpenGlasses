@@ -55,6 +55,11 @@ enum OfficeCheckIn {
         let expiresAt: Int64
     }
 
+    struct FSMDirect: Codable, Equatable, Sendable {
+        let system: String
+        let state: String
+        var valid: Bool { system == "workiz" && ["on", "off"].contains(state) }
+    }
     struct CheckIn: Codable, Equatable, Sendable {
         let version: Int
         let kind: String
@@ -67,6 +72,7 @@ enum OfficeCheckIn {
         let phoneTransportID: String
         let generation: Int64
         let bindingSHA256: String
+        var fsmDirect: FSMDirect? = nil
         let leaseRenewBy: Int64
         let appVersion: String
         let appBuild: String
@@ -211,13 +217,13 @@ enum OfficeCheckIn {
     private static let checkInFields: Set<String> = [
         "version", "kind", "challengeID", "challengeSHA256", "nonce", "organizationID", "enrolmentID",
         "officeID", "phoneTransportID", "generation", "bindingSHA256", "leaseRenewBy", "appVersion",
-        "appBuild", "createdAt"]
+        "appBuild", "createdAt", "fsmDirect"]
 
     /// The check-in these exact bytes state, or nil unless they are a closed, flat check-in
     /// payload within the field rules. The phone signs nothing else under the check-in domain.
     static func checkInPayload(_ raw: Data) -> CheckIn? {
         guard !raw.isEmpty, raw.count <= maximumMessageBytes,
-              OfficeManualAssignment.flatObject(raw, keys: checkInFields),
+              checkInObject(raw),
               let c = try? JSONDecoder().decode(CheckIn.self, from: raw), valid(c) else { return nil }
         return c
     }
@@ -247,8 +253,13 @@ enum OfficeCheckIn {
             && canonicalDeviceID(c.phoneTransportID) && instant(c.generation) && hex(c.bindingSHA256, count: 64)
             && instant(c.leaseRenewBy) && printable(c.appVersion, maximum: 64)
             && printable(c.appBuild, maximum: 64) && instant(c.createdAt)
+            && (c.fsmDirect?.valid ?? true)
     }
 
+    private static func checkInObject(_ raw: Data) -> Bool {
+        OfficeManualAssignment.flatObject(raw, keys: checkInFields, optional: ["fsmDirect"],
+                                         nested: ["fsmDirect": ["system", "state"]])
+    }
     // MARK: - Result
 
     private static let resultFields: Set<String> = [
@@ -354,7 +365,7 @@ enum OfficeCheckIn {
               signature.base64EncodedString() == envelope.signature else { throw Refusal.malformed }
         guard let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: key),
               publicKey.isValidSignature(signature, for: domain + raw) else { throw Refusal.badSignature }
-        guard OfficeManualAssignment.flatObject(raw, keys: fields) else { throw Refusal.malformed }
+        guard (domain == checkInDomain ? checkInObject(raw) : OfficeManualAssignment.flatObject(raw, keys: fields)) else { throw Refusal.malformed }
         return raw
     }
 

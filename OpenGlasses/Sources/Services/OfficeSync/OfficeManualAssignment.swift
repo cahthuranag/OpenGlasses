@@ -131,7 +131,7 @@ enum OfficeManualAssignment {
 
     /// v1 is a flat, closed schema. Reject duplicate/unknown keys and non-integer number
     /// spellings before platform decoders can give ambiguous input different meanings.
-    static func flatObject(_ data: Data, keys expected: Set<String>) -> Bool {
+    static func flatObject(_ data: Data, keys expected: Set<String>, optional: Set<String> = [], nested: [String: Set<String>] = [:]) -> Bool {
         let b = Array(data)
         var i = 0
         func whitespace() { while i < b.count && [9, 10, 13, 32].contains(b[i]) { i += 1 } }
@@ -164,7 +164,15 @@ enum OfficeManualAssignment {
                   expected.contains(key), seen.insert(key).inserted, take(58) else { return false }
             whitespace()
             guard i < b.count else { return false }
-            if b[i] == 34 {
+            if b[i] == 123, let children = nested[key] {
+                let start = i; i += 1
+                while i < b.count && b[i] != 125 {
+                    if b[i] == 34 { guard stringToken() != nil else { return false } }
+                    else { i += 1 }
+                }
+                guard i < b.count else { return false }; i += 1
+                guard flatObject(Data(b[start..<i]), keys: children) else { return false }
+            } else if b[i] == 34 {
                 guard stringToken() != nil else { return false }
             } else {
                 let start = i
@@ -180,7 +188,7 @@ enum OfficeManualAssignment {
             guard take(44) else { return false }
         }
         whitespace()
-        return i == b.count && seen == expected
+        return i == b.count && seen.subtracting(optional) == expected.subtracting(optional)
     }
 
     static func safeIdentifier(_ value: String) -> Bool {

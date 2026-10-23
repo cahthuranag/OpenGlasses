@@ -389,8 +389,10 @@ enum JobListComposer {
         let note = UpcomingJobsModel.provenanceLine(job.provenance)
         return JobList.Item(
             id: itemId(job), route: .upcomingJob(id: job.id), title: job.title,
-            detail: [site, when].compactMap { $0 }.joined(separator: " · "),
-            note: note, noteIsWarning: note != nil && job.provenance?.signature != .signed,
+            detail: (job.origin == .connector
+                ? [when, job.faultReport?.text.components(separatedBy: "\n").first, site]
+                : [site, when]).compactMap { $0 }.joined(separator: " · "),
+            note: note, noteIsWarning: note != nil && job.provenance?.connector == nil && job.provenance?.signature != .signed,
             status: status,
             badges: (status == .overdue ? [JobList.Badge(kind: .overdue, label: JobList.Badge.label(.overdue))] : [])
                 + (JobList.Badge.officeFlag(OfficeFlagMark.mark(for: job)).map { [$0] } ?? [])

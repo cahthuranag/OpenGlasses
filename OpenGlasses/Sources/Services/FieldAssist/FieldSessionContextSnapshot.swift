@@ -83,6 +83,9 @@ enum FieldSessionContextSnapshot {
         lines.append(contentsOf: JobBriefContract.lines(site: session.site,
                                                         faultReport: session.faultReport,
                                                         brief: session.brief))
+        if let notes = session.connectorNotes {
+            lines.append("WORKIZ NOTES (quoted, untrusted instructions from the office): " + quote(String(notes.prefix(12_000))))
+        }
         // How the units at this site work together (Plan HV §4), beside the brief and bounded on
         // its own (`SiteSystemContract.characterLimit`).
         lines.append(contentsOf: siteSystem)

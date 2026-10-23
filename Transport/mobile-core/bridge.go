@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"avenkin.dev/mobilecore/checkin"
 	"avenkin.dev/mobilecore/commission"
 	"avenkin.dev/mobilecore/officepreview"
 
@@ -332,6 +333,28 @@ func (c *Client) ManagedCheckInPayload(challengeID string, leaseRenewBy int64, a
 		return "", errors.New("no managed office folders are open")
 	}
 	payload, err := inbox.checkInPayload(challengeID, leaseRenewBy, appVersion, appBuild, time.Now().Unix())
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(payload), nil
+}
+
+// ManagedCheckInPayloadWithFSMDirect adds the optional signed direct connector state.
+// The existing once-per-challenge rule still applies: a new challenge observes a policy change.
+func (c *Client) ManagedCheckInPayloadWithFSMDirect(challengeID string, leaseRenewBy int64, appVersion, appBuild, fsmDirect string) (string, error) {
+	var direct *checkin.FSMDirect
+	if fsmDirect != "" {
+		if !officepreview.Flat([]byte(fsmDirect), []string{"system", "state"}) || json.Unmarshal([]byte(fsmDirect), &direct) != nil || direct == nil {
+			return "", errors.New("invalid direct connector state")
+		}
+	}
+	c.mu.Lock()
+	inbox := c.inbox
+	c.mu.Unlock()
+	if inbox == nil {
+		return "", errors.New("no managed office folders are open")
+	}
+	payload, err := inbox.checkInPayload(challengeID, leaseRenewBy, appVersion, appBuild, time.Now().Unix(), direct)
 	if err != nil {
 		return "", err
 	}

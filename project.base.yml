@@ -128,6 +128,9 @@ targets:
     type: application
     platform: iOS
     sources:
+      - path: Contracts/fixtures/workiz-v2
+        type: folder
+        buildPhase: resources
       - path: OpenGlasses/Sources
         excludes:
           - "Resources/Vaults/**"

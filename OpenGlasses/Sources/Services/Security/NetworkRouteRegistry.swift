@@ -171,6 +171,7 @@ enum NetworkRoute: String, CaseIterable, Sendable {
     case expertBridgeWebhook
     case expertSignaling
     case offlineEndpointSync
+    case workizAPI
     case webRTCBrowserStreaming
     case twitchChatSocket
     /// A recorded job's bundle sent to the organisation's office over the managed connection
@@ -251,6 +252,7 @@ extension NetworkRoute {
         case .expertBridgeWebhook: return "Notify a Field Assist expert endpoint that help was requested."
         case .expertSignaling: return "Exchange WebRTC signaling so an expert can see the wearer's camera."
         case .webRTCBrowserStreaming: return "Relay camera frames to a browser viewer through the signaling server."
+        case .workizAPI: return "Read assigned jobs and write a confirmed work report to the technician’s Workiz account."
         case .offlineEndpointSync: return "Flush queued offline records to the configured sync endpoint."
         case .twitchChatSocket: return "Read and post broadcast chat messages."
         case .jobRecordingOfficeSync: return "Send a recorded job — its video, sound, timeline and transcript — to the organisation's own office, the one this phone is paired with."
@@ -327,6 +329,7 @@ extension NetworkRoute {
             return [.frame, .audio]
         case .jobRecordingOfficeSync:
             return [.frame, .audio, .transcript]
+        case .workizAPI: return [.transcript, .healthFact, .credential, .contactData]
         case .offlineEndpointSync:
             return [.transcript, .healthFact, .credential]
         case .twitchChatSocket:
@@ -357,7 +360,7 @@ extension NetworkRoute {
              .cloudTranslationCaptions, .llmCompletion, .intentClassification,
              .providerModelCatalog, .conversationRecallSummary, .connectivityProbe,
              .customAgentHarness, .expertBridgeWebhook, .expertSignaling,
-             .offlineEndpointSync, .webRTCBrowserStreaming,
+             .offlineEndpointSync, .workizAPI, .webRTCBrowserStreaming,
              .fhirExport, .fhirConnectionTest:
             return .userConfiguredCloud
         case .claudeOAuthToken, .chatGPTOAuthToken, .googleOAuthToken, .xaiOAuthToken,
@@ -469,6 +472,7 @@ extension NetworkRoute {
         case .customAgentHarness: return ["CustomAgentHarness"]
         case .expertBridgeWebhook: return ["WebhookExpertNotifier"]
         case .expertSignaling: return ["ExpertSignalingClient"]
+        case .workizAPI: return ["URLSessionWorkizTransport"]
         case .offlineEndpointSync: return ["EndpointSyncSink"]
         case .webRTCBrowserStreaming: return ["WebRTCStreamingService"]
         case .twitchChatSocket: return ["URLSessionChatSocket"]

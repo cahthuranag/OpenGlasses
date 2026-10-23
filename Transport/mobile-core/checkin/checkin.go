@@ -11,12 +11,14 @@
 package checkin
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 
 	"avenkin.dev/mobilecore/officepreview"
 	"github.com/syncthing/syncthing/lib/protocol"
@@ -86,21 +88,85 @@ type Challenge struct {
 
 // CheckIn is the phone's answer, signed with its application key.
 type CheckIn struct {
-	Version          int    `json:"version"`
-	Kind             string `json:"kind"`
-	ChallengeID      string `json:"challengeID"`
-	ChallengeSHA256  string `json:"challengeSHA256"`
-	Nonce            string `json:"nonce"`
-	OrganizationID   string `json:"organizationID"`
-	EnrolmentID      string `json:"enrolmentID"`
-	OfficeID         string `json:"officeID"`
-	PhoneTransportID string `json:"phoneTransportID"`
-	Generation       int64  `json:"generation"`
-	BindingSHA256    string `json:"bindingSHA256"`
-	LeaseRenewBy     int64  `json:"leaseRenewBy"`
-	AppVersion       string `json:"appVersion"`
-	AppBuild         string `json:"appBuild"`
-	CreatedAt        int64  `json:"createdAt"`
+	Version          int        `json:"version"`
+	Kind             string     `json:"kind"`
+	ChallengeID      string     `json:"challengeID"`
+	ChallengeSHA256  string     `json:"challengeSHA256"`
+	Nonce            string     `json:"nonce"`
+	OrganizationID   string     `json:"organizationID"`
+	EnrolmentID      string     `json:"enrolmentID"`
+	OfficeID         string     `json:"officeID"`
+	PhoneTransportID string     `json:"phoneTransportID"`
+	Generation       int64      `json:"generation"`
+	BindingSHA256    string     `json:"bindingSHA256"`
+	LeaseRenewBy     int64      `json:"leaseRenewBy"`
+	AppVersion       string     `json:"appVersion"`
+	AppBuild         string     `json:"appBuild"`
+	CreatedAt        int64      `json:"createdAt"`
+	FSMDirect        *FSMDirect `json:"fsmDirect,omitempty"`
+}
+
+// FSMDirect is the phone's signed direct-connector state. Absent means unknown.
+type FSMDirect struct {
+	System string `json:"system"`
+	State  string `json:"state"`
+}
+
+func (f *FSMDirect) valid() bool {
+	return f == nil || (f.System == "workiz" && (f.State == "on" || f.State == "off"))
+}
+
+// checkInObject keeps the schema closed, including duplicate/unknown nested keys.
+func checkInObject(data []byte) bool {
+	d := json.NewDecoder(bytes.NewReader(data))
+	token, err := d.Token()
+	if err != nil || token != json.Delim('{') {
+		return false
+	}
+	seen := map[string]bool{}
+	for d.More() {
+		token, err = d.Token()
+		if err != nil {
+			return false
+		}
+		key, ok := token.(string)
+		if !ok || seen[key] {
+			return false
+		}
+		seen[key] = true
+		var value json.RawMessage
+		if d.Decode(&value) != nil {
+			return false
+		}
+		if key == "fsmDirect" {
+			if !officepreview.Flat(value, []string{"system", "state"}) {
+				return false
+			}
+		} else {
+			allowed := false
+			for _, field := range checkInFields {
+				if key == field {
+					allowed = true
+				}
+			}
+			if !allowed || !officepreview.Flat(append(append([]byte(`{"x":`), value...), '}'), []string{"x"}) {
+				return false
+			}
+		}
+	}
+	token, err = d.Token()
+	if err != nil || token != json.Delim('}') {
+		return false
+	}
+	if _, err = d.Token(); err != io.EOF {
+		return false
+	}
+	for _, field := range checkInFields {
+		if !seen[field] {
+			return false
+		}
+	}
+	return len(seen) == len(checkInFields) || (seen["fsmDirect"] && len(seen) == len(checkInFields)+1)
 }
 
 // Result is the administrator's answer to one check-in. It carries the renewed binding.
@@ -223,7 +289,7 @@ func open(text, domain string, key ed25519.PublicKey, fields []string, limit int
 	if len(key) != ed25519.PublicKeySize || !ed25519.Verify(key, SigningInput(domain, payload), signature) {
 		return nil, ErrSignature
 	}
-	if !officepreview.Flat(payload, fields) {
+	if (domain == CheckInDomain && !checkInObject(payload)) || (domain != CheckInDomain && !officepreview.Flat(payload, fields)) {
 		return nil, ErrMalformed
 	}
 	return payload, nil
@@ -409,7 +475,7 @@ func (c CheckIn) valid() bool {
 	return c.Version == 1 && c.Kind == CheckInKind && lowerHex(c.ChallengeID, 32) && lowerHex(c.ChallengeSHA256, 64) &&
 		nonce(c.Nonce) && safeIdentifier(c.OrganizationID) && safeIdentifier(c.EnrolmentID) && safeIdentifier(c.OfficeID) &&
 		transportID(c.PhoneTransportID) && instant(c.Generation) && lowerHex(c.BindingSHA256, 64) &&
-		instant(c.LeaseRenewBy) && printable(c.AppVersion, 64) && printable(c.AppBuild, 64) && instant(c.CreatedAt)
+		instant(c.LeaseRenewBy) && printable(c.AppVersion, 64) && printable(c.AppBuild, 64) && instant(c.CreatedAt) && c.FSMDirect.valid()
 }
 
 // CheckInFor fills a check-in's addressing from the challenge it answers. The caller has
@@ -417,7 +483,7 @@ func (c CheckIn) valid() bool {
 // own.
 func CheckInFor(challengeEnvelope string, c Challenge, nonce string, leaseRenewBy int64, appVersion, appBuild string, createdAt int64) CheckIn {
 	return CheckIn{1, CheckInKind, c.ChallengeID, Digest(challengeEnvelope), nonce, c.OrganizationID, c.EnrolmentID, c.OfficeID,
-		c.PhoneTransportID, c.Generation, c.BindingSHA256, leaseRenewBy, appVersion, appBuild, createdAt}
+		c.PhoneTransportID, c.Generation, c.BindingSHA256, leaseRenewBy, appVersion, appBuild, createdAt, nil}
 }
 
 // CheckInPayload is the exact bytes a phone signs. The phone application key lives in
@@ -433,7 +499,7 @@ func CheckInPayload(c CheckIn) ([]byte, error) {
 // SealCheckIn wraps a check-in payload with the signature the phone application key made.
 func SealCheckIn(payload, signature []byte) (string, error) {
 	var c CheckIn
-	if !officepreview.Flat(payload, checkInFields) || json.Unmarshal(payload, &c) != nil || !c.valid() {
+	if !checkInObject(payload) || json.Unmarshal(payload, &c) != nil || !c.valid() {
 		return "", ErrMalformed
 	}
 	return seal(payload, signature, MaximumMessage)

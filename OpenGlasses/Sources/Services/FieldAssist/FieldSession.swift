@@ -76,6 +76,7 @@ struct FieldSession: Codable, Identifiable, Equatable {
     var site: JobSite?
     /// What the office or the customer said was wrong, verbatim, with who said it.
     var faultReport: FaultReport?
+    var connectorNotes: String? = nil
     /// The brief the technician was given on the way, kept so the visit's model context starts
     /// from it (a bounded section of the continuity snapshot). Advisory: nothing in it is a task.
     var brief: JobBrief?
@@ -260,7 +261,7 @@ struct FieldSession: Codable, Identifiable, Equatable {
         case minutesPerBillingUnit, equipment
         case jobReference, tasks, partsRequests, identityFields, jobEvidence
         case media, evidenceSelection, signOff, debriefs
-        case site, faultReport, brief, jobFile, jobNeeds
+        case site, faultReport, brief, jobFile, jobNeeds, connectorNotes
         case officeHistory, officeSiteRequirements, officeContext, officeEquipment
         case siteSystem
         case continuityScope, taskEquipmentScopes, identityEquipmentScopes, procedureEquipmentScope
@@ -314,6 +315,7 @@ extension FieldSession {
         debriefs = try c.decodeIfPresent([JobDebrief].self, forKey: .debriefs) ?? []
         site = try c.decodeIfPresent(JobSite.self, forKey: .site)
         faultReport = try c.decodeIfPresent(FaultReport.self, forKey: .faultReport)
+        connectorNotes = try c.decodeIfPresent(String.self, forKey: .connectorNotes)
         brief = try c.decodeIfPresent(JobBrief.self, forKey: .brief)
         jobFile = try c.decodeIfPresent(JobFileProvenance.self, forKey: .jobFile)
         jobNeeds = try c.decodeIfPresent(JobNeeds.self, forKey: .jobNeeds)

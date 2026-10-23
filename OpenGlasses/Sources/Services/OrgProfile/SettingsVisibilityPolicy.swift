@@ -171,6 +171,7 @@ enum SettingsVisibilityPolicy {
         // never had a row to hide.
         let ceilings = context.lockedKeys.filter {
             if case .ceiling = $0.kind { return true }
+            if case .stringCeiling = $0.kind { return true }
             return false
         }
         if ceilings.contains(where: { presentation(.key($0), in: context) == .hidden }) { return true }

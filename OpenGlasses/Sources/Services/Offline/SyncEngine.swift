@@ -18,7 +18,9 @@ enum SyncOutcome: Equatable {
 @MainActor
 protocol SyncSink: AnyObject {
     func deliver(_ op: QueuedOp) async -> SyncOutcome
+    func deliveryExhausted(_ op: QueuedOp)
 }
+extension SyncSink { func deliveryExhausted(_ op: QueuedOp) {} }
 
 /// v1 sink: there is no remote backend yet, so a well-formed op is considered delivered (its
 /// durable local record already exists). Records delivered ids so a real backend's idempotent
@@ -107,6 +109,7 @@ final class SyncEngine: ObservableObject {
                     let attempts = op.attempts + 1
                     if attempts >= maxAttempts {
                         queue.mark(op.id, state: .failed, attempts: attempts)
+                        sink.deliveryExhausted(op)
                         // `reason` is composed by whichever sink refused the operation and can
                         // quote the payload back; the op's kind and its retry tier are what a
                         // stuck queue is diagnosed from.

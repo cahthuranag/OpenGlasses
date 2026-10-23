@@ -55,6 +55,8 @@ struct Config {
         values.append(contentsOf: savedModels.map(\.apiKey))
         values.append(contentsOf: savedRealtimeModels.map(\.apiKey))
         values.append(compatibleRealtimeConfiguration.apiKey)
+        if let data = KeychainService.data(for: WorkizConnection.keychainAccount),
+           let credential = try? JSONDecoder().decode(WorkizCredential.self, from: data) { values.append(credential.key) }
         // A licence is a bearer credential too; support files carry only its fingerprint.
         if let code = UserDefaults.standard.string(forKey: LicenseService.storageKey) { values.append(code) }
         // FHIR credentials live in their own protected store rather than the migration list, but a

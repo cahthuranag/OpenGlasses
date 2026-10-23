@@ -127,6 +127,7 @@ struct SyncStatusView: View {
         case .llmGrounding:  return "Deferred question"
         case .auditExport:   return "Audit export"
         case .captureRecord: return "Capture record"
+        case .workizReport: return "Workiz report"
         case .workRecord:    return "Work record"
         case .partsRequest:  return "Parts request"
         case .subjectErasure: return "Deletion request"

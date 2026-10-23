@@ -25,6 +25,9 @@ final class UpcomingJobStore: ObservableObject {
 
     @Published private(set) var jobs: [UpcomingJob]
 
+    @Published private(set) var workizLastPull: Date?
+    @Published private(set) var workizNotice: String?
+    private var workizStampURL: URL { fileURL.deletingLastPathComponent().appendingPathComponent("workiz-pull.json") }
     private let fileURL: URL
 
     init(directory: URL? = nil) {
@@ -33,6 +36,28 @@ final class UpcomingJobStore: ObservableObject {
         fileURL = folder.appendingPathComponent("upcoming-jobs.json")
         jobs = Self.ordered(Self.read(fileURL) ?? [])
         protectFile()
+        if let data = try? Data(contentsOf: workizStampURL),
+           let stamp = try? JSONDecoder().decode(WorkizPull.self, from: data) {
+            workizLastPull = stamp.date; workizNotice = stamp.notice
+        }
+    }
+    private struct WorkizPull: Codable { let date: Date; let notice: String? }
+    func removeWorkizJobs() {
+        jobs.removeAll { $0.provenance?.connector == "workiz" }; save()
+        workizLastPull = nil; workizNotice = nil
+        try? FileManager.default.removeItem(at: workizStampURL)
+    }
+    func reconcileWorkiz(_ incoming: [UpcomingJob], at date: Date, notice: String) {
+        // Only the ahead store changes. A started session has already copied its snapshot.
+        let others = jobs.filter { $0.provenance?.connector != "workiz" }
+        let space = max(0, Self.entryCap - others.count)
+        jobs = Self.ordered(others + incoming.prefix(space)); save()
+        workizLastPull = date; workizNotice = notice.isEmpty ? nil : notice
+        if let data = try? JSONEncoder().encode(WorkizPull(date: date, notice: workizNotice)) {
+            try? data.write(to: workizStampURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            var values = URLResourceValues(); values.isExcludedFromBackup = true
+            var url = workizStampURL; try? url.setResourceValues(values)
+        }
     }
 
     // MARK: - Reading
@@ -101,6 +126,7 @@ final class UpcomingJobStore: ObservableObject {
 
     /// Everything, for a wipe — what the registry's "delete all" column names.
     func removeAll() {
+        removeWorkizJobs()
         jobs = []
         save()
     }

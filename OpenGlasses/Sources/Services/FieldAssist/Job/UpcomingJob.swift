@@ -45,6 +45,7 @@ struct FaultReport: Codable, Equatable {
         case typed
         /// Carried in by an `.ogjob` file.
         case jobFile = "job_file"
+        case connector
 
         /// How the brief attributes the words.
         var attribution: String {
@@ -52,6 +53,7 @@ struct FaultReport: Codable, Equatable {
             case .spoken: return "as you said it"
             case .typed: return "as typed on this phone"
             case .jobFile: return "from the job file"
+            case .connector: return "from Workiz"
             }
         }
     }
@@ -147,9 +149,11 @@ struct JobFileProvenance: Codable, Equatable {
     /// the visit's record as it arrived. Nil, and absent from the JSON, for every other file — so
     /// a record written without it encodes exactly as it did.
     let external: ExternalJobReference?
+    /// Present for a direct connector snapshot; no job file or signature is implied.
+    let connector: String?
 
     init(fileName: String, signature: Signature, signer: String?, receivedAt: Date = Date(),
-         digest: String, identity: JobFile.Identity? = nil, external: ExternalJobReference? = nil) {
+         digest: String, identity: JobFile.Identity? = nil, external: ExternalJobReference? = nil, connector: String? = nil) {
         self.fileName = fileName
         self.signature = signature
         self.signer = signature == .signed ? signer : nil
@@ -159,6 +163,7 @@ struct JobFileProvenance: Codable, Equatable {
         revision = identity?.revision
         jobSHA256 = identity?.sha256
         self.external = external
+        self.connector = connector
     }
 
     enum CodingKeys: String, CodingKey {
@@ -169,7 +174,7 @@ struct JobFileProvenance: Codable, Equatable {
         case jobID = "job_id"
         case revision
         case jobSHA256 = "job_sha256"
-        case external
+        case external, connector
     }
 
     /// Which of the office's jobs this is, when the file said.
@@ -184,6 +189,7 @@ struct JobFileProvenance: Codable, Equatable {
     /// copy of the file and never says which app it came from, so the record cannot claim Mail.
     var recordLine: String {
         let date = receivedAt.formatted(date: .abbreviated, time: .shortened)
+        if connector == "workiz" { return "From Workiz at \(date)." }
         let file = revision.map { "\(fileName) (revision \($0))" } ?? fileName
         switch signature {
         case .signed:
@@ -211,6 +217,7 @@ struct UpcomingJob: Codable, Equatable, Identifiable {
         case spoken
         case typed
         case jobFile = "job_file"
+        case connector
     }
 
     let id: String

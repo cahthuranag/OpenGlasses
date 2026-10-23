@@ -143,6 +143,7 @@ subject column distinguishes the wearer from a third party who never installed t
 | vaultLedger | `VaultDocumentLedger` | derivedIndex | wearer | platformDefault | no | none | `VaultDocumentLedger.clear(in:)` | `VaultDocumentLedger.forget(documentId:in:)` |
 | vaultLinkStaging | `VaultLinkStagingStore` | documentCorpus | none | complete | yes | deleted when the install finishes, fails or is dismissed; a directory found at launch belonged to an approval that no longer exists and is swept | `VaultLinkStagingStore.removeAbandonedSessions()` | n/a — no subject linkage |
 | voiceSkills | `VoiceSkillStore` | skillDefinition | wearer | platformDefault | no | none | none — skills are removed individually by name | n/a — no subject linkage |
+| workizConnection | `WorkizConnection` | credential | wearer | keychainAfterFirstUnlockThisDeviceOnly | yes | none | `WorkizConnection.remove()` | n/a — no subject linkage |
 <!-- END GENERATED: data-lifecycle-matrix -->
 
 Not yet signed. Open before sign-off: the privacy owner's approval of the retention periods

@@ -151,6 +151,15 @@ struct FieldAssistSettingsView: View {
             // ──────────────── Entitlement (paywall when locked, status when unlocked)
             if Config.fieldAssistUnlocked {
                 entitlementStatus
+                Section("Field service software") {
+                    if appState.workizConnection.officeRoute {
+                        Text("Your office connects to Workiz for you.")
+                    } else {
+                        NavigationLink("Workiz") {
+                            WorkizSettingsView(controller: appState.workiz, connection: appState.workizConnection)
+                        }.accessibilityIdentifier("workiz.settings")
+                    }
+                }
             } else {
                 entitlementPaywall
             }

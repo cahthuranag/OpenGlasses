@@ -1,0 +1,82 @@
+{
+  "id": "JOB-fixture1",
+  "serialId": 1234,
+  "name": "Fridge not cooling",
+  "status": "Submitted",
+  "date": "2026-10-23 10:00:00",
+  "endDate": "2026-10-23 11:00:00",
+  "isScheduled": true,
+  "jobType": {
+    "id": "JT-fridge",
+    "name": "Refrigerator repair"
+  },
+  "description": "Fridge is warm. Ring before arrival.",
+  "clientInfo": {
+    "clientId": "CL-fixture1",
+    "firstName": "Morgan",
+    "lastName": "Smith",
+    "companyName": "",
+    "primaryPhone": "+64 21 555 0101",
+    "email": "fixture@example.invalid",
+    "addressDetails": {
+      "address": "12 Fictional Elm St",
+      "unit": "Unit 2",
+      "city": "Exampletown",
+      "state": "",
+      "zipCode": "0000",
+      "country": "NZ"
+    }
+  },
+  "team": [
+    {
+      "id": "USR-jamie",
+      "name": "Jamie Lee"
+    }
+  ],
+  "customFields": [],
+  "notes": [
+    {
+      "id": "JNT-0",
+      "techName": "Fictional Dispatcher",
+      "note": "Instruction 0",
+      "timestamp": "2026-10-22 09:00:00"
+    },
+    {
+      "id": "JNT-1",
+      "techName": "Fictional Dispatcher",
+      "note": "Instruction 1",
+      "timestamp": "2026-10-22 10:00:00"
+    },
+    {
+      "id": "JNT-2",
+      "techName": "Fictional Dispatcher",
+      "note": "Instruction 2",
+      "timestamp": "2026-10-22 11:00:00"
+    },
+    {
+      "id": "JNT-3",
+      "techName": "Fictional Dispatcher",
+      "note": "Instruction 3",
+      "timestamp": "2026-10-22 12:00:00"
+    },
+    {
+      "id": "JNT-4",
+      "techName": "Fictional Dispatcher",
+      "note": "Instruction 4",
+      "timestamp": "2026-10-22 13:00:00"
+    },
+    {
+      "id": "JNT-5",
+      "techName": "Fictional Dispatcher",
+      "note": "Instruction 5",
+      "timestamp": "2026-10-22 14:00:00"
+    }
+  ],
+  "attachments": [
+    {
+      "id": "FLE-fixture1",
+      "name": "Fictional appliance label.jpg",
+      "fileUrl": "https://example.invalid/never-fetch"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ enum UpcomingJobsModel {
 
     static func provenanceLine(_ provenance: JobFileProvenance?) -> String? {
         guard let provenance else { return nil }
+        if provenance.connector == "workiz" { return "Workiz" }
         switch provenance.signature {
         case .signed: return "Signed by \(provenance.signer ?? "your organisation")"
         case .unsigned, .unverifiable: return "Job file — not signed"

@@ -20,6 +20,13 @@ targets:
       - path: OpenGlassesWatch/WatchComplicationLink.swift
       # Golden fixtures exported from the Python reference pipeline (Plan CK —
       # Scripts/export-fingerspelling-fixtures.py); loaded via Bundle(for:).
+      - path: Contracts/fixtures/workiz-v2
+        type: folder
+        buildPhase: resources
+      - path: Contracts/fixtures/office-check-in-workiz-on-v1.json
+        buildPhase: resources
+      - path: Contracts/fixtures/office-check-in-workiz-off-v1.json
+        buildPhase: resources
       - path: OpenGlassesTests/Fixtures
         buildPhase: resources
       # Shared FX1 public assignment/archive fixtures (no production keys or content).

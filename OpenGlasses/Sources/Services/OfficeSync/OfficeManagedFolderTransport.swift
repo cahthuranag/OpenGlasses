@@ -47,6 +47,8 @@ protocol OfficeManagedFolderTransport: Sendable {
 
     /// `PublishManagedCheckIn`: publishes the check-in at `records/checkin/` and returns the
     /// exact envelope published. A signature that is not this phone's publishes nothing.
+    func checkInPayload(challengeID: String, leaseRenewBy: Int64, appVersion: String,
+                        appBuild: String, fsmDirect: OfficeCheckIn.FSMDirect?) async throws -> String
     func publishCheckIn(challengeID: String, signatureBase64: String) async throws -> String
 
     /// `ManagedRemovalReceiptPayload`: the exact bytes (standard base64) of the receipt for a
@@ -275,5 +277,13 @@ enum OfficeManagedFolders {
             throw DecodingFailure.malformed
         }
         return pending
+    }
+}
+
+
+extension OfficeManagedFolderTransport {
+    func checkInPayload(challengeID: String, leaseRenewBy: Int64, appVersion: String,
+                        appBuild: String, fsmDirect: OfficeCheckIn.FSMDirect?) async throws -> String {
+        try await checkInPayload(challengeID: challengeID, leaseRenewBy: leaseRenewBy, appVersion: appVersion, appBuild: appBuild)
     }
 }

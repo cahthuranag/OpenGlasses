@@ -392,7 +392,11 @@ struct OpenGlassesApp: App {
                 }
             }
             // Also once at launch, in case the first activation came before this view; idempotent.
-            .task { if scenePhase != .background { appState.officeField.appBecameActive() } }
+            .task {
+                appState.enforceWorkizRoute()
+                if scenePhase != .background { appState.officeField.appBecameActive(); await appState.workiz.refresh(); if appState.workizConnection.isRunning { await appState.syncEngine.flush() } }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .orgPolicyDidChange)) { _ in appState.enforceWorkizRoute() }
             .onAppear {
                 AppStateProvider.shared = appState
                 #if DEBUG
@@ -611,6 +615,7 @@ struct OpenGlassesApp: App {
                 }
         }
         .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active { Task { await appState.workiz.refresh(); if appState.workizConnection.isRunning { await appState.syncEngine.flush() } } }
             // Plan W: feed foreground state into the presence throttle (background ⇒ away ⇒ paused).
             appState.notePresenceForeground(newPhase == .active)
             // W04.1: the blur pass is unavailable while backgrounded and through the lock-screen
@@ -1361,7 +1366,47 @@ class AppState: ObservableObject, AppStateProtocol {
     /// The queue's delivery target. `EndpointSyncSink` posts job records and stock checks to the
     /// organisation's endpoint when one is configured (Plan EM P2) and hands everything else — and
     /// everything, when no endpoint is set — to the local sink that was there before.
-    lazy var syncEngine = SyncEngine(queue: offlineQueue, sink: makeSyncSink())
+    lazy var syncEngine = SyncEngine(queue: offlineQueue, sink: workizSink)
+    let workizConnection = WorkizConnection.forApp()
+    lazy var workiz: WorkizController = {
+        let controller = WorkizController(connection: workizConnection, jobs: upcomingJobs, started: {
+            let service = FieldSessionService.shared
+            return Set((service.history + [service.activeSession].compactMap { $0 }).compactMap { $0.jobFile?.external }.filter { $0.system == "workiz" }.map(\.jobID))
+        })
+        return controller
+    }()
+    lazy var workizSink = WorkizSyncSink(queue: offlineQueue, connection: workizConnection,
+        client: workiz.client, fallback: makeSyncSink(), retry: { [weak self] date in self?.scheduleWorkizRetry(at: date) })
+    private var workizRetryTask: Task<Void, Never>?
+    private var workizRetryDate: Date?
+    private func scheduleWorkizRetry(at date: Date) {
+        guard UIApplication.shared.applicationState == .active,
+              workizRetryDate.map({ date < $0 }) ?? true else { return }
+        workizRetryTask?.cancel(); workizRetryDate = date
+        workizRetryTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(max(1, date.timeIntervalSinceNow))) }
+            catch { return }
+            guard let self else { return }
+            self.workizRetryDate = nil
+            guard UIApplication.shared.applicationState == .active, self.workizConnection.isRunning else { return }
+            if self.syncEngine.isFlushing {
+                self.scheduleWorkizRetry(at: Date().addingTimeInterval(1)); return
+            }
+            await self.syncEngine.flush()
+        }
+    }
+    func enforceWorkizRoute() {
+        workiz.enforceRoute()
+        if workizConnection.officeRoute {
+            workizRetryTask?.cancel(); workizRetryTask = nil; workizRetryDate = nil
+            workizSink.endForOffice()
+        }
+    }
+    func queueWorkizReport(_ request: DeliveryRequest) {
+        guard case .workRecord(let record, _) = request.payload else { return }
+        workizSink.enqueue(record)
+        Task { await syncEngine.flush() }
+    }
 
     /// A phone that joined an office by its code sends job records and stock checks there, over
     /// the managed folders, and waits for the office's receipt. Any other phone, and any build
@@ -1818,6 +1863,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 // The existing store-and-forward route, unchanged: the record goes into the
                 // durable queue and the endpoint sink delivers it. "Sent" is what the queue says.
                 if let op = request.payload.queuedOp() { self.offlineQueue.enqueue(op) }
+                self.queueWorkizReport(request)
                 await self.syncEngine.flush()
                 let stillQueued = QueuedRecordRows.outstandingCount(
                     in: self.offlineQueue.all(limit: 200), sessionId: request.sessionId) > 0
@@ -5227,6 +5273,7 @@ class AppState: ObservableObject, AppStateProtocol {
             // delivers it. "Sent" is what the queue says, not what this method hopes.
             // A parts order adds nothing to the queue: each of its requests was queued on its own
             // when it was asked for, so "sent" is those requests having left.
+            queueWorkizReport(request)
             let op = request.payload.queuedOp()
             if let op { offlineQueue.enqueue(op) }
             Task { [weak self] in
@@ -5355,6 +5402,7 @@ class AppState: ObservableObject, AppStateProtocol {
         }
         // A staged send from the car ends here too, and its entry follows the same rule the record
         // does: only a confirmed send moves it, and a cancelled one stays queued (Plan FO P3b).
+        if outcome.isSent { queueWorkizReport(request) }
         if jobSends.owns(request) { jobSends.completePresented(outcome: outcome) }
         switch outcome {
         case .sent:

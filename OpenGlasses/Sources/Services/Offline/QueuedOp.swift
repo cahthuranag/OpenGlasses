@@ -11,6 +11,7 @@ enum OpKind: String, Codable {
     case llmGrounding   // a question asked offline → answer when back online
     case auditExport    // generate / upload the session audit export
     case captureRecord  // a finished capture-flow record (Plan U) — typed so a networked sink can route it
+    case workizReport
     case workRecord     // the deterministic record of one visit (Plan EM) — what base is sent at the end
     case partsRequest   // a stock check (Plan EM) — leaves on its own, before the job is finished
     /// A subject the wearer erased locally, queued so a peer that holds a copy is told to erase it

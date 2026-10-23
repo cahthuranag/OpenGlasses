@@ -227,6 +227,7 @@ final class OrgProfileManager: ObservableObject {
             }
             seams.endLapseDeparture = { OrgDepartureService.shared.cancelLapse(enrolmentId: $0) }
             seams.beginDeparture = { reason, record, profile in
+                AppStateProvider.shared?.workiz.remove()
                 PilotReportStore.shared.clear()
                 AppStateProvider.shared?.pilotReportDays = []
                 if AppStateProvider.shared?.supportReportRequest?.pilotDay != nil {
@@ -911,6 +912,7 @@ extension SettingKey {
     /// One line for a ceiling, as the review sheet shows it.
     var ceilingDescription: String {
         switch self {
+        case .organizationFieldServiceRoute: return "Your office connects to Workiz for you"
         case .organizationAllowsUnsignedVaults: return "Vaults from a link must be signed"
         case .organizationRequiresSignedJobFiles: return "Job files must be signed by your organisation"
         case .organizationRequiresCustomerSignOff: return "Every job asks for the customer's signature"

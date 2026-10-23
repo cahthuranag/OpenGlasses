@@ -20,6 +20,7 @@ enum UITestSupport {
 
     enum Flag: String, CaseIterable {
         /// A never-launched install: onboarding is the first thing on screen.
+        case workizFixture = "-UITestWorkizFixture"
         case freshInstall = "-OGUITestFreshInstall"
         /// Past onboarding.
         case configured = "-OGUITestConfigured"
@@ -120,7 +121,7 @@ enum UITestSupport {
     /// Whether any of the Field Assist flags is set. They are cumulative: seeding a job implies
     /// the feature is on, because a job cannot exist otherwise.
     static var wantsFieldAssist: Bool {
-        isSet(.fieldAssist) || isSet(.seedFieldHistory) || isSet(.seedFieldJob)
+        isSet(.workizFixture) || isSet(.fieldAssist) || isSet(.seedFieldHistory) || isSet(.seedFieldJob)
             || isSet(.seedFieldPhotos) || isSet(.seedFieldClips) || isSet(.seedFieldSignOff)
             || isSet(.seedFieldSends) || isSet(.seedFieldDay)
     }
@@ -315,6 +316,15 @@ enum UITestSupport {
             Task { @MainActor in seedFieldJobs(appState) }
         }
 
+        if isSet(.workizFixture) {
+            appState.upcomingJobs.removeAll()
+            Task { @MainActor in
+                guard WorkizFixtureTransport.state != "empty" else { return }
+                WorkizFixtureTransport.seed(appState)
+                await appState.workiz.testConnection()
+                if WorkizFixtureTransport.state == "connected" { await appState.workiz.refresh(force: true) }
+            }
+        }
         if isSet(.seedFieldDay) {
             seedFieldDay(appState)
         }

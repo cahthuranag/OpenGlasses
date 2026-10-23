@@ -106,13 +106,26 @@ func Fixtures() (map[string][]byte, error) {
 	if e != nil {
 		return nil, e
 	}
+	base := CheckInFor(challenge, read, base64.RawURLEncoding.EncodeToString(label("Avenkin public fixture phone nonce v1")), FixtureNow+26*86400, "1.0.0", "100", FixtureNow+60)
+	base.FSMDirect = &FSMDirect{System: "workiz", State: "on"}
+	directOn, e := SignCheckIn(base, phone)
+	if e != nil {
+		return nil, e
+	}
+	base.FSMDirect.State = "off"
+	directOff, e := SignCheckIn(base, phone)
+	if e != nil {
+		return nil, e
+	}
 	return map[string][]byte{
-		"office-check-in-binding-v1.json":   []byte(binding),
-		"office-check-in-challenge-v1.json": []byte(challenge),
-		"office-check-in-v1.json":           []byte(checkIn),
-		"office-check-in-result-v1.json":    []byte(result),
-		"office-removal-v1.json":            []byte(removal),
-		"office-removal-receipt-v1.json":    []byte(receipt),
-		"office-check-in-fixture-keys.json": append(keys, '\n'),
+		"office-check-in-workiz-on-v1.json":  []byte(directOn),
+		"office-check-in-workiz-off-v1.json": []byte(directOff),
+		"office-check-in-binding-v1.json":    []byte(binding),
+		"office-check-in-challenge-v1.json":  []byte(challenge),
+		"office-check-in-v1.json":            []byte(checkIn),
+		"office-check-in-result-v1.json":     []byte(result),
+		"office-removal-v1.json":             []byte(removal),
+		"office-removal-receipt-v1.json":     []byte(receipt),
+		"office-check-in-fixture-keys.json":  append(keys, '\n'),
 	}, nil
 }

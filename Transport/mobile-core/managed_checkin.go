@@ -234,7 +234,7 @@ func (i *managedInbox) removal(id string, changed *bool) ([]byte, bool) {
 }
 
 // checkInPayload builds, once, the check-in that answers the live challenge.
-func (i *managedInbox) checkInPayload(challengeID string, leaseRenewBy int64, appVersion, appBuild string, now int64) ([]byte, error) {
+func (i *managedInbox) checkInPayload(challengeID string, leaseRenewBy int64, appVersion, appBuild string, now int64, direct ...*checkin.FSMDirect) ([]byte, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.authority == nil {
@@ -254,7 +254,11 @@ func (i *managedInbox) checkInPayload(challengeID string, leaseRenewBy int64, ap
 	if _, err := rand.Read(random); err != nil {
 		return nil, err
 	}
-	payload, err := checkin.CheckInPayload(checkin.CheckInFor(string(envelope), challenge, base64.RawURLEncoding.EncodeToString(random), leaseRenewBy, appVersion, appBuild, now))
+	message := checkin.CheckInFor(string(envelope), challenge, base64.RawURLEncoding.EncodeToString(random), leaseRenewBy, appVersion, appBuild, now)
+	if len(direct) > 0 {
+		message.FSMDirect = direct[0]
+	}
+	payload, err := checkin.CheckInPayload(message)
 	if err != nil {
 		return nil, err
 	}

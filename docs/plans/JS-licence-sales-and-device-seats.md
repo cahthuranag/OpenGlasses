@@ -1,6 +1,6 @@
 # Plan JS — Licence Sales and Device Seats (a partner orders codes, pays by bank transfer, and a code counts its phones)
 
-**Status:** P0 implemented in this PR (2026-10-23); validation recorded in `Tools/LicenceIssuance/README.md` and the PR. P1–P3 remain unimplemented.
+**Status:** 🚧 P0 merged 2026-10-23 (PR 838); validation recorded in `Tools/LicenceIssuance/README.md`. Hosting for P1 decided the same day (*Hosting*). P1–P3 remain unimplemented.
 **Origin:** the pilot partner resells Field Assist team licences and needs to order and pay for them
 without waiting on the vendor. The owner asked whether a licence could be held to a number of
 devices, and whether one server could produce the code and its QR, and let the partner buy and be
@@ -148,7 +148,11 @@ time, not by remembering a decision made at setup.
   **every** request, not only when its Settings section is drawn. A refused check sends nothing and
   says *"⟨licensee⟩'s licence has expired. Your administrator can renew it."* The saved API key is
   kept. This is a requirement on Plan JR's P1, and JR's tests carry it: a lapsed licence sends no
-  request and keeps the key.
+  request and keeps the key. *(Checked 2026-10-23, after JR merged in PR 837: every Workiz request
+  and the report sink first check `WorkizConnection.isRunning`, which reads `Config.fieldAssistUnlocked`,
+  the live entitlement. A lapse sends nothing and keeps the key, and reports wait. **Still to do:**
+  the refusal says "The Workiz connection is off." (`WorkizFailure.disabled`), not that the licence
+  has expired.)*
 - **Field Assist's team features:** locked through the gates that exist (vaults, packs, procedures,
   audited export, team learnings).
 
@@ -236,6 +240,77 @@ phone holding a seat-checked licence makes the call.
 **Phone without office.** The claim is made from the phone. Avenkin Office plays no part, and a firm
 running it gains nothing it needs and loses nothing.
 
+## Hosting (P1, decided 2026-10-23)
+
+**Owner decision:** the service runs in **OrbStack containers on the vendor's own Mac**. It is
+reachable from the internet, not only from a private network, and it is locked down. It is not
+published on Tailscale. Moving it to a proper host is expected before P2, and the design below
+keeps that move invisible to phones.
+
+### How it reaches the internet: a Cloudflare Tunnel
+
+A `cloudflared` container opens an **outbound** connection to Cloudflare. Nothing listens on the
+router and no port is forwarded, so the Mac is no more exposed than it is now. Unlike Tailscale
+Funnel, which serves only `ts.net` names, a tunnel serves **the vendor's own domain**. That matters
+because the profile address is inside every signed code and can never change for a code already
+issued (the same trap as the Pages address that blocked the repo rename). The one requirement: the
+domain's DNS, or at least the delegated subdomain, is on Cloudflare.
+
+### Two hostnames, two doors
+
+| Hostname (example) | Who | What it serves | Locked how |
+|---|---|---|---|
+| `licence.avenkin.com` | Customers' phones | `GET /p/<profileId>` (signed profiles), and in P2 the seat claim, renew and release calls | Public, but only those paths. No portal page answers on this name. Profile ids are unguessable and there is no listing. Cloudflare rate limits in front. P2 calls are signed by the phone's Secure Enclave key. |
+| `partners.avenkin.com` | The partner and the vendor | The portal and the console | **Cloudflare Access** checks identity before any request reaches the Mac: the partner by email one-time code or Google sign-in, the vendor by passkey. Then the app's **own login with two-factor**, so getting past one still meets the other. |
+
+Activation files do not come from the box. Shipped builds read them from the public site's
+`activation/` directory (*Verified starting point*), so the service publishes each sealed file there.
+**Profiles must never go in the public repository:** each one carries a licence code, and the repo
+would list them all.
+
+### Containers, and what each may reach
+
+| Container | Holds | Reachable from |
+|---|---|---|
+| `tunnel` (`cloudflared`) | The tunnel credential | Outbound to Cloudflare only; forwards to `web` and `public` |
+| `web` | Portal and console, sessions, the 2FA secrets | `tunnel`. **Never holds a signing key.** |
+| `public` | Read-only signed profile documents | `tunnel` |
+| `signer` | The signing keys: licence and profile now, seat lease in P2 | **`web` only, over a local socket on the internal network.** No route from `tunnel`. |
+| `db` | Ledger, invoices, payments, customers (a volume) | `web` and `signer`; never exposed |
+
+- **The signer re-runs the policy.** It validates every request against the stored partner grant
+  itself, using the P0 package, and does not trust `web`'s decision. A compromised `web` can ask,
+  but cannot obtain a code the partner's grant does not allow, and the ledger row is written by the
+  signer.
+- **Keys:** one 0600 file per key on the FileVault disk, mounted **read-only into `signer` only**.
+  Never baked into an image, never in an environment variable, never in a log. The manual generator
+  reads the same files, so it remains the recovery path when the box is down.
+- **Linux:** OrbStack containers are Linux, so the P0 package needs the swift-crypto adapter its
+  README already defers to a later phase. That settles the language question: **Swift on Linux**,
+  using the P0 package directly rather than a port held to golden fixtures.
+
+### Backups, and running on a home Mac
+
+- **The ledger is the billing record.** It is backed up off the Mac, encrypted, on a schedule, with
+  a restore rehearsed once before the first paid order. The hash chain shows tampering. It cannot
+  replace a lost disk.
+- **The Mac stays on and logged in:** sleep off, OrbStack set to start at login, and the containers
+  set to restart automatically. A Mac that naps takes the box with it.
+- **Cloudflare decrypts traffic in transit,** so it sees profile documents and the licence codes
+  inside them. That is normal for a CDN in front of a service. Cloudflare is named as a processor in
+  the privacy policy.
+- **Pinned images, patched on a schedule;** the console shows each image's version and the last
+  update date.
+
+### When the box is down
+
+- **Before P2, phones are unaffected.** Codes and profiles are checked offline, and a failed fetch
+  only delays a renewal. The partner cannot order; the vendor can still mint by hand.
+- **The sensitive window is a paid invoice near day 35:** a phone needs one fetch to get the full
+  code. Keep the box up around payments.
+- **P2 is the point to move.** With seats, an outage longer than the lease plus grace locks
+  seat-checked phones. Moving means pointing the domain at the new host, with no new codes.
+
 ## Failure cases
 
 | Case | What happens |
@@ -270,7 +345,7 @@ the generator as a thin caller, and `swift test` in CI. Additions:
   and `OfficeFieldConnectionPolicy.afterFailure` answers its `notCurrentlyValid` with
   `.stop(.managementLapsed)`. The full code restores both. No existing app test changes.
 
-**P1 — the service (separate private repository; in-repo, only `docs/licensing/partner-issuance.md`).**
+**P1 — the service (separate private repository; in-repo, only `docs/licensing/partner-issuance.md`), hosted as in *Hosting*.**
 The partner portal, the vendor console, the isolated signer, profile hosting at the address the
 codes name, publishing sealed activation files to the public site, the daily job (reminders on day
 30, lapse report on day 35, renewal invoices 35 days out), invoice PDFs and the accounting export.
@@ -328,8 +403,9 @@ lapse. Bank-statement import to match payments by reference. Emailing invoices f
 - **Who may free a seat:** the partner only, or also the customer's administrator phone (CT 3b)?
 - **Lease length and grace** for P2. Leaning 14 + 7 days.
 - **Whether to require a minimum build** for seat-checked licences, and how the app would say so.
-- **Where the service runs**, and in what language. Leaning Swift on Linux (swift-crypto), so the
-  service uses the P0 package itself rather than a port held to golden fixtures.
+- ~~**Where the service runs**, and in what language.~~ **Resolved 2026-10-23:** OrbStack on the
+  vendor's Mac behind a Cloudflare Tunnel, with the portal behind Cloudflare Access, and Swift on
+  Linux. See *Hosting*.
 - **Whether the customer is told before an unpaid lapse** (P3), given it puts the partner's billing
   dispute on the customer's screen.
 - **Finished reports during a lapse.** This plan holds them in the outbox until a paid code arrives,

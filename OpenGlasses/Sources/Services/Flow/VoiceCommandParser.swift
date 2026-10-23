@@ -190,25 +190,20 @@ struct VoiceCommandParser {
     /// persona plus the query with the phrase removed. Mirrors the Action-Button / push-to-talk
     /// path: "Hey Claude, what's the weather" → (claude, "what's the weather").
     func detectPersona(in text: String, personas: [PersonaPhrases]) -> PersonaMatch? {
-        let lower = normalize(text)
         for persona in personas {
             for phrase in persona.phrases {
-                guard lower.hasPrefix(phrase) || lower.contains(phrase) else { continue }
-                var query = text
-                if let range = lower.range(of: phrase) {
-                    query = String(text[range.upperBound...])
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        .trimmingCharacters(in: CharacterSet(charactersIn: ","))
-                        .trimmingCharacters(in: .whitespaces)
-                }
+                // Keep the match's indices in the original transcript. Lowercasing can change
+                // Unicode length, and trimming shifts offsets; neither string's indices are
+                // safe to use when slicing `text`.
+                guard let range = text.range(of: phrase, options: .caseInsensitive) else { continue }
+                var query = String(text[range.upperBound...])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ","))
+                    .trimmingCharacters(in: .whitespaces)
                 if query.isEmpty { query = text }
                 return PersonaMatch(personaId: persona.id, query: query)
             }
         }
         return nil
-    }
-
-    private func normalize(_ text: String) -> String {
-        text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

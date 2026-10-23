@@ -198,6 +198,104 @@ The vendor uses a console. It covers partner grants (EI's table plus the price t
 limits), record payment, overdue invoices with their lapse dates, the period export, and every
 partner's ledger.
 
+## Customers (decided 2026-10-23)
+
+**Owner decision:** each company a partner signs up is a **customer** with **one profile and one
+activation key for its whole life**. A partner configures a customer **only through presets the
+vendor has approved**. P0 takes a `profileId` per order and builds only the minimal profile, so both
+rules are new.
+
+### One customer, one profile, one key
+
+When the partner signs up a company, the service creates a customer record once:
+
+| Field | Set | Changes |
+|---|---|---|
+| `customerId` | At sign-up | Never |
+| `partnerId` | At sign-up | Only by the vendor (moving a customer to another partner) |
+| `licensee` | At sign-up, the exact name the phones show | Never. See *Renaming* |
+| `organizationID`, `profileId` | At sign-up | Never |
+| Profile address (`https://licence.avenkin.com/p/<profileId>`) | At sign-up | Never. It is inside every code |
+| Activation-key file name | At sign-up | Only when the key is rotated |
+| Preset (id and version) and the partner's chosen values | At sign-up | By the partner, within the preset; every change re-signs the profile |
+
+- **Every order belongs to a customer:** the first order, seat increases, renewals, and a
+  provisional code turning full-term. All of them update that customer's one profile, and phones pick
+  the new code up on the daily fetch.
+- **One live code per customer.** A seat increase is **co-termed**: the new code carries the total
+  seats and keeps the current expiry, and the invoice is pro-rated by the agreement's own rule. Two
+  overlapping codes with different end dates for one company would be two answers to "when does
+  this licence end".
+- **The key is shown once** at sign-up, as the short key and its QR. The partner hands it to the
+  company's administrator, and every technician at that company uses the same key for as long as
+  the company is a customer.
+
+**Why one key can last for life without the server keeping it.** The key unlocks one sealed file,
+and that file holds the customer's *first* code, whose signed `profile` claim names the customer's
+fixed address. When a phone enters the key, enrolment decodes the code without checking its expiry,
+fetches the profile, and activates the profile's later-issued code (`OrgProfileManager`, the
+same-organisation check: "the later-issued of the two is the one activated"). So a key entered two
+years later still opens a first code long since expired, and the phone ends up on today's code.
+**The service never stores the key**, and the ledger keeps only the file name, as CT 3a requires.
+
+That rests on a path nothing tests yet as a whole: short key → sealed **expired** provisional code →
+enrolment → the profile's current code active. `LicenseService.activate(code:)` refuses an expired
+code, so any step that calls it on the entered code would break the rule. **P0b proves the path
+with a test.** If it fails, the fallback is re-sealing: the signer keeps each customer's key
+encrypted at rest and re-seals the file with every new code. That is no worse than the signing keys
+the signer already holds, but it is a stored bearer secret, so it is the fallback, not the design.
+
+- **A lost or leaked key is rotated:** a new key and sealed file, with the old file deleted from the
+  public site. Phones already enrolled are untouched, because they renew from the profile, not from
+  the key. Before P2, a leaked key is the same exposure EE and EI already accept. With P2, extra
+  phones are refused a seat.
+- **Renaming a company** changes `licensee`, and the same-organisation check refuses an entered key
+  whose code names a different organisation from the profile's. So a rename is a key rotation: the
+  new sealed file carries a code in the new name, and enrolled phones take the renamed code on their
+  next fetch (`renew(with:)` does not compare names).
+- **Ending a customer** is not a delete. Its last code runs out, its profile stays served so phones
+  show why they stopped, and the record stays in the ledger.
+
+### Partner configuration through presets
+
+Plan CT decided (2026-09-23, decision 1) that **profiles are issued by the vendor only**, and
+partners issue codes, never profiles. A partner setting a company's edition, model or vault pack by
+hand would be a partner issuing policy. Presets keep CT's rule true: the vendor writes every rule
+in a profile, and the partner only picks.
+
+- **A preset is a vendor-authored, versioned template** of everything a profile may carry apart from
+  the licence: `edition`, the `SettingKey` ceilings and starting values, `lockdown`, `leaseDays`
+  (at least 60, as above), `eraseAfterLapseDays` (absent unless the preset says otherwise), and
+  **enumerated choices**. Examples: the vault packs the preset allows (always within the partner's
+  grant), and the AI providers and models it allows (`aiModel`, never a key).
+- **The partner chooses only among a preset's enumerated values,** in the portal. No free-form JSON,
+  no `SettingKey` the preset does not list, no base URL the preset does not list. The signer builds
+  the profile from the preset plus the choices, re-validates both, and signs it with the vendor's
+  profile key. The partner never holds a key and never writes a rule.
+- **Presets are added and changed by the vendor only,** in the console. A new preset version applies
+  to a customer when the partner moves the customer onto it, never silently. The profile's renewal
+  path already applies a changed profile without asking (CT PR 2b), so a silent preset change would
+  reach every phone of every customer at once.
+- **The first presets** are the two the pilot needs. *Field Assist* is the CT 3b edition, the
+  technician's tabs and the administrator behind a passcode. *Field Assist with Avenkin Office* is
+  the same, with the field-service route through the office. The vendor drafts both before P1 ships.
+
+**The administrator passcode belongs to the company, so its own administrator sets it, not the
+partner.** At sign-up the portal produces a **one-time setup link** for the company's administrator.
+Opening it asks for the passcode and derives the verifier **in the browser** (PBKDF2-HMAC-SHA256,
+the derivation `AdminSecrets.pbkdf2` checks, with a fresh salt and an iteration count inside
+`AdminSecrets`' accepted range). Only `{salt, iterations, hash}` reaches the service, so neither the
+partner nor the vendor ever sees the passcode. The signer re-signs the profile with the verifier.
+The link works once and expires after 7 days. Until it is used, the profile carries no passcode,
+and the phone has no administrator view (`AdminGate`: "a profile that issued neither a card nor a
+passcode has no administrator view on the phone"). The technician's edition still works. A
+forgotten passcode has no local reset by design (`AdminGate`), so the partner issues a new setup
+link, and the re-signed profile reaches the phones on their next fetch.
+
+**Personal data in a customer record** is kept to the company's name and, optionally, one
+administrator contact for the setup link, deleted once the link is used or expires. Technicians are
+never named. A seat is a phone (P2), and identity stays CT's axis.
+
 ## Device seats (P2, app change)
 
 P2 makes `seats` a number the server enforces, by claiming a seat at first use. EI rejected device
@@ -345,6 +443,16 @@ the generator as a thin caller, and `swift test` in CI. Additions:
   and `OfficeFieldConnectionPolicy.afterFailure` answers its `notCurrentlyValid` with
   `.stop(.managementLapsed)`. The full code restores both. No existing app test changes.
 
+**P0b — customers and presets (this repo, small; before P1).** In `Tools/LicenceIssuance`: a
+`Customer` record (fixed `licensee`, `organizationID`, `profileId` and profile address; orders keyed
+to it); one live code per customer, with seat increases co-termed; a `ProfilePreset` (versioned,
+vendor-authored, enumerated choices) and profile construction from a preset plus the partner's
+choices, refusing any value the preset does not list; the passcode verifier accepted only as
+`{salt, iterations, hash}`, with iterations inside `AdminSecrets.iterationRange`; key rotation
+(new sealed file, old file name listed for deletion). The app-side test the key-for-life rule rests
+on: short key → sealed expired provisional code → enrolment → the profile's current code active, with
+nothing re-sealed.
+
 **P1 — the service (separate private repository; in-repo, only `docs/licensing/partner-issuance.md`), hosted as in *Hosting*.**
 The partner portal, the vendor console, the isolated signer, profile hosting at the address the
 codes name, publishing sealed activation files to the public site, the daily job (reminders on day
@@ -372,6 +480,13 @@ lapse. Bank-statement import to match payments by reference. Emailing invoices f
   next term at the old `expires`; an overdue invoice refuses an order; unpaid seats at the cap refuse
   an order; invoice numbers never repeat or skip; an edited invoice is impossible (a credit note is
   the only correction); a short payment leaves the invoice open; and the no-app-change test above.
+- **P0b:** a customer's `licensee`, `profileId` and address cannot change after sign-up; a second
+  order for a customer reuses its profile; a seat increase keeps the live code's expiry and raises
+  its seats; a preset choice outside the preset's list is refused, as is a pack outside the
+  partner's grant, a `SettingKey` the preset does not name, and an `aiModel` carrying a key; a
+  verifier with too few iterations is refused; a profile built from a preset is byte-identical to one
+  built by `make-org-profile.swift` from the same inputs; a rotated key's new sealed file opens to the
+  current code; and the key-for-life path above.
 - **P2:** a lease verifies only with its own domain prefix and key; a lease naming another device key
   fails; a lease past `notAfter` plus grace fails; a licence without `seatCheck` grants with no lease,
   exactly as today; a seat-checked licence with no lease is locked with the "all seats in use" or
@@ -412,6 +527,10 @@ lapse. Bank-statement import to match payments by reference. Emailing invoices f
   consistent with "can't be used". Plan IL's decision 7 lets a lapsed technician app send reports
   already composed, because a late invoice should not hurt the customer. The two should agree.
   Leaning: hold, since the firm can end the hold by paying.
+- **Which values each first preset enumerates**, notably which AI providers and models a partner
+  may pick for a customer. The vendor drafts the two first presets before P1.
+- **Pro-rating a co-termed seat increase:** by day, by month, or whole terms only. The agreement
+  decides; the core needs one rule.
 - **Whether the provisional window is fixed at 35 days or per grant.** Leaning fixed: it is the
   credit term, and a partner-by-partner number invites negotiation over it.
 

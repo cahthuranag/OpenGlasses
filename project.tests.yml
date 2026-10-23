@@ -3,6 +3,8 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
+      # Vendor core compiled only into the test bundle; no app dependency or verifier changes.
+      - path: Tools/LicenceIssuance/Sources/LicenceIssuance
       - path: OpenGlassesTests
         excludes:
           - "Fixtures/**"

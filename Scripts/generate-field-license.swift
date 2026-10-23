@@ -1,6 +1,9 @@
 #!/usr/bin/env swift
+// Shared wire domains: "openglasses.activation-id.v1\n" and "openglasses.activation-key.v1"
+#if canImport(LicenceIssuance)
 import Foundation
 import CryptoKit
+import LicenceIssuance
 
 // Mints a signed Field Assist license code.
 //
@@ -33,81 +36,7 @@ import CryptoKit
 // Format (must match LicenseService): base64(payloadJSON) + "." + base64(Ed25519 signature),
 // payload encoded with ISO-8601 dates and sorted keys.
 
-struct LicensePayload: Codable {
-    let feature: String
-    let licensee: String
-    let issued: Date
-    let expires: Date?
-    var tier: String?
-    var plan: String?
-    var seats: Int?
-    var reference: String?
-    var packs: [String]?
-    var profile: String?
-    var organizationID: String?
-    var profileID: String?
-}
-
-/// Plan CT 3a — mirrors `ActivationKey` in the app, byte for byte: Crockford base32, fifteen random
-/// characters and a GF(32) check character; the sealed file is named
-/// hex(SHA-256("openglasses.activation-id.v1\n" + key)) and holds base64(AES-GCM combined) under
-/// HKDF-SHA256(key, info "openglasses.activation-key.v1"). "key" is the sixteen canonical characters.
-enum ActivationKeyMint {
-    static let alphabet: [Character] = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
-
-    static func gfMultiply(_ lhs: Int, _ rhs: Int) -> Int {
-        var a = lhs
-        var b = rhs
-        var product = 0
-        while b > 0 {
-            if b & 1 == 1 { product ^= a }
-            b >>= 1
-            a <<= 1
-            if a & 0b10_0000 != 0 { a ^= 0b10_0101 }
-        }
-        return product
-    }
-
-    static func checkValue(_ values: [Int]) -> Int {
-        var weight = 1
-        var sum = 0
-        for value in values {
-            weight = gfMultiply(weight, 2)
-            sum ^= gfMultiply(weight, value)
-        }
-        return sum
-    }
-
-    /// A new key's sixteen canonical characters, from the system's secure generator.
-    static func generate() -> String {
-        var generator = SystemRandomNumberGenerator()
-        let values = (0..<15).map { _ in Int.random(in: 0..<32, using: &generator) }
-        return String((values + [checkValue(values)]).map { alphabet[$0] })
-    }
-
-    static func display(_ canonical: String) -> String {
-        let characters = Array(canonical)
-        return stride(from: 0, to: characters.count, by: 4)
-            .map { String(characters[$0..<min($0 + 4, characters.count)]) }
-            .joined(separator: "-")
-    }
-
-    static func fileName(_ canonical: String) -> String {
-        SHA256.hash(data: Data(("openglasses.activation-id.v1\n" + canonical).utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
-    }
-
-    static func seal(_ code: String, canonical: String) throws -> String {
-        let key = HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: Data(canonical.utf8)),
-                                         info: Data("openglasses.activation-key.v1".utf8),
-                                         outputByteCount: 32)
-        guard let combined = try AES.GCM.seal(Data(code.utf8), using: key).combined else {
-            throw CryptoKitError.incorrectParameterSize
-        }
-        return combined.base64EncodedString()
-    }
-}
+typealias LicensePayload = IssuedLicensePayload
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
@@ -194,7 +123,7 @@ func resolvePrivateKey(keyFile: String?) -> String {
     if let env = ProcessInfo.processInfo.environment["FIELD_ASSIST_SIGNING_KEY"], !env.isEmpty {
         return env
     }
-    let scriptDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+    let scriptDir = URL(fileURLWithPath: #filePath).resolvingSymlinksInPath().deletingLastPathComponent()
     let candidates = [
         scriptDir.deletingLastPathComponent().appendingPathComponent("secrets/field-assist-signing-key.txt"),
         URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("secrets/field-assist-signing-key.txt"),
@@ -255,6 +184,7 @@ usage: generate-field-license.swift "<Licensee>" [expiresISO8601]
   --key-file names a PATH (or `-` for stdin). A key passed as an argument is refused:
   arguments reach `ps`, shell history, CI logs and crash reports.
   Positional expiry and --days are alternatives; --days counts from now.
+  --issued-at ISO8601 fixes the issue clock for fixtures and reproducible payloads.
   Prints the code on stdout and the decoded payload on stderr for a final look.
   --activation-key also prints a short key (once — it is not stored anywhere) and writes the
   code, sealed under it, to DIR/<file name> (default ./activation, run from the repo root) for
@@ -268,6 +198,7 @@ var plan: String?
 var seats: Int?
 var reference: String?
 var days: Int?
+var issuedAt = Date()
 var packs: [String] = []
 var profileAddress: String?
 var organizationID: String?
@@ -314,6 +245,9 @@ while let arg = iterator.next() {
         mintActivationKey = true
     case "--activation-dir":
         activationDirectory = value(arg)
+    case "--issued-at":
+        guard let date = ISO8601DateFormatter().date(from: value(arg)) else { fail("invalid --issued-at") }
+        issuedAt = date
     case "--days":
         guard let n = Int(value(arg)), n > 0 else { fail("--days must be a positive integer") }
         days = n
@@ -335,7 +269,7 @@ if positional.count >= 2 {
 }
 if let days {
     guard expires == nil else { fail("give either a positional expiry or --days, not both") }
-    expires = Date().addingTimeInterval(TimeInterval(days) * 86_400)
+    expires = issuedAt.addingTimeInterval(TimeInterval(days) * 86_400)
 }
 if plan == "pilot" && expires == nil { fail("a pilot code must expire — pass --days or an expiry") }
 if plan == "enterprise" && tier == nil { tier = "enterprise" }
@@ -359,19 +293,13 @@ guard let keyData = Data(base64Encoded: resolvePrivateKey(keyFile: keyFile)) els
 
 do {
     let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: keyData)
-    let payload = LicensePayload(feature: "field_assist", licensee: licensee, issued: Date(), expires: expires,
+    let payload = LicensePayload(feature: "field_assist", licensee: licensee, issued: issuedAt, expires: expires,
                                  tier: tier, plan: plan, seats: seats, reference: reference,
-                                 packs: packs.isEmpty ? nil : packs,
+                                 packs: packs.isEmpty ? nil : packs.sorted(),
                                  profile: profileAddress,
                                  organizationID: organizationID, profileID: profileID)
 
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    encoder.outputFormatting = [.sortedKeys]
-    let payloadData = try encoder.encode(payload)
-    let signature = try privateKey.signature(for: payloadData)
-
-    let code = "\(payloadData.base64EncodedString()).\(signature.base64EncodedString())"
+    let code = try IssuanceWire.code(payload, signer: privateKey.signature(for:))
     print(code)
 
     if mintActivationKey {
@@ -404,3 +332,17 @@ do {
 } catch {
     fail("Failed to sign: \(error)")
 }
+
+#else
+import Foundation
+let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+let process = Process()
+process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+process.arguments = ["swift", "run", "--quiet", "--package-path", repo.appendingPathComponent("Tools/LicenceIssuance").path, "generate-field-license"] + CommandLine.arguments.dropFirst()
+process.standardInput = FileHandle.standardInput
+process.standardOutput = FileHandle.standardOutput
+process.standardError = FileHandle.standardError
+try process.run()
+process.waitUntilExit()
+exit(process.terminationStatus)
+#endif

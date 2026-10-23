@@ -69,7 +69,7 @@ packages:
     # Motion, Speech, voice invocations, `Camera.photo`, camera audio) that may change in any minor
     # and that published apps may not use. We link none of them; staying exact means a 1.y is read
     # and adopted deliberately, never picked up by a resolve.
-    version: "1.0.0"
+    version: "1.0.1"
   HaishinKit:
     url: https://github.com/shogo4405/HaishinKit.swift.git
     from: "2.2.5"

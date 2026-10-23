@@ -50,6 +50,11 @@ struct DiagnosticsSupportView: View {
                 .buttonStyle(.plain)
             }
 
+            OGSection {
+                ActivityDayMenu(appState: appState, store: appState.conversationStore)
+            }
+            PilotReportSettings(appState: appState)
+
             OGSection(
                 header: "Self-Test",
                 footer: "Each check exercises the real path — the camera takes a photo, the AI answers a tiny query, the lens renders a card."

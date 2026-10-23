@@ -66,6 +66,22 @@ final class OfficeReportTests: XCTestCase {
         XCTAssertEqual(OfficeReport.envelopeBytes(payload: payload, signature: signature), try F.data("office-report-v1"))
     }
 
+    func testReportAttributionFixtureIsBoundToTheReportDigest() throws {
+        let record = try F.data("office-report-record-identity-v1")
+        let attachments = try goldenAttachments()
+        let manifest = try F.data("office-report-manifest-v1")
+        let report = try XCTUnwrap(OfficeReport.report(
+            operationID: "7C9E6679-7425-40DE-944B-E07FC1F90AE7", recordKind: .workRecord,
+            recordID: "3F2504E0-4F89-11D3-9A0C-0305E82C3301", revision: 1, identity: identity(),
+            jobReference: "JOB-1042", jobID: "job-2031", jobRevision: 2,
+            record: record, manifest: manifest, transcript: .attached, createdAt: F.now))
+        XCTAssertTrue(OfficeReport.recordAgrees(report, record: record, attachments: attachments))
+        let edited = Data(String(decoding: record, as: UTF8.self).replacingOccurrences(of: "TECH-27", with: "TECH-28").utf8)
+        XCTAssertFalse(OfficeReport.recordAgrees(report, record: edited, attachments: attachments),
+                       "changing even an attribution label invalidates the signed record binding")
+        XCTAssertNotEqual(report.recordSHA256, try goldenReport().recordSHA256)
+    }
+
     func testAReportIsThePhonesAndForThisPairing() throws {
         let payload = try F.payload("office-report-v1")
         assertRefused(.badSignature, "signed by the office application key") {

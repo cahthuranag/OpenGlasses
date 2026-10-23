@@ -1,4 +1,5 @@
 import XCTest
+import PDFKit
 @testable import OpenGlasses
 
 /// Tests for SessionExporter: reconstructing the consolidated audit from session.json + log.jsonl,
@@ -49,6 +50,34 @@ final class SessionExporterTests: XCTestCase {
         try? FileManager.default.removeItem(at: sessionDir)
         try FileManager.default.moveItem(at: produced, to: sessionDir)
         return session
+    }
+
+    func testJobStartSnapshotsIdentityAndThePDFNeverPrintsTechnicianID() throws {
+        let keys = ["technicianFullName", "technicianDisplayName", "technicianID", "organizationDisplayName"]
+        let priors = keys.map { UserDefaults.standard.object(forKey: $0) }
+        defer {
+            for (key, value) in zip(keys, priors) {
+                if let value { UserDefaults.standard.set(value, forKey: key) }
+                else { UserDefaults.standard.removeObject(forKey: key) }
+            }
+        }
+        Config.technicianFullName = "Samuel Tane"
+        Config.technicianDisplayName = "Sam"
+        Config.technicianID = "PRIVATE-TECH-27"
+        Config.organizationDisplayName = "Northbridge Mechanical"
+        let session = try makePopulatedSession()
+        XCTAssertEqual(session.reportedBy?.fullName, "Samuel Tane")
+        Config.technicianFullName = "Someone Else"
+        let document = try XCTUnwrap(SessionExporter.buildExport(sessionDir: sessionDir))
+        XCTAssertEqual(document.reportedBy?.fullName, "Samuel Tane")
+        XCTAssertEqual(document.workRecord?.reportedBy, document.reportedBy)
+        let pdf = tempRoot.appendingPathComponent("identity.pdf")
+        try SessionExporter.writePDF(document, to: pdf)
+        let text = try XCTUnwrap(PDFDocument(url: pdf)?.string)
+        XCTAssertTrue(text.contains("Northbridge Mechanical"))
+        XCTAssertTrue(text.contains("Samuel Tane"))
+        XCTAssertFalse(text.contains("Someone Else"))
+        XCTAssertFalse(text.contains("PRIVATE-TECH-27"))
     }
 
     func testBuildExportReconstructsAuditFields() throws {

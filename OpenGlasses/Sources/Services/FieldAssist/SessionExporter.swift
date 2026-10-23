@@ -241,6 +241,7 @@ enum SessionExporter {
         }
 
         return SessionExport(
+            reportedBy: session.reportIdentity,
             sessionId: session.id,
             startedAt: session.startedAt,
             endedAt: session.endedAt,
@@ -379,6 +380,7 @@ enum SessionExporter {
             stamp.apply(to: context.cgContext)
             layout.begin(context)
             layout.heading(workOrderTitle)
+            if let identity = document.reportedBy?.customerLine { layout.body(identity) }
             layout.body("\(document.vaultName)  •  Session \(document.sessionId.prefix(8))")
             layout.spacer(6)
 

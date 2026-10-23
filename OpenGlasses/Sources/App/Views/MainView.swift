@@ -149,6 +149,22 @@ struct MainView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .overlay(alignment: .bottom) {
+            if !showOnboarding, appState.mayShowPilotReports, !appState.pilotReportDays.isEmpty {
+                PilotReportOffer(days: appState.pilotReportDays,
+                                 send: { appState.openPilotReport($0) },
+                                 dismiss: { appState.pilotReportDays = [] })
+            }
+        }
+        .onChange(of: showOnboarding) { _, onboarding in
+            if !onboarding { appState.offerPilotReports() }
+        }
+        .onReceive(appState.geminiLiveSession.$isActive) { active in
+            if active { appState.pilotReportDays = [] }
+        }
+        .onReceive(appState.openAIRealtimeSession.$isActive) { active in
+            if active { appState.pilotReportDays = [] }
+        }
         .animation(.easeInOut(duration: 0.25), value: appState.supportPrompt)
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
             PrivacyLog.app(.memoryWarning)

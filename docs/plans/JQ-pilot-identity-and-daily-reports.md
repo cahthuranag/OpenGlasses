@@ -1,6 +1,8 @@
 # Plan JQ — Who Sent It, and Yesterday's Report
 
-**Status:** 📝 Drafted 2026-10-23 — nothing implemented.
+**Status:** P0–P3 implemented 2026-10-23 (validation below). P2's 7-day/14,000-event
+retention measured on a physical iPhone Air before raising the capacity. Physical
+Mail/share/VoiceOver walkthrough owed. No reminder is scheduled (decision 3: none by default).
 **Origin:** the pilot partner, 2026-10-23, before installing the app at several tester companies:
 each company should be identifiable from its licence; Settings should hold the technician's full
 name, short name and technician ID; the company and the technician should appear on job reports
@@ -181,3 +183,70 @@ not secret, and it identifies which code a phone runs without printing the code 
   open, live or on CarPlay; a cancelled send offered again; *Not now* until tomorrow; switch off
   means nothing.
 - `SupportReportRecipientTests`: the pilot address list (up to three, each checked).
+
+
+## Implementation decisions — 2026-10-23
+
+The proposed defaults above are used: profile company before licence licensee; names but no
+technician ID on the customer PDF; IDs in JSON/internal attribution; source-system technician
+ID before the phone label on an FSM job; no reminder notification; a profile can seed pilot
+reports and addresses but cannot lock them. The original short-name key is unchanged.
+`reported_by` contains company, full name, short name and technician ID. Licence metadata and
+enrolment appear only in support files, and the licence code never appears.
+
+Pilot reports reuse the existing review sheet, Mail and share sheet. The prompt is once per
+local calendar day, for unsent activity days in the preceding seven calendar days, newest
+first. Cancelling or dismissing does not mark a day sent. Organisation departure clears the
+addresses/date metadata synchronously and closes a pending pilot review. The profile uses
+starting values, so the technician can always turn reporting off.
+
+The app-event age bound is seven days and the per-run capacity is 14,000, raised only after
+the physical-device measurement below. Count can evict sooner; the report, privacy inventory
+and in-app copy disclose both bounds. Physical Mail/share/VoiceOver checks remain owed.
+
+
+## Physical capacity measurement — 2026-10-23
+
+Measured on an **iPhone Air (iPhone18,4), iOS 27.0.1**, using a temporary separate app with the
+production `DiagnosticRing`, `DiagnosticBreadcrumbStore` and `StoreProtection` source. Only
+logger value types were stubbed; the candidate read-size guard was 16 MB. The app wrote synthetic
+events through the production writer, then timed construction of the production ring and checked
+the retained count, nine times per shape. It never read the installed Avenkin app's data and was
+removed afterwards. This measures the diagnostic-history work at launch, **not total app launch**;
+the file was freshly written, so these are not cold-filesystem timings.
+
+| Capacity | Persisted entries | Line characters | File bytes | First load ms | Median ms | Maximum ms |
+|---|---|---|---|---|---|---|
+| 2000 | 2000 | 100 | 376001 | 3.743 | 3.897 | 4.489 |
+| 2000 | 2000 | 300 | 776001 | 4.172 | 4.172 | 4.495 |
+| 2000 | 4000 | 100 | 752001 | 7.592 | 8.078 | 8.721 |
+| 2000 | 4000 | 300 | 1552001 | 8.893 | 9.673 | 11.231 |
+| 14000 | 14000 | 100 | 2632001 | 28.763 | 27.899 | 31.208 |
+| 14000 | 14000 | 300 | 5432001 | 28.222 | 29.910 | 35.282 |
+| 14000 | 28000 | 100 | 5264001 | 64.828 | 59.446 | 66.821 |
+| 14000 | 28000 | 300 | 10864001 | 69.027 | 71.046 | 78.015 |
+
+The per-run capacity is **14,000**. A persisted checkpoint can hold the preceding history and
+this run together, so the measurement includes **28,000** entries. The file-size guard rises
+from 4 MB to **16 MB**: retaining the old guard would reject the app's own larger history.
+The age bound stays seven days, and count may still evict sooner. Raw samples and methodology:
+[`reports/plan-jq-diagnostic-capacity-2026-10-23.json`](../../reports/plan-jq-diagnostic-capacity-2026-10-23.json).
+
+The repeatable standalone harness is in [`Scripts/diagnostic-capacity-benchmark`](../../Scripts/diagnostic-capacity-benchmark/README.md).
+
+
+## Validation — 2026-10-23
+
+- iOS simulator app/test build passed (Xcode 27.2 SDK, arm64, localisation extraction disabled).
+- Final focused regression run: **238 tests executed, 1 skipped, 0 failures** (237 passed),
+  on a new iPhone 17 Pro simulator, iOS 27.0. The skipped existing WorkRecord test requires a
+  manufacturer manual not present in the checkout.
+- Suites: identity and legacy decoding, job-start snapshots and PDF text, prompt policy/calendar
+  arithmetic, recipient lists, activity-day selection, diagnostic persistence/retention,
+  profile application/removal, work records, signed Office record binding and the privacy inventory.
+- `Scripts/check-privacy-logging.sh`: passed; `git diff --check`: passed.
+- The earlier simulator's test host stopped loading XCTest; the final run used a disposable
+  fresh simulator and completed successfully. No source workaround was needed.
+- Physical iPhone capacity measurement completed above; the separate benchmark app was removed.
+- Still manual: Mail sent/cancelled/failed outcomes, a completed/cancelled share sheet, and the
+  new Settings/review/prompt rows with VoiceOver on a physical phone. No report was sent.

@@ -4,6 +4,8 @@ import CoreLocation
 /// A long-lived field-service session — represents one technician visit to one asset.
 /// Sessions persist across app launches and emit a structured audit log on completion.
 struct FieldSession: Codable, Identifiable, Equatable {
+    /// Immutable report attribution, captured when this visit begins.
+    var reportedBy: ReportIdentity? = nil
     let id: String
     let vaultId: String
     let assetId: String?
@@ -253,7 +255,7 @@ struct FieldSession: Codable, Identifiable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, vaultId, assetId, mode, startedAt, endedAt, pausedAt, resumedAt, outcome
-        case accessClosureReason
+        case accessClosureReason, reportedBy
         case startLocation, endLocation, escalations, billableSeconds, billingBasis
         case minutesPerBillingUnit, equipment
         case jobReference, tasks, partsRequests, identityFields, jobEvidence
@@ -283,6 +285,7 @@ extension FieldSession {
     /// the collections would not.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        reportedBy = try c.decodeIfPresent(ReportIdentity.self, forKey: .reportedBy)
         id = try c.decode(String.self, forKey: .id)
         vaultId = try c.decode(String.self, forKey: .vaultId)
         assetId = try c.decodeIfPresent(String.self, forKey: .assetId)

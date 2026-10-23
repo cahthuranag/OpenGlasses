@@ -32,7 +32,7 @@ struct DiagnosticExportView: View {
                 }
                 OGDivider()
                 OGRow("Saved Locally", icon: "internaldrive", mutedIcon: true, showsChevron: false) {
-                    OGRowValue(value: "Recent runs")
+                    OGRowValue(value: "Up to \(DiagnosticRing.retentionDays) days")
                 }
             }
 

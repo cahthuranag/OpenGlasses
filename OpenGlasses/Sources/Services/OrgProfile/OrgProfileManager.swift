@@ -227,6 +227,11 @@ final class OrgProfileManager: ObservableObject {
             }
             seams.endLapseDeparture = { OrgDepartureService.shared.cancelLapse(enrolmentId: $0) }
             seams.beginDeparture = { reason, record, profile in
+                PilotReportStore.shared.clear()
+                AppStateProvider.shared?.pilotReportDays = []
+                if AppStateProvider.shared?.supportReportRequest?.pilotDay != nil {
+                    AppStateProvider.shared?.supportReportRequest = nil
+                }
                 Task { @MainActor in
                     await OrgDepartureService.shared.begin(
                         reason, organizationName: profile?.organizationName ?? "your organisation",
@@ -938,6 +943,8 @@ extension SettingKey {
         case .organizationReportRecipients: return "Who job reports are addressed to"
         case .organizationReportTranscriptInternal: return "Whether reports to the office carry the transcript"
         case .organizationAccentColor: return "The app's accent colour"
+        case .technicianFullName: return "Your full name on reports"
+        case .technicianID: return "Your technician ID on internal reports"
         case .technicianDisplayName: return "Your name, as your team sees it"
         case .organizationToolDefinitionsMode: return "When the assistant looks up tool definitions on demand"
         default: return rawValue

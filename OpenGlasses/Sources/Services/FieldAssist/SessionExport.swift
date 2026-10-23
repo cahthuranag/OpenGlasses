@@ -6,6 +6,7 @@ import Foundation
 /// exported for compliance use cases — EPA 608 refrigerant logs, warranty submissions, and customer
 /// work orders. Unlike the raw append-only log, it's a single denormalized document.
 struct SessionExport: Codable, Equatable {
+    var reportedBy: ReportIdentity? = nil
     let sessionId: String
     let startedAt: Date
     let endedAt: Date?
@@ -268,6 +269,7 @@ struct SessionExport: Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
+        case reportedBy = "reported_by"
         case sessionId = "session_id"
         case startedAt = "started_at"
         case endedAt = "ended_at"

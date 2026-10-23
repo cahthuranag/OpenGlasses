@@ -335,3 +335,8 @@ rules raise both, so a site-wide overdue routine needs it too) and on no other k
 allowed on those two kinds only and is optional even on a schedule's flag; `schedule` only with
 `basis: schedule`; visits must be newest first (a later visit after an earlier one is refused,
 the phone never reorders); a `unit_key` may not equal any serial in any letter case.
+
+
+Plan JQ narrows decision 3 for report attribution only: a source system's technician ID
+supersedes the phone label in internal report JSON. It is never shown on phone screens
+or on customer PDFs. Enrolment remains the office's join key.

@@ -49,7 +49,7 @@ enum DiagnosticExportBuilder {
         "This file is a list of what the app did — one line per structured event, with its category, event name, counts, durations and outcome.",
         "It contains no conversation content, no transcripts, no tool arguments or results, no photos, no names, no locations, no medical values, no URLs, and no keys or tokens. Those have no way into a log line: the logging API has no parameter that accepts them.",
         "Identifiers that would name a device, a gateway or a thread appear only as short one-way fingerprints (#a1b2c3d4), which can be compared with each other but not read back.",
-        "Recent structured events are saved locally in a bounded buffer, excluded from backup. This export can include earlier runs of the app (up to 48 hours old), which may have ended normally or unexpectedly. The last events before an abrupt exit may be missing. Nothing is sent automatically.",
+        "Recent structured events are saved locally in a bounded buffer, excluded from backup. This export can include earlier runs of the app (up to \(DiagnosticRing.retentionDays) days old), which may have ended normally or unexpectedly. The \(DiagnosticRing.defaultCapacity)-event capacity can be reached before that age. The last events before an abrupt exit may be missing. Nothing is sent automatically.",
         "A note on the system log: marking a log field private tells the operating system to hide it from other readers on the device. It does not make the value safe to send to us, so this app does not put values in log fields and then rely on that. What you are reading is all there is.",
     ]
 

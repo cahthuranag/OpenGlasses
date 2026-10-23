@@ -45,9 +45,15 @@ struct RootView: View {
                     .onAppear { manualCapture.cancel() }
             }
         }
-        .task { await manualCapture.resume() }
+        .task {
+            await manualCapture.resume()
+            appState.offerPilotReports()
+        }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await manualCapture.resume() } }
+            if phase == .active {
+                appState.offerPilotReports()
+                Task { await manualCapture.resume() }
+            }
         }
     }
 }

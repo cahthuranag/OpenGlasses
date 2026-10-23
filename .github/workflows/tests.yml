@@ -65,6 +65,16 @@ permissions:
   contents: read
 
 jobs:
+  licence-issuance:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Licence issuance fixtures and terminal contracts
+        run: |
+          swift test --package-path Tools/LicenceIssuance
+          ./Scripts/tests/signing-key-handling.sh
+
   test:
     runs-on: macos-26
     timeout-minutes: 90

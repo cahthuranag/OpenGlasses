@@ -1,0 +1,1 @@
+../../../../Scripts/make-org-profile.swift

@@ -1,6 +1,8 @@
 #!/usr/bin/env swift
+#if canImport(LicenceIssuance)
 import Foundation
 import CryptoKit
+import LicenceIssuance
 import CommonCrypto
 import CoreImage
 
@@ -381,7 +383,7 @@ func readKey(_ path: String?) -> Curve25519.Signing.PrivateKey {
     if path == "-" {
         text = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
     } else {
-        let scriptDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+        let scriptDir = URL(fileURLWithPath: #filePath).resolvingSymlinksInPath().deletingLastPathComponent()
         let candidates = path.map { [$0] } ?? [
             scriptDir.deletingLastPathComponent().appendingPathComponent("secrets/org-profile-signing-key.txt").path,
             FileManager.default.currentDirectoryPath + "/secrets/org-profile-signing-key.txt",
@@ -407,16 +409,11 @@ func readKey(_ path: String?) -> Curve25519.Signing.PrivateKey {
 }
 
 func sign(_ payload: Data, domain: String, key: Curve25519.Signing.PrivateKey) -> String {
-    guard let signature = try? key.signature(for: Data(domain.utf8) + payload) else { fail("error: signing failed") }
-    return "\(payload.base64EncodedString()).\(signature.base64EncodedString())"
+    guard let document = try? IssuanceWire.sign(payload, domain: domain, signer: key.signature(for:)) else { fail("error: signing failed") }
+    return document
 }
 
-let encoder: JSONEncoder = {
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    return encoder
-}()
+let encoder = IssuanceWire.encoder(profile: true)
 
 /// Whole seconds, so what is signed reads back as exactly what was shown.
 func now() -> Date { Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down)) }
@@ -549,3 +546,17 @@ case "revoke":
 default:
     fail(usage)
 }
+
+#else
+import Foundation
+let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+let process = Process()
+process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+process.arguments = ["swift", "run", "--quiet", "--package-path", repo.appendingPathComponent("Tools/LicenceIssuance").path, "make-org-profile"] + CommandLine.arguments.dropFirst()
+process.standardInput = FileHandle.standardInput
+process.standardOutput = FileHandle.standardOutput
+process.standardError = FileHandle.standardError
+try process.run()
+process.waitUntilExit()
+exit(process.terminationStatus)
+#endif

@@ -1,6 +1,6 @@
 # Plan JS — Licence Sales and Device Seats (a partner orders codes, pays by bank transfer, and a code counts its phones)
 
-**Status:** 📝 Drafted 2026-10-23 — nothing implemented.
+**Status:** P0 implemented in this PR (2026-10-23); validation recorded in `Tools/LicenceIssuance/README.md` and the PR. P1–P3 remain unimplemented.
 **Origin:** the pilot partner resells Field Assist team licences and needs to order and pay for them
 without waiting on the vendor. The owner asked whether a licence could be held to a number of
 devices, and whether one server could produce the code and its QR, and let the partner buy and be
@@ -83,9 +83,8 @@ use of the app carries on.
   phone's own stores and its clock. It makes no network call, so being out of signal neither
   triggers a lapse nor delays one. The network matters for one thing only: getting the paid code
   (see *A phone offline on the day of payment*).
-- **Workiz is not built.** Plan JR shows its Settings section only while Field Assist is licensed,
-  but says nothing about a licence that lapses while the connection is in use. That is the one
-  business connection this plan has to add a rule for.
+- **Workiz is implemented (JR, #837).** It checks the live licence before every request and retains
+  local credentials and state at lapse. P0 uses its fixture tests; live qualification remains deferred.
 - **A profile lapse or revocation is different, and harsher.** A lapsed profile lease withholds the
   licence the profile brought. `eraseAfterLapseDays` (an organisation opt-in) erases the firm's
   content, and a signed revocation erases it after delivering records. **An unpaid invoice must
@@ -339,3 +338,18 @@ lapse. Bank-statement import to match payments by reference. Emailing invoices f
   Leaning: hold, since the firm can end the hold by paying.
 - **Whether the provisional window is fixed at 35 days or per grant.** Leaning fixed: it is the
   credit term, and a partner-by-partner number invites negotiation over it.
+
+## P0 implementation notes (2026-10-23)
+
+The package and terminal are under [`Tools/LicenceIssuance`](../../Tools/LicenceIssuance/README.md).
+P0 adopts EI's bill-on-issuance quota model and exact payment coverage (no short-payment tolerance).
+Prices and tax text are agreement-supplied immutable invoice snapshots. Credits correct accounting
+without authorizing a paid code. A credited order needing a paid code is corrected/rebilled.
+Profile/signing and activation sealing share the manual tools' contracts. Production app sources
+and verification are unchanged; the test bundle alone compiles the vendor library.
+
+Two starting-point assumptions are clarified by tests: CryptoKit signatures are randomized, so
+byte compatibility means payload identity plus exact assembly using a fixed signature; Office
+inline verification deliberately rejects hosted-profile licences, so hosted renewal and the Office
+inline lapse/restore gate are exercised through their distinct existing routes. P1 must still
+implement durable delivery and hosting in the separate private service repository.

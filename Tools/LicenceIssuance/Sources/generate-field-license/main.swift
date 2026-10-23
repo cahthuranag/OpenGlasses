@@ -1,0 +1,1 @@
+../../../../Scripts/generate-field-license.swift

@@ -318,6 +318,9 @@ class LLMService: ObservableObject {
 
     /// Said once per process: the first Field Assist job turn handed off the on-device model.
     private static var onDeviceJobRouteAnnounced = false
+    /// Saved ChatGPT models already replaced at least once in this process: the wearer hears why
+    /// on the first turn, not on every one.
+    private static var announcedModelSubstitutions: Set<String> = []
     /// The cascade already routed this turn's job (`sendMessageCascading`): a later hop back to
     /// the on-device model stays there, with the compact job summary.
     private var onDeviceJobRouteSettled = false
@@ -1012,6 +1015,20 @@ class LLMService: ObservableObject {
             spendCapNotice = notice
         }
 
+        // The ChatGPT backend refuses, on every turn, a model the account's catalog does not list.
+        // This turn sends the catalog's default instead; the saved setting is left as it is.
+        var modelNotice: String?
+        if modelConfig.llmProvider == .chatgpt,
+           let offered = ChatGPTModelAvailability.modelForTurn(modelConfig.model,
+                                                               accountID: chatGPTAccount.accountID) {
+            PrivacyLog.model(.modelSubstituted, provider: PrivacyToken(LLMProvider.chatgpt.rawValue),
+                             model: PrivacyToken(offered), detail: PrivacyToken(modelConfig.model))
+            if Self.announcedModelSubstitutions.insert(modelConfig.model).inserted {
+                modelNotice = ChatGPTModelAvailability.substitutionNotice
+            }
+            modelConfig.model = offered
+        }
+
         let provider = modelConfig.llmProvider
         // Plan CU P1: tag the turn with the model that is about to serve it, read here rather than
         // afterwards. `sendMessageCascading` restores the pre-turn active model in a `defer` before
@@ -1225,7 +1242,8 @@ class LLMService: ObservableObject {
         }
         // The job's log keeps the model's reply, not the app's spend notice in front of it.
         recordFieldAssistantReply(spoken)
-        return withJobRouteNotice(jobRouteNotice, spendCapNotice.map { $0 + " " + spoken } ?? spoken)
+        let reply = ([modelNotice, spendCapNotice].compactMap { $0 } + [spoken]).joined(separator: " ")
+        return withJobRouteNotice(jobRouteNotice, reply)
     }
 
     // MARK: - Field Assist jobs off the on-device model
@@ -3594,12 +3612,27 @@ class LLMService: ObservableObject {
                 if errorBody.count > 2048 { break }
             }
             let text = String(data: errorBody, encoding: .utf8) ?? ""
-            PrivacyLog.model(.apiError, provider: PrivacyToken(providerToken),
-                             status: status, bytes: errorBody.count)
+            let rejection = ProviderRejection(response: response, body: errorBody,
+                                              provider: LLMProvider(rawValue: providerToken) ?? .openai)
+            let unservedOnSubscription = providerToken == LLMProvider.chatgpt.rawValue
+                && rejection.reason == .modelNotAvailable
+            // The classified reason rides the log line, so a support report can say why. On the
+            // subscription the same refusal means "not in the catalog" or "allowance used up";
+            // whether the usage headers were at their limit tells them apart.
+            let limitReading = unservedOnSubscription
+                ? ChatGPTModelAvailability.limitReading(
+                    headers: (response as? HTTPURLResponse)?.allHeaderFields ?? [:])
+                : nil
+            PrivacyLog.modelRejected(rejection, provider: PrivacyToken(providerToken),
+                                     bytes: errorBody.count,
+                                     detail: limitReading.map { PrivacyToken($0.rawValue) })
+            // Fetch the catalog again on the next turn, which can then send a model the account
+            // does serve (`ChatGPTModelAvailability`).
+            if unservedOnSubscription {
+                ChatGPTContextCatalog.markStale()
+            }
             throw LLMError.apiError(provider: providerLabel, statusCode: status, message: text,
-                                    rejection: ProviderRejection(
-                                        response: response, body: errorBody,
-                                        provider: LLMProvider(rawValue: providerToken) ?? .openai))
+                                    rejection: rejection)
         }
 
         var parser = SSEEventParser()

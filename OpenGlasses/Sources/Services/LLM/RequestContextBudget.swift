@@ -219,15 +219,23 @@ enum ChatGPTContextCatalog {
     static let retryAfter: TimeInterval = 300
     private static var lastRefreshAttempt: Date?
 
+    /// Set when the backend refused a model as outside the account's catalog: the stored copy is
+    /// known to be wrong, so the next turn fetches a fresh one whatever its age.
+    private static var markedStale = false
+
     struct Snapshot: Codable, Equatable {
         let accountDigest: String
         let updatedAt: Date
         let windows: [String: Int]
+        /// Which models the account offers. Optional so a snapshot stored before it existed still
+        /// decodes; such a snapshot says nothing about availability.
+        var offered: ChatGPTModelAvailability.Catalog?
     }
 
     static func update(data: Data, accountID: String?, now: Date = Date()) {
         guard let accountID, !accountID.isEmpty else {
             store.removeObject(forKey: storeKey)
+            markedStale = false
             return
         }
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
@@ -239,10 +247,25 @@ enum ChatGPTContextCatalog {
                   (8_192...2_000_000).contains(window) else { continue }
             parsed[id] = window
         }
-        let snapshot = Snapshot(accountDigest: digest(accountID), updatedAt: now, windows: parsed)
+        let snapshot = Snapshot(accountDigest: digest(accountID), updatedAt: now, windows: parsed,
+                                offered: ChatGPTModelAvailability.Catalog(data: data))
         if let encoded = try? JSONEncoder().encode(snapshot) {
             store.set(encoded, forKey: storeKey)
         }
+        markedStale = false
+    }
+
+    /// The models this account's stored catalog offers, or nil when there is no usable snapshot
+    /// for it (none, another account's, too old, or stored before availability was kept).
+    static func offered(accountID: String?, now: Date = Date()) -> ChatGPTModelAvailability.Catalog? {
+        guard let snapshot = snapshot(for: accountID),
+              now.timeIntervalSince(snapshot.updatedAt) < maxAge else { return nil }
+        return snapshot.offered
+    }
+
+    /// Ask the next ChatGPT turn to fetch the catalog again, however recent the stored copy.
+    static func markStale() {
+        markedStale = true
     }
 
     static func context(model: String, accountID: String?, now: Date = Date()) -> Int? {
@@ -254,7 +277,7 @@ enum ChatGPTContextCatalog {
     /// True when this account has no snapshot, or one older than `refreshAfter`.
     static func needsRefresh(accountID: String?, now: Date = Date()) -> Bool {
         guard let accountID, !accountID.isEmpty else { return false }
-        guard let snapshot = snapshot(for: accountID) else { return true }
+        guard !markedStale, let snapshot = snapshot(for: accountID) else { return true }
         return now.timeIntervalSince(snapshot.updatedAt) >= refreshAfter
     }
 

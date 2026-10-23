@@ -55,6 +55,17 @@ enum ModelSwitchNarrator {
         if lastError is RequestContextBudget.CapacityError || RequestContextBudget.isOverflow(error: lastError) {
             return "the request was too large for this model"
         }
+        // So is a model the service would not serve, whatever status carried it (a 400 from the
+        // ChatGPT backend, a 404 elsewhere). On the subscription the same refusal comes back both
+        // for a model outside the account's catalog and, observed, for one whose own allowance is
+        // used up, so the line says both and names neither as certain.
+        if case LLMError.apiError(let provider, _, _, let rejection?) = lastError,
+           rejection.reason == .modelNotAvailable {
+            // "ChatGPT" is the label the subscription's send path throws under.
+            return provider == "ChatGPT"
+                ? "the chosen model isn't available on your ChatGPT account right now — it may have reached its usage limit, so try again later or pick another model"
+                : "the chosen model isn't available on this account, so pick another in Settings"
+        }
         let reason: String
         switch ModelFallbackChain.classify(lastError) {
         case .visionUnavailable:

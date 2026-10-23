@@ -1,19 +1,25 @@
 name: Generate the Xcode project
 description: >-
   Install the pinned XcodeGen, obtain the vendored binaries, freeze package resolution to the
-  tracked lockfile, generate OpenGlasses.xcodeproj and boot a simulator to test against.
+  tracked lockfile, generate OpenGlasses.xcodeproj and select a simulator to test against.
 
-# Every macOS job in tests.yml needs the same twelve steps before it can run a single test. Copying
+# Every macOS job in tests.yml needs the same preparation before it can run a single test. Copying
 # them into each job means the copies drift — and a security gate that generates the project
 # slightly differently from the unit gate is testing a slightly different app. One definition, used
 # by both.
 #
 # The caller checks out first; this starts from a checkout and leaves a generated project plus a
-# booted simulator whose UDID it returns.
+# selected simulator whose UDID it returns. Jobs that only build can leave it shut down.
+
+inputs:
+  boot-simulator:
+    description: Boot the selected simulator when this job will execute tests.
+    required: false
+    default: 'true'
 
 outputs:
   simulator-udid:
-    description: UDID of a booted iPhone simulator on this runner.
+    description: UDID of the selected available iPhone simulator on this runner.
     value: ${{ steps.sim.outputs.udid }}
 
 runs:
@@ -111,4 +117,10 @@ runs:
             sys.exit("no available iPhone simulator on this image")
         print(phones[-1]["udid"])')
         echo "udid=$UDID" >> "$GITHUB_OUTPUT"
-        xcrun simctl boot "$UDID" || true
+
+    - name: Boot the selected simulator
+      if: inputs.boot-simulator == 'true'
+      shell: bash
+      env:
+        SIMULATOR_UDID: ${{ steps.sim.outputs.udid }}
+      run: xcrun simctl boot "$SIMULATOR_UDID" || true

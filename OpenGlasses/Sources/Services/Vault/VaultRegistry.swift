@@ -181,6 +181,17 @@ final class VaultRegistry {
     /// route through here, so a denied decision blocks a vault read even when no settings screen is
     /// involved.
     func isUnlocked(_ manifest: VaultManifest) -> Bool {
+        if let pack = VaultImporter.installedPack(for: manifest.id)?.id {
+            // A personal purchase cannot re-authorise documents withdrawn by the employer.
+            let manager = OrgProfileManager.shared
+            if manager.profile?.vaultPack?.packId == pack,
+               (manager.contentLocked || !FieldAssistEntitlement.shared.has(.orgConfiguration)) { return false }
+            if let departure = OrgDepartureService.loadStored(), departure.packId == pack {
+                let renewed = manager.lease?.isInForce == true &&
+                    (departure.reason == .lapsed || manager.record?.enrolmentId != departure.enrolmentId)
+                if !renewed { return false }
+            }
+        }
         guard let iap = manifest.gating.iap else { return true }
         switch iap {
         case "medical_compliance":

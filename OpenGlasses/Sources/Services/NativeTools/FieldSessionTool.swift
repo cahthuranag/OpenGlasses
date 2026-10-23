@@ -146,6 +146,7 @@ final class FieldSessionTool: NativeTool {
         }
 
         let service = sessionService ?? FieldSessionService.shared
+        service.reconcileAccess()
 
         switch action {
         case "vaults":

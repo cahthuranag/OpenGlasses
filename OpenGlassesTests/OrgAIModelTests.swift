@@ -12,6 +12,7 @@ final class OrgAIModelTests: XCTestCase {
     private var models: [ModelConfig] = []
     private var activeId = ""
     private var nextId = 0
+    private var currentDate: Date!
     private var forgotAdminCard = 0
     private var departures: [OrgDeparture.Reason] = []
     private var fetchResult: Result<Data, Error> = .failure(URLError(.notConnectedToInternet))
@@ -27,6 +28,7 @@ final class OrgAIModelTests: XCTestCase {
         models = [ownConfig]
         activeId = "mine"
         nextId = 0
+        currentDate = issued.addingTimeInterval(86_400)
         forgotAdminCard = 0
         departures = []
         fetchResult = .failure(URLError(.notConnectedToInternet))
@@ -39,8 +41,7 @@ final class OrgAIModelTests: XCTestCase {
         var seams = OrgProfileManager.Seams()
         seams.verificationKeys = ["k": publicKeyBase64]
         seams.licenceKey = publicKeyBase64
-        let now = issued.addingTimeInterval(86_400)
-        seams.now = { now }
+        seams.now = { [unowned self] in self.currentDate }
         seams.resolvableVaultIds = { [] }
         seams.loadRecord = { [unowned self] in self.stored }
         seams.saveRecord = { [unowned self] in self.stored = $0 }
@@ -165,6 +166,30 @@ final class OrgAIModelTests: XCTestCase {
         XCTAssertFalse(manager.needsModelSetup)
         XCTAssertEqual(stored?.modelConfigId, "org-1")
         XCTAssertFalse((stored?.document ?? "").contains("sk-ant-abc"), "the key never enters the profile")
+    }
+
+    func testRevocationRemovesTheOrganisationsModelAndCannotReinstallItsKey() async throws {
+        let manager = makeManager()
+        try enrol(manager, claude)
+        XCTAssertTrue(manager.completeModelSetup(apiKey: "sk-ant-abc"))
+        let revoked = ProfileRevocation(keyId: "k", profileId: "northbridge", issued: currentDate)
+        fetchResult = .success(Data(try ProfileVerification.makeDocument(revoked, privateKeyBase64: privateKeyBase64).utf8))
+        await manager.renewIfDue(force: true)
+        XCTAssertEqual(models, [ownConfig])
+        XCTAssertEqual(activeId, "mine")
+        XCTAssertFalse(manager.completeModelSetup(apiKey: "sk-ant-abc"))
+    }
+
+    func testAnExpiredLeaseRemovesTheOrganisationsModelWithoutRemovingThePersonalOne() throws {
+        let manager = makeManager()
+        try enrol(manager, claude)
+        XCTAssertTrue(manager.completeModelSetup(apiKey: "sk-ant-abc"))
+        currentDate = issued.addingTimeInterval(400 * 86400)
+        manager.evaluateLease()
+        XCTAssertTrue(manager.contentLocked)
+        XCTAssertEqual(models, [ownConfig])
+        XCTAssertEqual(activeId, "mine")
+        XCTAssertFalse(manager.completeModelSetup(apiKey: "sk-ant-abc"))
     }
 
     func testAnOnDeviceModelIsReadyAtOnce() throws {

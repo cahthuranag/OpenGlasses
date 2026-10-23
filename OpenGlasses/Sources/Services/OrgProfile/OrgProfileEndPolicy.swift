@@ -1,28 +1,10 @@
 import Foundation
 
-// Plan CT — when the organisation's signed term has ended (2026-10-04). **A notice, and only that.**
-//
-// A profile's `policyExpiry` is the term the organisation signed. Once it has passed, the lease
-// reports lapsed: the rules stay in force, the content locks, a job already open runs to its end
-// (Plan CT PR 4). The profile itself is never removed automatically, and nothing here changes that.
-// What this adds is the sentence the person was missing: the profile has ended, and where to remove
-// it — Settings › Organisation › ⟨org⟩, Remove Profile under "Leave ⟨org⟩" (Plan HA C4).
-//
-// Why a notice and not an action: removal starts a departure that erases the firm's records after
-// `undeliveredEraseDays` whether or not they were delivered, so doing it for the person — or even
-// nudging hard — risks records the firm is owed. The product owner approved exactly this step.
-// Inactive-then-removed with a grace period, an office-pushed signed removal, and office renewal
-// come later (Plan CT, *The organisation's term has ended*).
-//
-// The rule reads `policyExpiry` only — never a lease lapse on its own. An office-commissioned phone
-// has no profile address to renew from, so its lease always lapses `leaseDays` after enrolment;
-// acting on that would tell every pilot phone its organisation had ended.
-//
-// The clock: the latest time the app has seen (`OrgEnrolmentRecord.clockHighWater`) stands in for a
-// clock wound back behind it, so moving the clock backwards cannot hide the notice. A clock moved
-// forwards shows it early, which is harmless for a notice.
-//
-// Pure: every input is a value, so the whole rule is tested headless (`OrgProfileEndPolicyTests`).
+// The organisation's signed term has ended. Access enforcement lives in OrgProfileManager:
+// it locks content and closes managed jobs even when one was left open. This policy supplies
+// the notice and removal instructions, without removing the profile or changing its erasure window.
+// It reads policyExpiry rather than a missed renewal alone. Clock high-water prevents winding
+// the clock backwards from hiding an end that the phone has already observed.
 
 enum OrgProfileEndPolicy {
 
@@ -34,7 +16,7 @@ enum OrgProfileEndPolicy {
         var now: Date
         /// The latest time the app has seen, or nil before the lease has been evaluated.
         var clockHighWater: Date?
-        /// A Field Assist job is open — the same job the lease's mid-job grace waits on.
+        /// Whether a job is still being closed. It cannot defer the end notice.
         var jobOpen: Bool
         /// Reports still waiting to be sent, as the leaving screen counts them.
         var owedReports: Int
@@ -47,8 +29,6 @@ enum OrgProfileEndPolicy {
     enum Outcome: Equatable, Sendable {
         /// No `policyExpiry`, or it has not been reached: nothing to say.
         case inForce
-        /// The term has ended, but a job is open. Quiet until the job closes, as the lock is.
-        case endedDuringJob(endedOn: Date)
         /// The term has ended: show the notice.
         case ended(Notice)
 
@@ -79,7 +59,6 @@ enum OrgProfileEndPolicy {
         // A clock wound back behind a time already seen is not allowed to un-end the term.
         let now = max(input.now, input.clockHighWater ?? input.now)
         guard now >= expiry else { return .inForce }
-        if input.jobOpen { return .endedDuringJob(endedOn: expiry) }
 
         let name = input.organizationName
         let ended = "\(name)'s profile ended on \(expiry.formatted(date: .abbreviated, time: .omitted))."

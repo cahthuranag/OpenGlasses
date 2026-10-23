@@ -127,6 +127,99 @@ final class FieldSessionServiceTests: XCTestCase {
         }
     }
 
+    func testExpiredSubscriptionClosesTheOldJobAndCannotStartMoreJobs() throws {
+        let queue = OfflineQueue(path: tempRoot.appendingPathComponent("expiry-handover.sqlite"))
+        service.offlineQueue = queue
+        let expiry = Date().addingTimeInterval(3600)
+        FieldAssistEntitlement.shared.provider = StubEntitlementProvider.subscriber(expiring: expiry)
+        let job = try service.startSession(vaultId: "refrigeration", assetId: nil)
+        FieldAssistEntitlement.shared.clock = { expiry }
+        service.reconcileAccess()
+
+        XCTAssertNil(service.activeSession)
+        let ended = try XCTUnwrap(service.history.first { $0.id == job.id })
+        XCTAssertEqual(ended.outcome, .deferred)
+        XCTAssertNotNil(ended.endedAt)
+        XCTAssertTrue(ended.escalations.contains { $0.reason.contains("access ended") })
+        XCTAssertNil(service.promptContext())
+        XCTAssertEqual(queue.pendingCount, 1, "The automatically closed job must be queued for handover")
+        let queued = try XCTUnwrap(queue.all(limit: 10).first { $0.sessionId == job.id })
+        let closure = try XCTUnwrap(queued.payloadJSON["access_closure"] as? [String: Any])
+        XCTAssertEqual(closure["outcome"] as? String, "deferred", "Handover must not claim completed work")
+        for _ in 0..<10 {
+            XCTAssertThrowsError(try service.startSession(vaultId: "refrigeration", assetId: nil)) { error in
+                guard case FieldSessionError.vaultLocked = error else {
+                    return XCTFail("Expired subscriber started another job or got the wrong refusal: \(error)")
+                }
+            }
+        }
+    }
+
+    func testExpiredSubscriptionCannotResumeAPausedJob() throws {
+        let expiry = Date().addingTimeInterval(3600)
+        FieldAssistEntitlement.shared.provider = StubEntitlementProvider.subscriber(expiring: expiry)
+        _ = try service.startSession(vaultId: "refrigeration", assetId: nil)
+        _ = try service.pauseSession()
+        FieldAssistEntitlement.shared.clock = { expiry }
+        XCTAssertThrowsError(try service.resumeSession())
+        XCTAssertNil(service.activeSession)
+        XCTAssertNil(service.activeVault)
+    }
+
+    func testTheExpiryDeadlineClosesAJobWithoutAnotherUserAction() async throws {
+        let expiry = Date().addingTimeInterval(0.5)
+        FieldAssistEntitlement.shared.provider = StubEntitlementProvider.subscriber(expiring: expiry)
+        _ = try service.startSession(vaultId: "refrigeration", assetId: nil)
+        let deadline = max(expiry, Date()).addingTimeInterval(3)
+        while service.activeSession != nil && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertNil(service.activeSession, "Leaving the job open must not extend the subscription")
+        XCTAssertNil(service.activeVault)
+    }
+
+    func testRestoringAnExpiredJobDoesNotLoadItsVaultOrPrompt() throws {
+        let expiry = Date().addingTimeInterval(3600)
+        FieldAssistEntitlement.shared.provider = StubEntitlementProvider.subscriber(expiring: expiry)
+        _ = try service.startSession(vaultId: "refrigeration", assetId: nil)
+        _ = try service.pauseSession()
+        FieldAssistEntitlement.shared.clock = { expiry }
+        let restored = FieldSessionService(sessionsRoot: tempRoot)
+        XCTAssertNil(restored.activeVault)
+        XCTAssertNil(restored.promptContext())
+        restored.reconcileAccess()
+        XCTAssertNil(restored.activeSession)
+    }
+
+    func testDepartureAfterRestartClosesAndQueuesTheJobWithoutExposingItsHistory() throws {
+        let job = try service.startSession(vaultId: "refrigeration", assetId: nil)
+        _ = try service.pauseSession()
+        service = nil
+        let prior = UserDefaults.standard.data(forKey: OrgDepartureService.storageKey)
+        defer {
+            if let prior { UserDefaults.standard.set(prior, forKey: OrgDepartureService.storageKey) }
+            else { UserDefaults.standard.removeObject(forKey: OrgDepartureService.storageKey) }
+        }
+        OrgDepartureService.saveStored(.init(organizationName: "Test organisation", enrolmentId: "test",
+            reason: .revoked, startedAt: Date(), eraseBy: Date().addingTimeInterval(86400), sessionIds: [job.id]))
+        let queue = OfflineQueue(path: tempRoot.appendingPathComponent("handover.sqlite"))
+        let restored = FieldSessionService(sessionsRoot: tempRoot)
+        restored.offlineQueue = queue
+        XCTAssertNil(restored.activeSession)
+        XCTAssertTrue(restored.history.isEmpty)
+        try restored.closeManagedRecordForDeparture(id: job.id, reason: "Organisational access revoked")
+        XCTAssertEqual(queue.pendingCount, 1)
+        XCTAssertEqual(restored.handoverWorkRecord(sessionId: job.id)?.accessClosure?.outcome, .deferred)
+        XCTAssertThrowsError(try restored.exportSession(id: job.id))
+
+        // Simulate the crash window after metadata was closed but before the queue write.
+        queue.deleteAll()
+        try restored.closeManagedRecordForDeparture(id: job.id, reason: "Organisational access revoked")
+        XCTAssertEqual(queue.pendingCount, 1)
+        try restored.closeManagedRecordForDeparture(id: job.id, reason: "Organisational access revoked")
+        XCTAssertEqual(queue.pendingCount, 1, "A retry must not duplicate the handover")
+    }
+
     func testRecordEscalationAppendsToSession() throws {
         _ = try service.startSession(vaultId: "refrigeration", assetId: nil)
         service.recordEscalation(reason: "Manifold gauge shows -5 psig, unit is off — cannot interpret")

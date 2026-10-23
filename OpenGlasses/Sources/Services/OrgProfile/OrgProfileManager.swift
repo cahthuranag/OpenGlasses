@@ -37,7 +37,7 @@ struct OrgEnrolmentRecord: Codable, Equatable, Sendable {
     /// Set when the organisation revoked this phone. Its settings no longer apply and its content
     /// stays locked; erasing that content is Plan CT PR 4.
     var revoked: Bool?
-    /// The mid-job grace: a lapse during a job locks when that job closes.
+    /// Persisted lease lock, including legacy deferred-job state that is no longer honoured.
     var leaseLock: ProfileLease.Lock?
 
     // Plan CT PR 3b — the vault pack enrolment installs.
@@ -196,6 +196,7 @@ final class OrgProfileManager: ObservableObject {
         var newEnrolmentId: () -> String = { String(UUID().uuidString.prefix(8)).lowercased() }
         var fetch: (URL) async throws -> Data = OrgEnrolmentService.boundedFetch
         var activeJobId: @MainActor () -> String? = { FieldSessionService.shared.activeSession?.id }
+        var closeManagedAccess: @MainActor (_ enrolledAt: Date) -> Void = { _ in }
         var withholdLicence: (String?) -> Void = { PolicyEnvelope.withholdLicence($0) }
         var installPack: @MainActor (String) async -> OrgPackInstaller.Outcome = { await OrgPackInstaller.install(packId: $0) }
         var loadModels: () -> [ModelConfig] = { Config.savedModels }
@@ -215,6 +216,15 @@ final class OrgProfileManager: ObservableObject {
         /// The app's seams: every default above, and the departure wired to `OrgDepartureService`.
         static var production: Seams {
             var seams = Seams()
+            seams.closeManagedAccess = { since in
+                let sessions = FieldSessionService.shared
+                let ids = sessions.managedRecordIDs(since: since)
+                for id in ids {
+                    try? sessions.closeManagedRecordForDeparture(id: id,
+                        reason: "Organisational access ended. Automatically closed for handover; outstanding checks remain unverified.")
+                }
+                sessions.lockManagedRecords(ids: Set(ids))
+            }
             seams.endLapseDeparture = { OrgDepartureService.shared.cancelLapse(enrolmentId: $0) }
             seams.beginDeparture = { reason, record, profile in
                 Task { @MainActor in
@@ -246,6 +256,7 @@ final class OrgProfileManager: ObservableObject {
 
     private var seams: Seams
     private var jobObservation: AnyCancellable?
+    private var leaseExpiryTask: Task<Void, Never>?
 
     init(seams: Seams = Seams()) {
         self.seams = seams
@@ -286,8 +297,7 @@ final class OrgProfileManager: ObservableObject {
         evaluateLease()
     }
 
-    /// Re-evaluate the lease whenever a job starts or ends, so a lapse deferred for a job locks the
-    /// moment that job closes.
+    /// Re-evaluate the lease whenever a job starts or ends; an open job never extends the lease.
     func observeJobs() {
         jobObservation = FieldSessionService.shared.$activeSession
             .dropFirst()
@@ -572,6 +582,7 @@ final class OrgProfileManager: ObservableObject {
     /// run `OrgAIModel.keyProblem` on the key.
     @discardableResult
     func completeModelSetup(apiKey: String) -> Bool {
+        guard evaluateLease()?.isInForce == true else { return false }
         guard var current = record, current.revoked != true, let profile, let model = organizationModel else {
             return false
         }
@@ -601,6 +612,7 @@ final class OrgProfileManager: ObservableObject {
     @discardableResult
     func evaluateLease() -> ProfileLease.Status? {
         guard var current = record, let profile else {
+            leaseExpiryTask?.cancel()
             lease = nil
             contentLocked = false
             seams.withholdLicence(nil)
@@ -621,8 +633,15 @@ final class OrgProfileManager: ObservableObject {
         var lock = current.leaseLock ?? ProfileLease.Lock()
         let locked = lock.isLocked(status: status, activeJob: seams.activeJobId())
         current.leaseLock = lock
+        if locked, let id = current.modelConfigId {
+            let remaining = seams.loadModels().filter { $0.id != id }
+            seams.saveModels(remaining)
+            if seams.activeModelId() == id, let next = remaining.first { seams.setActiveModelId(next.id) }
+            current.modelConfigId = nil
+            current.modelSetupPending = organizationModel != nil ? true : nil
+        }
         // Plan CT PR 4: the organisation's opt-in — erase its content once the lease has been lapsed
-        // this long without a renewal. Locked means no job is holding the lock off, so never mid-job.
+        // this long without a renewal. Jobs are already closed when access locks.
         // No network is needed; the pack is reinstalled if a renewal is ever heard.
         var erasingForLapse = false
         if case .lapsed(let since) = status, locked, current.lapseErasedAt == nil,
@@ -640,6 +659,17 @@ final class OrgProfileManager: ObservableObject {
         contentLocked = locked
         seams.withholdLicence(locked && current.activatedLicence
                               ? (current.activatedLicenceCode ?? profile.licenceCode) : nil)
+        if locked { seams.closeManagedAccess(current.enrolledAt) }
+        leaseExpiryTask?.cancel()
+        switch status {
+        case .live(let end), .renewSoon(let end):
+            let delay = max(0, end.timeIntervalSince(seams.now()))
+            leaseExpiryTask = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                _ = self?.evaluateLease()
+            }
+        default: break
+        }
         if erasingForLapse { seams.beginDeparture(.lapsed, current, profile) }
         return status
     }

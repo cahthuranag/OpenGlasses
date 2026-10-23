@@ -206,7 +206,7 @@ extension OfficeReportDocuments.Seams {
                 return (workOrder, auditExport)
             },
             transcript: { id in
-                guard let record = sessions.workRecord(sessionId: id) else {
+                guard let record = sessions.handoverWorkRecord(sessionId: id) else {
                     throw SessionExporter.ExportError.metadataUnreadable
                 }
                 return try bytes(of: SessionExporter.exportTranscriptPDF(sessionDir: directory(id), record: record))

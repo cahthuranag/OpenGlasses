@@ -344,6 +344,12 @@ final class DeliveryQueueStore: ObservableObject {
         save()
     }
 
+    /// Interactive composers are not the locked handover outbox. Remove only the firm's rows.
+    func remove(sessionIDs: Set<String>) {
+        queue = DeliveryQueue(entries: queue.entries.filter { !sessionIDs.contains($0.sessionId) })
+        save()
+    }
+
     // MARK: - Storage
 
     private static func read(_ url: URL) -> DeliveryQueue? {

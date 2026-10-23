@@ -161,6 +161,16 @@ final class OfflineQueue: ConflictBaselineStore {
     }
 
     var pendingCount: Int { count(where: "state = 'pending'") }
+
+    /// Includes accepted tombstones: retrying departure must not resubmit an accepted report.
+    func containsWorkRecord(sessionId: String) -> Bool {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT 1 FROM ops WHERE session_id = ? AND kind = 'workRecord' LIMIT 1",
+                                -1, &statement, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(statement) }
+        bindText(statement, 1, sessionId)
+        return sqlite3_step(statement) == SQLITE_ROW
+    }
     var conflictCount: Int { count(where: "state = 'conflict'") }
 
     // MARK: - Conflict baselines

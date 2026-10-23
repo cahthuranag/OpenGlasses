@@ -28,7 +28,7 @@ enum ProfileLease {
         /// URL, or by naming this enrolment in the profile's revoked list.
         case revoked
 
-        /// Whether the organisation's content may be used right now, before any mid-job grace.
+        /// Whether the organisation's content may be used right now.
         var isInForce: Bool {
             switch self {
             case .live, .renewSoon: return true
@@ -50,27 +50,22 @@ enum ProfileLease {
         return .live(renewBy: end)
     }
 
-    /// The lock, with the mid-job grace: a lease that runs out during a job locks when that job
-    /// closes, never mid-repair — and a job started after the lapse gets no grace.
+    /// An open job cannot extend the organisation's authority beyond its signed lease.
+    /// The old grace fields remain decodable so an older install's deferred lock is cleared.
     struct Lock: Codable, Equatable, Sendable {
-        /// Whether the running-out has already been seen, so grace is granted once, at that moment.
+        /// Whether an end has been observed. Retained for stored-record compatibility.
         var lapseObserved = false
-        /// The job the lock is waiting on.
+        /// Legacy deferred job. Always cleared when this version evaluates the lease.
         var deferredForJob: String?
 
-        /// Decide whether the organisation's content is locked now, updating the grace state.
+        /// Decide whether the organisation's content is locked now.
         mutating func isLocked(status: Status, activeJob: String?) -> Bool {
             guard !status.isInForce else {
                 lapseObserved = false
                 deferredForJob = nil
                 return false
             }
-            if !lapseObserved {
-                lapseObserved = true
-                deferredForJob = activeJob
-                return activeJob == nil
-            }
-            if let deferred = deferredForJob, deferred == activeJob { return false }
+            lapseObserved = true
             deferredForJob = nil
             return true
         }

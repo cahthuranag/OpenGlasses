@@ -3,7 +3,7 @@ import XCTest
 
 /// Plan CT PR 4 — leaving the firm: the organisation's content goes at once; its session logs and
 /// waiting reports go to it first and are erased once its endpoint has accepted them, or once the
-/// window has passed; nothing is erased mid-job.
+/// window has passed; the managed job is closed before cleanup.
 @MainActor
 final class OrgDepartureTests: XCTestCase {
 
@@ -16,7 +16,23 @@ final class OrgDepartureTests: XCTestCase {
     private var endpoint = false
     private var outstandingCount = 0
     private var flushes = 0
+    private var events: [String] = []
+    private var closeFails = false
     private let enrolledAt = Date(timeIntervalSince1970: 1_789_000_000)
+
+    func testOwnershipPreservesAPersonalJobStartedBeforeEnrolment() {
+        XCTAssertFalse(OrgDepartureService.ownsManagedRecord(id: "personal",
+            startedAt: enrolledAt.addingTimeInterval(-60), enrolledAt: enrolledAt, retainedIDs: []))
+        XCTAssertTrue(OrgDepartureService.ownsManagedRecord(id: "managed",
+            startedAt: enrolledAt, enrolledAt: enrolledAt, retainedIDs: []))
+    }
+
+    func testOwnershipSurvivesProfileRemovalWithoutClaimingPersonalRecords() {
+        XCTAssertTrue(OrgDepartureService.ownsManagedRecord(id: "managed",
+            startedAt: enrolledAt, enrolledAt: nil, retainedIDs: ["managed"]))
+        XCTAssertFalse(OrgDepartureService.ownsManagedRecord(id: "personal",
+            startedAt: now, enrolledAt: nil, retainedIDs: ["managed"]))
+    }
 
     override func setUp() {
         super.setUp()
@@ -31,6 +47,8 @@ final class OrgDepartureTests: XCTestCase {
         endpoint = false
         outstandingCount = 0
         flushes = 0
+        events = []
+        closeFails = false
     }
 
     private func makeService() -> OrgDepartureService {
@@ -40,9 +58,22 @@ final class OrgDepartureTests: XCTestCase {
         seams.save = { [unowned self] in self.saved = $0 }
         seams.sessionIds = { [unowned self] since in self.sessions.filter { $0.startedAt >= since }.map { $0.id } }
         seams.activeJobId = { [unowned self] in self.activeJob }
-        seams.eraseContent = { [unowned self] packId in self.erasedContentFor.append(packId) }
+        seams.closeJobs = { [unowned self] ids, _ in
+            if self.closeFails { throw URLError(.cannotWriteToFile) }
+            if let active = self.activeJob, ids.contains(active) {
+                self.events.append("close")
+                self.activeJob = nil
+            }
+        }
+        seams.eraseContent = { [unowned self] packId in
+            self.events.append("erase-content")
+            self.erasedContentFor.append(packId)
+        }
         seams.hasEndpoint = { [unowned self] in self.endpoint }
-        seams.flushEndpoint = { [unowned self] in self.flushes += 1 }
+        seams.flushEndpoint = { [unowned self] in
+            self.events.append("flush")
+            self.flushes += 1
+        }
         seams.outstanding = { [unowned self] _ in self.outstandingCount }
         seams.eraseRecords = { [unowned self] ids in self.erasedRecords.append(ids) }
         let service = OrgDepartureService(seams: seams)
@@ -120,18 +151,87 @@ final class OrgDepartureTests: XCTestCase {
         XCTAssertEqual(saved?.deliveredToFirm, false, "the erasure records that it never reached the firm")
     }
 
-    func testNothingIsErasedMidJob() async {
+    func testALapseClosesItsExistingJobAndDeliversTheRecord() async {
         endpoint = true
-        activeJob = "job-3"
+        activeJob = "job-2"
         let service = makeService()
-        await leave(service)
+        await leave(service, reason: .lapsed)
         now = now.addingTimeInterval(40 * 86_400)
         await service.settle()
-        XCTAssertEqual(erasedRecords, [], "not even past the window")
-
-        activeJob = nil
-        await service.settle()
+        XCTAssertNil(activeJob)
         XCTAssertEqual(erasedRecords.count, 1)
+    }
+
+    func testRevocationAndRemovalCloseTheManagedJobBeforeCleanupAndDelivery() async {
+        for reason: OrgDeparture.Reason in [.revoked, .removed] {
+            saved = nil
+            events = []
+            endpoint = true
+            activeJob = "job-2"
+            let service = makeService()
+            await leave(service, reason: reason)
+            XCTAssertNil(activeJob)
+            XCTAssertEqual(events, ["close", "erase-content", "flush"])
+            XCTAssertEqual(service.departure?.deliveredToFirm, true)
+        }
+    }
+
+    func testFailedClosureRemainsLockedAndRetriesAfterRestart() async {
+        activeJob = "job-2"
+        closeFails = true
+        let service = makeService()
+        await leave(service)
+        XCTAssertTrue(saved?.isPending == true)
+        XCTAssertEqual(erasedContentFor.count, 0)
+        XCTAssertEqual(flushes, 0)
+
+        closeFails = false
+        await makeService().settle()
+        XCTAssertNil(activeJob)
+        XCTAssertEqual(erasedContentFor, ["hvac_rtu_pack"])
+    }
+
+    func testAPersonalJobDoesNotDelayDeliveryOfTheFormerOrganisationsRecords() async {
+        activeJob = "personal-job"
+        endpoint = true
+        await leave(makeService())
+        XCTAssertEqual(activeJob, "personal-job")
+        XCTAssertEqual(flushes, 1)
+        XCTAssertEqual(saved?.deliveredToFirm, true)
+    }
+
+    func testRevocationUpgradesAPendingLapseAndCannotBeUndoneByRenewal() async {
+        activeJob = "job-2"
+        let service = makeService()
+        await leave(service, reason: .lapsed)
+        await leave(service, reason: .revoked)
+        XCTAssertNil(activeJob)
+        XCTAssertEqual(saved?.reason, .revoked)
+        service.cancelLapse(enrolmentId: "e1")
+        XCTAssertEqual(saved?.reason, .revoked)
+    }
+
+    func testLocalFallbackCannotMarkAnOrganisationsRecordAsSent() async {
+        let local = LocalSyncSink()
+        let sink = UndeliveredHandoverSink(fallback: local, ownedIDs: { ["job-1"] })
+        let owned = QueuedOp(kind: .workRecord, sessionId: "job-1")
+        let result = await sink.deliver(owned)
+        guard case .waiting = result else { return XCTFail("Local storage is not delivery to the firm") }
+        XCTAssertTrue(local.delivered.isEmpty)
+    }
+
+    func testLocalFallbackHoldsAnExpiredSubscribersHandoverWithoutChangingOrdinarySync() async {
+        let local = LocalSyncSink()
+        let sink = UndeliveredHandoverSink(fallback: local, ownedIDs: { [] })
+        let handover = QueuedOp.make(kind: .workRecord, sessionId: "personal-job",
+            json: ["access_closure": ["outcome": "deferred", "reason": "Subscription expired"]])
+        let result = await sink.deliver(handover)
+        guard case .waiting = result else { return XCTFail("An expiry handover needs real delivery too") }
+        XCTAssertTrue(local.delivered.isEmpty)
+        let ordinary = QueuedOp(kind: .logEntry, sessionId: "personal-job")
+        let ordinaryResult = await sink.deliver(ordinary)
+        XCTAssertEqual(ordinaryResult, .done)
+        XCTAssertEqual(local.delivered, [ordinary.id])
     }
 
     func testLeavingTwiceForTheSameEnrolmentChangesNothing() async {

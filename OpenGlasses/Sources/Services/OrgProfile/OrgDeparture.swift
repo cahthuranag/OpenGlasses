@@ -1,5 +1,28 @@
 import Foundation
 
+/// Losing the report route must not turn "stored locally" into "sent".
+/// Real endpoint/Office sinks run first; their local fallback holds handover records.
+@MainActor
+final class UndeliveredHandoverSink: SyncSink {
+    private let fallback: SyncSink
+    private let ownedIDs: @MainActor () -> Set<String>
+
+    init(fallback: SyncSink,
+         ownedIDs: @escaping @MainActor () -> Set<String> = {
+             Set(OrgDepartureService.loadStored()?.sessionIds ?? []).union(FieldSessionService.shared.lockedManagedRecordIDs)
+         }) {
+        self.fallback = fallback
+        self.ownedIDs = ownedIDs
+    }
+
+    func deliver(_ op: QueuedOp) async -> SyncOutcome {
+        guard !ownedIDs().contains(op.sessionId), op.payloadJSON["access_closure"] == nil else {
+            return .waiting(reason: "waiting for an authorised report destination to accept the handover record")
+        }
+        return await fallback.deliver(op)
+    }
+}
+
 /// Plan CT PR 4 — what a phone that has left the firm still owes it.
 ///
 /// Kept apart from the enrolment record (`OrgProfileManager`'s), because a profile removed by the
@@ -18,7 +41,7 @@ struct OrgDeparture: Codable, Equatable, Sendable {
 
     let organizationName: String
     let enrolmentId: String
-    let reason: Reason
+    var reason: Reason
     let startedAt: Date
     /// After this the firm's records are erased whether or not they reached it.
     let eraseBy: Date
@@ -29,6 +52,9 @@ struct OrgDeparture: Codable, Equatable, Sendable {
     /// Whether they reached the firm before they were erased: accepted by its endpoint. False means
     /// the window ran out first, and the erasure says so.
     var deliveredToFirm: Bool?
+    /// Kept until cleanup succeeds, including across a crash during departure.
+    var packId: String?
+    var contentErasedAt: Date?
 
     var isPending: Bool { settledAt == nil }
 }
@@ -46,7 +72,8 @@ struct OrgDeparture: Codable, Equatable, Sendable {
 /// - **The window.** Undelivered records stay locked and are retried at launch and on every
 ///   foreground, and are erased regardless once `eraseBy` passes (`undeliveredEraseDays`, 30 by
 ///   default), with that recorded here.
-/// - **Never mid-job.** Nothing is erased while a job is open.
+/// - **Withdrawal closes the job.** Revocation/removal closes the firm's open job for
+///   handover before delivery; an unrelated personal job does not hold its records hostage.
 ///
 /// Every seam defaults to doing nothing: erasure is too consequential to be a default a test
 /// inherits. `AppState` wires the production seams at launch.
@@ -60,6 +87,7 @@ final class OrgDepartureService: ObservableObject {
         /// Session log ids from the managed period.
         var sessionIds: @MainActor (_ since: Date) -> [String] = { _ in [] }
         var activeJobId: @MainActor () -> String? = { nil }
+        var closeJobs: @MainActor (_ ids: [String], _ reason: OrgDeparture.Reason) throws -> Void = { _, _ in }
         /// The firm's vault (by the profile's pack id), jobs ahead and staged exports.
         var eraseContent: @MainActor (_ packId: String?) async -> Void = { _ in }
         var hasEndpoint: @MainActor () -> Bool = { false }
@@ -74,6 +102,7 @@ final class OrgDepartureService: ObservableObject {
 
     @Published private(set) var departure: OrgDeparture?
     var seams: Seams
+    private var isSettling = false
 
     init(seams: Seams = Seams()) {
         self.seams = seams
@@ -87,7 +116,16 @@ final class OrgDepartureService: ObservableObject {
     /// records. Beginning again for the same enrolment changes nothing.
     func begin(_ reason: OrgDeparture.Reason, organizationName: String, enrolmentId: String,
                enrolledAt: Date, packId: String?, undeliveredEraseDays: Int?) async {
-        if let current = departure, current.isPending, current.enrolmentId == enrolmentId { return }
+        if var current = departure, current.isPending, current.enrolmentId == enrolmentId {
+            // An explicit withdrawal cannot inherit a prior offline lapse's grace or renewal.
+            if current.reason == .lapsed, reason != .lapsed {
+                current.reason = reason
+                departure = current
+                seams.save(current)
+                await settle()
+            }
+            return
+        }
         let now = seams.now()
         let requested = undeliveredEraseDays ?? ConfigProfile.defaultUndeliveredEraseDays
         let days = min(max(requested, ConfigProfile.erasureDaysRange.lowerBound),
@@ -95,18 +133,29 @@ final class OrgDepartureService: ObservableObject {
         let started = OrgDeparture(organizationName: organizationName, enrolmentId: enrolmentId,
                                    reason: reason, startedAt: now,
                                    eraseBy: now.addingTimeInterval(TimeInterval(days) * 86_400),
-                                   sessionIds: seams.sessionIds(enrolledAt))
+                                   sessionIds: seams.sessionIds(enrolledAt), packId: packId)
         departure = started
         seams.save(started)
-        await seams.eraseContent(packId)
         await settle()
     }
 
     /// Deliver what is owed, and erase it once it has been delivered or the window has passed.
     /// Called when the departure begins, at launch and on every foreground.
     func settle() async {
+        guard !isSettling else { return }
+        isSettling = true
+        defer { isSettling = false }
         guard let pending = departure, pending.isPending else { return }
-        if seams.activeJobId() != nil { return }
+        do { try seams.closeJobs(pending.sessionIds, pending.reason) } catch { return }
+        // Never erase or report a successful close if the closure did not end the firm's job.
+        if let active = seams.activeJobId(), pending.sessionIds.contains(active) { return }
+        if pending.contentErasedAt == nil {
+            await seams.eraseContent(pending.packId)
+            guard var current = departure, current.enrolmentId == pending.enrolmentId, current.isPending else { return }
+            current.contentErasedAt = seams.now()
+            departure = current
+            seams.save(current)
+        }
         var delivered = false
         if seams.hasEndpoint() {
             await seams.flushEndpoint()
@@ -132,6 +181,12 @@ final class OrgDepartureService: ObservableObject {
     /// One rule for the departure and for the removal prompt that offers to send them first.
     nonisolated static func managedSessionIds(_ sessions: [FieldSession], since enrolledAt: Date) -> [String] {
         sessions.filter { $0.startedAt >= enrolledAt }.map { $0.id }
+    }
+
+    /// The managed period and retained-record ledger establish ownership after access ends.
+    nonisolated static func ownsManagedRecord(id: String, startedAt: Date,
+                                              enrolledAt: Date?, retainedIDs: Set<String>) -> Bool {
+        retainedIDs.contains(id) || enrolledAt.map { startedAt >= $0 } == true
     }
 
     /// A renewal was heard after a lapse erasure: the phone is the firm's again, so the records a

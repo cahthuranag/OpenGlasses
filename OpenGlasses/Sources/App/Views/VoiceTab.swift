@@ -144,7 +144,8 @@ struct VoiceTab: View {
             }
             if layout.showsContext {
                 AdaptiveWorkspaceContext(showsJobs: showsJobContext,
-                                         showsMyDay: showsDayContext)
+                                         showsMyDay: showsDayContext,
+                                         hasUnfinishedJob: hasUnfinishedJob)
                     .padding(.vertical, 12)
                     .padding(.trailing, 12)
                     .frame(width: layout.contextWidth)
@@ -230,7 +231,7 @@ struct VoiceTab: View {
     private func conversationZone(_ voiceState: VoiceVisualState, layout: AdaptiveWorkspaceLayout) -> some View {
         GeometryReader { proxy in
             let showsThread = layout.showsContext && !layout.isShort
-                && (showsJobContext || showsDayContext
+                && (showsJobContext || (showsDayContext && workspace.personalSection == .myDay)
                     || appState.manualFigureRequest != nil)
             VStack(spacing: showsThread ? 12 : 0) {
             ScrollView {
@@ -348,11 +349,7 @@ struct VoiceTab: View {
     /// Which day card the zone draws — the whole rule is `HomeDayCard`'s.
     private func dayCard(_ voiceState: VoiceVisualState) -> HomeDayCard {
         HomeDayCard.resolve(
-            fieldAssistOn: FieldAssistMode.isOn(.init(
-                switchOn: fieldAssistEnabled,
-                entitled: Config.fieldAssistUnlocked,
-                entitlementChecked: store.hasCheckedEntitlements,
-                restricted: adminGate.isRestricted)),
+            fieldAssistOn: showsJobContext,
             myDayEnabled: myDayEnabled,
             myDayOnHome: myDayOnHome,
             personalLocked: adminGate.lock(.connections).isLocked,
@@ -364,13 +361,19 @@ struct VoiceTab: View {
     }
 
     private var showsJobContext: Bool {
-        JobTabPresence.decide(.init(
-            featureEnabled: fieldAssistEnabled || adminGate.isRestricted,
+        // Keeping an unfinished job reachable is a navigation rule, not a reason to put
+        // the whole home workspace back into Field Assist after its switch was turned off.
+        FieldAssistMode.isOn(.init(
+            switchOn: fieldAssistEnabled,
             entitled: Config.fieldAssistUnlocked,
             entitlementChecked: store.hasCheckedEntitlements,
-            hasOpenJob: fieldSessions.activeSession.map {
-                $0.endedAt == nil && $0.outcome != .cancelled
-            } ?? false)).showsTab
+            restricted: adminGate.isRestricted))
+    }
+
+    private var hasUnfinishedJob: Bool {
+        fieldSessions.activeSession.map {
+            $0.endedAt == nil && $0.outcome != .cancelled
+        } ?? false
     }
 
     private var surfaceHeightReader: some View {

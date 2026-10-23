@@ -23,6 +23,7 @@ struct MainView: View {
     /// Plan CT 3b: the organisation's edition, and the administrator session that lifts it.
     @ObservedObject private var adminGate = AdminGate.shared
     @ObservedObject private var orgProfile = OrgProfileManager.shared
+    @ObservedObject private var departures = OrgDepartureService.shared
 
     /// Whether the technician's view is in force: an edition, and no administrator session.
     private var restricted: Bool { adminGate.isRestricted }
@@ -118,6 +119,9 @@ struct MainView: View {
                     }
                 }
             }
+            // Discard pushed pages and cached job/manual views when organisational access ends.
+            .id(departures.departure?.startedAt)
+            .id(orgProfile.contentLocked)
             .tabViewStyle(.sidebarAdaptable)
             .tabBarMinimizeBehavior(.onScrollDown)
             .tint(accent)
@@ -163,6 +167,12 @@ struct MainView: View {
         // The same for the edition: a session ending never leaves the technician on a hidden tab.
         .onChange(of: restricted) { _, isRestricted in
             selectedTab = EditionPresentation.tab(selectedTab, restricted: isRestricted)
+        }
+        .onChange(of: departures.departure?.startedAt) { _, departure in
+            if departure != nil { selectedTab = .voice }
+        }
+        .onChange(of: orgProfile.contentLocked) { _, locked in
+            if locked { selectedTab = .voice }
         }
         // …and for the Modes slot, which only goes away under an edition with no licence in force.
         .onChange(of: modesPresentation) { _, presentation in

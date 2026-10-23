@@ -66,15 +66,19 @@ final class TerminalTests: XCTestCase {
         for id in ["one", "two"] {
             let r = IssuanceRequest(licensee: "Fixture Ltd", seats: 2, termDays: 365, reference: id, profile: "https://fixture.invalid/p/\(id)")
             try command(["action": "order", "id": id, "request": object(r), "grant": object(grant), "catalogProof": object(proof), "catalogPublicKey": key.publicKey.rawRepresentation.base64EncodedString(), "profileId": id, "bankDetails": "FIXTURE"])
-            let issued = try run("licence-issuance", [journal, commandFile.path, keyFile.path]); XCTAssertEqual(issued.0, 0)
+            let issued = try run("licence-issuance", [journal, commandFile.path, keyFile.path]); XCTAssertEqual(issued.0, 0, issued.2)
             codes.append(issued.1.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        let payment = Payment(id: "transfer", invoiceNumber: "INV-000001", amountMinor: 200, receivedAt: now, bankReference: "fixture")
+        // Each CLI process timestamps its own invoice. The setup time can predate that invoice
+        // if creating the orders crosses a second, so timestamp receipt only after they exist.
+        // Match the CLI's whole-second clock so receipt cannot appear to be in its future.
+        let receivedAt = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
+        let payment = Payment(id: "transfer", invoiceNumber: "INV-000001", amountMinor: 200, receivedAt: receivedAt, bankReference: "fixture")
         try command(["action": "payment", "payment": object(payment)])
         let refused = try run("licence-issuance", [journal, commandFile.path, keyFile.path], input: "no\n")
         XCTAssertNotEqual(refused.0, 0)
         let paid = try run("licence-issuance", [journal, commandFile.path, keyFile.path], input: "PAY INV-000001 200\n")
-        XCTAssertEqual(paid.0, 0); codes.append(paid.1.trimmingCharacters(in: .whitespacesAndNewlines))
+        XCTAssertEqual(paid.0, 0, paid.2); codes.append(paid.1.trimmingCharacters(in: .whitespacesAndNewlines))
         try command(["action": "inspect"])
         let reopened = try run("licence-issuance", [journal, commandFile.path]); XCTAssertEqual(reopened.0, 0)
         let ledger = try IssuanceWire.decoder().decode(Ledger.self, from: Data(reopened.1.utf8))

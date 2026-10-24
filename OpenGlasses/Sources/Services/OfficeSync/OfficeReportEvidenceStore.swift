@@ -177,7 +177,8 @@ enum OfficeReportDocuments {
 extension OfficeReportDocuments.Seams {
     /// The app's own export, as a report to the organisation's office has always been made.
     @MainActor
-    static func app(sessions: FieldSessionService = .shared) -> Self {
+    static func app(sessions: FieldSessionService? = nil) -> Self {
+        let sessions = sessions ?? .shared
         func directory(_ id: String) -> URL { sessions.sessionDirectory(sessionId: id) }
         func bytes(of lease: StagedExportLease) throws -> Data {
             defer { StagedExportCoordinator.fieldSession.release(lease) }

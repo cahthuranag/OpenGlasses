@@ -108,7 +108,7 @@ final class OfficeReportService: ObservableObject {
         case notWhatWasAskedFor
     }
 
-    static let maximumEntries = 200
+    nonisolated static let maximumEntries = 200
 
     /// What is still on its way, for a screen.
     struct Summary: Equatable, Sendable {

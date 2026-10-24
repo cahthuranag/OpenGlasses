@@ -438,8 +438,9 @@ extension OfficeCheckInService.Seams {
     @MainActor
     static func app(transport: any OfficeManagedFolderTransport,
                     pairing: @escaping @MainActor () -> OfficePairingService = { OfficePairingService() },
-                    manager: OrgProfileManager = .shared,
+                    manager: OrgProfileManager? = nil,
                     ledgerFile: URL? = OfficeCheckInService.defaultLedgerFile()) -> Self {
+        let manager = manager ?? .shared
         var seams = Self(
             transport: transport,
             held: {

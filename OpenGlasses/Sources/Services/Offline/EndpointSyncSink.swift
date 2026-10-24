@@ -32,7 +32,7 @@ final class EndpointSyncSink: SyncSink {
     /// ever agreed — the same reason it has always delegated photo uploads. Spelled as a property
     /// rather than left implicit so "clips travel if the sink supports files" is a decision with a
     /// name, and so the day an endpoint does take files there is one place to say so.
-    static let carriesFiles = false
+    nonisolated static let carriesFiles = false
 
     /// What happens to a queued clip, given whether the sink can carry files.
     ///

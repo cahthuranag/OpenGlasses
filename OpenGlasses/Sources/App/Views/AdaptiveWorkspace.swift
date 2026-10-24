@@ -160,7 +160,11 @@ final class ManualFigurePresentation: ObservableObject {
     private var controllers: [String: [Int: ManualPageController]] = [:]
     private weak var session: FieldSessionService?
 
-    init(session: FieldSessionService? = .shared) {
+    convenience init() {
+        self.init(session: .shared)
+    }
+
+    init(session: FieldSessionService?) {
         self.session = session
     }
 

@@ -46,25 +46,28 @@ enum JobUpdateNotifications {
     @MainActor
     static func post(jobID: String, jobLabel: String?, updateKind: String,
                      center: UNUserNotificationCenter = .current()) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body(jobLabel: jobLabel, updateKind: updateKind)
-        content.sound = .default
-        content.userInfo = [JobSendNotifications.openTabKey: MainTab.job.rawValue]
-        let request = UNNotificationRequest(identifier: identifier(jobID: jobID), content: content, trigger: nil)
-        center.getNotificationSettings { settings in
-            switch settings.authorizationStatus {
-            case .authorized, .provisional, .ephemeral:
-                center.add(request)
-            case .notDetermined:
-                center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-                    guard granted else { return }
-                    center.add(request)
+        Task { @MainActor in
+            let settings = await center.notificationSettings()
+            do {
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    break
+                case .notDetermined:
+                    guard try await center.requestAuthorization(options: [.alert, .sound]) else { return }
+                case .denied:
+                    return
+                @unknown default:
+                    return
                 }
-            case .denied:
-                break
-            @unknown default:
-                break
+                let content = UNMutableNotificationContent()
+                content.title = title
+                content.body = body(jobLabel: jobLabel, updateKind: updateKind)
+                content.sound = .default
+                content.userInfo = [JobSendNotifications.openTabKey: MainTab.job.rawValue]
+                let request = UNNotificationRequest(identifier: identifier(jobID: jobID), content: content, trigger: nil)
+                try await center.add(request)
+            } catch {
+                // The Jobs list still shows the update if notifications are unavailable.
             }
         }
     }
@@ -79,7 +82,8 @@ enum JobUpdateNotifications {
     /// Every one of them, for leaving the organisation.
     @MainActor
     static func clearAll(center: UNUserNotificationCenter = .current()) {
-        center.getDeliveredNotifications { delivered in
+        Task { @MainActor in
+            let delivered = await center.deliveredNotifications()
             let ours = delivered.map(\.request.identifier).filter(isUpdate(identifier:))
             guard !ours.isEmpty else { return }
             center.removeDeliveredNotifications(withIdentifiers: ours)

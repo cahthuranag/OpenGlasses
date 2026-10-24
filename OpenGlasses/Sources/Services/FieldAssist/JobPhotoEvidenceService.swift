@@ -60,7 +60,7 @@ final class JobPhotoEvidenceService {
     /// Everything device-facing, as closures — so the whole path is exercisable headless, against a
     /// real `FieldSessionService` in a temp directory and a filter that marks what it touched.
     struct Seams {
-        var sessions: () -> FieldSessionService = { FieldSessionService.shared }
+        var sessions: @MainActor () -> FieldSessionService = { FieldSessionService.shared }
         /// The blur. Nil means none is wired, which fails closed rather than reading as "nothing
         /// to filter" — the same rule `CameraService.filteredStill` follows.
         var filter: () -> (any StillImageFiltering)? = { nil }

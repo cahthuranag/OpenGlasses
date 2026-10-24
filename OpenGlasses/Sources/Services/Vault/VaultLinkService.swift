@@ -100,7 +100,7 @@ final class VaultLinkService: ObservableObject {
     private let isOnCellular: () -> Bool
     private let installedManifest: (String) -> VaultManifest?
     private let install: (VaultLinkInstaller.Request) async throws -> VaultLinkInstaller.Outcome
-    private let audit: (String, Bool) -> Void
+    private let audit: @MainActor (String, Bool) -> Void
     private let now: () -> Date
     private let maximumBytes: Int
     private let cellularWarningBytes: Int
@@ -125,7 +125,7 @@ final class VaultLinkService: ObservableObject {
             = { id in VaultImporter.installedManifests().first { $0.id == id } },
          install: @escaping (VaultLinkInstaller.Request) async throws -> VaultLinkInstaller.Outcome
             = VaultLinkInstaller.install,
-         audit: @escaping (String, Bool) -> Void = VaultLinkService.auditToOpenSession,
+         audit: @escaping @MainActor (String, Bool) -> Void = VaultLinkService.auditToOpenSession,
          now: @escaping () -> Date = Date.init,
          maximumBytes: Int = Config.vaultLinkMaxBytes,
          cellularWarningBytes: Int = Config.vaultLinkCellularWarningBytes,
@@ -188,7 +188,7 @@ final class VaultLinkService: ObservableObject {
         pendingURL = nil
         stage = .downloading(Progress(received: 0))
         let staging = self.staging
-        let task = Task { [download] in
+        let task = Task { [weak self, download] in
             try await download(url, staging) { [weak self] received in
                 guard let self, case .downloading = self.stage else { return }
                 self.stage = .downloading(Progress(received: received))

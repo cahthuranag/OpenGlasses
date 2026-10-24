@@ -136,7 +136,7 @@ final class OfficeManualService: ObservableObject {
     }
 
     static let maximumReasonCharacters = 200
-    static let maximumEntries = 100
+    nonisolated static let maximumEntries = 100
     static let maximumRefused = 64
 
     @Published private(set) var rows: [Row] = []
@@ -556,8 +556,9 @@ extension OfficeManualService.Seams {
     @MainActor
     static func app(transport: any OfficeManagedFolderTransport,
                     pairing: @escaping @MainActor () -> OfficePairingService = { OfficePairingService() },
-                    manager: OrgProfileManager = .shared,
+                    manager: OrgProfileManager? = nil,
                     ledgerFile: URL? = OfficeManualService.defaultLedgerFile()) -> Self {
+        let manager = manager ?? .shared
         var seams = Self(
             transport: transport,
             held: {

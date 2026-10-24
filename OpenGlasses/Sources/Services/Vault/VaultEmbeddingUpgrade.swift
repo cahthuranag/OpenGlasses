@@ -25,7 +25,8 @@ enum VaultEmbeddingUpgrade {
     /// and when the model's asset arrives. A run already going is superseded: it stops at its next
     /// chunk, keeping what it built, and the new run carries on.
     static func start(store: DocumentStore, manifests: @escaping () -> [VaultManifest] = { VaultImporter.installedManifests() },
-                      monitor: VaultIndexingMonitor = .shared) {
+                      monitor: VaultIndexingMonitor? = nil) {
+        let monitor = monitor ?? .shared
         generation += 1
         let mine = generation
         running = Task { @MainActor in

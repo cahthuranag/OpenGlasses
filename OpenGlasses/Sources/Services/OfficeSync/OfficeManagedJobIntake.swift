@@ -92,7 +92,7 @@ final class OfficeManagedJobIntake: ObservableObject {
     }
 
     static let maximumReasonCharacters = 200
-    static let maximumEntries = 200
+    nonisolated static let maximumEntries = 200
 
     @Published private(set) var state: State = .waitingForOffice
     private(set) var ledger: Ledger

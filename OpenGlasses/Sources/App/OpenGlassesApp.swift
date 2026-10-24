@@ -3832,7 +3832,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 do {
                     // Nobody pressed anything: a camera permission that is not granted is read
                     // and reported, never asked for, because asking leaves for Meta AI.
-                    try await CameraPermissionRequestPolicy.startedByApp {
+                    _ = try await CameraPermissionRequestPolicy.startedByApp {
                         try await self.cameraService.startStreaming()
                     }
                 } catch {
@@ -6957,7 +6957,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 var photoCaptured = false
                 self.didNarrateModelSwitchThisTurn = false
 
-                self.currentLLMTask = Task {
+                self.currentLLMTask = Task { [self] in
                     await ConversationTurnRunner.run(.init(
                         send: {
                             // Capture and send to LLM concurrently — no extra round-trip speech

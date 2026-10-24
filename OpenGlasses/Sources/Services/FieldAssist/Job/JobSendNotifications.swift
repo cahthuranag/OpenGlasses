@@ -38,32 +38,36 @@ enum JobSendNotifications {
             center.removeDeliveredNotifications(withIdentifiers: [identifier])
             return
         }
-        center.getNotificationSettings { settings in
-            switch settings.authorizationStatus {
-            case .authorized, .provisional, .ephemeral:
-                deliver(stagedCount: stagedCount, center: center)
-            case .notDetermined:
-                // Asked at the moment it is first useful, which is the only moment a technician
-                // can judge the request.
-                center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-                    guard granted else { return }
-                    deliver(stagedCount: stagedCount, center: center)
+        Task { @MainActor in
+            let settings = await center.notificationSettings()
+            do {
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    break
+                case .notDetermined:
+                    // Asked at the moment it is first useful, which is the only moment a technician
+                    // can judge the request.
+                    guard try await center.requestAuthorization(options: [.alert, .sound]) else { return }
+                case .denied:
+                    return
+                @unknown default:
+                    return
                 }
-            case .denied:
-                break
-            @unknown default:
-                break
+                try await deliver(stagedCount: stagedCount, center: center)
+            } catch {
+                // The Job tab still shows the staged reports if notifications are unavailable.
             }
         }
     }
 
-    private static func deliver(stagedCount: Int, center: UNUserNotificationCenter) {
+    @MainActor
+    private static func deliver(stagedCount: Int, center: UNUserNotificationCenter) async throws {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body(stagedCount: stagedCount)
         content.sound = .default
         content.userInfo = [openTabKey: MainTab.job.rawValue]
-        center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+        try await center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
     }
 }
 

@@ -92,7 +92,7 @@ final class JobClipRecorder: ObservableObject {
     struct Seams {
         /// Where the clip is filed. The same service photographs go to, for the same reason: a
         /// clip is evidence of the visit and belongs under the visit's own store.
-        var sessions: () -> any JobClipFiling = { FieldSessionService.shared }
+        var sessions: @MainActor () -> any JobClipFiling = { FieldSessionService.shared }
         /// Is the camera producing pictures right now? A clip recorded off a stalled stream is
         /// thirty seconds of the last frame, which is worse than an honest refusal.
         var readiness: () -> CameraReadiness? = { nil }

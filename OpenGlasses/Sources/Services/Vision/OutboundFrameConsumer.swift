@@ -110,6 +110,8 @@ enum OutboundFrameConsumer: String, CaseIterable {
     case lookCloselyCapture
     /// `capture_photo` — the still the wearer asks for, base64'd into the model turn.
     case capturePhotoTool
+    /// Explicit visual memory: filtered still to the selected model and on-device OCR.
+    case rememberSceneTool
     /// `photo_log` — attached to a Field Assist session log *and* sent to the model.
     case photoLogTool
     /// The money identifier, which sends the note itself to the model rather than OCR text.
@@ -313,6 +315,7 @@ enum OutboundFrameConsumer: String, CaseIterable {
         case .liveCoach: return "LiveCoachService"
         case .lookCloselyCapture: return "SharpStillCapture"
         case .capturePhotoTool: return "CapturePhotoTool"
+        case .rememberSceneTool: return "RememberSceneTool"
         case .photoLogTool: return "PhotoLogTool"
         case .moneyIdentifierTool: return "MoneyIdentifierTool"
         case .mcpFrameRequest: return "MCPGlassesServer"
@@ -355,7 +358,7 @@ enum OutboundFrameConsumer: String, CaseIterable {
         case .readingCompanion, .fingerspelling, .dwellCapture: return .onDeviceVision
         case .structuredVisionAssessment, .safetyAssessment, .refrigerantGaugeReading: return .visionAssessment
         case .assistiveGuidanceLoop, .navigationAssist, .liveCoach: return .assistiveGuidance
-        case .capturePhotoTool, .photoLogTool, .moneyIdentifierTool,
+        case .capturePhotoTool, .rememberSceneTool, .photoLogTool, .moneyIdentifierTool,
              .jobPhoneEvidence, .parkingSignCapture, .parkingPhonePhoto: return .toolPhotoCapture
         case .dwellCaptureSave: return .photoLibrary
         case .mcpFrameRequest: return .remoteFrameRequest
@@ -386,7 +389,7 @@ enum OutboundFrameConsumer: String, CaseIterable {
         case .jobPhoneEvidence, .parkingPhonePhoto: return .heldImage
         case .structuredVisionAssessment, .safetyAssessment, .refrigerantGaugeReading,
              .assistiveGuidanceLoop,
-             .navigationAssist, .liveCoach, .capturePhotoTool, .photoLogTool, .moneyIdentifierTool,
+             .navigationAssist, .liveCoach, .capturePhotoTool, .rememberSceneTool, .photoLogTool, .moneyIdentifierTool,
              .mcpFrameRequest, .studyScan, .teleprompterScan, .readingAccessibilityTool,
              .smartCaptureTool, .medicationIdentifierTool, .manualLookupTool, .equipmentLookupTool,
              .barcodeScannerTool, .qrContextTool, .colorIdentifierTool, .badgeScanTool,
@@ -408,7 +411,7 @@ enum OutboundFrameConsumer: String, CaseIterable {
         case .jobRecordingOfficeSync: return .organisationExit
         case .structuredVisionAssessment, .safetyAssessment, .refrigerantGaugeReading,
              .assistiveGuidanceLoop,
-             .navigationAssist, .liveCoach, .capturePhotoTool, .photoLogTool, .moneyIdentifierTool,
+             .navigationAssist, .liveCoach, .capturePhotoTool, .rememberSceneTool, .photoLogTool, .moneyIdentifierTool,
              .mcpFrameRequest, .dwellCaptureSave, .lookCloselyCapture,
              .jobPhoneEvidence, .parkingSignCapture, .parkingPhonePhoto,
              .jobRecordingBlurPass: return .chokepoint

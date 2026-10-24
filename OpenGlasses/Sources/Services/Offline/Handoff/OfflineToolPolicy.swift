@@ -127,6 +127,7 @@ enum OfflineToolPolicy {
         "scan_assist": .degraded,
         "send_message": .degraded,         // the composer opens; delivery waits for signal
         "smart_capture": .degraded,
+        "remember_scene": .degraded,      // on-device OCR; description needs a supported vision model
         "smart_home": .degraded,           // HomeKit on the home network only
         "summarize_conversation": .degraded,
         "translate": .degraded,

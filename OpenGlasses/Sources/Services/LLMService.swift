@@ -4536,6 +4536,8 @@ class LLMService: ObservableObject {
         "flashlight", "brightness", "calendar", "reminder",
         "set_alarm", "step_count", "device_info", "music_control",
         "where_am_i", "health_summary",
+        // Explicit scene capture can save on-device OCR even without a vision model.
+        "remember_scene", "memory_search",
         // Plan IW P1: reads the phone's own trail, goals and schedule; nothing to supply.
         "activity"
     ]

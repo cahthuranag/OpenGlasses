@@ -18,9 +18,9 @@ final class ManualCaptureService: ObservableObject {
     var completed: ((CapturedManualContract.Manifest) -> Void)?
     private let sessions: FieldSessionService
     private let catalog: CapturedManualCatalog
-    private let cameraSupported: () -> Bool
+    private let cameraSupported: @MainActor () -> Bool
     init(sessions: FieldSessionService? = nil, catalog: CapturedManualCatalog? = nil,
-         cameraSupported: @escaping () -> Bool = { VNDocumentCameraViewController.isSupported }) {
+         cameraSupported: @escaping @MainActor () -> Bool = { VNDocumentCameraViewController.isSupported }) {
         self.sessions = sessions ?? .shared
         self.catalog = catalog ?? .shared
         self.cameraSupported = cameraSupported

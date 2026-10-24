@@ -20,7 +20,7 @@ final class LearningCandidateStore {
 
     /// How many candidates a phone keeps. A crew member files a handful a week; a store that kept
     /// growing past this would be a notes app nobody reviews. Withdrawn candidates make room first.
-    static let entryCap = 500
+    nonisolated static let entryCap = 500
 
     /// The protection class this store's files are written with and re-stamped to. First-unlock,
     /// not `.complete`: the store is written from voice turns that run with the phone locked in a

@@ -910,10 +910,11 @@ enum JobTranscriptExporter {
                          options: Options = Options(),
                          sessions: FieldSessionService,
                          store: ConversationStore,
-                         traces: TurnTraceStore = .shared,
+                         traces: TurnTraceStore? = nil,
                          environment: Environment = Environment(),
                          now: Date = Date(),
                          calendar: Calendar = .current) -> Result<JobTranscriptExport.Document, Failure> {
+        let traces = traces ?? .shared
         guard !store.isLocked else { return .failure(.conversationsLocked) }
         let chosen = JobTranscriptExport.sessions(for: scope, in: sessions.history, calendar: calendar)
         let jobs = chosen.map { session in
@@ -1024,7 +1025,8 @@ enum JobTranscriptExporter {
     /// Write the document to a protected, short-lived file. The lease is released when the share
     /// finishes, however it finishes, by the caller's share completion.
     static func lease(for document: JobTranscriptExport.Document,
-                      coordinator: StagedExportCoordinator = .fieldSession) throws -> StagedExportLease {
+                      coordinator: StagedExportCoordinator? = nil) throws -> StagedExportLease {
+        let coordinator = coordinator ?? .fieldSession
         let lease = try coordinator.makeLease(data: Data(document.body.utf8), fileExtension: "txt",
                                               displayName: document.displayName,
                                               fallbackName: "job-transcript.txt")

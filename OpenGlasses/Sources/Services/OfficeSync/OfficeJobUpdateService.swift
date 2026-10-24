@@ -73,7 +73,7 @@ final class OfficeJobUpdateService: ObservableObject {
         case notWhatWasAskedFor
     }
 
-    static let maximumEntries = 200
+    nonisolated static let maximumEntries = 200
     static let maximumPerJob = 50
     static let maximumRefused = 64
     static let maximumReasonCharacters = 200

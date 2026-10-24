@@ -83,7 +83,7 @@ final class WeatherTool: NativeTool, @unchecked Sendable {
     func execute(args: [String: Any]) async throws -> String {
         switch await lookUp(args: args) {
         case .answered(let text, _):
-            await dependencies.onAnswered()
+            dependencies.onAnswered()
             return text
         case .refused(let message):
             return message

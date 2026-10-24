@@ -63,7 +63,7 @@ class AgentNotificationQueue: ObservableObject {
 
     /// Add a notification to the queue. If glasses are connected, deliver immediately.
     func enqueue(message: String, source: String, priority: QueuedNotification.Priority = .medium, personaId: String? = nil, personaName: String? = nil) {
-        guard let appState else { return }
+        guard appState != nil else { return }
 
         // Check chattiness — quiet mode suppresses non-high notifications
         if Config.agentChattiness == .quiet && priority != .high { return }

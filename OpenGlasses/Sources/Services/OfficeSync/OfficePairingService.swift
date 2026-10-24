@@ -65,28 +65,28 @@ final class OfficePairingService {
 
     init(manager: OrgProfileManager? = nil,
          currentLicence: (() -> String?)? = nil,
-         transportID: @escaping () async throws -> String = { try await OfficeTransportIdentity.shared.deviceID() },
-         phoneApplicationKey: @escaping () async throws -> Data = { try await OfficePhoneIdentity.shared.publicKey() },
+         transportID: (() async throws -> String)? = nil,
+         phoneApplicationKey: (() async throws -> Data)? = nil,
          highWater: OfficePeerHighWaterStore = .shared,
          approvedPeerStore: OfficeApprovedPeerStore = .shared,
          profileKeys: [String: String] = ProfileVerification.productionKeys,
          licenceKey: String = LicenseService.productionPublicKeyBase64,
          clock: @escaping () -> Date = Date.init,
-         startManagedOffice: @escaping (String, TransportPolicy, String) async throws -> Void = {
-             try await OfficeTransportIdentity.shared.startManagedOffice(transportID: $0, policy: $1, lanHint: $2)
-         },
-         stopManagedOffice: @escaping () async -> Void = { await OfficeTransportIdentity.shared.stop() }) {
+         startManagedOffice: ((String, TransportPolicy, String) async throws -> Void)? = nil,
+         stopManagedOffice: (() async -> Void)? = nil) {
         self.manager = manager ?? .shared
         self.currentLicence = currentLicence ?? { LicenseService.shared.storedCode }
-        self.transportID = transportID
-        self.phoneApplicationKey = phoneApplicationKey
+        self.transportID = transportID ?? { try await OfficeTransportIdentity.shared.deviceID() }
+        self.phoneApplicationKey = phoneApplicationKey ?? { try await OfficePhoneIdentity.shared.publicKey() }
         self.highWater = highWater
         self.approvedPeerStore = approvedPeerStore
         self.profileKeys = profileKeys
         self.licenceKey = licenceKey
         self.clock = clock
-        self.startManagedOffice = startManagedOffice
-        self.stopManagedOffice = stopManagedOffice
+        self.startManagedOffice = startManagedOffice ?? {
+            try await OfficeTransportIdentity.shared.startManagedOffice(transportID: $0, policy: $1, lanHint: $2)
+        }
+        self.stopManagedOffice = stopManagedOffice ?? { await OfficeTransportIdentity.shared.stop() }
     }
 
     /// `lanHint` is the office's private-LAN address when one came with the approval, kept as a

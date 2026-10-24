@@ -15,7 +15,7 @@ final class UpcomingJobStore: ObservableObject {
 
     /// How many jobs ahead a phone holds. A technician's week is a few dozen; a store that kept
     /// growing would be an office system that happens to live on a phone.
-    static let entryCap = 100
+    nonisolated static let entryCap = 100
 
     /// The protection class this store's files are written with and re-stamped to. First-unlock,
     /// not `.complete`: the store is written from voice turns that run with the phone locked in a

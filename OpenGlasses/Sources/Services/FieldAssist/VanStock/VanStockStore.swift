@@ -24,7 +24,7 @@ final class VanStockStore: ObservableObject {
 
     /// How long a movement is kept before it is folded into its line's opening figure. Levels are
     /// exact either way; only the history gets shorter.
-    static let historyDays = 400
+    nonisolated static let historyDays = 400
 
     /// What is on disk: the log and which van it is, under a format number so a later shape can
     /// be told apart.

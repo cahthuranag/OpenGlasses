@@ -79,7 +79,6 @@ final class ManualLookupTool: NativeTool {
         guard let documentStore else {
             return "Manual search is unavailable in this context."
         }
-        let namespace = DocumentStore.vaultNamespace(store.manifest.id)
         guard corpus.any else {
             // Listed but not searchable: still being indexed, or never indexed — not "never
             // imported", which sent the model round five rephrasings of the same search.

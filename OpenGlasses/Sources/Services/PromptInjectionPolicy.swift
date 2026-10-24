@@ -28,6 +28,7 @@ enum PromptInjectionPolicy {
         "web_search", "get_news", "daily_briefing", "play_podcast",
         // Camera OCR / codes / captured documents (text from the physical world)
         "reading_assist", "scan_code", "qr_context", "smart_capture",
+        "remember_scene", "memory_search", "brain", "my_memory", // saved scenes can contain physical-world text
         "translate", "translate_sign_menu", "identify_medication", "equipment_lookup",
         // Ambient audio — other people's speech, fully attacker-controllable
         "memory_rewind", "meeting_summary", "summarize_conversation",

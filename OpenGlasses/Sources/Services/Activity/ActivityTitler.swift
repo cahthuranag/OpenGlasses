@@ -221,6 +221,7 @@ enum ActivityTitler {
                              reads: ["status"]),
         "scan_document": .init("Scanned a document for you"),
         "smart_capture": .init("Captured what you're looking at"),
+        "remember_scene": .init("Remembered a scene for you"),
         "look_closely": .init("Took a closer look with the camera"),
         "reading_assist": .init("Read what's in front of you"),
         "reading_session": .init("Started a reading session"),

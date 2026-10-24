@@ -133,6 +133,10 @@ extension ClipboardTool {
 extension ObjectMemoryTool {
     var executionSemantics: ToolExecutionSemantics { .local(idempotency: .intrinsic) }
 }
+// May send a filtered image to the selected vision model, then save the extracted memory.
+extension RememberSceneTool {
+    var executionSemantics: ToolExecutionSemantics { .external(.bestEffort, timeout: .seconds(60)) }
+}
 extension VoiceSkillsTool {
     var executionSemantics: ToolExecutionSemantics { .local(idempotency: .intrinsic) }
 }

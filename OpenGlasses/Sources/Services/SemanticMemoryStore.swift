@@ -532,7 +532,10 @@ class SemanticMemoryStore: ObservableObject {
             sections.append("GATEWAY MEMORY (other devices):\n\(lines.joined(separator: "\n"))")
         }
 
-        return Rendered(text: sections.joined(separator: "\n\n"),
+        // Saved scans can include instructions printed in the physical world. Memory is
+        // reference data even when injected automatically rather than returned by a tool.
+        return Rendered(text: PromptInjectionPolicy.wrap(toolName: "saved_memory",
+                                                       content: sections.joined(separator: "\n\n")),
                         stored: stored,
                         retrieved: retrieved,
                         included: included,

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings → Services → Music (Plan GS P2): where music plays by default, Apple Music access and
+/// Settings → Connections → Services & Integrations → Music (Plan GS P2): where music plays by default, Apple Music access and
 /// catalogue status, and which Home Assistant speakers Avenkin may use. A general setting, not a
 /// glasses one — the phone and a speaker are enough.
 struct MusicSettingsView: View {

@@ -1,7 +1,7 @@
 import AppIntents
 
 /// AppIntent for the iPhone Action Button — starts listening for a voice command.
-/// User configures: Settings → Action Button → Shortcut → "Ask OpenGlasses".
+/// User configures: iPhone Settings → Action Button → Shortcut → "Ask OpenGlasses".
 /// Skips wake word detection entirely — just starts transcribing immediately.
 // AudioRecordingIntent (iOS 18+): grants BACKGROUND microphone-start rights for intent
 // invocations. Without it, an Action-button press with the app backgrounded is refused by

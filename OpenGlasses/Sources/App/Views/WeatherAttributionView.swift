@@ -3,7 +3,7 @@ import SwiftUI
 /// The Apple Weather credit Apple requires wherever WeatherKit data is displayed: the combined mark
 /// (or the service name as text until the mark has loaded) and a link to the legal attribution
 /// page. Drawn under My Day's weather row, at the foot of a chat thread that answered a weather
-/// question, and in Settings → About Weather Data.
+/// question, and in Settings → Connections → Works with your iPhone → About Weather Data.
 struct WeatherAttributionView: View {
     @ObservedObject private var store = WeatherAttributionStore.shared
     @Environment(\.colorScheme) private var colorScheme
@@ -35,7 +35,7 @@ struct WeatherAttributionView: View {
     }
 }
 
-/// Settings → Works with your iPhone → About Weather Data.
+/// Settings → Connections → Works with your iPhone → About Weather Data.
 struct WeatherDataAboutView: View {
     var body: some View {
         Form {

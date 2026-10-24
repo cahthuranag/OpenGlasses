@@ -1131,7 +1131,7 @@ struct OnboardingView: View {
                             .foregroundStyle(OGTheme.okLabel)
                             .frame(minHeight: rowMinHeight)
                     } else {
-                        Text("Go to Settings → Accessibility → Spoken Content → Voices to download a premium voice.")
+                        Text("Go to iPhone Settings → Accessibility → Read & Speak → Voices to download a premium voice.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

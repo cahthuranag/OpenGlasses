@@ -231,12 +231,12 @@ struct PersonaEditorView: View {
                     }
 
                     if models.isEmpty {
-                        OGStatusLabel("Add a model in Settings → AI Models first", kind: .warn)
+                        OGStatusLabel("Add a model in Settings → AI & Personality → AI Models first", kind: .warn)
                     }
                 } header: {
                     Text("Model")
                 } footer: {
-                    Text("Which AI model responds when this persona is activated. Add models in Settings → AI Models.")
+                    Text("Which AI model responds when this persona is activated. Add models in Settings → AI & Personality → AI Models.")
                 }
 
                 Section {

@@ -168,7 +168,7 @@ struct CustomerSignOffSheet: View {
                         .font(.footnote)
                         .foregroundStyle(Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Technician: Guided Access (Settings → Accessibility) locks the phone to this page while the customer signs.")
+                    Text("Technician: Guided Access (iPhone Settings → Accessibility → Guided Access) locks the phone to this page while the customer signs.")
                         .font(.footnote)
                         .foregroundStyle(Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)

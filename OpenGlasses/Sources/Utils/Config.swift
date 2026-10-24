@@ -3036,7 +3036,7 @@ struct Config {
 
     /// Where "play", "pause" and play-by-name go when the wearer names no speaker. Apple Music for
     /// new installs and for everyone upgrading — unchanged behaviour until the wearer picks a
-    /// Home Assistant speaker in Settings → Music.
+    /// Home Assistant speaker in Settings → Connections → Services & Integrations → Music.
     static var musicDefaultProvider: MusicProviderID {
         get {
             UserDefaults.standard.string(forKey: "musicDefaultProvider")

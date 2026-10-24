@@ -1230,7 +1230,7 @@ enum LocalLLMError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .modelNotLoaded:
-            return "No local model is loaded. Download one in Settings → AI Models."
+            return "No local model is loaded. In Settings → AI & Personality → AI Models, edit or add a Local (On-Device MLX) model, then open Download & Manage Models."
         case .generationFailed(let reason):
             return "Local model generation failed: \(reason)"
         case .backgrounded:

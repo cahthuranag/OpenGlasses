@@ -20,11 +20,28 @@ final class MemoryRecentFirstRenderTests: XCTestCase {
 
     /// Keys of the bullet lines in one section, in rendered order.
     private func keys(in context: String, section header: String) -> [String] {
-        let sections = context.components(separatedBy: "\n\n")
-        guard let block = sections.first(where: { $0.hasPrefix(header) }) else { return [] }
-        return block.components(separatedBy: "\n")
-            .filter { $0.hasPrefix("- ") }
+        // The memory block is framed as untrusted reference data. Find the section inside
+        // that envelope, then stop at its boundary rather than reading another section's keys.
+        let lines = context.components(separatedBy: "\n")
+        guard let start = lines.firstIndex(where: { $0.hasPrefix(header) }) else { return [] }
+        return lines.dropFirst(start + 1)
+            .prefix { $0.hasPrefix("- ") }
             .compactMap { $0.dropFirst(2).components(separatedBy: ":").first }
+    }
+
+    func testWrappedSectionsKeepTheirOwnKeys() {
+        let store = makeStore(clock: TestClock())
+        store.rememberGlobal("shared fact", value: "shared value")
+        store.activePersonaId = "projA"
+        store.remember("persona fact", value: "persona value")
+        store.gatewayMemories = ["gateway fact: gateway value"]
+
+        let context = store.systemPromptContext(query: nil) ?? ""
+        XCTAssertTrue(context.hasPrefix("<untrusted_tool_output tool=\"saved_memory\">"))
+        XCTAssertEqual(keys(in: context, section: "SHARED MEMORY"), ["shared fact"])
+        XCTAssertEqual(keys(in: context, section: "PERSONA MEMORY"), ["persona fact"])
+        XCTAssertEqual(keys(in: context, section: "GATEWAY MEMORY"), ["gateway fact"])
+        XCTAssertEqual(keys(in: context, section: "MISSING MEMORY"), [])
     }
 
     /// Twelve facts written k00…k11 in order, so alphabetical and oldest-first coincide and the

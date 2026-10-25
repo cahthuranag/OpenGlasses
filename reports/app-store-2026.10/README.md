@@ -32,6 +32,10 @@ The upload sources are `screenshots/*-rgb.png`. Captures use a Debug simulator w
 
 The export is an opaque 8-bit RGB PNG at 3840 × 1646, one of Apple's accepted header sizes. It is uploaded as the selected product page header. Apple's loaded iPhone product-page preview was visually checked, including the top-control safe area; `header/app-store-header-preview.jpg` records the result. References: [creative asset specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications) and [asset best practices](https://developer.apple.com/app-store/asset-best-practices/).
 
+## Search results creative
+
+`search-results/avenkin-search-3840x2560.png` reflows the same brand artwork into a 3:2 search card. The headline is centred above the voice/action illustration for legibility at result-card sizes. It is an opaque 8-bit RGB PNG, with editable `search-art.svg` and a reproducible `build-search.sh` export. It is uploaded as the selected Search Results asset; Apple's loaded iPhone search preview was visually checked and saved as `search-results/app-store-search-preview.jpg`. This is a separate creative asset from the product-page header.
+
 ## Remaining before submission
 
 1. Merge the implementation PR when ready, let Xcode Cloud build it, then select the processed release build. Verify the App Store installation follows Plan JE and hides glasses functionality. The runtime distinction intentionally retains glasses support in TestFlight.

@@ -112,11 +112,13 @@ enum SettingsVisibilityPolicy {
     static func isLocked(_ setting: ManagedSetting, in context: ManagedSettingsContext) -> Bool {
         switch setting {
         case .category(let id):
+            if id == .myManuals && context.restricted { return true }
             // A partly open category still has rows the technician may use, so it stays a row.
             return SettingsLockPolicy.lock(id, lockdown: context.lockdown, restricted: context.restricted) == .locked
         case .area(let area):
             return SettingsLockPolicy.isLocked(area, lockdown: context.lockdown, restricted: context.restricted)
         case .row(let id):
+            if id == .myManuals && context.restricted { return true }
             return SettingsLockPolicy.lock(id, lockdown: context.lockdown, restricted: context.restricted).isLocked
         case .key(let key):
             return context.lockedKeys.contains(key)

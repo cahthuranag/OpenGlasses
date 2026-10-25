@@ -128,7 +128,9 @@ struct AdvancedQuickActionsView: View {
                         .buttonStyle(.plain)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("\(action.label), \(action.type.displayName)")
-                        .accessibilityHint("Double-tap to edit")
+                        .accessibilityHint(action.id == QuickAction.myManuals.id ? "Built-in manual picker" : "Double-tap to edit")
+                        .disabled(action.id == QuickAction.myManuals.id)
+                        .deleteDisabled(action.id == QuickAction.myManuals.id)
                     }
                     .onDelete { indexSet in
                         // Through the same seam the grid's editor uses, so a deleted action's
@@ -222,6 +224,7 @@ struct AdvancedQuickActionsView: View {
     }
 
     private func actionSummary(_ action: QuickAction) -> String {
+        if action.id == QuickAction.myManuals.id { return "Choose manuals for the current chat" }
         switch action.type {
         case .prompt: return action.promptText ?? "Text prompt"
         case .photo: return "Capture and describe"

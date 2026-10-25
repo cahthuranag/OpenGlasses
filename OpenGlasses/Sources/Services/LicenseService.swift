@@ -92,7 +92,7 @@ final class LicenseService: ObservableObject {
         /// The tier this payload grants; an unrecognised or missing claim is team, never more.
         var resolvedTier: FieldAssistTier {
             guard let tier, let parsed = FieldAssistTier(rawValue: tier) else { return .team }
-            return parsed == .solo ? .team : parsed
+            return parsed < .team ? .team : parsed
         }
 
         /// "Pilot" / "Team" / "Enterprise", or nil for a legacy code.

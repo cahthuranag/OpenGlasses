@@ -11,7 +11,7 @@ import Foundation
 final class ManualLookupTool: NativeTool {
     let name = "manual_lookup"
     let description = """
-    Search the OEM manuals and code books loaded into the active Field Assist vault for a fault \
+    Search the OEM manuals and code books loaded on this phone for a fault \
     code, model, component, procedure, or a clause or rule number (pass it as printed, e.g. \
     "clause 3.9.4.2", "rule 26-700", "section 110.26"). Pass 'query' with what to look for, or omit it (or set 'use_camera') \
     to read a nameplate / fault display through the camera (the glasses when connected, otherwise the phone) and search on what it says. \
@@ -21,7 +21,7 @@ final class ManualLookupTool: NativeTool {
     knowledge. Write the query in the manual's own words — the part, procedure, table or rule as \
     the book would name it — rather than repeating the technician's phrasing; when a result offers \
     the book's index references or its nearest section headings, those are the words to search \
-    with. Requires an active session in a vault that has manuals.
+    with. Uses your loaded manuals, or the active Field Assist session. In a personal library, searches the manuals selected for this chat together. Omit document to search that set; name a manual to narrow it. If none are selected and the request is ambiguous, ask which manuals. Cite each book separately and explain any conflicting values. Camera lookup requires Field Assist.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
@@ -63,6 +63,9 @@ final class ManualLookupTool: NativeTool {
     }
 
     func execute(args: [String: Any]) async throws -> String {
+        if !Config.fieldAssistActive {
+            return PersonalManualLibrary.shared.lookup(args, documentStore: documentStore)
+        }
         guard Config.fieldAssistActive else {
             return "Field Assist is disabled. Enable it in Settings → Field Assist."
         }
@@ -70,6 +73,7 @@ final class ManualLookupTool: NativeTool {
         guard let store = session.activeVault else {
             return "No active Field Assist session. Start a session to search its manuals."
         }
+        guard VaultRegistry.shared.isUnlocked(store.manifest) else { return MyManualsPaywallCopy.locked }
         // Published team learnings are searched beside the manuals (Plan FP P2), so a vault with
         // learnings and no manuals is still searchable; the messages below are for one with neither.
         let corpus = session.retrievableCorpus(store: store, documentStore: documentStore)

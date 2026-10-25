@@ -180,7 +180,7 @@ struct LockdownSpec: Codable {
 }
 
 /// `SettingsCategoryID` raw values, in hub order. Must stay identical to the app's enum.
-let settingsCategoryIds = ["intelligence", "voice", "devices", "accessibility", "field-assist", "look-and-feel",
+let settingsCategoryIds = ["intelligence", "voice", "devices", "accessibility", "field-assist", "my-manuals", "look-and-feel",
                            "tools", "connections", "capture", "display", "advanced", "diagnostics"]
 /// `ManagedLockdown.pinnedOpen` — never locked by an organisation.
 let pinnedOpenCategoryIds: Set<String> = ["accessibility", "look-and-feel", "diagnostics"]

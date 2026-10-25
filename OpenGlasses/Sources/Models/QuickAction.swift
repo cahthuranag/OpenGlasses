@@ -73,6 +73,11 @@ struct QuickAction: Codable, Identifiable, Equatable {
         ),
     ]
 
+    /// Opens the manual picker directly; AppState handles this before sending any prompt.
+    static let myManuals = QuickAction(
+        id: "my-manuals", label: "My Manuals", icon: "books.vertical", type: .prompt
+    )
+
     /// Built-in Field Assist quick action. Injected at the front of `Config.quickActions`
     /// whenever Field Assist is active (see `withFieldAssistAction`) — it is never persisted,
     /// so it appears/disappears with the entitlement.

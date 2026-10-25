@@ -4,6 +4,8 @@ import Foundation
 @MainActor
 final class NativeToolRegistry {
     private var tools: [String: any NativeTool] = [:]
+    private var fieldToolNames: Set<String> = []
+    private var registeringFieldTools = false
     let myDayService: MyDayService
     /// Where `lookup_tools` finds the MCP client, whose offered tools it may also describe (Plan
     /// IU). Set by `NativeToolRouter.init`, which owns the client; nil leaves the lookup native-only.
@@ -207,10 +209,20 @@ final class NativeToolRegistry {
         // the tool self-gates on Config.agentModeEnabled at execute time.
         register(AgentControlTool())
 
-        // Field Assist (B2B) — only registered when the feature is entitled AND enabled.
-        // Tools re-check Config.fieldAssistActive at execute time too, so a lapsed license/IAP
-        // disables them and users see a clear message.
-        if Config.fieldAssistActive {
+        // Personal/manual tools recheck the resolved source at execution. Keeping their schemas
+        // registered also lets an empty library explain how to add a manual after a purchase.
+        PersonalManualLibrary.shared.documents = documentStore
+        register(ManualLookupTool(documentStore: documentStore, cameraService: cameraService))
+        register(ManualFigureTool(documentStore: documentStore))
+        register(ShowSourceTool(documentStore: documentStore))
+        register(TableLookupTool(documentStore: documentStore))
+        register(ManualCaptureTool())
+
+        // Construct the professional tools once, but expose them only through the live capability
+        // and mode gate. A StoreKit upgrade/downgrade must take effect without restarting the app.
+        do {
+            registeringFieldTools = true
+            defer { registeringFieldTools = false }
             register(FieldSessionTool(flow: guidedJobFlow))
             register(ProjectNoteTool())
             register(ProcedureRunnerTool())
@@ -223,7 +235,6 @@ final class NativeToolRegistry {
             register(EquipmentLookupTool(cameraService: cameraService, documentStore: documentStore,
                                         flow: guidedJobFlow))
             // manual_lookup searches the vault's imported OEM manuals (reference tier, Plan ED).
-            register(ManualLookupTool(documentStore: documentStore, cameraService: cameraService))
             // The work record (Plan EM): a recommendation is an object the technician decides on,
             // and a part number is only written down once it has been looked up.
             register(ProposeTaskTool())
@@ -241,7 +252,6 @@ final class NativeToolRegistry {
             // "Note this for the team" (Plan FP P1): a finding filed for a supervisor's review. The
             // tool checks Field Assist; the team-learning capability is checked by its service.
             register(TeamLearningTool())
-            register(ManualCaptureTool())
             // deliver_report stages the finished record for the composer; iOS makes the technician
             // tap Send, which is the human-in-the-loop step rather than an obstacle.
             register(DeliverReportTool(thread: { [weak conversationStore] in
@@ -251,12 +261,9 @@ final class NativeToolRegistry {
                 return .init(id: id, createdAt: store.threads.first { $0.id == id }?.createdAt)
             }))
             // manual_figure puts a numbered drawing on the phone and in the next turn's image slot.
-            register(ManualFigureTool(documentStore: documentStore))
             // show_source opens the page the last answer cited, its passage highlighted (Plan IN P2).
-            register(ShowSourceTool(documentStore: documentStore))
             // table_lookup reads one cell of a table extracted from the vault's own manuals, with
             // its headers, notes and page (Plan JJ P1).
-            register(TableLookupTool(documentStore: documentStore))
             // rule_chain runs a chain the vault's chains.md offers — asks, table lookups,
             // arithmetic, a check — one step at a time, read back with a citation per step (Plan JJ
             // P2).
@@ -369,6 +376,7 @@ final class NativeToolRegistry {
 
     func register(_ tool: any NativeTool) {
         tools[tool.name] = tool
+        if registeringFieldTools { fieldToolNames.insert(tool.name) }
     }
 
     /// Remove every registered skill-pack wrapper (Plan BX). The store's merge calls this first,
@@ -381,6 +389,7 @@ final class NativeToolRegistry {
     }
 
     func tool(named name: String) -> (any NativeTool)? {
+        guard !fieldToolNames.contains(name) || Config.fieldAssistActive else { return nil }
         guard Config.isToolEnabled(name) else { return nil }
         // HIPAA mode disables tools that could leak PHI
         if Config.hipaaMode, Config.hipaaDisabledTools.contains(name) { return nil }
@@ -396,6 +405,7 @@ final class NativeToolRegistry {
     /// HIPAA mode automatically excludes tools that could leak PHI.
     var toolNames: [String] {
         Array(tools.keys).filter { name in
+            guard !fieldToolNames.contains(name) || Config.fieldAssistActive else { return false }
             // Plan IU: infrastructure for on-demand definitions, not a tool the prompt lists.
             guard name != ToolLookupTool.toolName else { return false }
             guard Config.isToolEnabled(name) else { return false }
@@ -409,6 +419,7 @@ final class NativeToolRegistry {
     /// own so callers can pass a pre-filtered `toolNames` slice safely.
     func toolDescriptions(for names: [String]) -> [(name: String, description: String)] {
         names.compactMap { name in
+            guard !fieldToolNames.contains(name) || Config.fieldAssistActive else { return nil }
             guard let tool = tools[name] else { return nil }
             return (name, tool.description)
         }

@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 @MainActor
 struct VaultManagerView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var installed: [VaultManifest] = VaultImporter.installedManifests()
+    @State private var installed: [VaultManifest] = VaultImporter.installedManifests().filter { !$0.isPersonalLibrary }
     @State private var ledgers: [String: VaultDocumentLedger] = [:]
     @State private var importing = false
     @State private var errorMessage: String?
@@ -479,7 +479,7 @@ struct VaultManagerView: View {
     // MARK: - Actions
 
     private func reloadLedgers() {
-        installed = VaultImporter.installedManifests()
+        installed = VaultImporter.installedManifests().filter { !$0.isPersonalLibrary }
         ledgers = Dictionary(uniqueKeysWithValues: installed.map { ($0.id, VaultImporter.documentLedger(for: $0.id)) })
         pendingRemovals = Dictionary(uniqueKeysWithValues: installed.map {
             ($0.id, VaultManualRemoval.pendingFiles(for: $0.id))

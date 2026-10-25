@@ -26,11 +26,16 @@ struct VaultLinkReview: Equatable {
     let cellularWarningBytes: Int
     /// Whether a vault with this id is already installed, and at what version.
     let installedVersion: String?
+    var personalMode = false
+    var admissionRefusal: String?
 
     init(vaultName: String, vaultVersion: String, vaultId: String, host: String, totalBytes: Int,
          manuals: [String], includesOriginalPDFs: Bool,
          verification: VaultArchiveVerification, policy: VaultLinkInstallPolicy,
-         isOnCellular: Bool, cellularWarningBytes: Int, installedVersion: String? = nil) {
+         isOnCellular: Bool, cellularWarningBytes: Int, installedVersion: String? = nil,
+         personalMode: Bool = false, admissionRefusal: String? = nil) {
+        self.personalMode = personalMode
+        self.admissionRefusal = admissionRefusal
         self.vaultName = vaultName
         self.vaultVersion = vaultVersion
         self.vaultId = vaultId
@@ -77,6 +82,8 @@ struct VaultLinkReview: Equatable {
     /// The reason there is no install button at all. Refusals first: a tampered or revoked archive
     /// stops here whatever the policy says, and a policy that forbids unsigned stops the rest.
     var refusal: String? {
+        if case .refused(let reason) = verification { return VaultArchiveVerifier.describe(reason) }
+        if let admissionRefusal { return admissionRefusal }
         switch verification {
         case .refused(let reason):
             return VaultArchiveVerifier.describe(reason)
@@ -103,7 +110,7 @@ struct VaultLinkReview: Equatable {
     /// What the button says: an update names the version it replaces, so "install" never quietly
     /// means "overwrite".
     var installButtonTitle: String {
-        guard let installedVersion else { return "Install vault" }
+        guard let installedVersion else { return personalMode ? "Add manuals" : "Install vault" }
         return "Update from v\(installedVersion)"
     }
 

@@ -33,6 +33,16 @@ struct VisionScannedPageReader: ScannedPageReader {
     }
 }
 
+/// Personal scans retain the existing capture rule: recognised secrets are removed before any
+/// checkpoint or document index is written. Page images remain the user's original evidence.
+struct PersonalManualPageReader: ScannedPageReader {
+    let reader: any ScannedPageReader
+    func recognise(_ image: CGImage) async -> ScannedPageText {
+        let page = await reader.recognise(image)
+        return .init(text: SecretPatterns.redact(page.text).redacted, confidence: page.confidence)
+    }
+}
+
 /// How a page is rasterised for recognition, as a function of device state. Pure.
 ///
 /// 200 dpi is what Vision wants for body text and small table type on a letter page (about

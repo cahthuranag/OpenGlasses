@@ -44,6 +44,14 @@ struct ConversationPageBody: View {
     }
 
     var body: some View {
+        VStack(spacing: 4) {
+            ManualSelectionButton(store: store, threadID: store.activeThreadId)
+            conversationContent
+        }
+    }
+
+    @ViewBuilder
+    private var conversationContent: some View {
         switch content {
         case .history(let threadId):
             ConversationThreadTranscript(store: store, threadId: threadId)

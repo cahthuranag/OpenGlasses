@@ -1111,6 +1111,10 @@ struct FieldAssistSettingsView: View {
                 Text(FieldAssistPaywallCopy.lockedDetail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if FieldAssistEntitlement.shared.has(.personalManuals) && !FieldAssistEntitlement.shared.has(.fieldWork) {
+                    Text("Your My Manuals subscription covers your own manuals. Field Assist adds jobs, trade references and professional tools.")
+                        .font(.caption)
+                }
                 switch entitlementState {
                 case .expired(let date):
                     if license.activeLicense != nil || UserDefaults.standard.string(forKey: LicenseService.storageKey) != nil {
@@ -1180,6 +1184,7 @@ struct FieldAssistSettingsView: View {
             Text(FieldAssistPaywallCopy.purchaseHeader)
         } footer: {
             Text(FieldAssistPaywallCopy.purchaseFooter)
+            NavigationLink("Only need your own manuals? See My Manuals.") { MyManualsView().environmentObject(appState) }
         }
     }
 

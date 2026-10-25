@@ -150,7 +150,10 @@ enum VaultDocumentExtractor {
             let recognised: ScannedPageText
             if let saved = state.pages[index] {
                 recognised = ScannedPageText(text: saved.text, confidence: saved.confidence)
-            } else if let page = document.page(at: index), let image = PDFPageRasterizer.image(for: page, dpi: dpi) {
+            } else if let image = autoreleasepool(invoking: { () -> CGImage? in
+                guard let page = document.page(at: index) else { return nil }
+                return PDFPageRasterizer.image(for: page, dpi: dpi)
+            }) {
                 recognised = await reader.recognise(image)
                 state.pages[index] = .init(index: index, text: recognised.text, confidence: recognised.confidence)
                 try checkpoint?.save(state)
@@ -185,16 +188,14 @@ enum VaultDocumentExtractor {
     static func pageLabels(of document: PDFDocument) -> [PageLabel] {
         var labels: [PageLabel] = []
         for index in 0..<document.pageCount {
-            guard let page = document.page(at: index) else { continue }
-            let physical = index + 1
-            if let label = page.label?.trimmingCharacters(in: .whitespaces), !label.isEmpty,
-               label != String(physical) {
-                labels.append(PageLabel(page: physical, label: label, source: .pdfLabel))
-                continue
+            let label: PageLabel? = autoreleasepool {
+                guard let page = document.page(at: index) else { return nil }
+                let physical = index + 1
+                if let label = page.label?.trimmingCharacters(in: .whitespaces), !label.isEmpty,
+                   label != String(physical) { return PageLabel(page: physical, label: label, source: .pdfLabel) }
+                return printedLabel(on: page).map { PageLabel(page: physical, label: $0, source: .printed) }
             }
-            if let printed = printedLabel(on: page) {
-                labels.append(PageLabel(page: physical, label: printed, source: .printed))
-            }
+            if let label { labels.append(label) }
         }
         return labels
     }
@@ -301,7 +302,7 @@ enum VaultDocumentExtractor {
         for index in 0..<document.pageCount {
             guard let page = document.page(at: index) else { pages.append(""); continue }
             guard body > 0, let typedPage = typed[index] else {
-                pages.append(page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                pages.append(autoreleasepool { page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" })
                 continue
             }
             let rendered = ManualStructure.render(typedPage, bodySize: body)
@@ -316,7 +317,7 @@ enum VaultDocumentExtractor {
     /// read, for callers that only need to know whether there is text at all.
     private static func textLayerPages(of document: PDFDocument) -> [String] {
         (0..<document.pageCount).map { index in
-            document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            autoreleasepool { document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
         }
     }
 

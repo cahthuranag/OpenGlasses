@@ -43,6 +43,7 @@ enum AIFeature: String, CaseIterable {
 
     // Neither, but AI and worth inventorying
     case ambientCaptions
+    case myManuals
 
     // MARK: - Facets
 
@@ -242,6 +243,16 @@ enum AIFeature: String, CaseIterable {
                           dataRetainedWhenDisabled: "Session logs stay: they are the engineer's own compliance record, and a warranty or refrigerant log that vanished with a settings toggle would be worse than one that stayed.",
                           erasure: .unavailable("a session log is the engineer's compliance record"))
 
+        case .myManuals:
+            return Record(feature: self, title: "My Manuals",
+                          sensitiveCategories: [.none],
+                          disableSwitch: Switch(key: "myManualsEnabled", isEnabled: { Config.myManualsEnabled },
+                                                setEnabled: { Config.myManualsEnabled = $0 }, preexisting: false),
+                          toolNames: ["manual_lookup", "manual_figure", "table_lookup", "show_source"],
+                          stores: [.vaultDocuments, .vaultLedger, .ragDocuments, .capturedManuals],
+                          dataRetainedWhenDisabled: MyManualsPaywallCopy.disclosure + " Switching answers off keeps your files and index; remove a manual to delete its copy and index.",
+                          erasure: .unavailable("remove manuals individually in My Manuals"))
+
         case .smartHomeControl:
             return Record(feature: self, title: "Smart home control",
                           sensitiveCategories: [.externalActuation],
@@ -317,7 +328,7 @@ enum AIFeatureGate {
     /// inline keep doing so as a second line.
     static var disabledToolNames: Set<String> {
         Set(AIFeature.allCases
-            .filter { !isEnabled($0) }
+            .filter { appliesToTools($0) && !isEnabled($0) }
             .flatMap { $0.record.toolNames })
     }
 
@@ -329,6 +340,10 @@ enum AIFeatureGate {
     /// The switched-off feature that owns a tool, or nil when the tool is callable. What the router
     /// asks, because the refusal names the feature (`disabledMessage`), not just the fact.
     static func disabledFeature(forTool name: String) -> AIFeature? {
-        AIFeature.allCases.first { $0.record.toolNames.contains(name) && !isEnabled($0) }
+        AIFeature.allCases.first { appliesToTools($0) && $0.record.toolNames.contains(name) && !isEnabled($0) }
+    }
+
+    private static func appliesToTools(_ feature: AIFeature) -> Bool {
+        feature != .myManuals || !Config.fieldAssistActive
     }
 }

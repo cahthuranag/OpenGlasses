@@ -48,7 +48,7 @@ enum VaultExporter {
     static func isExportable(_ manifest: VaultManifest) -> Bool {
         // A purchased pack lives in the registry like a customer folder but is paid content;
         // exporting it would hand the pack to anyone (Plan EG).
-        if VaultImporter.installedPack(for: manifest.id) != nil { return false }
+        if manifest.isPersonalLibrary || VaultImporter.installedPack(for: manifest.id) != nil { return false }
         let isUserImported = VaultImporter.installedManifests().contains { $0.id == manifest.id }
         let isFree = manifest.gating.iap == nil
         return isUserImported || isFree

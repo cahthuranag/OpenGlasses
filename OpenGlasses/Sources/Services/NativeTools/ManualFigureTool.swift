@@ -11,14 +11,13 @@ import Foundation
 final class ManualFigureTool: NativeTool {
     let name = "manual_figure"
     let description = """
-    Show a numbered figure, table or page from the manuals loaded into the active Field Assist \
-    vault, or re-open the source a previous answer cited. Pass 'figure' ("Figure 58", or just \
+    Show a numbered figure, table or page from the manuals loaded on this phone, or re-open the source a previous answer cited. Pass 'figure' ("Figure 58", or just \
     "58"), or 'page' with a printed page number ("open page 20"), or 'again' to bring back the \
     last figure or page shown ("show me that source", "show that figure again"). The page opens on the technician's phone and is \
     attached to your next turn as an image when one is available, so you can read the drawing \
     yourself. Use it when the technician names a figure or asks to see a wiring diagram, and after \
     citing one. A manual imported as extracted text has no page to show — the tool says so, and \
-    the citation is still correct. Requires an active session in a vault that has manuals.
+    the citation is still correct. Uses your loaded manuals, or the active Field Assist session. In a personal library, name the manual when several are loaded; camera lookup requires Field Assist.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
@@ -58,6 +57,9 @@ final class ManualFigureTool: NativeTool {
     }
 
     func execute(args: [String: Any]) async throws -> String {
+        if !Config.fieldAssistActive {
+            return PersonalManualLibrary.shared.figure(args, documentStore: documentStore)
+        }
         guard Config.fieldAssistActive else {
             return "Field Assist is disabled. Enable it in Settings → Field Assist."
         }
@@ -66,6 +68,7 @@ final class ManualFigureTool: NativeTool {
             return "No active Field Assist session. Start a session to show a figure from its manuals."
         }
 
+        guard VaultRegistry.shared.isUnlocked(store.manifest) else { return MyManualsPaywallCopy.locked }
         if (args["again"] as? Bool) == true {
             guard let staged = session.restageLastFigure(
                 origin: session.turnAskedForPage ? .requested : .automatic) else {

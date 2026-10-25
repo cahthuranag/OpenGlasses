@@ -49,7 +49,8 @@ enum FieldAssistEntitlementEvidence: Equatable, Sendable {
     /// The tier this evidence grants.
     var tier: FieldAssistTier {
         switch self {
-        case .verifiedStoreProduct: return .solo
+        case .verifiedStoreProduct(let productID, _):
+            return StoreKitService.myManualsSubscriptionIds.contains(productID) ? .personal : .solo
         case .verifiedOrganizationLicense(_, _, let tier, _): return tier
         #if DEBUG
         case .internalDeveloper: return .enterprise

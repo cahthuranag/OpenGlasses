@@ -27,7 +27,7 @@ enum VaultValidator {
     static let coreBudgetCharacters = 32_768
 
     /// Validate a directory laid out like a bundled vault.
-    static func validate(directory: URL) -> Result {
+    static func validate(directory: URL, manualOnly: Bool = false) -> Result {
         var issues: [String] = []
         var warnings: [String] = []
         let fm = FileManager.default
@@ -44,9 +44,9 @@ enum VaultValidator {
         if manifest.files.isEmpty && manifest.documents.isEmpty {
             issues.append("manifest lists no files and no documents")
         }
-        if manifest.promptRules.isEmpty {
+        if manifest.promptRules.isEmpty && !manualOnly {
             issues.append("manifest must include prompt_rules (grounding discipline)")
-        } else {
+        } else if !manualOnly {
             let joined = manifest.promptRules.joined(separator: " ").lowercased()
             for theme in requiredRuleThemes where !joined.contains(theme) {
                 issues.append("prompt_rules should address '\(theme)' (anti-fabrication / source citation)")
@@ -89,7 +89,18 @@ enum VaultValidator {
                     issues.append(notIncludedIssue(title: document.title, paths: absent)); continue
                 }
             }
-            let url = directory.appendingPathComponent(manifest.documentRelativePath(document))
+            let uploadedURL = directory.appendingPathComponent(manifest.documentRelativePath(document))
+            let url: URL
+            if document.personalReadingCopy == true {
+                guard ManualFileUpload.extensions.subtracting(["pdf"]).contains(uploadedURL.pathExtension.lowercased()),
+                      fm.fileExists(atPath: uploadedURL.path),
+                      let source = manifest.documentSourceRelativePath(document),
+                      (try? ManualLibraryAdmission.pageCount(directory.appendingPathComponent(source))) != nil else {
+                    issues.append("uploaded manual needs its original file and a readable PDF reading copy: \(document.file)")
+                    continue
+                }
+                url = directory.appendingPathComponent(source)
+            } else { url = uploadedURL }
             guard fm.fileExists(atPath: url.path) else {
                 issues.append("listed document missing: \(manifest.documentRelativePath(document))"); continue
             }

@@ -233,6 +233,7 @@ enum VaultPackAccess {
     static func isUnlocked(productId: String, licensePack: String,
                            purchasedProducts: Set<String>, licensedPacks: Set<String>,
                            capabilities: Set<FieldAssistCapability>) -> Bool {
+        guard capabilities.contains(.fieldWork) else { return false }
         if capabilities.contains(.everyVaultPack) { return true }
         if purchasedProducts.contains(productId) { return true }
         return licensedPacks.contains(licensePack)

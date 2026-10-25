@@ -65,7 +65,8 @@ struct MainView: View {
             switchOn: fieldAssistEnabled,
             entitled: Config.fieldAssistUnlocked,
             entitlementChecked: store.hasCheckedEntitlements,
-            restricted: restricted))
+            restricted: restricted,
+            personalManuals: FieldAssistEntitlement.shared.has(.personalManuals)))
     }
 
     var body: some View {
@@ -209,6 +210,9 @@ struct MainView: View {
         .environment(\.appAccent, accent)
         .animation(.easeInOut(duration: 0.3), value: showOnboarding)
         .preferredColorScheme(colorScheme)
+        .sheet(isPresented: $appState.showManualPicker) {
+            ManualPickerView(store: appState.conversationStore, threadID: appState.manualPickerThreadID)
+        }
         .sheet(item: $appState.phoneCameraRequest) { request in
             PhoneCameraView(
                 prompt: request.prompt,

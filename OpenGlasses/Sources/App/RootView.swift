@@ -4,6 +4,7 @@ struct RootView: View {
     @EnvironmentObject var appState: AppState
     @State private var showLaunchScreen = true
     @ObservedObject private var manualCapture = ManualCaptureService.shared
+    @ObservedObject private var personalCapture = PersonalManualCapture.shared
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -45,11 +46,18 @@ struct RootView: View {
                     .onAppear { manualCapture.cancel() }
             }
         }
+        .sheet(item: Binding(get: { personalCapture.request }, set: { value in
+            if value == nil, let request = personalCapture.request { personalCapture.cancel(request.id) }
+        })) { request in
+            if PersonalManualLibrary.canManage { ManualDocumentCamera(request: request).ignoresSafeArea() }
+            else { Text("Manual capture is unavailable under the current policy.").onAppear { personalCapture.cancel(request.id) } }
+        }
         .task {
             await manualCapture.resume()
             appState.offerPilotReports()
         }
         .onChange(of: scenePhase) { _, phase in
+            if phase == .background, let request = personalCapture.request { personalCapture.cancel(request.id) }
             if phase == .active {
                 appState.offerPilotReports()
                 Task { await manualCapture.resume() }

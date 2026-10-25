@@ -166,6 +166,7 @@ enum HomeGridEntry: Identifiable, Equatable {
         case .builtIn:
             return "Double-tap to ask."
         case .quickAction(let action):
+            if action.id == QuickAction.myManuals.id { return "Choose one or more manuals for this conversation." }
             switch action.type {
             case .prompt: return "Double-tap to ask."
             case .homeAssistant: return "Double-tap to run this home control."
@@ -468,13 +469,13 @@ enum DockSlot: Identifiable, Equatable {
     }
 
     /// Whether a slot the stored order never mentions goes to the *top* of the grid rather than
-    /// the bottom. Only Field Assist's tiles: they arrive with the entitlement, usually long after
+    /// the bottom. My Manuals and Field Assist's tiles: they arrive with the entitlement, usually long after
     /// the wearer arranged their grid, and the job tiles a technician came for should not land
     /// under the fold behind everything else. Once the wearer places one, the stored order holds
     /// it like any other slot.
     var leadsWhenUnplaced: Bool {
         guard case .action(.quickAction(let action)) = self else { return false }
-        return QuickAction.fieldAssistManagedActions.contains { $0.id == action.id }
+        return action.id == QuickAction.myManuals.id || QuickAction.fieldAssistManagedActions.contains { $0.id == action.id }
     }
 
     var editorLabel: String {

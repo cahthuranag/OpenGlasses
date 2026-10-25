@@ -88,14 +88,14 @@ enum PDFTableReader {
         func fail(_ caption: TableExtractor.Caption, _ failure: TableExtractor.Failure, at place: ManualTable.Page, listed: Bool) {
             failed.append((.unextracted(caption, page: place, failure: failure), listed))
         }
-        for index in 0..<document.pageCount {
+        func scanPage(_ index: Int) {
             let physical = index + 1
             let waiting = foot
             foot = nil
             guard let page = document.page(at: index) else {
                 if let waiting { fail(waiting.caption, waiting.failure, at: waiting.place, listed: false) }
                 open = nil
-                continue
+                return
             }
             let text = page.string ?? ""
             if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -107,7 +107,7 @@ enum PDFTableReader {
                 let bounds = page.bounds(for: .mediaBox)
                 candidates.append(.init(physical: physical, kind: .page,
                                         region: CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height)))
-                guard let pictures, let scanned = pictures.recognitions.pages[physical] else { continue }
+                guard let pictures, let scanned = pictures.recognitions.pages[physical] else { return }
                 let place = ManualTable.Page(physical: physical, printed: printedLabels[physical])
                 for found in PictureTableReading.captionRegions(onScannedPage: scanned.words, pageBounds: bounds) {
                     guard let recognition = pictures.recognitions.regions[.init(physical: physical, label: found.caption.label)]
@@ -126,12 +126,12 @@ enum PDFTableReader {
                              at: place, listed: false)
                     }
                 }
-                continue
+                return
             }
             let carried = open.flatMap { $0.physical == physical - 1 ? $0 : nil }
             guard carried != nil || waiting != nil || text.range(of: "table", options: .caseInsensitive) != nil else {
                 open = nil
-                continue
+                return
             }
             let place = ManualTable.Page(physical: physical, printed: printedLabels[physical])
             let words = positionedWords(on: page)
@@ -208,6 +208,8 @@ enum PDFTableReader {
             }
             open = next
         }
+        // PDFKit selections and attributed strings must drain per page on long books.
+        for index in 0..<document.pageCount { autoreleasepool { scanPage(index) } }
         if let waiting = foot { fail(waiting.caption, waiting.failure, at: waiting.place, listed: false) }
 
         // An entry in a list of tables is not a table: dropped where the document captions the

@@ -62,13 +62,21 @@ enum CapturedManualMedia {
                      confidence:results.isEmpty ? 0 : results.reduce(0) { $0 + $1.1 } / Float(results.count))
     }
     static func pdf(_ draft: CapturedManualStore.Draft, imageAt: (Int) throws -> Data) throws -> Data {
+        try pdf(title: draft.metadata.title, capturedAt: draft.metadata.capturedAt,
+                pageCount: draft.images.count, imageAt: imageAt)
+    }
+
+    /// Shared page encoder for job captures and personal-library captures. No job metadata is
+    /// manufactured for a library scan; both paths use the same bounded image/PDF encoding.
+    static func pdf(title: String, capturedAt: Int64, pageCount: Int, imageAt: (Int) throws -> Data) throws -> Data {
+        guard (1...CapturedManualContract.maximumPages).contains(pageCount) else { throw CapturedManualStore.Failure.limits }
         let output = NSMutableData()
         guard let consumer = CGDataConsumer(data:output) else { throw CapturedManualStore.Failure.unavailable }
         var box = CGRect(x:0,y:0,width:612,height:792)
         guard let context = CGContext(consumer:consumer,mediaBox:&box,
-            [kCGPDFContextCreator as String:"Avenkin",kCGPDFContextTitle as String:draft.metadata.title] as CFDictionary)
+            [kCGPDFContextCreator as String:"Avenkin",kCGPDFContextTitle as String:title] as CFDictionary)
         else { throw CapturedManualStore.Failure.unavailable }
-        for index in 1...draft.images.count {
+        for index in 1...pageCount {
             try Task.checkCancellation()
             try autoreleasepool {
                 let image = try image(imageAt(index))
@@ -83,8 +91,8 @@ enum CapturedManualMedia {
         guard let document = PDFDocument(data:output as Data) else { throw CapturedManualStore.Failure.unavailable }
         // Pin both dates to the source revision. Persist this result before OCR; PDFKit's
         // internal object ids are not assumed reproducible on another process/OS release.
-        let date = Date(timeIntervalSince1970:TimeInterval(draft.metadata.capturedAt))
-        document.documentAttributes = [PDFDocumentAttribute.titleAttribute:draft.metadata.title,PDFDocumentAttribute.creatorAttribute:"Avenkin",
+        let date = Date(timeIntervalSince1970:TimeInterval(capturedAt))
+        document.documentAttributes = [PDFDocumentAttribute.titleAttribute:title,PDFDocumentAttribute.creatorAttribute:"Avenkin",
                                        PDFDocumentAttribute.creationDateAttribute:date,PDFDocumentAttribute.modificationDateAttribute:date]
         guard let bytes = document.dataRepresentation(), bytes.count <= CapturedManualContract.maximumPDFBytes else {
             throw CapturedManualStore.Failure.limits

@@ -2090,8 +2090,9 @@ struct Config {
             base = QuickAction.defaults
         }
         let active = fieldAssistActive
-        return withFieldAssistActions(base, active: active,
-                                      trades: active ? FieldTradeSetting.current.trades : [])
+        let fieldActions = withFieldAssistActions(base, active: active,
+                                                 trades: active ? FieldTradeSetting.current.trades : [])
+        return withMyManualsAction(fieldActions, available: !active && !hipaaMode && FieldAssistEntitlement.shared.has(.personalManuals))
     }
 
     /// Surface the built-in Field Assist quick actions — the job starter first, then its job
@@ -2106,8 +2107,14 @@ struct Config {
         return active ? QuickAction.fieldAssistActions(trades: trades) + base : base
     }
 
+    static func withMyManualsAction(_ actions: [QuickAction], available: Bool) -> [QuickAction] {
+        let base = actions.filter { $0.id != QuickAction.myManuals.id }
+        return available ? [QuickAction.myManuals] + base : base
+    }
+
     static func setQuickActions(_ actions: [QuickAction]) {
-        if let data = try? JSONEncoder().encode(actions) {
+        let stored = actions.filter { $0.id != QuickAction.myManuals.id }
+        if let data = try? JSONEncoder().encode(stored) {
             UserDefaults.standard.set(data, forKey: "quickActions")
         }
     }
@@ -4554,6 +4561,12 @@ struct Config {
 
     // MARK: - Field Assist entitlement
 
+    /// User control over library answers, independent of the verified purchase gate.
+    static var myManualsEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "myManualsEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "myManualsEnabled") }
+    }
+
     /// Display mirror of the last license validation. **Not authoritative** — it is a plain mutable
     /// preference, so it is exactly as forgeable as any other. Entitlement decisions re-verify the
     /// stored license code itself; this only drives settings copy.
@@ -4582,7 +4595,7 @@ struct Config {
     /// transaction verified in this process, or a signed organization license re-checked at read
     /// time. There is no stored "entitled" boolean behind this, by design.
     static var fieldAssistUnlocked: Bool {
-        FieldAssistEntitlement.shared.isGranted
+        FieldAssistEntitlement.shared.has(.fieldWork)
     }
 
     /// True only when Field Assist is both entitled and switched on. Field tools and vaults gate on

@@ -37,6 +37,7 @@ struct SettingsView: View {
 
     private var visibleCategories: [SettingsCategory] {
         SettingsVisibilityPolicy.hubCategories(simpleMode: simpleModeEnabled, in: adminGate.settingsContext)
+            .filter { $0.id != .myManuals || !adminGate.isRestricted }
     }
 
     private var organization: String { ManagedLockReason.organization }
@@ -264,6 +265,7 @@ struct SettingsView: View {
             case .noGlassesAdded, .addedDisconnected: return nil
             }
         case .fieldAssist: return fieldAssistEnabled ? "On" : nil
+        case .myManuals: return FieldAssistEntitlement.shared.has(.personalManuals) ? "Available" : nil
         case .lookAndFeel: return appearance.capitalized
         case .accessibility: return Config.accessibilityModeEnabled ? "On" : nil
         case .display: return glassesDisplayEnabled ? "On" : nil
@@ -287,6 +289,8 @@ struct SettingsView: View {
             AccessibilitySettingsView().environmentObject(appState)
         case .fieldAssist:
             FieldAssistSettingsView().environmentObject(appState)
+        case .myManuals:
+            MyManualsView().environmentObject(appState)
         case .lookAndFeel:
             LookFeelSettingsScreen()
         case .tools:

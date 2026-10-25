@@ -8,8 +8,7 @@ import Foundation
 final class TableLookupTool: NativeTool {
     let name = "table_lookup"
     let description = """
-    Read one value from a table printed in the manuals or code books loaded into the active Field \
-    Assist vault: the cell at a row and a column, with its row and column headings, units, the \
+    Read one value from a table printed in the manuals or code books loaded on this phone: the cell at a row and a column, with its row and column headings, units, the \
     notes it refers to, and the page it is printed on. Pass 'table' (its number as printed, e.g. \
     "Table 99", or words of its title), 'row' (the row's heading, e.g. a size, a type or a range, \
     or a number to find), and 'column' (the column's heading, e.g. "Rating group 2" or a path such \
@@ -20,7 +19,7 @@ final class TableLookupTool: NativeTool {
     its row, column and page, and repeat the Source line. A value from a table printed as a picture \
     comes back marked "read from a picture of the table": say so, read it back for the technician \
     to check, and offer the page, and a cell the picture did not show clearly is never given, so \
-    never supply it yourself. Requires an active session in a vault that has manuals.
+    never supply it yourself. Uses your loaded manuals, or the active Field Assist session. In a personal library, name the manual when several are loaded; camera lookup requires Field Assist.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
@@ -58,6 +57,9 @@ final class TableLookupTool: NativeTool {
     }
 
     func execute(args: [String: Any]) async throws -> String {
+        if !Config.fieldAssistActive {
+            return PersonalManualLibrary.shared.table(args, documentStore: documentStore)
+        }
         guard Config.fieldAssistActive else {
             return "Field Assist is disabled. Enable it in Settings → Field Assist."
         }
@@ -65,6 +67,7 @@ final class TableLookupTool: NativeTool {
         guard let store = session.activeVault else {
             return "No active Field Assist session. Start a session to look up a table in its manuals."
         }
+        guard VaultRegistry.shared.isUnlocked(store.manifest) else { return MyManualsPaywallCopy.locked }
         guard let documentStore else { return "Table lookup is unavailable in this context." }
         let table = (args["table"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let row = (args["row"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

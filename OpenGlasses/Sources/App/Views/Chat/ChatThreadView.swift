@@ -47,6 +47,8 @@ struct ChatThreadView: View {
             if !Config.conversationPersistenceEnabled { persistenceBanner }
 
             Divider()
+            ManualSelectionButton(store: store, threadID: threadId)
+                .padding(.horizontal, 16)
             ChatComposer(
                 autoFocus: thread?.messages.isEmpty ?? false,
                 onAttachDocument: { showFileImporter = true }
@@ -308,7 +310,7 @@ struct ChatThreadView: View {
     /// Drop a thread the user opened but never used, so empty "New Conversation" shells
     /// don't accumulate in the list.
     private func pruneIfEmpty() {
-        if let thread, thread.messages.isEmpty { store.deleteThread(threadId) }
+        if let thread, thread.messages.isEmpty, (thread.manualIDs ?? []).isEmpty { store.deleteThread(threadId) }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {

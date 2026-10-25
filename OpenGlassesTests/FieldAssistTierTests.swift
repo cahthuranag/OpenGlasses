@@ -288,7 +288,7 @@ final class FieldAssistTierTests: XCTestCase {
 
     func testPaywallCopyNeverSteersOutsideTheStore() {
         let forbidden = ["http", "www.", ".com", ".kiwi", "email", "website", "contact us", "purchase order", "invoice"]
-        for line in FieldAssistPaywallCopy.all {
+        for line in FieldAssistPaywallCopy.all + MyManualsPaywallCopy.all {
             for needle in forbidden {
                 XCTAssertFalse(line.lowercased().contains(needle), "\"\(line)\" contains \"\(needle)\"")
             }

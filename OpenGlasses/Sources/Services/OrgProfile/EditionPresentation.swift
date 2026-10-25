@@ -43,7 +43,9 @@ enum EditionPresentation {
     /// Dock tiles the technician does not see: the model picker, which is the mode switch on the
     /// session surface. The organisation chose the model.
     static func hidesDockSlot(_ slot: DockSlot, restricted: Bool) -> Bool {
-        guard restricted, case .control(.model) = slot else { return false }
-        return true
+        guard restricted else { return false }
+        if case .control(.model) = slot { return true }
+        if case .action(.quickAction(let action)) = slot { return action.id == QuickAction.myManuals.id }
+        return false
     }
 }

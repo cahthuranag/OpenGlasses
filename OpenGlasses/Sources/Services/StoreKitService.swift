@@ -31,6 +31,11 @@ class StoreKitService: ObservableObject {
     /// Field Assist (solo) monthly and annual auto-renewing subscriptions.
     nonisolated static let fieldAssistMonthlyId = "com.openglasses.field_assist_monthly"
     nonisolated static let fieldAssistAnnualId = "com.openglasses.field_assist_annual"
+    nonisolated static let myManualsMonthlyId = "com.openglasses.my_manuals_monthly"
+    nonisolated static let myManualsAnnualId = "com.openglasses.my_manuals_annual"
+    nonisolated static let myManualsSubscriptionIds: Set<String> = [myManualsMonthlyId, myManualsAnnualId]
+    /// Monthly is offered now; annual receipts remain recognised for restore.
+    nonisolated static let myManualsCatalogProductIds: Set<String> = [myManualsMonthlyId]
 
     /// Every store product that grants the solo tier, including the retired non-consumable so
     /// existing owners continue to pass receipt validation. Teams use signed licences.
@@ -45,6 +50,7 @@ class StoreKitService: ObservableObject {
 
     /// All known product identifiers (loaded from the App Store / .storekit).
     private static let allProductIds: Set<String> = medicalProductIds.union(fieldAssistCatalogProductIds)
+        .union(myManualsSubscriptionIds)
 
     /// Subscription group name (must match App Store Connect).
     static let subscriptionGroupId = "medical_compliance"
@@ -57,6 +63,7 @@ class StoreKitService: ObservableObject {
     @Published private(set) var isLoadingProducts = false
     @Published private(set) var catalogError: String?
     @Published private(set) var medicalCatalogError: String?
+    @Published private(set) var myManualsCatalogError: String?
     @Published private(set) var isRestoring = false
     /// False means unknown, not an absent purchase. Set only after recording verified evidence.
     @Published private(set) var hasCheckedEntitlements = false
@@ -71,6 +78,7 @@ class StoreKitService: ObservableObject {
 
     /// The Field Assist subscription's renewal state, when the entitlement comes from one.
     @Published private(set) var fieldAssistSubscription: SubscriptionInfo?
+    @Published private(set) var myManualsSubscription: SubscriptionInfo?
 
     /// The user's current subscription status (for UI display).
     @Published private(set) var subscriptionStatus: SubscriptionInfo?
@@ -149,6 +157,7 @@ class StoreKitService: ObservableObject {
         isLoadingProducts = true
         catalogError = nil
         medicalCatalogError = nil
+        myManualsCatalogError = nil
         defer { isLoadingProducts = false }
         do {
             let loaded = try await productLoader(Self.allProductIds)
@@ -161,13 +170,23 @@ class StoreKitService: ObservableObject {
             if !Self.medicalProductIds.isSubset(of: Set(loaded.map(\.id))) {
                 medicalCatalogError = "Some Medical Compliance plans are unavailable. Check your connection and App Store sign-in, then retry."
             }
+            if !Self.myManualsCatalogProductIds.isSubset(of: Set(loaded.map(\.id))) {
+                myManualsCatalogError = "My Manuals plans are unavailable. Check your connection and App Store sign-in, then retry."
+            }
             PrivacyLog.purchase(.catalogLoaded, count: loaded.count)
             let generation = entitlementGeneration
             Task { await refreshRenewalInformation(generation: generation) }
         } catch {
             catalogError = "Unable to load purchases: \(error.localizedDescription)"
             medicalCatalogError = catalogError
+            myManualsCatalogError = "Unable to load My Manuals plans. Check your connection and App Store sign-in, then retry."
             PrivacyLog.purchase(.catalogFailed, error: SafeErrorSummary(error))
+        }
+    }
+
+    var myManualsProducts: [Product] {
+        products.filter { Self.myManualsCatalogProductIds.contains($0.id) }.sorted {
+            ($0.id == Self.myManualsMonthlyId ? 0 : 1) < ($1.id == Self.myManualsMonthlyId ? 0 : 1)
         }
     }
 
@@ -225,17 +244,21 @@ class StoreKitService: ObservableObject {
         // A slower, older read must not overwrite the result of a purchase or restore.
         guard generation == entitlementGeneration else { return }
         let field = entitlements.filter { Self.fieldAssistProductIds.contains($0.productID) }
+        let personal = entitlements.filter { Self.myManualsSubscriptionIds.contains($0.productID) }
         let medical = entitlements.first { Self.medicalProductIds.contains($0.productID) }
         let packs = Set(entitlements.map(\.productID).filter { VaultPackManifest.isPackProductId($0) })
 
         // Commit evidence before publishing UI changes. A missing catalog is not a missing receipt.
-        VerifiedStorePurchaseRecorder.shared.record(products: field.map { ($0.productID, $0.expiration) })
+        VerifiedStorePurchaseRecorder.shared.record(products: (field + personal).map { ($0.productID, $0.expiration) })
         VerifiedStorePurchaseRecorder.shared.recordPackProducts(packs)
         Config.setFieldAssistPurchased(!field.isEmpty)
         isFieldAssistPurchased = !field.isEmpty
         isMedicalComplianceActive = medical != nil
         subscriptionStatus = medical.map { subscriptionInfo(for: $0) }
         fieldAssistSubscription = field.filter { Self.fieldAssistSubscriptionIds.contains($0.productID) }
+            .max { ($0.expiration ?? .distantFuture) < ($1.expiration ?? .distantFuture) }
+            .map { subscriptionInfo(for: $0) }
+        myManualsSubscription = personal
             .max { ($0.expiration ?? .distantFuture) < ($1.expiration ?? .distantFuture) }
             .map { subscriptionInfo(for: $0) }
         hasCheckedEntitlements = true
@@ -249,7 +272,7 @@ class StoreKitService: ObservableObject {
 
     /// Renewal metadata can require a network request; access is already available before it runs.
     private func refreshRenewalInformation(generation: Int) async {
-        for info in [subscriptionStatus, fieldAssistSubscription].compactMap({ $0 }) {
+        for info in [subscriptionStatus, fieldAssistSubscription, myManualsSubscription].compactMap({ $0 }) {
             guard let statuses = try? await product(for: info.productId)?.subscription?.status,
                   let status = statuses.first(where: {
                       if case .verified(let transaction) = $0.transaction { return transaction.productID == info.productId }
@@ -260,6 +283,7 @@ class StoreKitService: ObservableObject {
                                            isInGracePeriod: status.state == .inGracePeriod,
                                            willAutoRenew: renewal.willAutoRenew)
             if Self.medicalProductIds.contains(info.productId) { subscriptionStatus = updated }
+            else if Self.myManualsSubscriptionIds.contains(info.productId) { myManualsSubscription = updated }
             else { fieldAssistSubscription = updated }
         }
     }
@@ -293,7 +317,9 @@ class StoreKitService: ObservableObject {
         do {
             try await synchronize()
             await checkSubscriptionStatus()
-            restoreMessage = isFieldAssistPurchased
+            restoreMessage = myManualsSubscription != nil && fieldAssistSubscription == nil
+                ? "My Manuals purchases restored."
+                : isFieldAssistPurchased
                 ? "Field Assist purchases restored."
                 : "No active Field Assist purchase was found for this App Store account."
             return true

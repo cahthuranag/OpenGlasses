@@ -80,14 +80,13 @@ final class VaultPackCatalogService: ObservableObject {
     func rowState(for entry: VaultPackCatalogEntry) -> VaultPackRowState {
         let installed = VaultImporter.installedPack(for: entry.vaultId)
         let licensePack = installed?.effectiveLicensePack ?? entry.vaultId
-        let decision = FieldAssistEntitlement.shared.decision()
         let unlocked = VaultPackAccess.isUnlocked(
             productId: entry.id, licensePack: licensePack,
             purchasedProducts: VerifiedStorePurchaseRecorder.shared.packProductIds,
             licensedPacks: FieldAssistEntitlement.shared.grantedPacks(),
             capabilities: FieldAssistEntitlement.shared.capabilities())
         return VaultPackRowState.resolve(entry: entry, installedVersion: installed?.version,
-                                         unlocked: unlocked, fieldAssistGranted: decision.isGranted,
+                                         unlocked: unlocked, fieldAssistGranted: FieldAssistEntitlement.shared.has(.fieldWork),
                                          currentBuild: currentBuild)
     }
 

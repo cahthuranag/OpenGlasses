@@ -47,7 +47,7 @@ final class VaultLinkService: ObservableObject {
 
         var message: String {
             var lines = [
-                "Fetch a vault from \(host)?",
+                "Download the publisher's set from \(host)?",
                 "Up to \(sizeCeilingText) is downloaded so you can see what it contains. Nothing is installed until you have reviewed it.",
             ]
             if isOnCellular { lines.append("You are on cellular data.") }
@@ -104,6 +104,7 @@ final class VaultLinkService: ObservableObject {
     private let now: () -> Date
     private let maximumBytes: Int
     private let cellularWarningBytes: Int
+    private let personalLibrary: Bool
     private let onInstalled: (VaultLinkInstaller.Outcome) -> Void
     private let staging: VaultLinkStagingStore
 
@@ -113,7 +114,7 @@ final class VaultLinkService: ObservableObject {
     private var pendingURL: URL?
     private var activeDownload: Task<(StagedVaultArchive, URL), Error>?
 
-    init(download: @escaping (URL, VaultLinkStagingStore, @escaping @MainActor (Int) -> Void) async throws -> (StagedVaultArchive, URL)
+    init(personalLibrary: Bool = false, download: @escaping (URL, VaultLinkStagingStore, @escaping @MainActor (Int) -> Void) async throws -> (StagedVaultArchive, URL)
             = VaultLinkService.boundedDownload,
          publishers: @escaping () async -> [VaultPublisher]
             = { await VaultPublisherDirectory.shared.current() },
@@ -133,12 +134,14 @@ final class VaultLinkService: ObservableObject {
          onInstalled: @escaping (VaultLinkInstaller.Outcome) -> Void = { _ in }) {
         self.download = download
         self.publishers = publishers
-        self.capability = capability
+        self.personalLibrary = personalLibrary
+        self.capability = personalLibrary ? { FieldAssistEntitlement.shared.check(.personalManuals) } : capability
         self.policy = policy
         self.isOnCellular = isOnCellular
         self.installedManifest = installedManifest
         self.install = install
-        self.audit = audit
+        // A personal-library action must never be filed into an open professional job.
+        self.audit = personalLibrary ? { _, _ in } : audit
         self.now = now
         self.maximumBytes = maximumBytes
         self.cellularWarningBytes = cellularWarningBytes
@@ -171,8 +174,8 @@ final class VaultLinkService: ObservableObject {
     private func offer(_ url: URL) {
         let check = capability()
         guard check.isGranted else {
-            stage = .failed(CustomVaultGateState.resolve(check).explanation
-                            ?? FieldAssistPaywallCopy.ownVaultsLocked)
+            stage = .failed(personalLibrary ? MyManualsPaywallCopy.locked : (CustomVaultGateState.resolve(check).explanation
+                            ?? FieldAssistPaywallCopy.ownVaultsLocked))
             return
         }
         pendingURL = url
@@ -242,6 +245,16 @@ final class VaultLinkService: ObservableObject {
         }
 
         let verification = VaultArchiveVerifier.verify(extracted, publishers: await publishers())
+        let personalMode = personalLibrary
+        var admissionRefusal: String?
+        if personalMode {
+            if case .signed = verification {
+                do { try await Task.detached(priority: .utility) { try VaultLinkInstaller.personalPreflight(files: extracted.files) }.value }
+                catch { admissionRefusal = error.localizedDescription }
+            } else if case .unverified = verification {
+                admissionRefusal = "My Manuals accepts sets signed by a listed publisher. Unverified archives need Field Assist."
+            }
+        }
         // The host the bytes actually came from, not the one that was typed: a link that redirects
         // to another site is reviewed against where it landed. Nothing has been trusted yet — the
         // review below is the first and only confirmation, and it names this host.
@@ -254,7 +267,8 @@ final class VaultLinkService: ObservableObject {
             includesOriginalPDFs: header.originalDocumentsIncluded,
             verification: verification, policy: policy(),
             isOnCellular: isOnCellular(), cellularWarningBytes: cellularWarningBytes,
-            installedVersion: installedManifest(header.vaultId)?.version)
+            installedVersion: installedManifest(personalLibrary ? (header.vaultId.hasPrefix("personal-") ? header.vaultId : "personal-" + header.vaultId) : header.vaultId)?.version,
+            personalMode: personalMode, admissionRefusal: admissionRefusal)
         reviewed = (archive, host, VaultArchiveReader.sha256Hex(bytes))
         acknowledgedUnverified = false
         audit("vault link reviewed — " + review.auditNote, false)
@@ -270,7 +284,7 @@ final class VaultLinkService: ObservableObject {
         // offered: a subscription can lapse between a review and a confirmation.
         guard capability().isGranted else {
             discardReviewed()
-            stage = .failed(FieldAssistPaywallCopy.ownVaultsLapsed)
+            stage = .failed(personalLibrary ? MyManualsPaywallCopy.locked : FieldAssistPaywallCopy.ownVaultsLapsed)
             return
         }
         stage = .installing
@@ -304,7 +318,7 @@ final class VaultLinkService: ObservableObject {
         let receipt = VaultReceipt.make(verification: verification, host: host,
                                         now: now(), archiveSHA256: reviewed.sha256)
         do {
-            let outcome = try await install(.init(files: extracted.files, receipt: receipt))
+            let outcome = try await install(.init(files: extracted.files, receipt: receipt, personalLibrary: personalLibrary))
             discardReviewed()
             audit("vault installed from a link — vault=\(outcome.vaultId), host=\(host), "
                   + receipt.verification.rawValue, true)

@@ -25,6 +25,8 @@ enum FieldAssistMode {
         /// Whether the organisation's edition is in force in the technician's view
         /// (`AdminGate.isRestricted`). The edition *is* Field Assist, whatever the switch says.
         var restricted = false
+        /// A personal purchase offers manuals without a Field Assist shortcut.
+        var personalManuals = false
     }
 
     /// Whether Field Assist mode is on. "Switch or edition" is the reading `JobTabPresence` already
@@ -96,6 +98,7 @@ enum ModesTabPresentation: Equatable {
         }
         if FieldAssistMode.isOn(inputs) { return .fieldAssist(otherModes: .accordion) }
         if inputs.entitled { return .modes(shortcut: .turnOn) }
+        if inputs.personalManuals { return .modes(shortcut: nil) }
         // Nothing is drawn on a guess: an unresolved entitlement could be about to say yes.
         guard inputs.entitlementChecked else { return .modes(shortcut: nil) }
         return .modes(shortcut: inputs.switchOn ? .lapsed : .unlock)

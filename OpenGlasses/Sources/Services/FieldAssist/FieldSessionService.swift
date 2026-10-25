@@ -62,7 +62,7 @@ final class FieldSessionService: ObservableObject {
     }
 
     private var hasCurrentWorkAccess: Bool {
-        FieldAssistEntitlement.shared.isGranted && !OrgProfileManager.shared.contentLocked
+        FieldAssistEntitlement.shared.has(.fieldWork) && !OrgProfileManager.shared.contentLocked
     }
 
     /// Procedures available in the active session's vault.
@@ -1735,6 +1735,7 @@ final class FieldSessionService: ObservableObject {
             guard let documentStore else { return }
             capturedManuals.documents = documentStore
             documentStore.capturedNamespaceAllowed = { [weak self] namespace in
+                if PersonalManualLibrary.shared.canReadCapturedNamespace(namespace) { return true }
                 guard let self, let session = self.activeSession else { return false }
                 return self.capturedManuals.available(namespace, session: session, vaultID: session.vaultId)
             }
@@ -2335,10 +2336,13 @@ final class FieldSessionService: ObservableObject {
         /// Where a table a lookup read from a picture was recognised, outlined on the page, since a
         /// picture has no text to mark (Plan JN P2).
         var pictureAreas: [ManualTable.PictureArea] = []
+        /// Library pages bind both searchable content and original-PDF revisions.
+        let sourceRevision: String?
 
         init(documentId: String, documentTitle: String, page: Int, figure: String? = nil,
              sourceFile: String? = nil, origin: PageOrigin = .requested,
-             presentOnPhone: Bool = true) {
+             presentOnPhone: Bool = true, sourceRevision: String? = nil) {
+            self.sourceRevision = sourceRevision
             self.documentId = documentId
             self.documentTitle = documentTitle
             self.page = page
@@ -2431,6 +2435,10 @@ final class FieldSessionService: ObservableObject {
     /// The PDF in the vault's read-only baseline that a staged figure's page comes from, or nil
     /// when the document was imported as text (or is no longer installed).
     func sourcePDFURL(for figure: StagedFigure) -> URL? {
+        if !Config.fieldAssistActive {
+            return PersonalManualLibrary.shared.sourceURL(for: figure)
+        }
+        guard let vault = activeVault, VaultRegistry.shared.isUnlocked(vault.manifest) else { return nil }
         if figure.documentId.hasPrefix("captured:") {
             guard let m = capturedManuals.historical(citation:figure.documentTitle),
                   (1...m.pageCount).contains(figure.page) else { return nil }
@@ -2482,6 +2490,8 @@ final class FieldSessionService: ObservableObject {
     /// otherwise the original bundled beside the extracted text (`source`). Nil when the vault
     /// holds neither — which is what "Original not bundled in this vault" is telling the reader.
     func manufacturerPDFURL(for figure: StagedFigure) -> URL? {
+        if !Config.fieldAssistActive { return PersonalManualLibrary.shared.sourceURL(for: figure) }
+        guard let vault = activeVault, VaultRegistry.shared.isUnlocked(vault.manifest) else { return nil }
         if figure.documentId.hasPrefix("captured:") {
             guard let m = capturedManuals.historical(citation: figure.documentTitle) else { return nil }
             return try? capturedManuals.source?.file(m, name: "pages.pdf")
@@ -2525,6 +2535,11 @@ final class FieldSessionService: ObservableObject {
     /// chip can only ever open the document it names. A manual with a removal in flight resolves as
     /// removed rather than as a page, because its file may still be on disk until cleanup finishes.
     func resolveCitation(_ citation: Citation) -> CitationResolution {
+        if !Config.fieldAssistActive {
+            if let figure = PersonalManualLibrary.shared.resolve(citation) { return .figure(figure) }
+            return .unknown(title: citation.title)
+        }
+        guard let vault = activeVault, VaultRegistry.shared.isUnlocked(vault.manifest) else { return .unknown(title: citation.title) }
         if citation.title.hasPrefix("Photographed manual · ") {
             guard let m = capturedManuals.historical(citation: citation.title),
                   let page = citation.page, (1...m.pageCount).contains(page),
@@ -2568,6 +2583,13 @@ final class FieldSessionService: ObservableObject {
     /// pages it can turn to, the hash the manufacturer's file is checked against, and the
     /// manufacturer's published copy when the manifest names one.
     func manualPageSheet(for figure: StagedFigure) -> ManualPageSheetModel {
+        if !Config.fieldAssistActive {
+            return PersonalManualLibrary.shared.sheet(for: figure)
+                ?? ManualPageSheetModel(citation: "Manual unavailable", documentTitle: "Manual unavailable", citedPage: figure.page)
+        }
+        guard let vault = activeVault, VaultRegistry.shared.isUnlocked(vault.manifest) else {
+            return ManualPageSheetModel(citation: "Manual unavailable", documentTitle: "Manual unavailable", citedPage: figure.page)
+        }
         if let m = capturedManuals.historical(citation: figure.documentTitle) {
             let pdf = try? capturedManuals.source?.file(m, name: "pages.pdf")
             // A table read from a photographed page is outlined where it was read (Plan JN P4).
@@ -2927,7 +2949,7 @@ final class FieldSessionService: ObservableObject {
     func recordAssistantReply(_ text: String, sourceID: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // What "show me the page" refers to next (Plan IN P2): kept whatever the log does.
-        sourceCenter.noteAnswer(trimmed, sessionId: activeSession?.id)
+        sourceCenter.noteAnswer(trimmed, sessionId: PersonalManualLibrary.shared.sourceScope ?? activeSession?.id)
         guard let session = activeSession, let logger, !trimmed.isEmpty else { return }
         // Paused, the job takes no reply — unless the question it answers is already in the
         // record, which is the turn that paused it: "pause the job" was logged while the job ran,

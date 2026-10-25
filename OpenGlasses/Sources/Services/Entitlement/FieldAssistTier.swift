@@ -9,12 +9,14 @@ import Foundation
 /// not a gate**: what the code may do is a `FieldAssistCapability`, because a subscription and the
 /// retired one-time unlock are both `solo` and only one of them includes vaults of your own.
 enum FieldAssistTier: String, Codable, Comparable, Sendable, CaseIterable {
+    case personal
     case solo
     case team
     case enterprise
 
     private var rank: Int {
         switch self {
+        case .personal: return -1
         case .solo: return 0
         case .team: return 1
         case .enterprise: return 2
@@ -25,6 +27,7 @@ enum FieldAssistTier: String, Codable, Comparable, Sendable, CaseIterable {
 
     var label: String {
         switch self {
+        case .personal: return "Personal"
         case .solo: return "Solo"
         case .team: return "Team"
         case .enterprise: return "Enterprise"
@@ -34,6 +37,7 @@ enum FieldAssistTier: String, Codable, Comparable, Sendable, CaseIterable {
     /// One line for the paywall: what this tier unlocks.
     var capabilitySummary: String {
         switch self {
+        case .personal: return "Your manuals, asked by voice with the page cited."
         case .solo: return "Bundled vaults, guided procedures, domain calculators, session log, and expert escalation — and, with a subscription, vaults of your own with your manuals."
         case .team: return "Everything in Solo, plus your own vaults and manuals on every seat, audited PDF export, and organisation-issued configuration."
         case .enterprise: return "Everything in Team, under contract terms: white-label, SLA, retention, and a self-hosted expert relay."

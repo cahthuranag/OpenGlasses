@@ -199,6 +199,11 @@ final class FieldAssistEntitlement: @unchecked Sendable {
         return FieldAssistCapability.capabilities(for: set, now: now)
     }
 
+    func manualLimits() -> ManualLimits? {
+        let (set, now) = read()
+        return ManualLimits.resolve(set, now: now)
+    }
+
     /// Whether the current evidence includes `capability`. **The gate every caller uses** — tiers
     /// describe what a licence is, capabilities decide what the code may do.
     func has(_ capability: FieldAssistCapability) -> Bool {

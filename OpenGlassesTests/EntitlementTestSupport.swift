@@ -10,6 +10,10 @@ struct AlwaysGrantedEntitlementProvider: FieldAssistEntitlementProvider {
 
     func evidence() -> FieldAssistEntitlementEvidenceSet {
         switch tier {
+        case .personal:
+            return FieldAssistEntitlementEvidenceSet(evidence: [
+                .verifiedStoreProduct(productID: StoreKitService.myManualsMonthlyId, expiration: expiration)
+            ])
         case .solo:
             return FieldAssistEntitlementEvidenceSet(evidence: [
                 .verifiedStoreProduct(productID: "com.openglasses.field_assist", expiration: expiration)

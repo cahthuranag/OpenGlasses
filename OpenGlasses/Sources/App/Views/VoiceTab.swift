@@ -33,6 +33,7 @@ struct VoiceTab: View {
     @AppStorage("fieldAssistEnabled") private var fieldAssistEnabled = false
     @ObservedObject private var store = StoreKitService.shared
     @ObservedObject private var adminGate = AdminGate.shared
+    @ObservedObject private var manualLibrary = PersonalManualLibrary.shared
     /// The full-screen day behind the job-day card, and where one of its rows asked to go once it
     /// is out of the way — a composer or another tab cannot be presented from under a cover.
     @State private var showingJobDay = false
@@ -292,6 +293,11 @@ struct VoiceTab: View {
                         }
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                }
+
+                if PersonalManualLibrary.canManage, !FieldAssistEntitlement.shared.has(.fieldWork), manualLibrary.manuals.isEmpty {
+                    Button("Add your first manual") { appState.openSettings(.myManuals) }
+                        .buttonStyle(.bordered)
                 }
 
                 if captionsActive {

@@ -19,7 +19,8 @@ struct FieldAssistEntitlementStatus: Equatable {
         var sourceLabel: String {
             switch source {
             case .storeProduct(let productID):
-                return StoreKitService.fieldAssistSubscriptionIds.contains(productID) ? "App Store subscription" : "In-app purchase"
+                return StoreKitService.fieldAssistSubscriptionIds.union(StoreKitService.myManualsSubscriptionIds)
+                    .contains(productID) ? "App Store subscription" : "In-app purchase"
             case .organizationLicense: return "Organisation licence"
             #if DEBUG
             case .internalDeveloper: return "Internal build"
@@ -81,7 +82,7 @@ enum FieldAssistPaywallCopy {
     static let bundledVaultsOnly = "Your purchase covers the bundled vaults. A subscription adds vaults of your own, with your manuals indexed on this phone; a team licence adds audited PDF export and organisation-issued configuration."
     /// A lapsed subscription is not a locked app: the vaults already installed stay readable, and a
     /// manual can still be taken off the phone. Only new manuals stop.
-    static let ownVaultsLapsed = "Your Field Assist access has lapsed. The vaults already on this phone stay readable and you can still remove a manual; importing new manuals needs an active subscription."
+    static let ownVaultsLapsed = "Your manual access has lapsed. Files stay on this phone and you can still remove them; reading and importing manuals need an active subscription."
     static let ownVaultsLocked = "Vaults of your own need Field Assist — a subscription, or the licence code your organisation issued."
     /// Team learnings (Plan FP), spoken by `team_learning` when it refuses. Licence entry, never
     /// purchase: they come with an organisation's team licence and nothing a consumer can buy.

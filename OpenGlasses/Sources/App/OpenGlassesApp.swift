@@ -3017,6 +3017,7 @@ class AppState: ObservableObject, AppStateProtocol {
         wireAIDisclosures()
         llmService.localLLMService = localLLMService
         llmService.conversationStore = conversationStore
+        PersonalManualLibrary.shared.conversations = conversationStore
         geminiLiveSession.nativeToolRouter = nativeToolRouter
         // Plan FO P3a — the OpenAI Realtime backend reaches the native tools for the first time.
         // Its declared surface is the Field Assist job tools only; see
@@ -5169,6 +5170,9 @@ class AppState: ObservableObject, AppStateProtocol {
         var id: String { stops.map(\.presenter.citation).joined(separator: " | ") }
     }
 
+    /// The picker edits this conversation even if the live thread changes while it is open.
+    var manualPickerThreadID: String?
+    @Published var showManualPicker = false
     /// Non-nil while the manual figure sheet should be presented.
     @Published var manualFigureRequest: ManualFigureRequest?
 
@@ -5935,6 +5939,12 @@ class AppState: ObservableObject, AppStateProtocol {
     /// Capture a photo and send it to the LLM for analysis (manual camera button).
     /// Execute a QuickAction by type — used by widget deep links and overlay.
     func executeQuickAction(_ action: QuickAction) async {
+        if action.id == QuickAction.myManuals.id {
+            guard PersonalManualLibrary.canManage else { return }
+            manualPickerThreadID = conversationStore.activeThreadId
+            showManualPicker = true
+            return
+        }
         // Plan FO P1: starting a job is an app action, not a sentence the model may or may not act
         // on. The prompt that follows is only the introduction.
         if action.id == QuickAction.fieldAssist.id, Config.fieldAssistActive,

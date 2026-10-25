@@ -50,6 +50,7 @@ enum PhoneCapturePolicy {
         "reading_assist": .askOnPhone,
         "look_closely": .askOnPhone,
         "smart_capture": .askOnPhone,
+        "remember_scene": .askOnPhone,
         "identify_medication": .askOnPhone,
         "identify_money": .askOnPhone,
         "identify_color": .askOnPhone,

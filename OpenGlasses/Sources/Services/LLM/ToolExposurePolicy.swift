@@ -190,8 +190,8 @@ enum ToolExposurePolicy {
 ///   web search, directions, nearby places, calls, messages, contacts, notes, units, maths).
 /// - **Seeing** — `capture_photo` (a turn that says "look at this" attaches a still on its own, but
 ///   an explicit photo is this tool) and `look_closely`.
-/// - **Memory** — `memory_search` and `brain`, the recall half (remembering is the `[REMEMBER]` tag
-///   in the prompt and needs no tool).
+/// - **Memory** — `memory_search` and `brain` for recall, and `remember_scene` for explicit camera
+///   memories. Spoken facts use the `[REMEMBER]` tag in the prompt.
 /// - **Control** — `new_topic` and `yield_to_human`, which change how the loop itself behaves.
 /// - **Mandatory routing** — `health_check`, which the prompt's routing rule says MUST be called.
 ///
@@ -209,7 +209,7 @@ enum ToolExposureCore {
         // The phone and the glasses.
         "device_info", "flashlight", "brightness", "music_control", "play_podcast",
         // Notes and memory.
-        "save_note", "list_notes", "memory_search", "brain",
+        "save_note", "list_notes", "memory_search", "brain", "remember_scene",
         // People.
         "phone_call", "send_message", "lookup_contact",
         // Seeing.

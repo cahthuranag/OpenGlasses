@@ -337,7 +337,7 @@ struct ServicesSettingsView: View {
             } header: {
                 Text("iOS Voice")
             } footer: {
-                Text("Used when no cloud voice is available or its credit has run out. Download more voices in iOS Settings → Accessibility → Spoken Content → Voices.")
+                Text("Used when no cloud voice is available or its credit has run out. Download more voices in iPhone Settings → Accessibility → Read & Speak → Voices.")
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 installedVoicesGeneration += 1
@@ -987,7 +987,7 @@ struct ServicesSettingsView: View {
         let have = advice.isCompactOnly
             ? String(localized: "Only the compact \(language) voice is installed.")
             : String(localized: "The Enhanced \(language) voice is installed; a Premium one may be available.")
-        return have + " " + String(localized: "Enhanced and Premium voices sound far more natural. Download one in iOS Settings → Accessibility → Spoken Content → Voices → \(language); on Auto, Avenkin uses the best one installed.")
+        return have + " " + String(localized: "Enhanced and Premium voices sound far more natural. Download one in iPhone Settings → Accessibility → Read & Speak → Voices → \(language); on Auto, Avenkin uses the best one installed.")
     }
 
     private func qualityLabel(_ quality: AVSpeechSynthesisVoiceQuality) -> String {

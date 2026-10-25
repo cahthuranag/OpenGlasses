@@ -26,6 +26,7 @@ enum FieldToolProfile {
         "convert_units", "calculate", "capture_flow", "safety_assessment", "first_aid",
         "emergency_info", "task", "propose_task", "reminder", "set_timer", "save_note", "list_notes",
         "session_search", "summarize_conversation", "new_topic", "yield_to_human",
+        "remember_scene", "memory_search", "my_memory",
         "discover_capabilities", "get_datetime", "get_weather", "where_am_i", "navigate",
         "get_directions", "find_nearby", "phone_call", "lookup_contact", "send_message",
         "web_search", "flashlight", "device_info", "teleprompter", "playbook",

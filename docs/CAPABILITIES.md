@@ -83,9 +83,17 @@ Avenkin combines explicit notes, saved locations, conversation records, and an o
 | “Remember my car is in lot B, level 3” | An object-memory entry, with location when permitted |
 | “Where did I park?” | Your previously saved location |
 | “Remember Sarah likes hiking” | A saved fact about a person |
+| “Remember this scene” / “Remember this label” | A timestamped camera description and readable text in saved memory |
+| “What model number was on that label?” | Search over previously saved scene text and descriptions |
 | “What do I know about Sarah?” | Facts you have recorded |
 | “Summarize the meeting” | Available ambient-caption history |
 | “What did they just say?” | Recent audio, when memory rewind is enabled |
+
+Scene memory saves text, not the photo, and follows the saved-memory switch, active persona,
+storage limits, and Memory screen's review and forget controls. Text recognition runs on-device;
+the scene description uses the selected supported cloud vision model. With Offline Mode enabled,
+or when that description is unavailable, readable text can still be saved on its own. Local-model
+scene descriptions are not yet supported by this action.
 
 **Enable capture before you need recall.** Memory rewind uses an opt-in rolling audio buffer; it cannot recover speech from before buffering started. Meeting summaries need a captured transcript—start ambient captions before the conversation. Audio recording is a separate capture path with its own library.
 

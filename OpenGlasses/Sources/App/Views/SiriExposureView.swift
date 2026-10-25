@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings → Siri & Search (Plan BQ P1) — the user-curated Siri surface.
+/// Settings → Tools & Actions → Siri & Search (Plan BQ P1) — the user-curated Siri surface.
 ///
 /// Three sections mirror the catalog's three sources: built-in action toggles, harvested
 /// user-authored capabilities (capture flows / procedures / playbooks / custom tools), and
@@ -468,7 +468,7 @@ struct SiriActionEditorView: View {
         case .toolNeedsDirectConfirmation(let tool):
             return "\"\(tool)\" takes an action you have to confirm yourself, so it can't run from a saved voice action. Ask the assistant for it instead."
         case .agentModeRequired:
-            return "Custom tools need Agentic Features enabled (Settings → Agentic Features)."
+            return "Custom tools need Agentic Features enabled (Settings → AI & Personality → Agentic Features)."
         }
     }
 }

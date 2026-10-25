@@ -284,7 +284,7 @@ struct ToolsSettingsView: View {
             }
             Button("Cancel", role: .cancel) { permissionDeniedTool = nil }
         } message: {
-            Text("\(permissionDeniedTool ?? "Permission") was denied. You can grant it in Settings.")
+            Text("\(permissionDeniedTool ?? "Permission") was denied. You can grant it in iPhone Settings → Apps → Avenkin.")
         }
     }
 }

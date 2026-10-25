@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings → Privacy → Health: what Avenkin reads from Apple Health, whether the AI may see it,
+/// Settings → Devices & Privacy → Hardware & Privacy → Health: what Avenkin reads from Apple Health, whether the AI may see it,
 /// and the summary kept on this phone for locked-phone answers (Plan GI).
 struct HealthSettingsView: View {
     @State private var shareWithAI = Config.shareHealthDataWithAI

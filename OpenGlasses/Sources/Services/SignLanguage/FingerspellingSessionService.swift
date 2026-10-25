@@ -149,7 +149,7 @@ final class FingerspellingSessionService: ObservableObject {
             return
         }
 
-        // P3 tuning knobs (Settings › Fingerspelling › Tuning): decode cadence and the
+        // P3 tuning knobs (Settings › Accessibility › Fingerspelling › Tuning): decode cadence and the
         // observation confidence floor, adjustable on device without rebuilds.
         var rules = FingerspellingLiveDecoder.ctcRules()
         rules.confidenceFloor = Config.fingerspellingConfidenceFloor

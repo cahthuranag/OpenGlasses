@@ -159,6 +159,9 @@ final class NativeToolRegistry {
                                       jobEvidence: FieldSessionService.shared))
             register(QRContextTool(cameraService: camera))
             register(SmartCaptureTool(cameraService: camera))
+            if let memory = semanticMemory {
+                register(RememberSceneTool(cameraService: camera, memoryStore: memory))
+            }
             // Plan CB: sharp-frame injection for live sessions. The injector resolves through
             // AppStateProvider at execution time — the session managers are per-session objects,
             // and capturing one here would go stale on the first teardown (see LookCloselyTool).

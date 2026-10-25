@@ -122,7 +122,7 @@ struct MedicalCompliancePaywallView: View {
                     .font(.subheadline)
                     .disabled(storeKit.isRestoring || storeKit.isPurchasing)
 
-                    Text("Subscription renews automatically. Cancel anytime in Settings → Apple ID → Subscriptions.")
+                    Text("Subscription renews automatically. Cancel anytime in iPhone Settings → [your name] → Subscriptions.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

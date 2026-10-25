@@ -57,7 +57,7 @@ final class CalendarTool: NativeTool, @unchecked Sendable {
         granted = try await eventStore.requestCalendarAccess()
 
         guard granted else {
-            return "Calendar access denied. Please enable calendar access in Settings > Privacy > Calendars."
+            return "Calendar access denied. Please enable calendar access in iPhone Settings > Privacy & Security > Calendars."
         }
 
         let action = (args["action"] as? String ?? "today").lowercased()

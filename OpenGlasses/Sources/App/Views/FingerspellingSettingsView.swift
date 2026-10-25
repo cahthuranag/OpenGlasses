@@ -130,7 +130,7 @@ struct FingerspellingSettingsView: View {
         } header: {
             Text("Live Recognition")
         } footer: {
-            Text("Works best with the signer 1–2 m away, facing the camera, at a camera frame rate of 15 fps or higher (Settings › Look & Feel › Camera).")
+            Text("Works best with the signer 1–2 m away, facing the camera, at a camera frame rate of 15 fps or higher (Settings › Connections › Services & Integrations › Camera).")
         }
     }
 

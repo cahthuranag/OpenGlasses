@@ -304,7 +304,7 @@ struct FieldAssistModeTab: View {
         let all = manuals
         Section {
             if all.isEmpty {
-                Text("No manuals yet. Add your manufacturers' manuals to a vault under Settings › Field Assist › Custom Vaults.")
+                Text("No manuals yet. Add your manufacturers' manuals to a vault under Settings › Tools & Actions › Custom Vaults.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {

@@ -36,6 +36,7 @@ enum AppleOnDeviceToolSet {
         "get_datetime", "get_weather", "where_am_i", "calendar", "reminder", "set_timer",
         "set_alarm", "calculate", "flashlight", "brightness", "music_control", "step_count",
         "health_summary", "device_info", "activity",
+        "remember_scene", "memory_search",
     ]
 
     /// Last, because it needs the network and its answer is the longest: a real search call,

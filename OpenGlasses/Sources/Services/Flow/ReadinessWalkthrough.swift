@@ -221,7 +221,7 @@ enum ReadinessWalkthrough {
 
     /// Where a refused permission is actually granted. iOS asks once, so this is the only route.
     static let openSettingsInstruction =
-        "Open iOS Settings, find Avenkin, and turn the permission on there. iOS only asks once."
+        "Open iPhone Settings, then Apps, then Avenkin, and turn the permission on there. iOS only asks once."
 
     // MARK: - The table
 

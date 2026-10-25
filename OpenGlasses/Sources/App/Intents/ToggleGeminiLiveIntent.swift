@@ -1,7 +1,7 @@
 import AppIntents
 
 /// AppIntent for the iPhone Action Button — toggles a Gemini Live session.
-/// User configures: Settings → Action Button → Shortcut → "Toggle Gemini Live".
+/// User configures: iPhone Settings → Action Button → Shortcut → "Toggle Gemini Live".
 struct ToggleGeminiLiveIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Gemini Live"
     static var description = IntentDescription("Start or stop a Gemini Live session")

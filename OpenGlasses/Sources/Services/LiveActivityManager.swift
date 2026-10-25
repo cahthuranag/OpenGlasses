@@ -24,7 +24,7 @@ class LiveActivityManager {
         }
     }
 
-    /// Whether the wearer allows this app to show Live Activities at all (Settings › Avenkin).
+    /// Whether the wearer allows this app to show Live Activities at all (iPhone Settings › Apps › Avenkin).
     static var activitiesEnabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
 
     /// Whether the activity this manager started is still live on the Lock Screen — not ended

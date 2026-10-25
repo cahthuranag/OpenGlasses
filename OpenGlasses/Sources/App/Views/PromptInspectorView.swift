@@ -136,7 +136,7 @@ struct PromptInspectorView: View {
             icon: "network",
             content: hasOpenClaw
                 ? "Adds the 'execute' tool for external integrations — messaging, web search, smart home, and more via your Mac."
-                : "Not configured. Enable in Settings → Services & Integrations.",
+                : "Not configured. Set up OpenClaw in Settings → Connections → Gateways.",
             isPresent: hasOpenClaw
         ))
 
@@ -156,7 +156,7 @@ struct PromptInspectorView: View {
                 ? memoryContext!
                 : memoryEnabled
                     ? "Enabled — no memories stored yet. Tell the AI facts about yourself and it will remember them."
-                    : "Disabled. Turn on in Settings → Intelligence.",
+                    : "Disabled. Turn on User Memory in Settings → AI & Personality.",
             isPresent: memoryEnabled
         ))
 

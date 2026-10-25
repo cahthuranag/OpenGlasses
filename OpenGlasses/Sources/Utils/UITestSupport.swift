@@ -24,6 +24,9 @@ enum UITestSupport {
         case freshInstall = "-OGUITestFreshInstall"
         /// Past onboarding.
         case configured = "-OGUITestConfigured"
+        /// Render the shipping App Store policy for screenshots on a simulator. The real
+        /// installation channel still decides this in Release and on physical devices.
+        case storePresentation = "-OGUITestStorePresentation"
         /// Captions overlay on screen with a short history and a live line.
         case seedCaptions = "-OGUITestSeedCaptions"
         /// My Day set up and loaded with a full card's worth of rows — the state that needs a
@@ -131,9 +134,34 @@ enum UITestSupport {
 
     static var isActive: Bool { arguments.contains(activation) }
 
+    static var initialTab: MainTab? {
+        #if targetEnvironment(simulator)
+        guard isSet(.storePresentation),
+              let index = arguments.firstIndex(of: "-OGUITestInitialTab"),
+              arguments.indices.contains(index + 1) else { return nil }
+        return MainTab(rawValue: arguments[index + 1])
+        #else
+        return nil
+        #endif
+    }
+
     static func isSet(_ flag: Flag) -> Bool { isActive && arguments.contains(flag.rawValue) }
 
-    private static var arguments: [String] { ProcessInfo.processInfo.arguments }
+    private static var arguments: [String] {
+        var result = ProcessInfo.processInfo.arguments
+        #if targetEnvironment(simulator)
+        // Device Hub can relaunch a simulator app without preserving its argv. Keep the
+        // screenshot state available through simctl's documented child environment too.
+        let environment = ProcessInfo.processInfo.environment
+        if environment["AVENKIN_STORE_SCREENSHOTS"] == "1" {
+            result += [activation, Flag.configured.rawValue, Flag.storePresentation.rawValue]
+            if let tab = environment["AVENKIN_SCREENSHOT_TAB"], MainTab(rawValue: tab) != nil {
+                result += ["-OGUITestInitialTab", tab]
+            }
+        }
+        #endif
+        return result
+    }
 
     // MARK: - Defaults-backed state
 
@@ -143,6 +171,10 @@ enum UITestSupport {
     /// settings-journey migration, both of which read what this writes.
     static func applyLaunchState() {
         guard isActive else { return }
+
+        #if targetEnvironment(simulator)
+        GlassesSupportPolicy.overrideForTesting = isSet(.storePresentation) ? .notInThisVersion : nil
+        #endif
 
         // Every run starts from the same defaults, whatever the simulator was left holding.
         if let domain = Bundle.main.bundleIdentifier {

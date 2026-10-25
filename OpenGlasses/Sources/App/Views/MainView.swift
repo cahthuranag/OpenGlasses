@@ -9,7 +9,11 @@ struct MainView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var store = StoreKitService.shared
     @StateObject private var sessions = FieldSessionService.shared
+    #if DEBUG
+    @State private var selectedTab: MainTab = UITestSupport.initialTab ?? .voice
+    #else
     @State private var selectedTab: MainTab = .voice
+    #endif
     @StateObject private var workspace = AdaptiveWorkspaceState()
     @StateObject private var manualPresentation = ManualFigurePresentation()
     @State private var showOnboarding = Config.needsOnboarding

@@ -22,8 +22,15 @@ All uploads were verified by filename and count in App Store Connect. RGB PNGs h
 | iPhone medium Dynamic Island | Home, Apple app integrations, AI provider selection | 1206 × 2622 |
 | iPad 13-inch | Workspace, Apple app integrations | 2752 × 2064 |
 | Apple Watch Series 12 46mm | Connected companion controls | 416 × 496 |
+| iPhone Duo | Closed cover display, fully open workspace | 1398 × 2034; 2853 × 2007 |
 
 The upload sources are `screenshots/*-rgb.png`. Captures use a Debug simulator with the shipping App Store glasses policy explicitly selected; this does not grant subscriptions or fabricate provider responses. Apple Intelligence is shown as the configured model, without claiming a successful AI request on the simulator.
+
+## Product page header
+
+`header/avenkin-header-3840x1646.png` uses the existing Open Span brand mark, orange/ivory/charcoal colours and the listing's “Talk. Ask. Get things done.” message. The waveform and task/calendar/document artwork are original vectors; the header does not depict glasses or fabricate an app response. `header-art.svg` and `build-header.sh` retain editable artwork and a reproducible export.
+
+The export is an opaque 8-bit RGB PNG at 3840 × 1646, one of Apple's accepted header sizes. It is uploaded as the selected product page header. Apple's loaded iPhone product-page preview was visually checked, including the top-control safe area; `header/app-store-header-preview.jpg` records the result. References: [creative asset specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications) and [asset best practices](https://developer.apple.com/app-store/asset-best-practices/).
 
 ## Remaining before submission
 
@@ -31,7 +38,12 @@ The upload sources are `screenshots/*-rgb.png`. Captures use a Debug simulator w
 2. Retest the live My Manuals StoreKit catalogue after Apple's agreement/account changes propagate. Verify the displayed monthly price, eligible one-week trial, purchase, restore and separate service access. Capture the actual functioning paywall for the subscription's required review screenshot. Local StoreKit tests do not establish live catalogue availability.
 3. Review and publish the saved App Privacy draft. It conservatively includes Health, Fitness, precise/coarse location, Contacts, photos/videos, audio, other user content and search history, used for App Functionality, linked to identity and not for tracking. The draft reflects optional third-party processing and has not been published or independently audited against every provider's retention practices. Reference: https://developer.apple.com/app-store/app-privacy-details/
 4. Complete the final age-rating questionnaire audit and encryption questions for the selected build. Existing age rating was retained; no unverified accessibility claims were added.
-5. An optional Duo screenshot remains outstanding. Device Hub accepted app launch and exposed posture controls, but repeatedly lost its window/remote accessibility connection and did not produce a verified expanded-screen capture. Do not claim physical folding has been tested. Existing iPhone/iPad assets must not be resized into a Duo screenshot.
+
+## Duo simulator recovery — 26 October
+
+After a computer restart, the iOS 27.2 Duo runtime image remained installed but its profile was not registered. `xcrun simctl runtime scan-and-mount` restored availability without downloading or deleting a runtime. The existing Duo then booted and its normal Open control successfully changed to the inner display. Exporting native display 3 produced a verified 2853 × 2007 image of the expanded workspace. Both open and closed images are uploaded; no iPhone or iPad capture was resized into a Duo asset. This verifies simulator layouts, not physical folding hardware.
+
+Earlier direct screen-power switching produced SpringBoard display-configuration assertions and was reverted. Do not use independent display-power changes as a folding substitute; use Device Hub's posture controls after the runtime is properly mounted.
 
 ## Source polish and validation
 

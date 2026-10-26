@@ -186,7 +186,11 @@ enum RealtimeProviderCatalog {
               model: "qwen3.8-max", vision: true),
         .init(id: "doubao", name: "Doubao (Ark API)",
               endpoint: "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-              model: "doubao-seed-2-1-pro-260628", vision: true)
+              model: "doubao-seed-2-1-pro-260628", vision: true),
+        // One key for Qwen, DeepSeek, GLM and others, with free credits on sign-up.
+        .init(id: "siliconflow", name: "SiliconFlow",
+              endpoint: "https://api.siliconflow.cn/v1/chat/completions",
+              model: "Qwen/Qwen3-VL-32B-Instruct", vision: true)
     ]
 }
 

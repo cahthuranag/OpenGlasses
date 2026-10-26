@@ -213,6 +213,8 @@ struct ModelFormView: View {
                     Text("Replace {workspace} in the URL with your Model Studio workspace ID, and use an API key from that workspace. Beijing and Singapore workspaces have separate IDs and keys. This is separate from the Qwen Coding Plan subscription.")
                 } else if providerTemplateID.wrappedValue == "doubao" {
                     Text("Use a Beijing Ark API key and a model ID or endpoint ID enabled for your account. Doubao speech has separate credentials.")
+                } else if providerTemplateID.wrappedValue == "siliconflow" {
+                    Text("Use a SiliconFlow API key. One key reaches Qwen, DeepSeek, GLM and more. Pick a vision model, such as Qwen3-VL, to send camera images.")
                 } else {
                     Text(providerHelpText)
                 }

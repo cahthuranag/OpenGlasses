@@ -42,6 +42,12 @@ struct OnboardingView: View {
     @State private var keyValid = false
     @State private var availableModels: [ModelFetcher.RemoteModel] = []
     @State private var selectedModelId: String?
+    /// A chat template picked instead of a built-in provider; `selectedProvider` is `.custom` then.
+    @State private var selectedTemplateID: String?
+    @State private var workspaceID = ""
+    @State private var modelStudioRegion: ModelStudioRegion = .beijing
+    /// Read once, so the list doesn't reorder under the user.
+    private let chinaFirst = OnboardingProviderPolicy.prefersChinaReachableProvidersOnThisDevice
 
     // Sign in with Claude (OAuth) — the no-API-key path for the Anthropic provider. Same
     // service the model editor uses; a connected account means requests authenticate with
@@ -499,6 +505,7 @@ struct OnboardingView: View {
                             icon: "iphone"
                         )
                     }
+                    if chinaFirst { chinaReachableRows }
                     providerRow(
                         .anthropic,
                         name: "Anthropic",
@@ -535,33 +542,13 @@ struct OnboardingView: View {
                         icon: "bolt"
                     )
                     providerRow(
-                        .deepseek,
-                        name: "DeepSeek",
-                        model: "V4.1 Flash",
-                        detail: "Multimodal vision, strong coding, low cost",
-                        icon: "fish"
-                    )
-                    providerRow(
                         .mistral,
                         name: "Mistral AI",
                         model: "Medium",
                         detail: "European AI lab, strong multilingual, vision",
                         icon: "wind"
                     )
-                    providerRow(
-                        .qwen,
-                        name: "Qwen",
-                        model: "Qwen3.5 Plus",
-                        detail: "Vision capable, bring your own key",
-                        icon: "globe.asia.australia"
-                    )
-                    providerRow(
-                        .zai,
-                        name: "Z.ai",
-                        model: "GLM-4.5",
-                        detail: "Bring your own key",
-                        icon: "bolt.circle"
-                    )
+                    if !chinaFirst { chinaReachableRows }
                 }
 
                 // Collapsed section for other providers
@@ -573,6 +560,15 @@ struct OnboardingView: View {
                             model: "500+ models",
                             detail: "Access many providers through one key",
                             icon: "arrow.triangle.branch"
+                        )
+                        // The Coding Plan is a separate subscription with its own sk-sp- keys and
+                        // host; a pay-as-you-go Model Studio key fails here, so it isn't "Qwen".
+                        providerRow(
+                            .qwen,
+                            name: "Qwen Coding Plan",
+                            model: LLMProvider.qwen.defaultModel,
+                            detail: "Only for a Coding Plan subscription key (sk-sp-…)",
+                            icon: "chevron.left.forwardslash.chevron.right"
                         )
                     } label: {
                         Text("More providers")
@@ -603,7 +599,7 @@ struct OnboardingView: View {
         let claudeConnected = provider == .anthropic && claudeOAuth.isConnected
 
         return VStack(spacing: 0) {
-            pageTitle(keyPageTitle(provider), keyPageSubtitle(provider), page: .accessKey)
+            pageTitle(keyPageTitle(provider), keyPageSubtitle(provider, name: selectedTemplate?.name), page: .accessKey)
 
             List {
                 if needsKey {
@@ -701,7 +697,7 @@ struct OnboardingView: View {
         return "You're all set"
     }
 
-    private func keyPageSubtitle(_ provider: LLMProvider) -> String? {
+    private func keyPageSubtitle(_ provider: LLMProvider, name templateName: String? = nil) -> String? {
         if provider == .chatgpt {
             return "Sign in with your ChatGPT account — no API key needed"
         }
@@ -711,12 +707,42 @@ struct OnboardingView: View {
         guard provider.requiresAPIKey else { return nil }
         return provider == .anthropic
             ? "Sign in with your Claude account, or paste an API key"
-            : "Paste your \(provider.displayName) access key below"
+            : "Paste your \(templateName.map { String(localized: String.LocalizationValue($0)) } ?? provider.displayName) access key below"
     }
 
     /// The key field, its "get a key" link, and the validation state — a stock
     /// grouped section, so the field behaves like every other field on iOS.
+    @ViewBuilder
     private func accessKeySection(_ provider: LLMProvider) -> some View {
+        if let template = selectedTemplate, OnboardingProviderPolicy.needsWorkspace(template) {
+            Section {
+                Picker("Region", selection: $modelStudioRegion) {
+                    ForEach(ModelStudioRegion.allCases) { Text($0.title).tag($0) }
+                }
+                .frame(minHeight: rowMinHeight)
+                .accessibilityIdentifier("onboarding.region")
+                TextField("Workspace ID", text: $workspaceID)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .frame(minHeight: rowMinHeight)
+                    .accessibilityIdentifier("onboarding.workspace")
+            } header: {
+                Text("Model Studio")
+            } footer: {
+                Text("Find the workspace ID on its details page in the Model Studio console. Beijing and Singapore workspaces have separate IDs and keys.")
+            }
+            .onChange(of: modelStudioRegion) { _, _ in
+                // Keys and workspaces belong to one region; never offer one to the other.
+                apiKey = ""
+                workspaceID = ""
+            }
+            .onChange(of: workspaceID) { _, _ in
+                validationError = nil
+                keyValid = false
+                availableModels = []
+                selectedModelId = nil
+            }
+        }
         Section {
             HStack(spacing: 8) {
                 SecretInputField(placeholder: "sk-...", text: $apiKey)
@@ -1734,44 +1760,96 @@ struct OnboardingView: View {
         detail: String,
         icon: String
     ) -> some View {
-        let selected = selectedProvider == provider
+        let selected = selectedProvider == provider && selectedTemplateID == nil
 
         return Button {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                 selectedProvider = provider
+                selectedTemplateID = nil
                 modelName = model
             }
         } label: {
-            HStack(spacing: OGMetrics.rowSpacing) {
-                OGIconTile(systemName: icon)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                    Text(detail)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 8)
-
-                OGSelectionCheck(selected)
-            }
-            .frame(minHeight: rowMinHeight)
-            .contentShape(Rectangle())
+            providerRowLabel(name: name, detail: detail, icon: icon, selected: selected)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(name) — \(detail)")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
+    /// Providers that answer in mainland China without a VPN: first on a Chinese-language or
+    /// mainland phone, after the others elsewhere.
+    @ViewBuilder
+    private var chinaReachableRows: some View {
+        templateRow("qwen", name: "Qwen", detail: "Alibaba Model Studio. Vision capable, Beijing or Singapore", icon: "globe.asia.australia")
+        templateRow("doubao", name: "Doubao", detail: "ByteDance Ark. Vision capable", icon: "flame")
+        providerRow(
+            .deepseek,
+            name: "DeepSeek",
+            model: "V4.1 Flash",
+            detail: "Multimodal vision, strong coding, low cost",
+            icon: "fish"
+        )
+        providerRow(
+            .zai,
+            name: "Z.ai",
+            model: "GLM-4.5",
+            detail: "Bring your own key",
+            icon: "bolt.circle"
+        )
+        templateRow("siliconflow", name: "SiliconFlow", detail: "One key for Qwen, DeepSeek, GLM and more. Free credits", icon: "square.stack.3d.up")
+    }
+
+    /// A row for an OpenAI-compatible chat template from `RealtimeProviderCatalog`.
+    @ViewBuilder
+    private func templateRow(_ id: String, name: String, detail: String, icon: String) -> some View {
+        if let template = RealtimeProviderCatalog.chatTemplates.first(where: { $0.id == id }) {
+            let selected = selectedTemplateID == id
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                    selectedProvider = .custom
+                    selectedTemplateID = id
+                    modelName = template.model
+                }
+            } label: {
+                providerRowLabel(name: name, detail: detail, icon: icon, selected: selected)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(name) — \(detail)")
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        }
+    }
+
+    private func providerRowLabel(name: String, detail: String, icon: String, selected: Bool) -> some View {
+        HStack(spacing: OGMetrics.rowSpacing) {
+            OGIconTile(systemName: icon)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            OGSelectionCheck(selected)
+        }
+        .frame(minHeight: rowMinHeight)
+        .contentShape(Rectangle())
+    }
+
     // MARK: - Logic
+
+    private var selectedTemplate: RealtimeProviderCatalog.ChatTemplate? {
+        RealtimeProviderCatalog.chatTemplates.first { $0.id == selectedTemplateID }
+    }
 
     private func configureDefaults() {
         guard let provider = selectedProvider else { return }
-        modelName = provider.defaultModel
+        modelName = selectedTemplate?.model ?? provider.defaultModel
     }
 
     private func validateKey() {
@@ -1791,6 +1869,19 @@ struct OnboardingView: View {
             return
         }
 
+        var baseURL = provider.defaultBaseURL
+        var defaultModel = provider.defaultModel
+        if let template = selectedTemplate {
+            guard let endpoint = OnboardingProviderPolicy.endpoint(for: template, region: modelStudioRegion,
+                                                                   workspaceID: workspaceID) else {
+                validationError = String(localized: "Enter your Model Studio workspace ID: letters, numbers and hyphens only.")
+                SessionAnnouncer.say(validationError ?? "", interrupts: true)
+                return
+            }
+            baseURL = endpoint
+            defaultModel = template.model
+        }
+
         isValidating = true
         validationError = nil
 
@@ -1798,7 +1889,7 @@ struct OnboardingView: View {
             let models = await ModelFetcher.fetchModels(
                 provider: provider,
                 apiKey: trimmed,
-                baseURL: provider.defaultBaseURL
+                baseURL: baseURL
             )
 
             await MainActor.run {
@@ -1807,13 +1898,13 @@ struct OnboardingView: View {
                     // Key may still be valid even if model listing fails — accept it
                     keyValid = true
                     availableModels = []
-                    selectedModelId = provider.defaultModel
+                    selectedModelId = defaultModel
                 } else {
                     keyValid = true
                     availableModels = models
                     // Pre-select the provider's default model if it's in the list
-                    if models.contains(where: { $0.id == provider.defaultModel }) {
-                        selectedModelId = provider.defaultModel
+                    if models.contains(where: { $0.id == defaultModel }) {
+                        selectedModelId = defaultModel
                     } else {
                         selectedModelId = models.first?.id
                     }
@@ -1888,7 +1979,7 @@ struct OnboardingView: View {
         let chosenModel = selectedModelId
             ?? (provider == .local ? offeredLocalModelId : provider.defaultModel)
 
-        let model = ModelConfig(
+        var model = ModelConfig(
             id: UUID().uuidString,
             name: provider.displayName,
             provider: provider.rawValue,
@@ -1896,10 +1987,20 @@ struct OnboardingView: View {
             model: chosenModel,
             baseURL: provider.defaultBaseURL
         )
+        if let template = selectedTemplate {
+            // Without a workspace ID yet, keep the regional placeholder: the model editor asks
+            // for it and refuses to connect until it is filled in.
+            model.name = String(localized: String.LocalizationValue(template.name))
+            model.model = selectedModelId ?? template.model
+            model.baseURL = OnboardingProviderPolicy.endpoint(for: template, region: modelStudioRegion, workspaceID: workspaceID)
+                ?? ModelStudioRegion.endpoint(template.endpoint, in: modelStudioRegion)
+            model.supportsVision = template.vision
+            model.providerTemplateID = template.id
+        }
 
         var models = Config.savedModels
-        // Replace existing model for same provider, or append
-        if let idx = models.firstIndex(where: { $0.provider == provider.rawValue }) {
+        // Replace existing model for same provider (or template), or append
+        if let idx = models.firstIndex(where: { $0.provider == provider.rawValue && $0.providerTemplateID == model.providerTemplateID }) {
             models[idx] = model
         } else {
             models.append(model)
@@ -1938,6 +2039,12 @@ struct OnboardingView: View {
     }
 
     private func openAPIKeyURL(for provider: LLMProvider) {
+        if let template = selectedTemplate,
+           let page = OnboardingProviderPolicy.keyPage(for: template, region: modelStudioRegion),
+           let url = URL(string: page.url) {
+            UIApplication.shared.open(url)
+            return
+        }
         let urlString: String
         switch provider {
         case .anthropic: urlString = "https://console.anthropic.com/settings/keys"
@@ -1958,6 +2065,9 @@ struct OnboardingView: View {
     }
 
     private func apiKeyURLLabel(for provider: LLMProvider) -> String {
+        if let template = selectedTemplate, let page = OnboardingProviderPolicy.keyPage(for: template, region: modelStudioRegion) {
+            return "Get a key at \(page.host)"
+        }
         switch provider {
         case .anthropic: return "Get a key at console.anthropic.com"
         case .openai: return "Get a key at platform.openai.com"

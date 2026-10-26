@@ -27,6 +27,7 @@ enum NetworkCategory: String, CaseIterable {
         if h.contains("anthropic.com") || h.contains("openai.com") || h.contains("googleapis.com")
             || h.contains("groq.com") || h.contains("together") || h.contains("perplexity")
             || h.contains("deepseek") || h.contains("mistral") || h.contains("dashscope")
+            || h.hasSuffix(".maas.aliyuncs.com")
             || h == "x.ai" || h.hasSuffix(".x.ai") {
             return .aiProvider
         }

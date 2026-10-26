@@ -29,6 +29,8 @@ struct ModelFormView: View {
     @State private var isScanning = false
     @State private var discoveredServers: [LocalServerScanner.DiscoveredServer] = []
     @State private var scanMessage: String?
+    /// Per-region workspace URL and key while a Model Studio template is being edited.
+    @State private var regionDrafts = ModelStudioRegionDrafts()
 
     // Account sign-in state (Anthropic, ChatGPT and xAI — rendered via the shared OAuthSignInRows)
     @ObservedObject private var claudeOAuth = ClaudeOAuthService.shared
@@ -76,6 +78,14 @@ struct ModelFormView: View {
                     name = newProvider.displayName
                 }
                 resetModelList()
+            }
+            if let template = RealtimeProviderCatalog.chatTemplates.first(where: { $0.id == providerTemplateID.wrappedValue }),
+               ModelStudioRegion.region(of: template.endpoint) != nil,
+               let region = ModelStudioRegion.region(of: baseURL) {
+                Picker("Region", selection: Binding(get: { region }, set: { switchRegion(from: region, to: $0) })) {
+                    ForEach(ModelStudioRegion.allCases) { Text($0.title).tag($0) }
+                }
+                .accessibilityIdentifier("chat.region")
             }
         } header: {
             Text("Provider")
@@ -200,7 +210,7 @@ struct ModelFormView: View {
                 Text(selectedProvider == .chatgpt ? "ChatGPT Account" : "API Key")
             } footer: {
                 if providerTemplateID.wrappedValue == "qwen" {
-                    Text("Replace {workspace} in the URL with your Beijing Model Studio workspace ID. Use that workspace’s API key. This is separate from the Qwen Coding Plan subscription.")
+                    Text("Replace {workspace} in the URL with your Model Studio workspace ID, and use an API key from that workspace. Beijing and Singapore workspaces have separate IDs and keys. This is separate from the Qwen Coding Plan subscription.")
                 } else if providerTemplateID.wrappedValue == "doubao" {
                     Text("Use a Beijing Ark API key and a model ID or endpoint ID enabled for your account. Doubao speech has separate credentials.")
                 } else {
@@ -264,6 +274,7 @@ struct ModelFormView: View {
                 model = template.model
                 supportsVision = template.vision
                 apiKey = ""
+                regionDrafts = ModelStudioRegionDrafts()
                 if name.isEmpty || name == previousName { name = template.name }
                 resetModelList()
             } else if let provider = LLMProvider(rawValue: String(value.dropFirst("provider:".count))) {
@@ -422,6 +433,14 @@ struct ModelFormView: View {
     }
 
     // MARK: - Private
+
+    private func switchRegion(from: ModelStudioRegion, to: ModelStudioRegion) {
+        guard from != to, let template = RealtimeProviderCatalog.chatTemplates.first(where: { $0.id == providerTemplateID.wrappedValue }) else { return }
+        let draft = regionDrafts.switchRegion(from: from, to: to, current: .init(endpoint: baseURL, apiKey: apiKey),
+                                              templateEndpoint: template.endpoint)
+        baseURL = draft.endpoint
+        apiKey = draft.apiKey
+    }
 
     private func resetModelList() {
         availableModels = []

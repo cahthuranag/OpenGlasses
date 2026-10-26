@@ -93,6 +93,52 @@ struct RealtimeProviderTemplate: Identifiable {
     }
 }
 
+/// Model Studio serves each region from its own workspace host, and a workspace ID and its API
+/// key belong to one region: a Beijing key is rejected in Singapore and the other way round.
+/// Templates are written for Beijing; `endpoint(_:in:)` moves one to another region.
+enum ModelStudioRegion: String, CaseIterable, Identifiable {
+    case beijing = "cn-beijing"
+    case singapore = "ap-southeast-1"
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .beijing: return String(localized: "China (Beijing)")
+        case .singapore: return String(localized: "International (Singapore)")
+        }
+    }
+    private var hostSuffix: String { ".\(rawValue).maas.aliyuncs.com" }
+    /// The region of a workspace endpoint, or nil for any other host (a custom or legacy URL).
+    static func region(of endpoint: String) -> ModelStudioRegion? {
+        // `{workspace}` is not a valid host label, so read the authority by hand.
+        guard let schemeEnd = endpoint.range(of: "://") else { return nil }
+        let authority = endpoint[schemeEnd.upperBound...].prefix { $0 != "/" && $0 != "?" }
+        let host = authority.split(separator: ":").first.map { $0.lowercased() } ?? ""
+        return allCases.first { host.hasSuffix($0.hostSuffix) }
+    }
+    /// A Beijing template endpoint rewritten for `region`. Other endpoints are returned unchanged.
+    static func endpoint(_ templateEndpoint: String, in region: ModelStudioRegion) -> String {
+        guard Self.region(of: templateEndpoint) == .beijing else { return templateEndpoint }
+        return templateEndpoint.replacingOccurrences(of: ModelStudioRegion.beijing.hostSuffix, with: region.hostSuffix)
+    }
+}
+
+/// What an editor holds for each region while it is open. Switching region never carries a
+/// workspace endpoint or a key across; switching back restores what was entered for that region.
+struct ModelStudioRegionDrafts: Equatable {
+    struct Draft: Equatable {
+        var endpoint: String
+        var apiKey: String
+    }
+    private var drafts: [ModelStudioRegion: Draft] = [:]
+    /// Keeps `current` as `from`'s draft and returns `to`'s: the one entered earlier, or the
+    /// template endpoint for that region with no key.
+    mutating func switchRegion(from: ModelStudioRegion, to: ModelStudioRegion, current: Draft,
+                               templateEndpoint: String) -> Draft {
+        drafts[from] = current
+        return drafts[to] ?? Draft(endpoint: ModelStudioRegion.endpoint(templateEndpoint, in: to), apiKey: "")
+    }
+}
+
 /// Both editors read this catalog. Templates contain defaults, never credentials.
 enum RealtimeProviderCatalog {
     static let templates: [RealtimeProviderTemplate] = [
@@ -103,14 +149,14 @@ enum RealtimeProviderCatalog {
               endpoint: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
               model: GeminiLiveModelPolicy.offlineFallbackModel, voice: "",
               help: String(localized: "Use a Gemini API key and a model enabled for Live audio on your account.")),
-        .init(id: "qwen", name: "Qwen (China API)", profile: .qwenOmniV1,
+        .init(id: "qwen", name: "Qwen (Model Studio)", profile: .qwenOmniV1,
               endpoint: "wss://{workspace}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime",
               model: "qwen3.8-omni-flash-realtime", voice: "Tina",
-              help: String(localized: "Replace {workspace} with your Model Studio workspace ID. Use its Beijing API key. Images are limited to one per second. App context updates are supported; text turns are unavailable.")),
-        .init(id: "qwen-audio", name: "Qwen Audio (China API)", profile: .qwenAudioV1,
+              help: String(localized: "Choose the region your Model Studio workspace is in, replace {workspace} with its ID and use an API key from that workspace. Images are limited to one per second. App context updates are supported; text turns are unavailable.")),
+        .init(id: "qwen-audio", name: "Qwen Audio (Model Studio)", profile: .qwenAudioV1,
               endpoint: "wss://{workspace}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime",
               model: "qwen-audio-3.1-realtime-plus", voice: "longanqian_v3.1",
-              help: String(localized: "Replace {workspace} with your Model Studio workspace ID and use its Beijing key. Supports voice, tools and text turns; images are unavailable.")),
+              help: String(localized: "Choose the region your Model Studio workspace is in, replace {workspace} with its ID and use an API key from that workspace. Supports voice, tools and text turns; images are unavailable.")),
         .init(id: "doubao", name: "Doubao", profile: .doubaoDuplexV3,
               endpoint: "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue",
               model: "1.2.6.1", voice: "zh_female_vv_jupiter_bigtts",
@@ -135,7 +181,7 @@ enum RealtimeProviderCatalog {
         let vision: Bool
     }
     static let chatTemplates: [ChatTemplate] = [
-        .init(id: "qwen", name: "Qwen (China API)",
+        .init(id: "qwen", name: "Qwen (Model Studio)",
               endpoint: "https://{workspace}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
               model: "qwen3.8-max", vision: true),
         .init(id: "doubao", name: "Doubao (Ark API)",

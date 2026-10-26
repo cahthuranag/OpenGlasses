@@ -1,9 +1,10 @@
 # LicenceIssuance (Plan JS P0 / EI pure core)
 
-Vendor-only Swift package, macOS 13+, Foundation and CryptoKit. It is not linked into the production
-app. Its sources are compiled into the iOS **test bundle** to exercise the deployed verifiers and
-profile manager without changing them. Linux hosting/crypto adapters, authentication, publishing,
-PDFs, reminders, seats and partner UI belong to later phases; P1 belongs in a private repository.
+Vendor-only Swift package, macOS 13+ and Linux, Foundation and CryptoKit (swift-crypto's `Crypto` on
+Linux, the licence service's containers). It is not linked into the production app. Its sources are
+compiled into the iOS **test bundle** to exercise the deployed verifiers and profile manager without
+changing them. Authentication, publishing, PDFs, reminders, seats and partner UI belong to later
+phases; P1 lives in the private `avenkin-licence` repository.
 
 ## Run
 
@@ -11,6 +12,7 @@ From the repository root:
 
 ```sh
 swift test --package-path Tools/LicenceIssuance
+docker run --rm -v "$PWD":/src:ro -w /src swift:6.4 swift test --package-path Tools/LicenceIssuance --scratch-path /tmp/build
 ./Scripts/tests/signing-key-handling.sh
 swift run --package-path Tools/LicenceIssuance licence-issuance /private/vendor/ledger.jsonl command.json /private/vendor/licence-key.txt
 ```
@@ -27,6 +29,16 @@ Both use `IssuanceWire` for encoding and signing; activation sealing uses `Activ
 `generate-field-license --issued-at ISO8601` supplies a fixed clock for fixtures; normal issuance uses now.
 The unrestricted manual generator remains the vendor's recovery tool, not a partner-policy bypass
 exposed to a service account.
+
+## Linux
+
+swift-crypto (pinned exactly in `Package.swift`, with `Package.resolved` committed) is a dependency only on
+Linux; on Apple platforms every source imports CryptoKit and nothing from it is compiled in. The first
+`swift test` or direct script run resolves it once from GitHub. `PlatformTests` pins the bytes of a licence
+payload, a profile and ledger rows, and runs on both platforms (CI's `licence-issuance-linux` job), so a
+journal the service writes on Linux verifies with the macOS tools. `make-org-profile` stays a macOS tool
+(passcode prompt, PBKDF2, the admin card's QR); on Linux it says so and exits, and its byte-identity test
+is skipped there.
 
 ## Command JSON
 

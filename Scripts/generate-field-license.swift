@@ -2,7 +2,11 @@
 // Shared wire domains: "openglasses.activation-id.v1\n" and "openglasses.activation-key.v1"
 #if canImport(LicenceIssuance)
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import LicenceIssuance
 
 // Mints a signed Field Assist license code.

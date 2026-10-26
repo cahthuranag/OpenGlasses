@@ -1,9 +1,18 @@
 import Foundation
 import XCTest
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto // swift-crypto: the same API on Linux (the service's containers)
+#endif
 @testable import LicenceIssuance
 
 final class TerminalTests: XCTestCase {
+    #if canImport(CommonCrypto)
+    static let profileToolRuns = true
+    #else
+    static let profileToolRuns = false
+    #endif
     private var binaryDirectory: URL {
         var path = Bundle(for: TerminalTests.self).bundleURL
         while !FileManager.default.fileExists(atPath: path.appendingPathComponent("licence-issuance").path) && path.path != "/" {
@@ -43,6 +52,7 @@ final class TerminalTests: XCTestCase {
         XCTAssertFalse(result.1.contains(privateText)); XCTAssertFalse(result.2.contains(privateText))
     }
     func testPresetProfileIsByteIdenticalToTheManualProfileTool() throws {
+        try XCTSkipUnless(Self.profileToolRuns, "make-org-profile is a macOS tool")
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }

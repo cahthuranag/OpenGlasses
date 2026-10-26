@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto // swift-crypto: the same API on Linux (the service's containers)
+#endif
 
 /// A catalog must be vendor-verified before its keys can be used by policy. A partner cannot supply free text.
 public struct VerifiedPackCatalog {

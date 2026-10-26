@@ -1,5 +1,9 @@
 import XCTest
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto // swift-crypto: the same API on Linux (the service's containers)
+#endif
 @testable import LicenceIssuance
 
 final class CoreTests: XCTestCase {

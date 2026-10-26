@@ -75,6 +75,19 @@ jobs:
           swift test --package-path Tools/LicenceIssuance
           ./Scripts/tests/signing-key-handling.sh
 
+  # The licence service runs this package in Linux containers (Plan JS P1), and its ledger is read back
+  # by the macOS tools above: PlatformTests pins the bytes both must produce. Image pinned by its
+  # multi-arch index digest (swift:6.4, Swift 6.4.1).
+  licence-issuance-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: swift@sha256:6fbd5978b56a5a9ff05a48f8f678079fc45be496ecda15b4e74e8944fab857be
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Licence issuance on Linux
+        run: swift test --package-path Tools/LicenceIssuance
+
   test:
     runs-on: macos-26
     timeout-minutes: 90

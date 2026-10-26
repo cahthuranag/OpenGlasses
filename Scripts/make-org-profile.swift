@@ -1,5 +1,5 @@
 #!/usr/bin/env swift
-#if canImport(LicenceIssuance)
+#if canImport(LicenceIssuance) && canImport(CommonCrypto)
 import Foundation
 import CryptoKit
 import LicenceIssuance
@@ -321,6 +321,13 @@ default:
     fail(usage)
 }
 
+#elseif canImport(LicenceIssuance)
+// Linux (the licence service's containers): the passcode prompt, PBKDF2 and the admin card's QR need
+// macOS. The service never runs this tool; its profiles come from ProfileContract and the browser
+// derives the passcode verifier.
+import Foundation
+FileHandle.standardError.write(Data("make-org-profile runs on macOS. On Linux, build profiles with LicenceIssuance's ProfileContract.\n".utf8))
+exit(1)
 #else
 import Foundation
 let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()

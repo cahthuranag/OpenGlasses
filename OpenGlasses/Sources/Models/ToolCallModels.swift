@@ -138,7 +138,7 @@ enum ToolDeclarations {
     /// Build native tool declarations from the registry.
     ///
     /// Plan GB: the same filter the registry applies before it will *execute* a tool — enabled,
-    /// and not HIPAA-disabled — so a tool the app will refuse is never *declared* to the model
+    /// entitled, in the active mode and not HIPAA-disabled — so a refused tool is never *declared*
     /// either. Sorted by name (P5) so the declaration list is byte-stable turn to turn and the
     /// provider's prompt cache can reuse it; `allTools` iterates a dictionary.
     @MainActor
@@ -157,7 +157,7 @@ enum ToolDeclarations {
     @MainActor
     static func nativeToolDeclarations(registry: NativeToolRegistry, fieldJobActive: Bool,
                                        fieldProfileEnabled: Bool) -> [[String: Any]] {
-        let declarable = Set(declarableNames(registry.allTools.map(\.name),
+        let declarable = Set(declarableNames(registry.toolNames,
                                              isEnabled: Config.isToolEnabled,
                                              hipaaMode: Config.hipaaMode,
                                              hipaaDisabled: Config.hipaaDisabledTools,

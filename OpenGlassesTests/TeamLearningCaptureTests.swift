@@ -321,7 +321,7 @@ final class TeamLearningCaptureTests: XCTestCase {
 
         FieldAssistEntitlement.shared.provider = StubEntitlementProvider.subscriber()
         XCTAssertTrue(Config.fieldAssistActive, "a subscriber has Field Assist — just not team learnings")
-        XCTAssertEqual(FieldAssistEntitlement.shared.check(.teamLearnings), .notIncluded(held: [.bundledVaults, .ownVaults]))
+        XCTAssertEqual(FieldAssistEntitlement.shared.check(.teamLearnings), .notIncluded(held: [.fieldWork, .bundledVaults, .ownVaults]))
         let refused = try await realTool.execute(args: ["action": "note", "finding": "Tubing sweats on a cold start"])
         XCTAssertEqual(refused, FieldAssistPaywallCopy.teamLearningsNotIncluded)
         XCTAssertTrue(store.candidates.isEmpty)
@@ -346,12 +346,15 @@ final class TeamLearningCaptureTests: XCTestCase {
     }
 
     func testHIPAAModeWithholdsTheToolFromTheRegistry() {
-        // Built without the Field Assist tools, and the one under test registered by hand, so the
-        // registry constructs nothing it does not need.
+        // Professional tools are constructed once, then filtered by the live mode and entitlement
+        // gates. Turning Field Assist on must expose the existing tool without rebuilding the registry.
         UserDefaults.standard.set(false, forKey: "fieldAssistEnabled")
         let registry = NativeToolRegistry(locationService: LocationService())
-        XCTAssertNil(registry.tool(named: "team_learning"), "registered only while Field Assist is on")
-        registry.register(TeamLearningTool(service: service))
+        XCTAssertTrue(registry.allTools.contains { $0.name == "team_learning" })
+        XCTAssertNil(registry.tool(named: "team_learning"), "withheld while Field Assist is off")
+        XCTAssertFalse(registry.toolNames.contains("team_learning"))
+
+        UserDefaults.standard.set(true, forKey: "fieldAssistEnabled")
         XCTAssertNotNil(registry.tool(named: "team_learning"))
         XCTAssertTrue(registry.toolNames.contains("team_learning"))
 
@@ -359,6 +362,10 @@ final class TeamLearningCaptureTests: XCTestCase {
         XCTAssertTrue(Config.hipaaDisabledTools.contains("team_learning"))
         XCTAssertNil(registry.tool(named: "team_learning"), "a clinical site's learning is a patient note")
         XCTAssertFalse(registry.toolNames.contains("team_learning"))
+
+        Config.hipaaMode = false
+        XCTAssertNotNil(registry.tool(named: "team_learning"))
+        XCTAssertTrue(registry.toolNames.contains("team_learning"))
     }
 
     func testTheToolIsOfferedDuringAJobAndWorksOffline() {

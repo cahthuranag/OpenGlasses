@@ -86,20 +86,33 @@ final class FieldToolProfileTests: XCTestCase {
     /// declared and listed or neither — and it is a real narrowing.
     @MainActor
     func testThePromptListAndTheDeclaredSchemasAgree() {
+        let previousEntitlement = EntitlementTestScope.grant(tier: .team)
+        let previousEnabled = UserDefaults.standard.object(forKey: "fieldAssistEnabled")
+        defer {
+            EntitlementTestScope.restore(previousEntitlement)
+            UserDefaults.standard.set(previousEnabled, forKey: "fieldAssistEnabled")
+        }
         let registry = NativeToolRegistry(locationService: LocationService())
-        let listed = FieldToolProfile.declaredNames(all: registry.toolNames, fieldJobActive: true, enabled: true)
-        let declared = ToolDeclarations.nativeToolDeclarations(registry: registry, fieldJobActive: true,
-                                                               fieldProfileEnabled: true)
-            .compactMap { $0["name"] as? String }
-        XCTAssertEqual(declared, listed)
-        XCTAssertLessThan(declared.count, registry.toolNames.count)
-        XCTAssertTrue(Set(declared).isSubset(of: FieldToolProfile.names))
+        // Use one registry through mode and subscription changes: personal access must never
+        // declare professional tools, and upgrading back must take effect without a restart.
+        for (tier, enabled) in [(FieldAssistTier.team, true), (.team, false), (.personal, true), (.team, true)] {
+            FieldAssistEntitlement.shared.provider = AlwaysGrantedEntitlementProvider(tier: tier)
+            UserDefaults.standard.set(enabled, forKey: "fieldAssistEnabled")
+            let listed = FieldToolProfile.declaredNames(all: registry.toolNames, fieldJobActive: true, enabled: true)
+            let declared = ToolDeclarations.nativeToolDeclarations(registry: registry, fieldJobActive: true,
+                                                                   fieldProfileEnabled: true)
+                .compactMap { $0["name"] as? String }
+            XCTAssertEqual(declared, listed)
+            XCTAssertEqual(declared.contains("field_session"), tier == .team && enabled)
+            XCTAssertLessThan(declared.count, registry.toolNames.count)
+            XCTAssertTrue(Set(declared).isSubset(of: FieldToolProfile.names))
 
-        // Off, or with no job, both lists are the whole registry's.
-        let everything = ToolDeclarations.nativeToolDeclarations(registry: registry, fieldJobActive: false,
-                                                                 fieldProfileEnabled: true)
-            .compactMap { $0["name"] as? String }
-        XCTAssertEqual(everything, registry.toolNames)
+            // With no job, both lists are the whole available registry's.
+            let everything = ToolDeclarations.nativeToolDeclarations(registry: registry, fieldJobActive: false,
+                                                                     fieldProfileEnabled: true)
+                .compactMap { $0["name"] as? String }
+            XCTAssertEqual(everything, registry.toolNames)
+        }
     }
 
     /// Plan HU P2 — "has the inducer been replaced before?" is a job question, so the office's

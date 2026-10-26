@@ -25,6 +25,22 @@ private final class RealtimeFakeTool: NativeTool, @unchecked Sendable {
 @MainActor
 final class OpenAIRealtimeJobToolsTests: XCTestCase {
 
+    private var previousEntitlement: FieldAssistEntitlementProvider!
+    private var previousEnabled: Any?
+
+    override func setUp() {
+        super.setUp()
+        previousEntitlement = EntitlementTestScope.grant(tier: .team)
+        previousEnabled = UserDefaults.standard.object(forKey: "fieldAssistEnabled")
+        UserDefaults.standard.set(true, forKey: "fieldAssistEnabled")
+    }
+
+    override func tearDown() {
+        EntitlementTestScope.restore(previousEntitlement)
+        UserDefaults.standard.set(previousEnabled, forKey: "fieldAssistEnabled")
+        super.tearDown()
+    }
+
     // MARK: - session.update
 
     /// The golden fixture. With no tools the payload is exactly what it was before this plan —

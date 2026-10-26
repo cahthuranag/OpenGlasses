@@ -1994,6 +1994,10 @@ class AppState: ObservableObject, AppStateProtocol {
     }
 
     private func clearWithdrawnJobContext() {
+        spokenTurnGate.invalidate()
+        bargeInReplacementTask?.cancel()
+        bargeInReplacementTask = nil
+        heldUtterance = nil
         currentLLMTask?.cancel()
         currentLLMTask = nil
         speechService.stopSpeaking()
@@ -2415,6 +2419,8 @@ class AppState: ObservableObject, AppStateProtocol {
         })
     private var autoSleepTask: Task<Void, Never>?
     private var currentLLMTask: Task<Void, Never>?
+    private var spokenTurnGate = SpokenTurnGate()
+    private var bargeInReplacementTask: Task<Void, Never>?
     /// The bounded re-arm waiting on a recoverable end-of-turn skip (see `scheduleWakeRearm`).
     /// At most one: a later turn's schedule replaces it.
     private var wakeRearmRetry: Task<Void, Never>?
@@ -2450,7 +2456,7 @@ class AppState: ObservableObject, AppStateProtocol {
     private var heldUtterance: (text: String, heldAt: Date)?
 
     private func turnElapsedSeconds() -> TimeInterval? {
-        turnStartedAt.map { Date().timeIntervalSince($0) }
+        (turnStartedAt ?? spokenTurnGate.reservedAt).map { Date().timeIntervalSince($0) }
     }
 
     /// Replay whatever was held while the finished turn ran, if it hasn't gone stale.
@@ -2467,7 +2473,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // park — hand the recorder the park time so the turn carries `heldSeconds` rather than
         // reporting a perceived latency that starts after the wait it was measuring.
         TurnRecorder.noteHeldUtterance(parkedAt: held.heldAt)
-        Task { @MainActor in await self.handleTranscription(held.text) }
+        Task { @MainActor in await self.runSpokenTurn(held.text) }
     }
 
     var inConversation: Bool = false
@@ -4033,6 +4039,16 @@ class AppState: ObservableObject, AppStateProtocol {
     /// A spoken transcript becomes a turn — straight from dictation, or after the review's
     /// countdown (Plan JM P1), so a reviewed transcript is answered exactly as a voice turn is.
     private func runSpokenTurn(_ text: String) async {
+        // A yes/no for an in-flight tool confirmation must bypass turn admission.
+        if toolConfirmationCoordinator.pending != nil, toolConfirmationCoordinator.resolveByVoice(text) {
+            currentTranscription = text
+            PrivacyLog.app(.consentAnsweredByVoice)
+            return
+        }
+        if spokenTurnGate.consumeRepeatedInterruption(text) {
+            PrivacyLog.app(.utteranceRejected, detail: PrivacyToken("duplicateBargeIn"), characters: text.count)
+            return
+        }
         // The wearer's answer owns the floor from here — a scene description cutting into a
         // reply is worse than no description at all. Perception keeps running; only the ear
         // is taken, so grounding continues accumulating through the turn.
@@ -4041,7 +4057,7 @@ class AppState: ObservableObject, AppStateProtocol {
         // CO Item 3: a turn already in flight used to mean the utterance was dropped behind
         // a debug print — no tone, no HUD, nothing the wearer could perceive. Now it is
         // either held for the turn that is finishing or refused audibly.
-        switch TurnAdmissionPolicy.decide(isProcessing: isProcessing,
+        switch TurnAdmissionPolicy.decide(isProcessing: isProcessing || spokenTurnGate.isReserved,
                                           turnElapsed: turnElapsedSeconds(),
                                           utterance: text) {
         case .accept:
@@ -4989,6 +5005,13 @@ class AppState: ObservableObject, AppStateProtocol {
     /// Stop the current response and process the barge-in text as a new query.
     func handleBargeIn(_ bargeInText: String) {
         PrivacyLog.app(.bargeIn, characters: bargeInText.count)
+        let replacementID = spokenTurnGate.beginReplacement(interruption: bargeInText)
+        let replacementText = SpokenTurnGate.replacementText(
+            held: heldUtterance?.text, heldAt: heldUtterance?.heldAt, interruption: bargeInText)
+        heldUtterance = nil
+        // One owner for cancellation cleanup and its replacement. The previous waiter must not
+        // compete with a newer interruption for the microphone or the next model request.
+        bargeInReplacementTask?.cancel()
         // Plan CU P1: read before `stopSpeaking()` clears it. A barge-in over playback is a turn
         // that worked and was cut short — its stage times are sound data. A barge-in while the
         // model is still generating is a turn that never delivered, and the cancellation path tags
@@ -5001,21 +5024,27 @@ class AppState: ObservableObject, AppStateProtocol {
         turnAnnouncement.cancel()
         let interruptedTask = currentLLMTask
         interruptedTask?.cancel()
-        currentLLMTask = nil
+        // Retain the cancelled task until cleanup ends: a second barge-in must wait for the
+        // same task, rather than seeing nil and starting a request ahead of its cleanup.
         isProcessing = false
         speechService.stopThinkingSound()
 
         guard inConversation else {
+            _ = spokenTurnGate.endReplacement(replacementID)
             Task { await returnToWakeWord() }
             return
         }
 
         // Let the cancelled turn finish its cleanup before starting the replacement. Otherwise its
         // finish closure can race the new turn and reset processing/listening state mid-flight.
-        Task { @MainActor [weak self] in
+        bargeInReplacementTask = Task { @MainActor [weak self] in
             await interruptedTask?.value
-            guard let self, self.inConversation, self.listeningEnabled, !self.isProcessing else { return }
-            await self.handleTranscription(bargeInText)
+            guard let self, !Task.isCancelled,
+                  self.spokenTurnGate.endReplacement(replacementID) else { return }
+            self.bargeInReplacementTask = nil
+            self.currentLLMTask = nil
+            guard self.inConversation, self.listeningEnabled, !self.isProcessing else { return }
+            await self.handleTranscription(replacementText)
         }
     }
 
@@ -5039,6 +5068,10 @@ class AppState: ObservableObject, AppStateProtocol {
         } else {
             // Stop everything: wake word, transcription, TTS, Live Activity — including any
             // in-flight LLM turn, whose finish stage would otherwise resume listening.
+            spokenTurnGate.invalidate()
+            bargeInReplacementTask?.cancel()
+            bargeInReplacementTask = nil
+            heldUtterance = nil
             currentLLMTask?.cancel()
             currentLLMTask = nil
             wakeWordService.stopListening()
@@ -5072,6 +5105,10 @@ class AppState: ObservableObject, AppStateProtocol {
     /// Cancel current LLM processing or TTS playback and return to wake word listening.
     func cancelCurrentResponse() {
         PrivacyLog.app(.responseCancelled)
+        spokenTurnGate.invalidate()
+        bargeInReplacementTask?.cancel()
+        bargeInReplacementTask = nil
+        heldUtterance = nil
         currentLLMTask?.cancel()
         currentLLMTask = nil
         speechService.stopSpeaking()
@@ -5091,6 +5128,10 @@ class AppState: ObservableObject, AppStateProtocol {
     /// cancelling a response, plus the recorder, which otherwise only stops on silence.
     func hangUpConversation() async {
         PrivacyLog.app(.responseCancelled)
+        spokenTurnGate.invalidate()
+        bargeInReplacementTask?.cancel()
+        bargeInReplacementTask = nil
+        heldUtterance = nil
         currentLLMTask?.cancel()
         currentLLMTask = nil
         transcriptionService.stopRecording()
@@ -5122,9 +5163,10 @@ class AppState: ObservableObject, AppStateProtocol {
     /// Mode gate and the authorization policy apply exactly as they do to any other delegation.
     /// - Parameter threadId: the saved conversation the question went into, so the reply follows
     ///   it there; nil files it in whichever thread is active.
-    func runAgentTurn(_ query: String, threadId: String? = nil) async {
+    func runAgentTurn(_ query: String, threadId: String? = nil, admissionID: UUID) async {
         guard Config.isOpenClawAgentActive, let router = llmService.nativeToolRouter else {
             await speechService.speak(String(localized: "Your agent isn't set up."))
+            guard spokenTurnGate.ownsRouting(admissionID) else { return }
             await resumeListeningOrReturnToWakeWord(ensureEngine: true)
             return
         }
@@ -5135,6 +5177,7 @@ class AppState: ObservableObject, AppStateProtocol {
             name: "execute",
             arguments: ToolArguments(["task": query]),
             origin: .user))
+        guard spokenTurnGate.ownsRouting(admissionID) else { return }
         speechService.stopThinkingSound()
         let reply = outcome.text
         lastResponse = reply
@@ -5146,6 +5189,7 @@ class AppState: ObservableObject, AppStateProtocol {
         startStopListener()
         TurnRecorder.handOffToSpeech()
         await speechService.speak(reply)
+        guard spokenTurnGate.ownsRouting(admissionID) else { return }
         stopStopListener()
         TurnRecorder.endTurn()
         await resumeListeningOrReturnToWakeWord(ensureEngine: true)
@@ -6813,11 +6857,15 @@ class AppState: ObservableObject, AppStateProtocol {
     /// - Parameter ensureEngine: run the audio-engine keepalive first — needed after TTS playback,
     ///   which may have interrupted the engine.
     private func resumeListeningOrReturnToWakeWord(ensureEngine: Bool = false) async {
+        // Barge-in owns the next input. The cancelled task still restores its resources, but
+        // must not start dictation or replay held speech while its replacement is waiting.
+        guard !spokenTurnGate.isReplacing else { return }
         // Plan FO P1: the turn is over, so this is the moment the app's own question goes out —
         // after whatever was being said, and before the microphone re-arms, so the next thing
         // heard is the answer. Speaks only when something is genuinely due, and the ask budget
         // means a technician who ignores it is not nagged.
         await guidedJobFlow.speakPendingQuestionIfDue()
+        guard !spokenTurnGate.isReplacing else { return }
         // The user may have disabled listening while the turn was finishing — a finish stage must
         // never turn the microphone back on behind their back. But it must still CLOSE the
         // conversation: returning with `inConversation` left true stranded the app until a
@@ -6831,6 +6879,7 @@ class AppState: ObservableObject, AppStateProtocol {
         }
         do {
             if ensureEngine { try? await wakeWordService.ensureAudioEngineRunning() }
+            guard !spokenTurnGate.isReplacing else { return }
             // The engine keepalive suspends; re-check the user didn't flip the toggle meanwhile —
             // and close the conversation if they did, for the same reason as above.
             guard listeningEnabled else {
@@ -6844,7 +6893,7 @@ class AppState: ObservableObject, AppStateProtocol {
             // back (switch first, then listen) before the follow-up records. Likewise when the
             // conversation landed on the phone from the background and the app is now in front.
             await wakeWordService.retakeConversationMicIfNeeded()
-            guard inConversation else { return }
+            guard inConversation, !spokenTurnGate.isReplacing else { return }
             isListening = true
             // CO Item 4: if what we just said was a question, give the user room to think before
             // the silence window ends the conversation out from under them.
@@ -6937,7 +6986,7 @@ class AppState: ObservableObject, AppStateProtocol {
     /// the user's turn is persisted to the conversation store and after persona detection, so the
     /// photo handler prompts the LLM with the persona-stripped `query` while command matching uses
     /// the raw transcript. Same first-consumer-wins contract as `preLLMHandlers`.
-    private func postStoreHandlers(query: String, threadId: String?) -> [VoiceCommandHandler] {
+    private func postStoreHandlers(query: String, threadId: String?, admissionID: UUID) -> [VoiceCommandHandler] {
         [
             // "stop" — interrupt TTS, stay in conversation
             VoiceCommandHandler(label: "stop") { [weak self] text in
@@ -6966,6 +7015,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 // Plan HP P2 item 10: the first answer of the launch is preceded by "Connecting to
                 // Avenkin AI." — before the shutter tone and the thinking sound, not after.
                 await self.speakConversationCueIfDue()
+                guard self.spokenTurnGate.ownsRouting(admissionID) else { return true }
                 // Start capture immediately — play the shutter tone, no spoken "taking a picture"
                 self.speechService.playAcknowledgmentTone()
                 self.speechService.startThinkingSound()
@@ -7347,7 +7397,7 @@ class AppState: ObservableObject, AppStateProtocol {
 
     /// Plan GE: close a phone turn that needed no model — a deterministic tool answer or the hold
     /// line — in the tier-0 shape: record it (marked as answered on the phone), speak, resume.
-    private func finishPhoneTurnWithoutModel(_ reply: String, threadId: String?) async {
+    private func finishPhoneTurnWithoutModel(_ reply: String, threadId: String?, admissionID: UUID) async {
         lastResponse = reply
         if Config.conversationPersistenceEnabled {
             conversationStore.appendMessage(role: "assistant", content: reply, answeredOnDevice: true,
@@ -7356,10 +7406,12 @@ class AppState: ObservableObject, AppStateProtocol {
         startStopListener()
         TurnRecorder.handOffToSpeech()
         await speechService.speak(reply)
+        guard spokenTurnGate.ownsRouting(admissionID) else { return }
         stopStopListener()
         isProcessing = false
         TurnRecorder.endTurn()
         await connectivityHandoff.turnEnded()
+        guard spokenTurnGate.ownsRouting(admissionID) else { return }
         await resumeListeningOrReturnToWakeWord(ensureEngine: true)
     }
 
@@ -7388,9 +7440,17 @@ class AppState: ObservableObject, AppStateProtocol {
             PrivacyLog.app(.consentAnsweredByVoice)
             return
         }
-        guard !isProcessing else {
+        guard !isProcessing, let admissionID = spokenTurnGate.beginRouting() else {
             PrivacyLog.app(.alreadyProcessing)
             return
+        }
+        defer {
+            spokenTurnGate.endRouting(admissionID)
+            // A command may have completed without dispatching a model task. Release any speech
+            // held during that routing too, after its reservation is gone.
+            if !isProcessing, !spokenTurnGate.isReserved, inConversation {
+                replayHeldUtteranceIfFresh()
+            }
         }
 
         currentTranscription = text
@@ -7408,6 +7468,7 @@ class AppState: ObservableObject, AppStateProtocol {
         if await ConversationFlowEngine(handlers: preLLMHandlers()).route(text) != nil {
             return
         }
+        guard spokenTurnGate.ownsRouting(admissionID) else { return }
 
         // Will be updated below if persona detected in text
         var query = text
@@ -7448,22 +7509,25 @@ class AppState: ObservableObject, AppStateProtocol {
         // turn is persisted (so "stop"/"goodbye" still appear in the thread) and after persona
         // detection (the photo prompt uses the persona-stripped `query`). The first consumer
         // short-circuits before the LLM; order is preserved from the original if-ladder.
-        if await ConversationFlowEngine(handlers: postStoreHandlers(query: query, threadId: turnThreadId))
+        if await ConversationFlowEngine(handlers: postStoreHandlers(query: query, threadId: turnThreadId,
+                                                                   admissionID: admissionID))
             .route(text) != nil {
             return
         }
+        guard spokenTurnGate.ownsRouting(admissionID) else { return }
 
         // Plan HP P2 item 10: everything below answers the wearer — the agent, a direct tool, the
         // phone's own model or the cloud — so the first answer of the launch is preceded by
         // "Connecting to Avenkin AI." Here, before any thinking sound starts; once per launch, so
         // every later turn passes straight through.
         await speakConversationCueIfDue()
+        guard spokenTurnGate.ownsRouting(admissionID) else { return }
 
         // A temple tap assigned to "ask my agent" opened this turn (Plan GJ): the utterance goes to
         // the agent. After the stop/goodbye handlers, so those still end the conversation.
         if pendingAgentTurn {
             pendingAgentTurn = false
-            await runAgentTurn(query, threadId: turnThreadId)
+            await runAgentTurn(query, threadId: turnThreadId, admissionID: admissionID)
             return
         }
 
@@ -7484,6 +7548,7 @@ class AppState: ObservableObject, AppStateProtocol {
             isProcessing = true
             TurnRecorder.beginTurn()
             await conversationReset.requestReset(source: .voiceCommand)
+            guard spokenTurnGate.ownsRouting(admissionID) else { return }
             isProcessing = false
             TurnRecorder.endTurn()
             await resumeListeningOrReturnToWakeWord(ensureEngine: true)
@@ -7514,6 +7579,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 arguments: ToolArguments(directCall.arguments),
                 origin: .user))
             fieldSessions.turnSourceID = previousTurnSourceID
+            guard spokenTurnGate.ownsRouting(admissionID) else { return }
             if case .completed(let result) = outcome {
                 TurnRecorder.addToolTime(since: toolStartedAt)
                 lastResponse = result
@@ -7534,6 +7600,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 startStopListener()
                 TurnRecorder.handOffToSpeech()
                 await speechService.speak(result)
+                guard spokenTurnGate.ownsRouting(admissionID) else { return }
                 stopStopListener()
             } else {
                 // Fall through to normal LLM path if the direct call didn't produce an answer. A
@@ -7569,9 +7636,11 @@ class AppState: ObservableObject, AppStateProtocol {
             isProcessing = true
             TurnRecorder.beginTurn()
             if let reply = await phoneReplyWithoutModel(handoffPlan, query: query) {
-                await finishPhoneTurnWithoutModel(reply, threadId: turnThreadId)
+                guard spokenTurnGate.ownsRouting(admissionID) else { return }
+                await finishPhoneTurnWithoutModel(reply, threadId: turnThreadId, admissionID: admissionID)
                 return
             }
+            guard spokenTurnGate.ownsRouting(admissionID) else { return }
             TurnRecorder.abandonTurnReleasingUtterance()
             isProcessing = false
             handoffPlan = connectivityHandoff.modelPlan()
@@ -7580,7 +7649,8 @@ class AppState: ObservableObject, AppStateProtocol {
             isProcessing = true
             TurnRecorder.beginTurn()
             let line = await phoneReplyWithoutModel(.hold, query: query) ?? HandoffAnnouncer.heldFirstLine
-            await finishPhoneTurnWithoutModel(line, threadId: turnThreadId)
+            guard spokenTurnGate.ownsRouting(admissionID) else { return }
+            await finishPhoneTurnWithoutModel(line, threadId: turnThreadId, admissionID: admissionID)
             return
         }
         var phoneModelId: String?
@@ -7639,6 +7709,7 @@ class AppState: ObservableObject, AppStateProtocol {
         }
 
         // Normal message — send to LLM (with Tier 1 prompt trimming via sections)
+        guard spokenTurnGate.ownsRouting(admissionID) else { return }
         isProcessing = true
         if !turnAnnouncement.isPending { speechService.startThinkingSound() }
 
@@ -7868,7 +7939,7 @@ class AppState: ObservableObject, AppStateProtocol {
     ///   the offline handoff's replay of a held question on return (Plan GE).
     func sendTextMessage(_ text: String, imageData: Data? = nil, speakResponse: Bool = true,
                          recordUserTurn: Bool = true) async {
-        guard !isProcessing else { return }
+        guard !isProcessing, !spokenTurnGate.isReserved else { return }
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
         noteTypeInstead(.typedTurn)   // Plan JM P1: a typed turn clears the "Type instead" chip

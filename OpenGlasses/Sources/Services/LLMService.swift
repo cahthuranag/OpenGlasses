@@ -870,6 +870,7 @@ class LLMService: ObservableObject {
                                               outcome: "not declared")
                     return .failedBeforeExecution(reason: ToolExposurePolicy.undeclaredCallMessage(name))
                 }
+                let toolTraceID = TurnRecorder.toolTraceID
                 let outcome: ToolExecutionOutcome
                 if let router = self.nativeToolRouter {
                     // The provider's own call id, where it gave one: a redelivery of this exact
@@ -883,12 +884,13 @@ class LLMService: ObservableObject {
                 } else {
                     outcome = .failedBeforeExecution(reason: "No tool handler available")
                 }
-                // Support trace: the tool's name and the class of result, never its arguments or
-                // output. A name the registry doesn't know is the model's own string, so it is
-                // not written down as given.
+                // Support trace: only web_search keeps a bounded, redacted query and result.
+                // Unknown tool names and all other arguments/outputs remain unrecorded.
                 let known = self.nativeToolRouter?.registry.tool(named: name) != nil
-                TurnRecorder.noteToolCall(name: known ? name : "unrecognised tool",
-                                          outcome: LLMService.traceOutcome(outcome))
+                TurnRecorder.noteToolResult(name: known ? name : "unrecognised tool",
+                                            outcome: LLMService.traceOutcome(outcome),
+                                            query: args["query"] as? String, result: outcome.text,
+                                            turnID: toolTraceID)
                 // Plan IU: what a lookup returned, and any tool the model reached, stay declared for
                 // the rest of the conversation.
                 if let available = ToolExposureScope.turn?.decision.available {

@@ -20,9 +20,12 @@ everything support needs on the phone, and make sending it one tap, with the per
 | What came back | the assistant's reply in the thread; the model that answered; timings (first output, reply complete, tools, heard) |
 | What went wrong | `SafeErrorSummary` category on the turn (`ConversationTurnRunner` and the two photo spines), plus the app's event log (`DiagnosticRing`) for the period, plus the job's own log |
 
-**The trace is content-free.** `TurnTrace` (from the sealed `TurnTimeline`) holds names, sizes,
-citations, categories and times — never words — and the thread and job it belongs to, so an export
-can line it up with the transcript. `TurnTraceStore` keeps 14 days, at most 2,000 turns, in
+**The trace includes bounded search evidence (2026-10-26).** `TurnTrace` (from the sealed
+`TurnTimeline`) holds names, sizes, citations, categories and times, plus web-search queries and
+returned text with credentials redacted before storage. It also holds the thread and job it belongs
+to, so an export can line it up with the transcript. Search contents appear only in reviewed support
+reports, never the general diagnostic event log. `TurnTraceStore` keeps up to 14 days, at most 2,000
+turns and 8 MB of encoded records, in
 `Application Support/Diagnostics/turn-traces.json` (protected until first unlock, backup-excluded),
 registered as `SensitiveStore.turnTraces`. Deletable in Settings → Diagnostics & Support, and erased
 when a phone leaves its organisation.

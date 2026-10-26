@@ -426,7 +426,8 @@ enum JobTranscriptExport {
         with the words (the parts of the instructions by size, manual pages, photos, tools), how \
         long it took and how it ended; each job's own log; this phone and the glasses; and the \
         app's event log. The words sent to the AI are the transcript lines themselves. Keys and \
-        tokens are masked.
+        tokens are masked. Recorded web searches include their queries and returned text, \
+        including source URLs when returned; long contents are marked as truncated.
         """
 
     static let jobLogOnlyNote = """
@@ -451,7 +452,8 @@ enum JobTranscriptExport {
         photos, tools), how long it took and how it ended; this phone and the glasses; and the \
         app's event log and debug log from five minutes before the conversation to five minutes \
         after it. The words sent to the AI are the transcript lines themselves. Keys and tokens \
-        are masked.
+        are masked. Recorded web searches include their queries and returned text, including \
+        source URLs when returned; long contents are marked as truncated.
         """
 
     static let jobConversationNote = """
@@ -778,6 +780,14 @@ enum JobTranscriptExport {
         if !trace.toolCalls.isEmpty {
             out.append(indent + "tools: " + trace.toolCalls.map { "\($0.name) (\($0.outcome))" }
                 .joined(separator: ", "))
+            for (index, call) in trace.toolCalls.enumerated() {
+                guard let search = call.search else { continue }
+                out.append(indent + "web search (tool call \(index + 1), \(call.outcome)):")
+                out.append(indent + "  query" + (search.queryTruncated ? " [truncated]" : "") + ":")
+                out += search.query.components(separatedBy: .newlines).map { indent + "    " + $0 }
+                out.append(indent + "  returned text" + (search.resultTruncated ? " [truncated]" : "") + ":")
+                out += search.result.components(separatedBy: .newlines).map { indent + "    " + $0 }
+            }
         }
         var timing: [String] = []
         if let first = trace.timeToFirstToken { timing.append("first output after \(seconds(first))") }

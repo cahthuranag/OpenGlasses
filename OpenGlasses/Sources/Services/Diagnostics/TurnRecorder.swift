@@ -92,6 +92,9 @@ enum TurnRecorder {
     /// or this code path is running as off-turn work.
     private static var targetID: UUID? { isOffTurnWork ? nil : currentID }
 
+    /// Capture before an async tool dispatch, so late results cannot attach to a newer turn.
+    static var toolTraceID: UUID? { isEnabled ? targetID : nil }
+
     /// Set once per turn so the per-token `markFirstToken()` is a boolean test after the first.
     private static var sawFirstToken = false
 
@@ -378,6 +381,24 @@ enum TurnRecorder {
         update {
             guard $0.toolCalls.count < maxToolCalls else { return }
             $0.toolCalls.append(.init(name: name, outcome: outcome))
+        }
+    }
+
+    /// Model tool dispatch, including the explicitly supported web-search evidence. Other tools
+    /// remain names/outcomes only. The caller captures `turnID` before it awaits the tool.
+    static func noteToolResult(name: String, outcome: String, query: String?, result: String,
+                               turnID: UUID?, secrets: () -> [String] = { Config.knownSecretValues }) {
+        guard let turnID, turnID == toolTraceID else { return }
+        update {
+            guard $0.toolCalls.count < maxToolCalls else { return }
+            var note = TurnTimeline.ToolNote(name: name, outcome: outcome)
+            if name == "web_search", let query {
+                let used = $0.toolCalls.reduce(0) { $0 + ($1.search?.result.count ?? 0) }
+                note.search = .init(query: query, result: result,
+                                    remainingResultCharacters: TurnTimeline.SearchEvidence.turnResultLimit - used,
+                                    secrets: secrets())
+            }
+            $0.toolCalls.append(note)
         }
     }
 

@@ -267,6 +267,36 @@ final class JobTranscriptExportTests: XCTestCase {
         XCTAssertEqual(unstamped.body.components(separatedBy: "\n")[2], "")
     }
 
+    func testSearchEvidenceAppearsOnlyInSupportReportsWithOutcomeAndSources() {
+        let session = Self.session("s1", startedAt: Self.date(26, 9, 12))
+        let thread = Self.thread([
+            Self.message("user", "When does Sporting play today?", at: Self.date(26, 9, 13)),
+        ])
+        let job = JobTranscriptExport.job(session: session, vaultName: "Test", thread: thread, events: [])
+        var trace = Self.trace(at: Self.date(26, 9, 13), session: "s1")
+        trace.toolCalls = [
+            .init(name: "web_search", outcome: "completed",
+                  search: .init(query: "Sporting 2026-10-25", result: "20:30\nSources: https://example.com/fixture")),
+            .init(name: "web_search", outcome: "failed",
+                  search: .init(query: "second search", result: "Search unavailable")),
+            .init(name: "web_search", outcome: "completed",
+                  search: .init(query: "long search", result: "too long", remainingResultCharacters: 3)),
+        ]
+        let support = JobTranscriptExport.document(
+            scope: .job(sessionId: "s1"), jobs: [job], exportedAt: Self.date(26, 14, 0),
+            timeZone: Self.utc, details: .init(traces: [trace]))
+        XCTAssertTrue(support.body.contains("Sporting 2026-10-25"))
+        XCTAssertTrue(support.body.contains("Sources: https://example.com/fixture"))
+        XCTAssertTrue(support.body.contains("web search (tool call 2, failed)"))
+        XCTAssertTrue(support.body.contains("Search unavailable"))
+        XCTAssertTrue(support.body.contains("returned text [truncated]:"))
+
+        let plain = JobTranscriptExport.document(
+            scope: .job(sessionId: "s1"), jobs: [job], exportedAt: Self.date(26, 14, 0), timeZone: Self.utc)
+        XCTAssertFalse(plain.body.contains("Sporting 2026-10-25"))
+        XCTAssertFalse(plain.body.contains("https://example.com/fixture"))
+    }
+
     func testAPlainTranscriptCarriesNoTroubleshootingLayer() {
         let job = JobTranscriptExport.job(
             session: Self.session("s1", startedAt: Self.date(26, 9, 12)), vaultName: "Refrigeration",

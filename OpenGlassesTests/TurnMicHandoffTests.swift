@@ -198,6 +198,32 @@ final class TurnMicHandoffTests: XCTestCase {
 
     // MARK: - A follow-up retaking the glasses after a phone turn
 
+    func testInterruptedSessionOnPhoneRepairsStaleGlassesRoute() {
+        for actual: MicRoute? in [.phone, nil] {
+            XCTAssertTrue(TurnMicHandoff.shouldRepairConversationRoute(
+                turnMic: .glasses, actualMic: actual, micRoute: .glasses,
+                glassesStoodDown: false, glassesWorn: true, appInForeground: true))
+        }
+        XCTAssertFalse(TurnMicHandoff.shouldRepairConversationRoute(
+            turnMic: .glasses, actualMic: .glasses, micRoute: .glasses,
+            glassesStoodDown: false, glassesWorn: true, appInForeground: true))
+    }
+
+    func testRouteRepairRespectsPhoneChoiceGlassesAvailabilityAndBackground() {
+        for (route, stoodDown, worn, foreground) in [
+            (MicRoute.phone, false, true, true), (.glasses, true, true, true),
+            (.glasses, false, false, true), (.glasses, false, true, false)
+        ] {
+            XCTAssertFalse(TurnMicHandoff.shouldRepairConversationRoute(
+                turnMic: .glasses, actualMic: .phone, micRoute: route,
+                glassesStoodDown: stoodDown, glassesWorn: worn, appInForeground: foreground))
+        }
+        // A deliberate foreground fallback remains governed by the existing phone-turn policy.
+        XCTAssertFalse(TurnMicHandoff.shouldRepairConversationRoute(
+            turnMic: .phone, actualMic: .phone, micRoute: .glasses,
+            glassesStoodDown: false, glassesWorn: true, appInForeground: true))
+    }
+
     private func retakes(turnMic: MicRoute? = .phone, micRoute: MicRoute = .glasses, stoodDown: Bool = false,
                          worn: Bool? = true, foreground: Bool = true, chosenInForeground: Bool = false) -> Bool {
         TurnMicHandoff.shouldRetakeAfterPhoneTurn(turnMic: turnMic, micRoute: micRoute,

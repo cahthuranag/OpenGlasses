@@ -1377,6 +1377,15 @@ class WakeWordService: NSObject, ObservableObject {
         guard !carPlayMode, pauseHoldCount > 0 else { return }
         let configured = wakeListenInputs().micRoute
         let glasses = glassesTurnState()
+        if TurnMicHandoff.shouldRepairConversationRoute(
+            turnMic: turnMicRoute, actualMic: resolvedInput(AVAudioSession.sharedInstance()), micRoute: configured,
+            glassesStoodDown: glasses.stoodDown, glassesWorn: glasses.worn, appInForeground: appInForeground()) {
+            try? AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
+            await retakeConversationMic()
+            PrivacyLog.audio(.wakeWord, .turnMicRetaken, route: PrivacyToken(configured.rawValue),
+                             detail: PrivacyToken((turnMicRoute ?? .phone).rawValue))
+            return
+        }
         guard TurnMicHandoff.shouldRetakeAfterPhoneTurn(
             turnMic: turnMicRoute, micRoute: configured, glassesStoodDown: glasses.stoodDown,
             glassesWorn: glasses.worn, appInForeground: appInForeground(),

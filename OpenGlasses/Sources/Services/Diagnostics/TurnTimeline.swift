@@ -156,6 +156,34 @@ struct TurnTimeline: Identifiable, Equatable {
     struct ToolNote: Equatable, Codable {
         let name: String
         let outcome: String
+        /// Only web_search carries content, redacted and bounded before it reaches the ledger.
+        /// Optional so pre-existing traces continue to decode.
+        var search: SearchEvidence? = nil
+    }
+
+    /// What a search returned to the model, not the underlying fetched web pages. Kept only in
+    /// the on-device support trace; never sent to PrivacyLog or the diagnostic event ring.
+    struct SearchEvidence: Equatable, Codable {
+        static let queryLimit = 1_024
+        static let resultLimit = 8_192
+        static let turnResultLimit = 24_576
+
+        let query: String
+        let result: String
+        let queryTruncated: Bool
+        let resultTruncated: Bool
+
+        init(query: String, result: String, remainingResultCharacters: Int = turnResultLimit,
+             secrets: [String] = []) {
+            // Scrub before truncating: a cut through a token must not leave a partial secret.
+            let safeQuery = DiagnosticsRedactor.redact(query, extraSecrets: secrets).redacted
+            let safeResult = DiagnosticsRedactor.redact(result, extraSecrets: secrets).redacted
+            let limit = max(0, min(Self.resultLimit, remainingResultCharacters))
+            self.query = String(safeQuery.prefix(Self.queryLimit))
+            self.result = String(safeResult.prefix(limit))
+            queryTruncated = safeQuery.count > Self.queryLimit
+            resultTruncated = safeResult.count > limit
+        }
     }
 
     /// Which recogniser transcribed the utterance this turn answers. `nil` when the turn did not

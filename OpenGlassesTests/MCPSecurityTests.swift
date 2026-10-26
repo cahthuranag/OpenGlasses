@@ -18,6 +18,15 @@ final class MCPSecurityTests: XCTestCase {
 
     // MARK: - SecretPatterns
 
+    func testLongSearchTokenIsLinearToRedactAndStillMasksFollowingEmail() {
+        let token = String(repeating: "r", count: 100_000)
+        let started = ProcessInfo.processInfo.systemUptime
+        let redacted = SecretPatterns.redact(token + " first.last+tag@example.com").redacted
+        XCTAssertEqual(redacted, token + " " + SecretPatterns.redactionPlaceholder)
+        // Generous on a busy simulator; the unanchored regex takes tens of seconds here.
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 2)
+    }
+
     func testSecretPatternsHitKnownCredentials() {
         let cases: [(String, String)] = [
             ("openai_key", sample("sk-ant-", 24)),

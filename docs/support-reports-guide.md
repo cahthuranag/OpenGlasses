@@ -70,7 +70,7 @@ Each job starts with its job number, the machine, and when it started and finish
 ```
 
 - **Technician** and **Assistant** lines are the conversation.
-- **AI turn** lines show what happened behind the scenes for the line above: which AI answered, which manual pages it used, whether a photo was sent, and how long it took. **FAILED** marks a problem.
+- **AI turn** lines show what happened behind the scenes for the line above: which AI answered, which manual pages it used, whether a photo was sent, and how long it took. Recorded web searches include the query and text returned to the AI, with source URLs when available. Long contents are marked **truncated**. These are the search tool's results, not copies of the full web pages. **FAILED** marks a problem.
 - At the end there are details about the phone and glasses, for the support team.
 
 ## What a report doesn't include
@@ -84,7 +84,7 @@ Each job starts with its job number, the machine, and when it started and finish
 
 ## Privacy
 
-The app keeps a record of each AI request for 14 days, on the phone only. It contains no conversation, just timings, pages used and errors. It can be deleted in **Settings** → **Diagnostics & Support** → **Delete AI Turn Records**. A support report does contain conversations, so it is only made when someone asks for one, and only sent when they send it.
+The app keeps a record of each AI request for up to 14 days, on the phone only, with a storage limit that may remove older records sooner. It contains timings, pages used, errors, and bounded web search queries and returned text. Keys and tokens are masked before search contents are saved and again when a support report is made. Search contents can still contain names, locations or other personal information. The records can be deleted in **Settings** → **Diagnostics & Support** → **Delete AI Turn Records**. A support report also contains conversations, so it is only made when someone asks for one, and only sent when they send it. Search contents are not included in the separate **Export Diagnostics** event log or **Report a Problem** report.
 
 ## Quick test (1 minute)
 

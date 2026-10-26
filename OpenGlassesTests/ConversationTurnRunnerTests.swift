@@ -45,6 +45,16 @@ final class ConversationTurnRunnerTests: XCTestCase {
         XCTAssertEqual(log.value, ["send", "postProcess(raw)", "accept(raw)", "speak(raw)", "finish"])
     }
 
+    func testAlreadyCancelledTurnDoesNotDispatchARequestButStillCleansUp() async {
+        let log = Box<[String]>([])
+        let deps = recordingDeps(into: log)
+        await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await ConversationTurnRunner.run(deps)
+        }.value
+        XCTAssertEqual(log.value, ["onCancelled", "finish"])
+    }
+
     func testPostProcessedResponseIsWhatGetsAcceptedAndSpoken() async {
         let log = Box<[String]>([])
         let deps = recordingDeps(into: log, postProcess: { _ in "cooked" })

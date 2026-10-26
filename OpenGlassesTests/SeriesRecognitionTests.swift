@@ -92,4 +92,44 @@ final class SeriesRecognitionTests: XCTestCase {
         XCTAssertNil(mixed.seriesStem)
         XCTAssertNil(mixed.series(of: "30RB070"))
     }
+
+    /// A vault covering several product families, whose largest family is a minority of its
+    /// models. Invented model numbers.
+    private static let families = """
+    # Models — refrigerators
+
+    ## QXT412KLMA (top mount)
+    ## QXT412KLMC (top mount)
+    ## QXT415KLMA (top mount)
+    ## QXT415KLMN (top mount)
+    ## QXT418KLMA (top mount)
+    ## QRF204PNTA (French door)
+    ## QRF638PNVE (French door)
+    ## QRS117GHJU (side by side)
+    ## QRS942GKJE (side by side)
+    ## QRB053BCDY (bottom mount)
+    ## QRB771BCDX (bottom mount)
+    ## QRV260MNPR (four door)
+    ## QRX389TUVS (counter depth)
+    """
+
+    func testAVaultOfSeveralFamiliesInfersNoSeriesFromItsLargestOne() {
+        let index = VaultModelIndex(vaultName: "Refrigerators", files: [("models.md", Self.families)])
+        XCTAssertEqual(index.models.count, 13)
+        XCTAssertNil(index.seriesStem, "five QXT41 models of thirteen are not the series the vault is written for")
+        XCTAssertNil(index.series(of: "QXT417KLMP"))
+        XCTAssertFalse(index.isKnown(token: "QXT417KLMP"), "an unlisted lookalike is not covered")
+        XCTAssertTrue(index.isKnown(token: "QXT415KLMN"), "a listed model still is")
+        XCTAssertEqual(EquipmentRecognition.resolve(stated: "QXT417KLMP", index: index), .unmatched)
+        XCTAssertNil(index.seriesMember(in: "the QXT417KLMP isn't cooling"))
+    }
+
+    func testASeriesVaultWithOneStraySectionKeepsItsSeries() {
+        let index = VaultModelIndex(vaultName: "Lennox SLP99 Furnace Service", files: [
+            ("models.md", Self.models), ("service_values.md", Self.serviceValues),
+            ("parts.md", "## XQ7720AB (condensate pump kit)\n"),
+        ])
+        XCTAssertEqual(index.seriesStem, "SLP99UH", "six of seven model sections is still the vault's series")
+        XCTAssertTrue(index.isKnown(token: Self.testersModel))
+    }
 }

@@ -240,6 +240,8 @@ final class PersonalManualLibrary: ObservableObject {
                 ? .insufficient(reason: RetrievalEvidencePolicy.insufficientSentence) : .sufficient(passages)
             let bounded = VaultRetriever.boundedOutcome(outcome, characterLimit: 12_000).outcome
             ShowSourceCenter.shared.noteLookup(bounded.passages, sessionId: sourceScope)
+            // An answer can now cite these books: their additions are no longer a wrong-file undo.
+            ManualLibraryAdmission.noteRead(identities: zip(manuals, results).filter { !$0.1.isEmpty }.map { $0.0.id })
             let guidance = manuals.count > 1 ? "Selected manuals searched together. Cite each book separately. If they disagree, explain the conflict; do not merge incompatible service values.\n\n" : ""
             return guidance + VaultRetriever.toolResult(outcome, query: query)
         } catch { return error.localizedDescription }
@@ -276,6 +278,13 @@ final class PersonalManualLibrary: ObservableObject {
             default: citations = []; areas = []
             }
             ShowSourceCenter.shared.noteTableLookup(rows: rows, citations: citations, pictureAreas: areas, sessionId: sourceScope)
+            let cited: String?
+            switch outcome {
+            case .found(let found): cited = found.source.documentId
+            case .notExtracted(let source), .unclear(let source, _, _): cited = source.documentId
+            default: cited = nil
+            }
+            if let cited { ManualLibraryAdmission.noteRead(identities: manuals.filter { $0.entry?.documentId == cited }.map(\.id)) }
             return TableLookup.render(outcome)
         } catch { return error.localizedDescription }
     }
@@ -283,6 +292,8 @@ final class PersonalManualLibrary: ObservableObject {
     func resolve(_ citation: Citation) -> FieldSessionService.StagedFigure? {
         guard Self.permitted, let page = citation.page, let manual = available.first(where: { $0.label == citation.title }),
               let entry = manual.entry, (try? ManualLibraryAdmission.pageCount(manual.pdf)).map({ page > 0 && page <= $0 }) == true else { return nil }
+        // Opening a page of a manual counts as reading it for the undo rule.
+        ManualLibraryAdmission.noteRead(identities: [manual.id])
         return .init(documentId: entry.documentId, documentTitle: manual.label, page: page, figure: citation.figure,
                      sourceFile: manual.document.file, sourceRevision: manual.sourceRevision)
     }
@@ -447,7 +458,8 @@ final class PersonalManualLibrary: ObservableObject {
             if let capture = manual.captured { try ManualCaptureService.shared.discard(capture.captureID) }
             else { _ = try await VaultManualRemoval.remove(file: manual.document.file, fromVault: manual.manifest.id, documentStore: store) }
             ShowSourceCenter.shared.clearForAccessLoss(); lastFigure = nil
-            status = "Manual removed."
+            let refunded = ManualLibraryAdmission.noteRemoved(identity: manual.id)
+            status = refunded ? "Manual removed. It no longer counts toward your new manuals." : "Manual removed."
         } catch { status = error.localizedDescription }
         revision += 1
     }

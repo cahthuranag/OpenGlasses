@@ -164,6 +164,9 @@ struct MyManualsView: View {
                     if upload.converted { Text(ManualFileUpload.conversionNotice).font(.footnote) }
                     Text("The manual is saved on this phone before indexing. You can retry interrupted indexing.").font(.footnote)
                     if PersonalManualLibrary.canManage {
+                        if let notice = ManualAdditionAllowance.uploadNotice(ManualLibraryAdmission.allowanceStatus()) {
+                            Text(notice).font(.footnote)
+                        }
                         Button("Upload manual") {
                             pendingUpload = nil
                             Task { await library.addPrepared(upload, title: title) }

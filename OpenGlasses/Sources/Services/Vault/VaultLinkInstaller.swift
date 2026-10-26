@@ -53,11 +53,21 @@ enum VaultLinkInstaller {
         for document in manifest.documents {
             let path = manifest.documentSourceRelativePath(document) ?? manifest.documentRelativePath(document)
             guard VaultArchiveReader.isSafeRelativePath(path), let data = files[path] else { throw InstallError.failed("This set is missing an original PDF.") }
-            let url = root.appendingPathComponent(path)
-            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            var writes = [(path, data)]
+            // The allowance fingerprints the original, which is the measured PDF unless a reading copy stands in.
+            let original = ManualLibraryAdmission.originalRelativePath(manifest, document)
+            if original != path {
+                guard VaultArchiveReader.isSafeRelativePath(original), let bytes = files[original] else { throw InstallError.failed("This set is missing an original manual.") }
+                writes.append((original, bytes))
+            }
+            for (relative, bytes) in writes {
+                let url = root.appendingPathComponent(relative)
+                try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try bytes.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            }
         }
-        try ManualLibraryAdmission.install(manifest: manifest, root: root) { () }
+        // A review: the same quota and new-manual allowance as the install, spending nothing.
+        try ManualLibraryAdmission.install(manifest: manifest, root: root, recordsAdditions: false) { () }
     }
 
     /// Lay the archive out and install it, serialised against every other operation on that vault.

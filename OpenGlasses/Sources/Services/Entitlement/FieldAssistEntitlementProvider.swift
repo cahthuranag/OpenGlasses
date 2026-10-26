@@ -21,6 +21,7 @@ final class VerifiedStorePurchaseRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [FieldAssistEntitlementEvidence] = []
     private var storedPackProducts: Set<String> = []
+    private var storedPersonalOriginalID: UInt64?
 
     init() {}
 
@@ -45,6 +46,23 @@ final class VerifiedStorePurchaseRecorder: @unchecked Sendable {
         storedPackProducts = ids
     }
 
+    /// The original transaction id of the verified My Manuals subscription (Plan JK §8). Monthly ↔
+    /// annual, a lapse and a re-subscribe keep it, so one subscription keeps one addition history;
+    /// another Apple ID's subscription has its own. Recorded with the evidence, never persisted.
+    func recordPersonalSubscription(originalTransactionID: UInt64?) {
+        lock.lock()
+        defer { lock.unlock() }
+        storedPersonalOriginalID = originalTransactionID
+    }
+
+    /// The key the new-manual allowance's history is filed under. Without a verified original
+    /// transaction (a test host, a debug grant) it is one stable key per device.
+    var personalSubscriptionKey: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedPersonalOriginalID.map { "store-\($0)" } ?? "device"
+    }
+
     var packProductIds: Set<String> {
         lock.lock()
         defer { lock.unlock() }
@@ -56,6 +74,7 @@ final class VerifiedStorePurchaseRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         stored = []
+        storedPersonalOriginalID = nil
     }
 
     /// The first recorded piece, for callers that only ever expected one.

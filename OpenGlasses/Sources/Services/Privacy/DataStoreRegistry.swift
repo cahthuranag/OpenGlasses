@@ -84,6 +84,8 @@ enum SensitiveStore: String, CaseIterable {
     case vanStock
     case learningCandidates
     case capturedManuals
+    /// The My Manuals new-manual allowance (Plan JK §8): the iCloud copy of the history.
+    case manualAdditionHistory
     case learningEntries
     case orgEnrolment
     case safetyAssessments
@@ -140,6 +142,8 @@ enum SensitiveStore: String, CaseIterable {
     case keychainConversationKey
     case keychainClinicalCredentials
     case keychainScopedDataKeys
+    case keychainManualAdditionHistory
+    case keychainManualAdditionSecret
 
     // Trust and consent registers (tool-definition digests, versioned consent records)
     case toolDefinitionDigests
@@ -203,6 +207,9 @@ enum SensitiveStore: String, CaseIterable {
         case keychainWhenUnlockedThisDeviceOnly
         /// Keychain, `whenUnlockedThisDeviceOnly` behind a `.userPresence` access control.
         case keychainWhenUnlockedThisDeviceOnlyWithUserPresence
+        /// Keychain, `afterFirstUnlock`, synchronizable: carried by iCloud Keychain (end-to-end
+        /// encrypted) to the wearer's other devices.
+        case keychainAfterFirstUnlockSynchronizable
         /// Held by an OS service (CoreSpotlight, Photos) under that service's own protection.
         case operatingSystemManaged
         /// Never reaches disk in production.
@@ -678,6 +685,17 @@ enum SensitiveStore: String, CaseIterable {
                           ownerPaths: ["OpenGlasses/Sources/Services/FieldAssist/CapturedManual/CapturedManualStore.swift",
                                        "OpenGlasses/Sources/Services/Vault/PersonalManualLibrary.swift"],
                           location: "Documents/CapturedManuals (sealed revisions, staging, checkpoints, selection and tombstones)")
+
+        case .manualAdditionHistory:
+            // Fingerprints (HMACs under a per-subscription secret), dates and flags; never a title,
+            // a file name or the manual. Syncs so one person's devices share one allowance.
+            return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,
+                          protection: .operatingSystemManaged, backupExcluded: false, retention: .none,
+                          deleteAll: .api("ManualAdditionHistoryStore.eraseAll()"),
+                          deleteSubject: .unavailable("the wearer's own additions; it holds no other person"),
+                          owner: "ManualAdditionHistoryStore",
+                          ownerPaths: ["OpenGlasses/Sources/Services/Vault/ManualAdditionHistoryStore.swift"],
+                          location: "iCloud key-value store key `myManuals.additions`: added-manual fingerprints and dates")
 
         case .learningCandidates:
             // Team-learning candidates (Plan FP P1): what a technician filed for their supervisor to
@@ -1215,6 +1233,26 @@ enum SensitiveStore: String, CaseIterable {
                           owner: "ScopedKeyring",
                           ownerPaths: ["OpenGlasses/Sources/Services/Privacy/ScopedKeyring.swift"],
                           location: "Keychain: one data key per erasable class")
+
+        case .keychainManualAdditionHistory:
+            return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,
+                          protection: .keychainAfterFirstUnlockThisDeviceOnly, backupExcluded: true,
+                          retention: .policy("append-only history; holdings pruned after the undo window"),
+                          deleteAll: .api("ManualAdditionHistoryStore.eraseAll()"),
+                          deleteSubject: .unavailable("the wearer's own additions; it holds no other person"),
+                          owner: "ManualAdditionHistoryStore",
+                          ownerPaths: ["OpenGlasses/Sources/Services/Vault/ManualAdditionHistoryStore.swift"],
+                          location: "Keychain: the local copy of the My Manuals addition history and this device's recent holdings")
+
+        case .keychainManualAdditionSecret:
+            return Record(store: self, dataClass: .credential, subjectLinkage: .wearer,
+                          protection: .keychainAfterFirstUnlockSynchronizable, backupExcluded: false,
+                          retention: .none,
+                          deleteAll: .api("ManualAdditionHistoryStore.eraseAll()"),
+                          deleteSubject: .notSubjectLinked,
+                          owner: "ManualAdditionHistoryStore",
+                          ownerPaths: ["OpenGlasses/Sources/Services/Vault/ManualAdditionHistoryStore.swift"],
+                          location: "iCloud Keychain: one random fingerprint key per My Manuals subscription")
 
         case .keychainClinicalCredentials:
             return Record(store: self, dataClass: .credential, subjectLinkage: .thirdPartySubject,

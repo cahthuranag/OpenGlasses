@@ -96,6 +96,8 @@ class StoreKitService: ObservableObject {
     struct Entitlement {
         let productID: String
         let expiration: Date?
+        /// The subscription's original transaction id; keys the new-manual allowance (Plan JK §8).
+        var originalTransactionID: UInt64? = nil
     }
 
     private let productLoader: @MainActor (Set<String>) async throws -> [Product]
@@ -143,7 +145,8 @@ class StoreKitService: ObservableObject {
         for await result in Transaction.currentEntitlements {
             if case .verified(let transaction) = result, transaction.revocationDate == nil {
                 entitlements.append(Entitlement(productID: transaction.productID,
-                                                expiration: transaction.expirationDate))
+                                                expiration: transaction.expirationDate,
+                                                originalTransactionID: transaction.originalID))
             }
         }
         return entitlements
@@ -249,6 +252,9 @@ class StoreKitService: ObservableObject {
         let packs = Set(entitlements.map(\.productID).filter { VaultPackManifest.isPackProductId($0) })
 
         // Commit evidence before publishing UI changes. A missing catalog is not a missing receipt.
+        // The allowance key first, so no addition sees personal evidence filed under the fallback key.
+        VerifiedStorePurchaseRecorder.shared.recordPersonalSubscription(
+            originalTransactionID: personal.compactMap(\.originalTransactionID).min())
         VerifiedStorePurchaseRecorder.shared.record(products: (field + personal).map { ($0.productID, $0.expiration) })
         VerifiedStorePurchaseRecorder.shared.recordPackProducts(packs)
         Config.setFieldAssistPurchased(!field.isEmpty)

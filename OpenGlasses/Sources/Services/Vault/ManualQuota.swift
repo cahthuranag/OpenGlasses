@@ -5,10 +5,31 @@ struct ManualLimits: Equatable, Sendable {
     let manuals: Int
     let pagesPerManual: Int?
     let totalPages: Int?
+    /// How fast the shelf may turn over (Plan JK §8). Nil for every holder without the personal
+    /// limits: an unlimited grant has no new-manual allowance.
+    let additions: AdditionAllowance?
+
+    init(manuals: Int, pagesPerManual: Int?, totalPages: Int?, additions: AdditionAllowance? = nil) {
+        self.manuals = manuals
+        self.pagesPerManual = pagesPerManual
+        self.totalPages = totalPages
+        self.additions = additions
+    }
+
+    /// New manuals per rolling window. A returning manual is free; the first distinct manuals of a
+    /// subscription are free; an unread addition removed within `undoWindow` is given back.
+    struct AdditionAllowance: Equatable, Sendable {
+        let newPerWindow: Int
+        let window: TimeInterval
+        let freeFirst: Int
+        let undoWindow: TimeInterval
+
+        static let personal = AdditionAllowance(newPerWindow: 3, window: 30 * 86_400, freeFirst: 5, undoWindow: 86_400)
+    }
 
     /// Provisional envelope after the 7,595-page / five-slot 9,459-page phone measurement.
     /// Broader hardware qualification remains outstanding.
-    static let personal = ManualLimits(manuals: 5, pagesPerManual: 8_000, totalPages: 10_000)
+    static let personal = ManualLimits(manuals: 5, pagesPerManual: 8_000, totalPages: 10_000, additions: .personal)
 
     static func resolve(_ evidence: FieldAssistEntitlementEvidenceSet, now: Date) -> ManualLimits? {
         FieldAssistCapability.capabilities(for: evidence, now: now).contains(.personalManuals) ? .personal : nil

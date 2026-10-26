@@ -12,6 +12,12 @@
 > preparation placeholder, external subscription-management button, fixed headline capacity and
 > Field Assist redirect/upsell have been removed. Current capacity is in the purchase sheet's
 > Plan limits disclosure. Live App Store Connect setup and sandbox qualification remain open.
+>
+> **Owner revision — 2026-10-26 (drafted, not built):** five on the shelf is not a limit on its
+> own, because removal frees a slot at once and nothing records it — a technician could load the
+> day's five job manuals each morning and delete them at night. §8 adds a **new-manual
+> allowance**: three new manuals in any rolling 30 days, a returning manual free, the allowance
+> shared across one person's devices through iCloud. Built as P1e.
 
 
 **Status:** 🛠 Implemented in the working tree 2026-10-25; validation and device/store qualification in progress. Purchase offers remain disabled. Owner decisions 2026-10-20: the product
@@ -240,7 +246,8 @@ counted as another manual merely because its size or page count changes. Separat
   reuse local scan/redaction/OCR without manufacturing a field session or changing the v1 job and
   Office contract. Cancellation and recovery release or resume the reservation.
 - **Removal frees a slot** through Plan FN's removal, unchanged. Forgetting never needs the
-  entitlement (the importer's rule today) and never needs the quota.
+  entitlement (the importer's rule today) and never needs the quota. It frees a *shelf slot*, not
+  a *new-manual addition*: what fills the slot next is governed by §8.
 - **Over the limit without adding** — a downgrade from Field Assist, or a lapse — deletes nothing.
   Every manual stays readable while an `ownVaults` grant is live; the quota only refuses the next
   addition. On lapse, reading stops exactly as an own vault's does today (`isUnlocked` false), the
@@ -374,7 +381,121 @@ resumes with nothing re-imported.
 - **EU AI Act**: retrieval over the person's own documents; nothing in Annex III; no change to the
   review document.
 - **Nothing is a preference.** The grant is the verified transaction; the quota is derived from it
-  on every read; no stored "manual count" or "tier" boolean exists (Plan DP's rule).
+  on every read; no stored "manual count" or "tier" boolean exists (Plan DP's rule). §8's addition
+  history is the one stored record, and it is a history of events, not a count or a grant: the
+  allowance is derived from it and from live evidence on every check, and losing it only ever
+  makes the app *more* generous.
+
+### 8. New-manual allowance: limiting swaps (owner decisions 2026-10-26)
+
+**The gap.** Count, page caps and the missing manifest all describe what the shelf *holds*.
+Nothing describes how fast it *turns over*: removal frees a slot immediately, needs no grant, and
+leaves no record (`VaultLinkInstaller` says so in as many words). A technician who meets 80–120 jobs
+a month can upload the day's manuals each morning, delete them each evening, and never hit a limit.
+That fails the owner's test from the top of this plan.
+
+**What separates the two customers is new manuals per month.** A private owner fills the shelf
+once (car, motorbike, mower, boat, a hi-fi) and afterwards meets a new manual every few months; a
+busy month brings two. A technician meets twenty or more. Any allowance from two to five separates
+them; the number is chosen so the owner never feels it.
+
+**Rules (decided):**
+
+- **Three new manuals in any rolling 30 days.** Each new addition is spent for 30 days from the
+  moment it was made and then comes back. Unused additions do not carry over. Rolling, not
+  calendar: a calendar month allows three on the 31st and three more on the 1st, and rolling lets
+  a refusal name the date the next addition becomes available.
+- **The first five distinct manuals are free.** Filling the shelf — including inside the trial
+  week — never touches the allowance. "First five" is per subscription (below), not per install.
+- **A returning manual is always free.** A manual is *new* when its fingerprint (below) has never
+  been held under this subscription. Re-adding one you removed, or adding to your iPad one that is
+  on your phone, costs nothing. This is what keeps the owner who swaps between two vehicles' books
+  out of the limit, and it cannot be gamed: a different manual cannot present an old fingerprint.
+  A re-saved PDF or a re-photographed manual has different bytes and counts as new; the refusal
+  copy does not need to explain this.
+- **Undo is free only for a manual nothing was read from.** Removing a new manual within 24 hours
+  gives its addition back **only if no answer cited it and none of its pages was opened** — the
+  wrong-file case. *(This narrows the 2026-10-26 discussion, which had a plain 24-hour undo: with
+  no read condition, a technician adds the job's manual, uses it all day and removes it at hour 23
+  for free, which reopens the gap this section closes.)*
+- **Removal stays free and immediate.** It frees a shelf slot; it never returns a spent addition
+  outside the undo rule.
+- **Publisher sets** spend one addition per manual in the set that is new to you. A set that does
+  not fit the remaining allowance is refused whole, as for the shelf, never installed partially.
+- **Annual subscribers get the same rate.** A year's subscription does not front-load 36.
+- **Only the personal limits carry an allowance.** Any live unlimited `ownVaults` grant (Field
+  Assist) lifts it with the other limits; `ManualLimits.resolve` returning nil means no allowance.
+- **Lapse and downgrade** change nothing about the history. The allowance gates additions only;
+  reading, removal and non-growing retries never consult it.
+
+**Fingerprint.** HMAC-SHA256 of the original file's bytes (the uploaded PDF/DOC/DOCX/Markdown, not
+the app-generated reading copy; each document of a publisher set separately), keyed with a random
+per-subscription secret. The secret lives in the **iCloud Keychain** (synchronizable, end-to-end
+encrypted) so every device on the person's iCloud derives the same fingerprints, while the history
+itself never holds anything that could identify which manual a person owns.
+
+**History.** An append-only set of records `{fingerprint, addedAt, spent: Bool, refunded: Bool}`
+keyed by the subscription's **original transaction id** from verified evidence, so a monthly ↔
+annual switch, a lapse and a re-subscribe all keep one history, and a different Apple ID's
+subscription starts its own.
+
+**Devices (decided): one allowance per person, one shelf per device.**
+
+- The history syncs through **iCloud key-value storage** (`NSUbiquitousKeyValueStore`), so a phone
+  and an iPad on the same iCloud share three new manuals a month. Each device keeps its own five on
+  the shelf; the manuals themselves never sync (the Non-goals stand: no sync of manuals, no cloud
+  copy). Only fingerprints and dates leave the phone, and only to the person's own iCloud.
+- Without iCloud, the history lives in the local keychain, which survives an app reinstall. On a
+  later iCloud sign-in the two are merged.
+- **Merge is a union** of records by `(fingerprint, addedAt)`; a smaller set never overwrites a
+  larger one. Two devices adding offline at once can overspend by what they added; accepted.
+- **Clock:** a record dated after the device's current time counts as inside the window, so moving
+  the clock forward to free the allowance spends the future window instead. Verified store time can
+  replace the device clock later if this is ever seen in practice.
+- **Accepted, not engineered against:** a company signing several technicians' App Store accounts
+  into one subscription. iOS lets the App Store account differ from the iCloud account, so their
+  histories never meet, and nothing on the phone can count devices without a server, which this
+  product does not have. Each phone in that arrangement still holds five and gets three new a
+  month, which is what makes it useless for daily work. The subscription terms (owner, off-repo)
+  gain a **personal, non-commercial use** clause as the stated basis.
+
+**Known residual.** Free returns mean a subscriber's set of *known* manuals grows by about three a
+month — five plus thirty-six after a year — all swappable into the five slots without cost. Swapping
+still means re-uploading the file for each job, which is the friction that matters. If this is
+seen in practice, the dial is a cap on free returns per window; not built now.
+
+**Not in this section:** one PDF made of many manuals still fits under the page caps. Detecting a
+bundle (for example, an upload whose model sections span many unrelated series, using the series
+inference already in the vault code) is a later, separate decision.
+
+**Surfaces.** The refusal names the count and the date and does not upsell: *"You've added 3 new
+manuals in the last 30 days. Your next new manual can be added on 12 November. Manuals you've had
+before can come back any time."* The purchase sheet's Plan limits disclosure gains one line
+(`MyManualsPaywallCopy.limitDetails`). The upload sheet says how many new additions remain only
+when one or none is left. No headline counter on the My Manuals page, per the 2026-10-25 revision.
+No plan letters in any of it.
+
+**Code shape.** `ManualLimits` gains `newPerWindow: 3`, `window: 30 days`, `freeFirst: 5`,
+`undoWindow: 24 h` (nil for every non-personal holder). A pure `ManualAdditionAllowance.decide(
+limits:history:proposed:now:)` returns `.allowed(spending:)` or `.wouldExceed(remaining:
+nextAvailable:)`, beside `ManualQuota` and with the same fail-closed rule: an unreadable history
+refuses additions, never removal or reading. `ManualLibraryAdmission.install` and
+`reserveCapture`/`validateCapture` consult it after the quota, under the same lock, and record spent
+additions in the same critical section as the commit; a cancelled or failed install records
+nothing. A small `ManualAdditionHistoryStore` owns the keychain/KVS pair and the merge. The read
+condition for undo comes from the library's existing citation and "show me" paths.
+
+**Privacy and data.** Register the keychain item, the iCloud Keychain secret and the KVS keys in
+`DataStoreRegistry`. The in-app privacy copy names the sync: *a private record of which manuals
+you've added — fingerprints and dates, never the manual — syncs through your iCloud.* No new SDK,
+no third-party egress; `PrivacyInfo.xcprivacy` claims are re-checked, not expected to change.
+**Owed — erasure:** subject erasure should delete the fingerprints and the secret (the person
+loses only their free returns). Whether in-window dates (no content, self-expiring after 30 days)
+may be kept until they expire, so that an erasure does not also reset the allowance, is a decision
+for the privacy review, not this plan.
+
+**Owner items.** iCloud key-value storage is a new capability: the entitlement in the spec and the
+capability in the developer portal before the next archive. The non-commercial clause in the terms.
 
 ## Phases
 
@@ -411,6 +532,17 @@ names the manual; the on-device set ranks the manual tools with a library and no
 entry present without `fieldWork`, hidden under an edition; the catalogue guard (strings, no plan
 letters in copy).
 
+### P1e — New-manual allowance (one PR, before purchase offers are enabled)
+
+§8, headless core first: `ManualAdditionAllowance` and its tests; the fingerprint and
+`ManualAdditionHistoryStore` behind a seam (an in-memory store in tests, never the live keychain or
+KVS); admission wired at Files, links and capture; the undo read condition; refusal and
+disclosure copy through the catalogue guard; `DataStoreRegistry` entries. The KVS entitlement goes
+into the spec in the same PR; the portal capability and a two-device check (phone and iPad on one
+iCloud) are owed after merge. Exit: the sixth new manual in a window is refused at every door with
+the date; a returning manual installs; removing and re-adding a manual costs nothing; an undo after
+a cited answer refunds nothing.
+
 ### P2 — Store and device (owner + one PR)
 
 The `.storekit` products; App Store Connect setup and the listing copy (owner); the sandbox sequence
@@ -422,7 +554,8 @@ the upgrade path end to end. Release build before the PR, as always.
 
 - No AI-generated summaries of a manual, no "chat with your car": the answer is a passage with its
   page, as for a technician.
-- No sharing, no sync between phones, no cloud copy of a manual. FS's rule is the product.
+- No sharing, no sync between phones, no cloud copy of a manual. FS's rule is the product. (§8's
+  addition history syncs fingerprints and dates, never a manual.)
 - No fetching a manual from a manufacturer's site (Plan IT is organisation-side; a later plan could
   offer the public-copy route to personal customers under IT's rules).
 - No mode, no tabs, no jobs, no "my garage" record keeping. A later consumer plan may want a vehicle
@@ -435,6 +568,13 @@ the upgrade path end to end. Release build before the PR, as always.
 Confirmed 2026-10-25: family sharing off; one-week trial for eligible subscribers; received
 publisher documents count toward five; each paywall names the other tier; entitlement label
 **Personal**. The product name remains **My Manuals**.
+
+Confirmed 2026-10-26 (§8): three new manuals in any rolling 30 days, no carry-over; first five
+distinct manuals free; a returning manual free; one allowance per person through iCloud, one shelf
+per device; a company sharing one App Store account accepted, with a non-commercial clause in the
+terms. Owed: the undo read condition (§8 narrows the discussed plain 24-hour undo), the erasure
+question for the privacy review, the iCloud capability, the terms clause, and a later decision on
+detecting one PDF made of many manuals.
 
 The supplied workshop PDFs and the completed five-slot phone benchmark support provisional
 policy ceilings of 8,000 physical pages per manual and 10,000 total. The earlier 2,500 / 6,000
@@ -449,7 +589,10 @@ rows), `ManualQuotaTests`, `ManualSourceTests`, `VaultImporterQuotaTests`,
 `VaultLinkReviewQuotaTests`, `ManualCaptureQuotaTests`, `MyManualsDoorsTests` (manifest folder,
 unverified archive, set-without-procedures, `use_camera`), `ManualToolsLibraryTests` (lookup, figure,
 table, show-source from a library with Field Assist off), `AppleOnDeviceToolSetTests` (library
-input), `MyManualsSettingsPresenceTests`, `PaywallCopyGuardTests` (both copies), the existing
+input), `MyManualsSettingsPresenceTests`, `PaywallCopyGuardTests` (both copies),
+`ManualAdditionAllowanceTests` (window edges, first five, returning free, undo with and without a
+read, a future-dated record, a set refused whole, nil limits, unreadable history),
+`ManualAdditionHistoryMergeTests` (union, offline overspend, keychain → iCloud merge), the existing
 `BrandNameGuardTests`, `OutboundFrameConsumerTests` and `TelemetryOptOutGuardTests` unchanged.
 
 ### Owner follow-up: uploaded Word and Markdown manuals

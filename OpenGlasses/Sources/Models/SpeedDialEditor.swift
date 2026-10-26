@@ -92,6 +92,7 @@ enum SpeedDialEditor {
         var ids = Set(QuickAction.travelTemplates.map(\.id))
         ids.formUnion(QuickAction.fieldAssistManagedActions.map(\.id))
         ids.insert(QuickAction.recordMeeting.id)
+        ids.insert(QuickAction.myManuals.id)
         return ids
     }
 

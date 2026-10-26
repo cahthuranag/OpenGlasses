@@ -50,7 +50,7 @@ final class EscalationCoordinator: ObservableObject {
     /// under way runs to `resolve`/`cancel` so the technician is never abandoned on a live call.
     @discardableResult
     func requestExpert(reason: String) async -> State {
-        guard FieldAssistEntitlement.shared.isGranted else {
+        guard FieldAssistEntitlement.shared.has(.fieldWork) else {
             state = .failed("Field Assist isn't unlocked on this device.")
             return state
         }

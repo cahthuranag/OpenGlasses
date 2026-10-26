@@ -10,6 +10,22 @@ import XCTest
 @MainActor
 final class FieldTradeGateTests: XCTestCase {
 
+    private var previousEntitlement: FieldAssistEntitlementProvider!
+    private var previousEnabled: Any?
+
+    override func setUp() {
+        super.setUp()
+        previousEntitlement = EntitlementTestScope.grant(tier: .team)
+        previousEnabled = UserDefaults.standard.object(forKey: "fieldAssistEnabled")
+        UserDefaults.standard.set(true, forKey: "fieldAssistEnabled")
+    }
+
+    override func tearDown() {
+        EntitlementTestScope.restore(previousEntitlement)
+        UserDefaults.standard.set(previousEnabled, forKey: "fieldAssistEnabled")
+        super.tearDown()
+    }
+
     private struct Case {
         let name: String
         let selection: FieldTradeSelection

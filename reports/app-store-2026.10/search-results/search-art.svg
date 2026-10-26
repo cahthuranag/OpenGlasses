@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2560" viewBox="0 0 3840 2560">
+  <title>Avenkin — Search results creative</title>
+  <rect width="3840" height="2560" fill="#F6F2EB" />
+  <g transform="translate(-800 1000)">
+    <circle cx="2800" cy="823" r="710" fill="#EEE7DC" />
+    <circle cx="3060" cy="823" r="187" fill="#202B2D" />
+    <g transform="translate(2700 326)">
+      <rect width="176" height="176" rx="42" fill="#F6F2EB" />
+    </g>
+    <g transform="translate(2700 1144)">
+      <rect width="176" height="176" rx="42" fill="#F6F2EB" />
+    </g>
+    <rect x="2168" y="761" width="44" height="124" rx="22" fill="#E77F47" />
+    <rect x="2260" y="694" width="44" height="258" rx="22" fill="#E77F47" />
+    <rect x="2352" y="627" width="44" height="392" rx="22" fill="#E77F47" />
+    <rect x="2444" y="565" width="44" height="516" rx="22" fill="#E77F47" />
+    <rect x="2536" y="659" width="44" height="328" rx="22" fill="#E77F47" />
+    <rect x="2628" y="722" width="44" height="202" rx="22" fill="#E77F47" />
+    <rect x="2720" y="762" width="44" height="122" rx="22" fill="#E77F47" />
+    <path d="M2967 811 Q2978 800 2989 811 L3036 858 L3137 753 Q3148 742 3159 753 Q3170 764 3159 775 L3047 891 Q3036 902 3025 891 L2967 833 Q2956 822 2967 811 Z" fill="#F6F2EB" />
+    <path d="M2754 369 H2822 Q2838 369 2838 385 V448 Q2838 466 2820 466 H2756 Q2738 466 2738 448 V387 Q2738 369 2754 369 Z M2756 379 Q2748 379 2748 387 V448 Q2748 456 2756 456 H2820 Q2828 456 2828 448 V387 Q2828 379 2820 379 Z" fill="#7B827D" fill-rule="evenodd" />
+    <rect x="2746" y="397" width="84" height="9" rx="4" fill="#7B827D" />
+    <rect x="2760" y="359" width="10" height="29" rx="4" fill="#7B827D" />
+    <rect x="2807" y="359" width="10" height="29" rx="4" fill="#7B827D" />
+    <rect x="2767" y="422" width="19" height="9" rx="4" fill="#7B827D" />
+    <rect x="2767" y="441" width="40" height="8" rx="4" fill="#7B827D" />
+    <path d="M2747 1177 H2807 L2832 1203 V1286 H2747 Z M2757 1187 V1276 H2822 V1208 L2802 1187 Z" fill="#7B827D" fill-rule="evenodd" />
+    <rect x="2773" y="1230" width="34" height="9" rx="4" fill="#7B827D" />
+    <rect x="2773" y="1250" width="34" height="9" rx="4" fill="#7B827D" />
+  </g>
+  <g transform="translate(1515 160) scale(.19)">
+    <path fill="#E77F47" d="M184 758 C219 654 264 486 360 348 C410 280 459 246 512 246 C565 246 614 280 664 348 C760 486 805 654 840 758 Q846 780 822 780 H712 Q696 780 690 763 C662 672 630 561 577 445 C556 400 534 374 512 374 C490 374 468 400 447 445 C394 561 362 672 334 763 Q328 780 312 780 H202 Q178 780 184 758 Z M350 560 H532 Q570 560 570 602 Q570 644 532 644 H350 Z" />
+  </g>
+</svg>

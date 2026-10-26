@@ -37,49 +37,30 @@ struct OCRService {
 
     /// Recognize text in a CGImage, sorted top-to-bottom then left-to-right (natural reading order).
     func recognizeText(in cgImage: CGImage) async -> Result {
-        await withCheckedContinuation { continuation in
+        // Vision's Objective-C requests and observations must drain after each page, rather
+        // than accumulating for the lifetime of a multi-thousand-page import task.
+        autoreleasepool {
             let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-            let request = VNRecognizeTextRequest { request, error in
-                if let error {
-                    PrivacyLog.vision(.ocr, .recognitionFailed, error: SafeErrorSummary(error))
-                    return continuation.resume(returning: Result(text: "", blocks: []))
-                }
-                guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                    return continuation.resume(returning: Result(text: "", blocks: []))
-                }
-
-                var blocks: [Block] = []
-                for observation in observations {
-                    guard let candidate = observation.topCandidates(1).first,
-                          candidate.confidence >= self.minimumConfidence else { continue }
-                    blocks.append(Block(text: candidate.string,
-                                        confidence: candidate.confidence,
-                                        boundingBox: observation.boundingBox))
-                }
-
-                // Reading order: Vision origin is bottom-left, so higher y = higher on the page.
-                blocks.sort { a, b in
-                    if abs(a.boundingBox.maxY - b.boundingBox.maxY) < 0.02 {
-                        return a.boundingBox.minX < b.boundingBox.minX
-                    }
-                    return a.boundingBox.maxY > b.boundingBox.maxY
-                }
-
-                let text = blocks.map(\.text).joined(separator: "\n")
-                continuation.resume(returning: Result(text: text, blocks: blocks))
-            }
+            let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
-            // Signs/menus/labels aren't always English — let Vision pick the script instead of
-            // defaulting to the device language (also feeds the translate mode better input).
             request.automaticallyDetectsLanguage = true
-
-            do {
-                try handler.perform([request])
-            } catch {
+            do { try handler.perform([request]) }
+            catch {
                 PrivacyLog.vision(.ocr, .recognitionFailed, error: SafeErrorSummary(error))
-                continuation.resume(returning: Result(text: "", blocks: []))
+                return Result(text: "", blocks: [])
             }
+            var blocks = (request.results ?? []).compactMap { observation -> Block? in
+                guard let candidate = observation.topCandidates(1).first,
+                      candidate.confidence >= minimumConfidence else { return nil }
+                return Block(text: candidate.string, confidence: candidate.confidence,
+                             boundingBox: observation.boundingBox)
+            }
+            blocks.sort { a, b in
+                if abs(a.boundingBox.maxY - b.boundingBox.maxY) < 0.02 { return a.boundingBox.minX < b.boundingBox.minX }
+                return a.boundingBox.maxY > b.boundingBox.maxY
+            }
+            return Result(text: blocks.map(\.text).joined(separator: "\n"), blocks: blocks)
         }
     }
 }

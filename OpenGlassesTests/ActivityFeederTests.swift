@@ -170,6 +170,13 @@ final class ActivityFeederTests: XCTestCase {
     }
 
     func testAJobsActionLinksToTheJobsThread() async {
+        let previousEntitlement = EntitlementTestScope.grant(tier: .team)
+        let previousEnabled = UserDefaults.standard.object(forKey: "fieldAssistEnabled")
+        defer {
+            EntitlementTestScope.restore(previousEntitlement)
+            UserDefaults.standard.set(previousEnabled, forKey: "fieldAssistEnabled")
+        }
+        UserDefaults.standard.set(true, forKey: "fieldAssistEnabled")
         let (router, recorder) = router([FakeTool("van_stock", .local())])
         router.activityJobThread = { "thread-1017" }
         _ = await router.executeRoot(name: "van_stock", args: ["action": "use"], invocationID: "call-2")

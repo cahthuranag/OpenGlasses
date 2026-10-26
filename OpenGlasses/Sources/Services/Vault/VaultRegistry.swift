@@ -151,7 +151,7 @@ final class VaultRegistry {
     private var userManifests: [VaultManifest] = VaultImporter.installedManifests()
 
     /// All manifests known to the registry, regardless of unlock state (built-in + user-installed).
-    var allManifests: [VaultManifest] { Self.builtInManifests + userManifests }
+    var allManifests: [VaultManifest] { Self.builtInManifests + userManifests.filter { !$0.isPersonalLibrary } }
 
     /// Re-read user-installed manifests after an import or uninstall.
     func reloadUserManifests() {
@@ -181,6 +181,7 @@ final class VaultRegistry {
     /// route through here, so a denied decision blocks a vault read even when no settings screen is
     /// involved.
     func isUnlocked(_ manifest: VaultManifest) -> Bool {
+        if manifest.isPersonalLibrary { return PersonalManualLibrary.permitted }
         if let pack = VaultImporter.installedPack(for: manifest.id)?.id {
             // A personal purchase cannot re-authorise documents withdrawn by the employer.
             let manager = OrgProfileManager.shared
@@ -197,7 +198,7 @@ final class VaultRegistry {
         case "medical_compliance":
             return StoreKitService.shared.isMedicalComplianceActive
         case "field_assist_refrigeration", "field_assist_it", "field_assist_electrical":
-            return FieldAssistEntitlement.shared.isGranted
+            return FieldAssistEntitlement.shared.has(.bundledVaults)
         case "enterprise":
             // A vault of the reader's own (Plan H). Gated on the capability, not a tier: a
             // subscription and a team licence both include it, the retired one-time unlock does not.

@@ -3,8 +3,17 @@ import SwiftUI
 import VisionKit
 
 struct ManualDocumentCamera: UIViewControllerRepresentable {
-    let request: ManualCaptureService.Request
-    func makeCoordinator() -> Coordinator { Coordinator(request:request) }
+    let onSave: @MainActor (VNDocumentCameraScan) -> Void
+    let onCancel: @MainActor (String) -> Void
+    init(request: ManualCaptureService.Request) {
+        onSave = { ManualCaptureService.shared.accept($0, request: request) }
+        onCancel = { ManualCaptureService.shared.cancel(requestID: request.id, message: $0) }
+    }
+    init(request: PersonalManualCapture.Request) {
+        onSave = { PersonalManualCapture.shared.accept($0, request: request) }
+        onCancel = { PersonalManualCapture.shared.cancel(request.id, message: $0) }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(onSave: onSave, onCancel: onCancel) }
     func makeUIViewController(context:Context) -> VNDocumentCameraViewController {
         let view = VNDocumentCameraViewController();view.delegate = context.coordinator;return view
     }
@@ -14,17 +23,19 @@ struct ManualDocumentCamera: UIViewControllerRepresentable {
         init(_ scan: VNDocumentCameraScan) { self.scan = scan }
     }
     final class Coordinator: NSObject,VNDocumentCameraViewControllerDelegate {
-        let request:ManualCaptureService.Request
-        init(request:ManualCaptureService.Request) {self.request = request}
+        let onSave: @MainActor (VNDocumentCameraScan) -> Void
+        let onCancel: @MainActor (String) -> Void
+        init(onSave: @escaping @MainActor (VNDocumentCameraScan) -> Void,
+             onCancel: @escaping @MainActor (String) -> Void) { self.onSave = onSave; self.onCancel = onCancel }
         func documentCameraViewController(_ controller:VNDocumentCameraViewController,didFinishWith scan:VNDocumentCameraScan) {
             let transfer = ScanTransfer(scan)
-            Task { @MainActor [request] in ManualCaptureService.shared.accept(transfer.scan,request:request) }
+            Task { @MainActor [onSave] in onSave(transfer.scan) }
         }
         func documentCameraViewControllerDidCancel(_ controller:VNDocumentCameraViewController) {
-            Task { @MainActor [request] in ManualCaptureService.shared.cancel(requestID:request.id) }
+            Task { @MainActor [onCancel] in onCancel("Manual capture cancelled.") }
         }
         func documentCameraViewController(_ controller:VNDocumentCameraViewController,didFailWithError error:Error) {
-            Task { @MainActor [request] in ManualCaptureService.shared.cancel(requestID:request.id,message:"The document camera could not save these pages. Check camera access and try again.") }
+            Task { @MainActor [onCancel] in onCancel("The document camera could not save these pages. Check camera access and try again.") }
         }
     }
 }

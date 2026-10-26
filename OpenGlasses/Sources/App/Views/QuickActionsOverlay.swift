@@ -10,7 +10,7 @@ struct QuickActionsOverlay: View {
     @EnvironmentObject var appState: AppState
     @State private var isExecuting = false
 
-    private var actions: [QuickAction] { Config.quickActions }
+    private var actions: [QuickAction] { Config.quickActions.filter { $0.id != QuickAction.myManuals.id || PersonalManualLibrary.canManage } }
 
     private var isIdle: Bool {
         !appState.isProcessing

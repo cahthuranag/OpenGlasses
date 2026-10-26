@@ -412,7 +412,7 @@ class LLMService: ObservableObject {
             location: locationContext,
             memory: memoryContext,
             weather: weatherContext,
-            job: FieldSessionService.shared.activeSession.map(AppleOnDeviceInstructions.JobSummary.init(session:)),
+            job: Config.fieldAssistActive ? FieldSessionService.shared.activeSession.map(AppleOnDeviceInstructions.JobSummary.init(session:)) : nil,
             fieldAssistActive: Config.fieldAssistActive,
             modelSettingsPath: "Settings > \(SettingsCatalog.category(.intelligence).title)",
             speakerLine: "The person speaking to you is \(speaker). Address them directly as \"you\". Never address \(Config.assistantName) — that is your own name."))
@@ -710,6 +710,10 @@ class LLMService: ObservableObject {
             prompt += "\n\n<field_assist_context>\n\(vaultContext)\n</field_assist_context>"
         }
         closeBlock("field assist: vault, job and manual passages")
+        if let manuals = PersonalManualLibrary.shared.promptContext {
+            prompt += "\n\n" + manuals
+        }
+        closeBlock("selected personal manuals")
         // Inject the debrief block while one is running (Plan FO P3b): which job it is about and
         // what the model may not do during one. Outside the vault context on purpose — a debrief
         // usually runs on a finished job, with no session active and no vault loaded.
@@ -733,7 +737,7 @@ class LLMService: ObservableObject {
         }
         closeBlock("reading session")
         // Inject project-scoped notes for the active job (what the user is mid-way through).
-        if Config.projectMemoryEnabled,
+        if Config.fieldAssistActive, Config.projectMemoryEnabled,
            let session = FieldSessionService.shared.activeSession, session.isActive {
             let eligible = ProjectMemoryScope.eligible(
                 BrainStore.shared.projectMemories(for: session.id), activeProject: session.id)
@@ -1129,13 +1133,17 @@ class LLMService: ObservableObject {
             }
         }
 
+        if provider == .appleOnDevice, let manuals = PersonalManualLibrary.shared.promptContext {
+            fullPrompt += "\n\n" + manuals
+        }
+
         // Plan EK P2: the manual page a Field Assist turn pointed at goes into the turn's single
         // image slot when nothing else is using it. The figure was staged while the prompt above
         // was built (retrieval happens there), so the decision is made here, after it — and the
         // sentence announcing the page is appended only once the page has actually rendered, so
         // the prompt can never promise a picture the model did not get.
         var turnImage = imageData
-        let stagedFigure = FieldSessionService.shared.stagedFigure
+        let stagedFigure = Config.fieldAssistActive ? FieldSessionService.shared.stagedFigure : PersonalManualLibrary.shared.takeStagedFigure()
         if let stagedFigure {
             let decision = ManualFigureAttachment.decide(
                 staged: stagedFigure,
@@ -1143,14 +1151,15 @@ class LLMService: ObservableObject {
                 hasCameraImage: imageData != nil,
                 isOnDevice: isOnDevice)
             if case .attach(let source, let page) = decision,
-               let rendered = await ManualFigureAttachment.render(source: source, page: page) {
+               let rendered = await ManualFigureAttachment.render(source: source, page: page),
+               FieldSessionService.shared.sourcePDFURL(for: stagedFigure) == source {
                 turnImage = rendered
                 if let tail = volatileTail {
                     volatileTail = tail + "\n\n" + ManualFigureAttachment.promptLine(for: stagedFigure)
                 } else {
                     fullPrompt += "\n\n" + ManualFigureAttachment.promptLine(for: stagedFigure)
                 }
-                FieldSessionService.shared.logFigureSent(stagedFigure)
+                if Config.fieldAssistActive { FieldSessionService.shared.logFigureSent(stagedFigure) }
             }
         }
 
@@ -1384,8 +1393,10 @@ class LLMService: ObservableObject {
 
     /// The on-device tool names for a turn: the reduced local set, narrowed further to what works
     /// without signal when the handoff put the turn on the phone. Pure.
-    nonisolated static func localToolNames(registered: [String], offlineHandoff: Bool) -> [String] {
-        let local = registered.filter { localSafeTools.contains($0) }
+    nonisolated static func localToolNames(registered: [String], offlineHandoff: Bool,
+                                          libraryHasManuals: Bool = false) -> [String] {
+        let manualTools: Set<String> = libraryHasManuals ? ["manual_lookup", "table_lookup", "manual_figure", "show_source"] : []
+        let local = registered.filter { localSafeTools.contains($0) || manualTools.contains($0) }
         return offlineHandoff ? OfflineToolPolicy.offlineNames(local) : local
     }
 
@@ -4452,7 +4463,8 @@ class LLMService: ObservableObject {
         let names = AppleOnDeviceToolSet.priorityNames(
             registered: registry.toolNames,
             fieldAssistActive: Config.fieldAssistActive,
-            offlineHandoff: offlineHandoffTurn)
+            offlineHandoff: offlineHandoffTurn,
+            libraryHasManuals: PersonalManualLibrary.permitted && !PersonalManualLibrary.shared.manuals.isEmpty)
         if let cache = appleToolCache, cache.names == names { return cache.tools }
 
         let dispatch: @Sendable (String, String) async -> String = { [weak self] name, json in
@@ -4723,7 +4735,8 @@ class LLMService: ObservableObject {
         var fullPrompt = systemPrompt
         if includeTools, let router = nativeToolRouter {
             let toolNames = Self.localToolNames(registered: router.registry.toolNames,
-                                                offlineHandoff: offlineHandoffTurn)
+                                               offlineHandoff: offlineHandoffTurn,
+                                               libraryHasManuals: PersonalManualLibrary.permitted && !PersonalManualLibrary.shared.manuals.isEmpty)
             fullPrompt += Self.localToolInstructions(toolNames: toolNames)
             // Plan IU: the on-device path is outside the setting — it has always carried its own
             // reduced list, names only, smaller than any core set. Logged so the report says so.

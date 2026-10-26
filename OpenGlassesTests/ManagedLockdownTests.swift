@@ -12,7 +12,7 @@ final class ManagedLockdownTests: XCTestCase {
 
     func testTheStandardSetLocksEverythingButTheBasicsAndFieldAssist() {
         XCTAssertEqual(ManagedLockdown.standard.lockedCategories,
-                       [.intelligence, .voice, .devices, .tools, .connections, .capture, .display, .advanced])
+                       [.intelligence, .voice, .devices, .myManuals, .tools, .connections, .capture, .display, .advanced])
         XCTAssertTrue(ManagedLockdown.standard.closedTools.isEmpty)
     }
 
@@ -80,10 +80,10 @@ final class ManagedLockdownTests: XCTestCase {
         XCTAssertEqual(everything.count, SettingsCategoryID.allCases.count)
         XCTAssertEqual(everything.filter { SettingsLockPolicy.lock($0.id, lockdown: .standard, restricted: true) == .locked }
                            .map(\.id),
-                       [.intelligence, .voice, .tools, .connections, .capture, .display, .advanced])
+                       [.intelligence, .voice, .myManuals, .tools, .connections, .capture, .display, .advanced])
         XCTAssertEqual(everything.filter { SettingsLockPolicy.lock($0.id, lockdown: .standard, restricted: true).isLocked }
                            .map(\.id),
-                       [.intelligence, .voice, .devices, .tools, .connections, .capture, .display, .advanced])
+                       [.intelligence, .voice, .devices, .myManuals, .tools, .connections, .capture, .display, .advanced])
     }
 
     // MARK: - The profile's adjustments

@@ -19,7 +19,7 @@ final class ShowSourceTool: NativeTool {
     answer cited (its row highlighted), or a table number such as "Table 99". Pass 'document' \
     when the technician names the book. It opens only what the last answer cited, so search with \
     manual_lookup or table_lookup and answer first. If it reports that the phone is locked, tell the technician "It's on your phone." and \
-    do not say the page is showing. Requires an active session in a vault that has manuals.
+    do not say the page is showing. Uses your loaded manuals, or the active Field Assist session. In a personal library, name the manual when several are loaded; camera lookup requires Field Assist.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
@@ -45,13 +45,17 @@ final class ShowSourceTool: NativeTool {
     }
 
     func execute(args: [String: Any]) async throws -> String {
+        if !Config.fieldAssistActive {
+            return PersonalManualLibrary.shared.show(args, documentStore: documentStore)
+        }
         guard Config.fieldAssistActive else {
             return "Field Assist is disabled. Enable it in Settings → Field Assist."
         }
         let session = injectedSession ?? FieldSessionService.shared
-        guard session.activeVault != nil else {
+        guard let store = session.activeVault else {
             return "No active Field Assist session. Start a session to show a page from its manuals."
         }
+        guard VaultRegistry.shared.isUnlocked(store.manifest) else { return MyManualsPaywallCopy.locked }
         let center = session.sourceCenter
         let which = args["which"] as? String
         let document = args["document"] as? String

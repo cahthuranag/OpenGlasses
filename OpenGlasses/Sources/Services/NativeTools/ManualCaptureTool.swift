@@ -8,6 +8,19 @@ final class ManualCaptureTool: NativeTool {
         "action":["type":"string","enum":["start","status","list","discard"]],
         "title":["type":"string"],"id":["type":"string"]],"required":["action"]]
     func execute(args:[String:Any]) async throws -> String {
+        if !Config.fieldAssistActive {
+            let action = args["action"] as? String ?? "status"
+            if action == "start" { return await PersonalManualCapture.shared.start(title: args["title"] as? String ?? "Photographed manual") }
+            if action == "discard", let id = args["id"] as? String,
+               let manual = PersonalManualLibrary.shared.manuals.first(where: { $0.id == id && $0.document.personalCapture == true }) {
+                await PersonalManualLibrary.shared.remove(manual)
+                return PersonalManualLibrary.shared.status
+            }
+            guard PersonalManualLibrary.canManage else { return MyManualsPaywallCopy.locked }
+            return PersonalManualLibrary.shared.manuals.filter { $0.document.personalCapture == true }
+                .map { "\($0.id): \($0.document.title)" }.joined(separator: "; ")
+                + " " + PersonalManualCapture.shared.status
+        }
         let service = ManualCaptureService.shared
         let action = args["action"] as? String ?? "status"
         if action == "discard" {

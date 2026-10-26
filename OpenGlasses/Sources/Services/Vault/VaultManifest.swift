@@ -171,10 +171,23 @@ struct VaultManifest: Codable, Equatable {
 
     /// The site documents this vault lists; empty for every vault without them.
     var siteFiles: [String] { sites ?? [] }
+
+    var isPersonalLibrary: Bool { gating.iap == "my_manuals" || id == "my-manuals" }
+
+    /// Document bytes and page mapping only; never professional manifest behaviour.
+    var personalProjection: VaultManifest {
+        VaultManifest(id: id.hasPrefix("personal-") ? id : "personal-" + id, name: name, version: version, files: [], documentsDir: documentsDir,
+            documents: documents.map { VaultDocument(file: $0.file, title: $0.title, source: $0.source, personalReadingCopy: $0.personalReadingCopy) },
+            gating: .init(iap: "my_manuals"))
+    }
 }
 
 /// One reference-tier document declared by a vault manifest.
 struct VaultDocument: Codable, Equatable {
+    /// App-written provenance for a personal-library scan; never a job/Office capture claim.
+    let personalCapture: Bool?
+    /// Source is an app-generated text reading PDF; file retains the uploaded original.
+    let personalReadingCopy: Bool?
     /// File name inside `documents_dir` (or the vault root). PDF, EPUB, Markdown, or plain text.
     let file: String
     /// The name the technician hears in a citation ("RTU-500 Service Manual").
@@ -201,7 +214,9 @@ struct VaultDocument: Codable, Equatable {
 
     init(file: String, title: String, kind: String? = nil,
          source: String? = nil, sourceUrl: String? = nil, capturedManual: CapturedManualReview? = nil,
-         edition: String? = nil) {
+         edition: String? = nil, personalCapture: Bool? = nil, personalReadingCopy: Bool? = nil) {
+        self.personalCapture = personalCapture
+        self.personalReadingCopy = personalReadingCopy
         self.file = file
         self.title = title
         self.kind = kind
@@ -212,13 +227,15 @@ struct VaultDocument: Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case file, title, kind, source, edition
+        case file, title, kind, source, edition, personalCapture, personalReadingCopy
         case sourceUrl = "source_url"
         case capturedManual = "captured_manual"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy:CodingKeys.self)
+        personalCapture = try c.decodeIfPresent(Bool.self, forKey: .personalCapture)
+        personalReadingCopy = try c.decodeIfPresent(Bool.self, forKey: .personalReadingCopy)
         file = try c.decode(String.self,forKey:.file);title = try c.decode(String.self,forKey:.title)
         kind = try c.decodeIfPresent(String.self,forKey:.kind);source = try c.decodeIfPresent(String.self,forKey:.source)
         sourceUrl = try c.decodeIfPresent(String.self,forKey:.sourceUrl)

@@ -552,7 +552,9 @@ enum SensitiveStore: String, CaseIterable {
                           deleteSubject: .notSubjectLinked,
                           owner: "VaultStore",
                           ownerPaths: ["OpenGlasses/Sources/Services/Vault/VaultStore.swift",
-                                       "OpenGlasses/Sources/Services/Vault/VaultImporter.swift"],
+                                       "OpenGlasses/Sources/Services/Vault/VaultImporter.swift",
+                                       "OpenGlasses/Sources/Services/Vault/PersonalManualLibrary.swift",
+                                       "OpenGlasses/Sources/Services/Vault/PersonalManualCapture.swift"],
                           location: "Documents/Vaults/{id}")
 
         case .vaultLedger:
@@ -578,7 +580,8 @@ enum SensitiveStore: String, CaseIterable {
                           deleteAll: .api("VaultLinkStagingStore.removeAbandonedSessions()"),
                           deleteSubject: .notSubjectLinked,
                           owner: "VaultLinkStagingStore",
-                          ownerPaths: ["OpenGlasses/Sources/Services/Vault/VaultLinkStagingStore.swift"],
+                          ownerPaths: ["OpenGlasses/Sources/Services/Vault/VaultLinkStagingStore.swift",
+                                       "OpenGlasses/Sources/Services/Vault/VaultLinkInstaller.swift"],
                           location: "Caches/VaultLinkStaging/{approval}/archive.zip")
 
         case .tableChecks:
@@ -672,7 +675,8 @@ enum SensitiveStore: String, CaseIterable {
                           deleteAll: .api("CapturedManualStore.removeAll()"),
                           deleteSubject: .api("CapturedManualStore.deleteMatching(_:)"),
                           owner: "CapturedManualStore",
-                          ownerPaths: ["OpenGlasses/Sources/Services/FieldAssist/CapturedManual/CapturedManualStore.swift"],
+                          ownerPaths: ["OpenGlasses/Sources/Services/FieldAssist/CapturedManual/CapturedManualStore.swift",
+                                       "OpenGlasses/Sources/Services/Vault/PersonalManualLibrary.swift"],
                           location: "Documents/CapturedManuals (sealed revisions, staging, checkpoints, selection and tombstones)")
 
         case .learningCandidates:

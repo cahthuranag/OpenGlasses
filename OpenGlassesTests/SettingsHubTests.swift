@@ -14,6 +14,7 @@ final class SettingsHubTests: XCTestCase {
             "Devices & Privacy",
             "Accessibility",
             "Field Assist",
+            "My Manuals",
             "Look & Feel",
             "Tools & Actions",
             "Connections",
@@ -30,7 +31,7 @@ final class SettingsHubTests: XCTestCase {
     /// The raw values are what an organisation profile names; they must not drift.
     func testCategoryIdsAreStable() {
         XCTAssertEqual(SettingsCategoryID.allCases.map(\.rawValue), [
-            "intelligence", "voice", "devices", "accessibility", "field-assist", "look-and-feel",
+            "intelligence", "voice", "devices", "accessibility", "field-assist", "my-manuals", "look-and-feel",
             "tools", "connections", "capture", "display", "advanced", "diagnostics",
         ])
     }
@@ -47,7 +48,7 @@ final class SettingsHubTests: XCTestCase {
 
     func testSimpleModeKeepsTheEverydaySurfaceInHubOrder() {
         XCTAssertEqual(SettingsCatalog.visible(simpleMode: true).map(\.id),
-                       [.voice, .devices, .accessibility, .lookAndFeel, .diagnostics])
+                       [.voice, .devices, .accessibility, .myManuals, .lookAndFeel, .diagnostics])
     }
 
     func testAccessibilityIsPinnedWhateverSimpleModeSays() {

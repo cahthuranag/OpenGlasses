@@ -8,10 +8,14 @@ import Foundation
 /// not: both grant `solo`, so no ordering over tiers can separate them. Gates therefore ask for a
 /// capability, and nothing outside this file compares tiers.
 enum FieldAssistCapability: String, CaseIterable, Sendable {
+    /// Field Assist mode, job sessions and professional tools.
+    case fieldWork
     /// Read the vaults that ship with the app, or come from a pack the reader is entitled to.
     case bundledVaults
     /// Import a vault of your own and index its manuals on this phone.
     case ownVaults
+    /// The separate My Manuals personal service; professional subscriptions do not grant it.
+    case personalManuals
     /// Produce the audited work-order export of a field session.
     case auditedExport
     /// Apply an organisation-issued configuration profile.
@@ -32,17 +36,20 @@ enum FieldAssistCapability: String, CaseIterable, Sendable {
             // A subscription is the store product that includes vaults of your own. The retired
             // one-time unlock grants exactly what it was sold as — the bundled vaults — and so does
             // any store product this build does not recognise.
-            return StoreKitService.fieldAssistSubscriptionIds.contains(productID)
-                ? [.bundledVaults, .ownVaults]
-                : [.bundledVaults]
+            if StoreKitService.myManualsSubscriptionIds.contains(productID) { return [.personalManuals] }
+            if StoreKitService.fieldAssistSubscriptionIds.contains(productID) {
+                return [.fieldWork, .bundledVaults, .ownVaults]
+            }
+            return productID == StoreKitService.fieldAssistId ? [.fieldWork, .bundledVaults] : [.bundledVaults]
         case .verifiedOrganizationLicense(_, _, let tier, _):
             switch tier {
             case .solo:
-                return [.bundledVaults]
-            case .team:
-                return [.bundledVaults, .ownVaults, .auditedExport, .orgConfiguration, .teamLearnings, .capturedManualReview]
+                return [.fieldWork, .bundledVaults]
+            case .personal, .team:
+                // Production codes are clamped to team by LicenseService, including "personal".
+                return [.fieldWork, .bundledVaults, .ownVaults, .auditedExport, .orgConfiguration, .teamLearnings, .capturedManualReview]
             case .enterprise:
-                return [.bundledVaults, .ownVaults, .auditedExport, .orgConfiguration, .everyVaultPack,
+                return [.fieldWork, .bundledVaults, .ownVaults, .auditedExport, .orgConfiguration, .everyVaultPack,
                         .teamLearnings, .capturedManualReview]
             }
         #if DEBUG

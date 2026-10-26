@@ -352,9 +352,11 @@ enum ManualStructure {
     static func typedPages(of document: PDFDocument) -> [Int: TypedPage] {
         var pages: [Int: TypedPage] = [:]
         for index in 0..<document.pageCount {
-            guard let page = document.page(at: index),
-                  let attributed = page.attributedString, attributed.length > 0 else { continue }
-            pages[index] = typedPage(from: attributed)
+            pages[index] = autoreleasepool {
+                guard let page = document.page(at: index),
+                      let attributed = page.attributedString, attributed.length > 0 else { return nil }
+                return typedPage(from: attributed)
+            }
         }
         return pages
     }

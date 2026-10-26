@@ -26,6 +26,7 @@ enum SettingsCategoryID: String, CaseIterable, Codable, Sendable {
     case devices
     case accessibility
     case fieldAssist = "field-assist"
+    case myManuals = "my-manuals"
     case lookAndFeel = "look-and-feel"
     case tools
     case connections
@@ -115,6 +116,10 @@ enum SettingsCatalog {
             return .category(id, title: "Field Assist", icon: "wrench.adjustable",
                              subtitle: "Jobs, vaults, reports, and expert help",
                              shownInSimpleMode: false)
+        case .myManuals:
+            return .category(id, title: "My Manuals", icon: "books.vertical",
+                             subtitle: "Your manuals, asked by voice with the page cited",
+                             shownInSimpleMode: true)
         case .lookAndFeel:
             return .category(id, title: "Look & Feel", icon: "paintbrush",
                              subtitle: "Theme, accent colour, and languages",

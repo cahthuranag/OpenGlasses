@@ -176,6 +176,96 @@
           "subscriptionGroupID": "field_assist",
           "type": "RecurringSubscription",
           "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "199.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "field_assist_annual_001",
+          "localizations": [
+            {
+              "locale": "en_US",
+              "displayName": "Annual",
+              "description": "Field Assist for one technician with annual billing."
+            }
+          ],
+          "productID": "com.openglasses.field_assist_annual",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Field Assist Annual",
+          "subscriptionGroupID": "field_assist",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        }
+      ]
+    },
+    {
+      "id": "my_manuals",
+      "localizations": [
+        {
+          "description": "Your personal manual library",
+          "displayName": "My Manuals",
+          "locale": "en_US"
+        }
+      ],
+      "name": "My Manuals",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "4.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "my_manuals_monthly_001",
+          "localizations": [
+            {
+              "locale": "en_US",
+              "displayName": "My Manuals Monthly",
+              "description": "Your manuals, asked by voice with the page cited."
+            }
+          ],
+          "productID": "com.openglasses.my_manuals_monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "My Manuals Monthly",
+          "subscriptionGroupID": "my_manuals",
+          "type": "RecurringSubscription",
+          "winbackOffers": [],
+          "introductoryOffer": {
+            "displayPrice": "0.00",
+            "internalID": "my_manuals_monthly_trial",
+            "numberOfPeriods": 1,
+            "paymentMode": "free",
+            "subscriptionPeriod": "P1W"
+          }
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "0.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "my_manuals_annual_001",
+          "localizations": [
+            {
+              "locale": "en_US",
+              "displayName": "My Manuals Annual",
+              "description": "Your manuals, asked by voice with the page cited."
+            }
+          ],
+          "productID": "com.openglasses.my_manuals_annual",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "My Manuals Annual",
+          "subscriptionGroupID": "my_manuals",
+          "type": "RecurringSubscription",
+          "winbackOffers": [],
+          "introductoryOffer": {
+            "displayPrice": "0.00",
+            "internalID": "my_manuals_annual_trial",
+            "numberOfPeriods": 1,
+            "paymentMode": "free",
+            "subscriptionPeriod": "P1W"
+          }
         }
       ]
     }

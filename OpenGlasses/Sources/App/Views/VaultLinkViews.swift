@@ -86,9 +86,9 @@ struct VaultLinkSheet: View {
                 Label("Scan a QR code", systemImage: "qrcode.viewfinder")
             }
         } header: {
-            Text("Vault link")
+            Text(PersonalManualLibrary.canManage ? "Manual set link" : "Vault link")
         } footer: {
-            Text("Paste the address from the publisher's page, or scan the code they show you. Nothing is downloaded until you have seen which site it comes from, and nothing is installed until you have seen what the vault contains.")
+            Text("Paste the address from the publisher's page, or scan their code. Review the site before downloading, then review the contents before adding them to this phone.")
         }
     }
 
@@ -128,7 +128,7 @@ struct VaultLinkReviewSections: View {
 
     var body: some View {
         Section {
-            LabeledContent("Vault", value: review.vaultName)
+            LabeledContent(review.personalMode ? "Manual set" : "Vault", value: review.vaultName)
             LabeledContent("Version", value: "v\(review.vaultVersion)")
             LabeledContent("From", value: review.host)
             LabeledContent("Download", value: review.sizeText)
@@ -155,7 +155,7 @@ struct VaultLinkReviewSections: View {
                 Label(title, systemImage: "doc.text")
                     .font(.callout)
             }
-            Text(VaultLinkReview.groundingSentence)
+            Text(review.personalMode ? "Only the manuals will be added. Procedures, prompt rules and other Field Assist content are left out." : VaultLinkReview.groundingSentence)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } header: {
@@ -257,7 +257,7 @@ struct VaultLinkScannerSheet: View {
                     .padding()
                 }
             }
-            .navigationTitle("Scan a vault code")
+            .navigationTitle("Scan a publisher code")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

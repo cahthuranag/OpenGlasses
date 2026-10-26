@@ -57,10 +57,11 @@ enum AppleOnDeviceToolSet {
     /// not a job is open — opening one is the point), then the everyday set, then the network set.
     /// Only names in `registered` survive. An offline-handoff turn drops what needs the network.
     static func priorityNames(registered: [String], fieldAssistActive: Bool,
-                              offlineHandoff: Bool) -> [String] {
+                              offlineHandoff: Bool, libraryHasManuals: Bool = false) -> [String] {
         let available = Set(registered)
         var ordered: [String] = []
         if fieldAssistActive { ordered += fieldAssistPriority }
+        if !fieldAssistActive && libraryHasManuals { ordered += ["table_lookup", "manual_figure", "show_source"] }
         ordered += everydayPriority
         ordered += networkPriority
         let present = ordered.filter(available.contains)

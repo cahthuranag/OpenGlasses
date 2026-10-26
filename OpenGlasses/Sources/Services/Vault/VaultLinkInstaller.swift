@@ -7,12 +7,15 @@ import Foundation
 /// into place atomically. What this adds is the receive half — the per-vault lock, the receipt
 /// beside the baseline, and the guarantee that a cancelled or failed install leaves no staging
 /// directory and no half-written vault behind.
+/// VaultLinkStagingStore owns downloaded archive bytes; this adapter also cleans its unpacked
+/// temporary files on return, before handing durable ownership to the installed vault.
 @MainActor
 enum VaultLinkInstaller {
 
     struct Request: Equatable {
         let files: [String: Data]
         let receipt: VaultReceipt
+        var personalLibrary: Bool = false
     }
 
     struct Outcome: Equatable {
@@ -37,6 +40,26 @@ enum VaultLinkInstaller {
         }
     }
 
+    /// Exact downloaded-review checks; installation repeats admission against current holdings.
+    nonisolated static func personalPreflight(files: [String: Data]) throws {
+        guard let bytes = files["manifest.json"] else { throw InstallError.failed("The manual list is unavailable.") }
+        let manifest = try JSONDecoder().decode(VaultManifest.self, from: bytes).personalProjection
+        guard !manifest.documents.isEmpty else { throw InstallError.failed("This publisher set contains no manuals.") }
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("ManualSetReview-\(UUID().uuidString)")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true,
+                               attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+        defer { try? fm.removeItem(at: root) }
+        for document in manifest.documents {
+            let path = manifest.documentSourceRelativePath(document) ?? manifest.documentRelativePath(document)
+            guard VaultArchiveReader.isSafeRelativePath(path), let data = files[path] else { throw InstallError.failed("This set is missing an original PDF.") }
+            let url = root.appendingPathComponent(path)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
+        try ManualLibraryAdmission.install(manifest: manifest, root: root) { () }
+    }
+
     /// Lay the archive out and install it, serialised against every other operation on that vault.
     ///
     /// The same id already installed goes down the path an explicit import always has: the import
@@ -50,7 +73,8 @@ enum VaultLinkInstaller {
               let manifest = try? JSONDecoder().decode(VaultManifest.self, from: manifestData) else {
             throw InstallError.failed("The archive's manifest.json is unreadable.")
         }
-        return try await VaultOperationLock.withLock(manifest.id) {
+        let targetID = request.personalLibrary ? manifest.personalProjection.id : manifest.id
+        return try await VaultOperationLock.withLock(targetID) {
             let staging = fm.temporaryDirectory
                 .appendingPathComponent("VaultLink-\(UUID().uuidString.prefix(8))", isDirectory: true)
             // Whatever happens next — a validation refusal, a write error, a cancellation — the
@@ -65,7 +89,17 @@ enum VaultLinkInstaller {
                     try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try data.write(to: url, options: .atomic)
                 }
-                let report = try VaultImporter.installReporting(from: staging)
+                let personal = request.personalLibrary
+                if personal {
+                    guard request.receipt.verification == .signed else {
+                        throw InstallError.failed("Unverified archives need Field Assist. My Manuals accepts sets signed by a listed publisher.")
+                    }
+                    // Receipt continues to identify the verified ORIGINAL archive. This is a
+                    // document-only projection, not a claim that rewritten bytes were signed.
+                    let projected = manifest.personalProjection
+                    try JSONEncoder().encode(projected).write(to: staging.appendingPathComponent("manifest.json"), options: .atomic)
+                }
+                let report = try VaultImporter.installReporting(from: staging, origin: personal ? .receivedSigned : .folder)
                 try VaultImporter.recordReceipt(request.receipt, for: report.manifest.id)
                 VaultRegistry.shared.reloadUserManifests()
                 VaultRegistry.shared.resetCache()

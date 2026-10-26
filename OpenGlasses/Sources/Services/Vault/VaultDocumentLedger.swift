@@ -32,11 +32,15 @@ struct VaultDocumentLedger: Codable, Equatable {
         let sourceContentHash: String?
         let capturedManual: CapturedManualReview?
         let capturedBinding: String?
+        /// Measured physical pages, independent of OCR/text chunks; nil on older ledgers.
+        let physicalPageCount: Int?
 
         init(file: String, title: String, documentId: String, contentHash: String, chunkCount: Int,
              ocrPages: Int? = nil, lowConfidencePages: Int? = nil,
              structuredHeadings: Int? = nil, diagramPages: Int? = nil,
-             sourceContentHash: String? = nil,capturedManual:CapturedManualReview? = nil,capturedBinding:String? = nil) {
+             sourceContentHash: String? = nil,capturedManual:CapturedManualReview? = nil,capturedBinding:String? = nil,
+             physicalPageCount: Int? = nil) {
+            self.physicalPageCount = physicalPageCount
             self.file = file
             self.title = title
             self.documentId = documentId

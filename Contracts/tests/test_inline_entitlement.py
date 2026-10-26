@@ -9,6 +9,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = [
     "OpenGlasses/Sources/Services/LicenseService.swift",
+    "OpenGlasses/Sources/Services/Entitlement/FieldAssistTier.swift",
     "OpenGlasses/Sources/Services/OrgProfile/ConfigProfile.swift",
     "OpenGlasses/Sources/Services/OrgProfile/ProfileVerification.swift",
     "OpenGlasses/Sources/Services/OfficeSync/OfficeManualAssignment.swift",
@@ -47,9 +48,10 @@ def main() -> None:
             shutil.copyfile(ROOT / relative, test_dir / Path(relative).name)
         # The check-in gate is checked against the golden fixtures.
         shutil.copytree(ROOT / "Contracts/fixtures", test_dir / "Fixtures")
+        # Keep tier membership and ordering in the production source above, rather than
+        # duplicating an enum that can drift when the licence verifier changes.
         (source_dir / "AppSeams.swift").write_text(
             """import Foundation
-enum FieldAssistTier: String { case solo, team, enterprise }
 enum Config { static func setFieldAssistLicenseValid(_ valid: Bool) {} }
 enum ProfileLease {
     enum Status { case live, lapsed

@@ -56,6 +56,8 @@ struct ConversationThread: Codable, Identifiable, Sendable {
     /// Project (Persona) this thread belongs to, or `nil` for legacy/global threads
     /// (Plan AN). Optional so older persisted threads decode unchanged.
     var personaId: String?
+    /// Stable manual identities chosen for this chat. Nil decodes legacy conversations unchanged.
+    var manualIDs: [String]?
 
     init(mode: String, title: String = "New Conversation", personaId: String? = nil) {
         self.id = UUID().uuidString
@@ -347,6 +349,18 @@ class ConversationStore: ObservableObject {
               let firstUser = threads[idx].messages.first(where: { $0.role == "user" }) else { return }
         threads[idx].title = Self.generateTitle(from: firstUser.content)
         save()
+    }
+
+    /// Selection follows the conversation through switching, encryption, relaunch and deletion.
+    @discardableResult
+    func setManualIDs(_ ids: [String], for threadID: String) -> Bool {
+        guard !isLocked, !saveBlocked, let index = threads.firstIndex(where: { $0.id == threadID }) else { return false }
+        let unique = Array(Set(ids)).sorted()
+        threads[index].manualIDs = unique.isEmpty ? nil : unique
+        threads[index].updatedAt = Date()
+        if activeThreadId == threadID { noteActiveThreadActivity() }
+        save()
+        return true
     }
 
     // MARK: - Recency (one-shot entry points like Siri)

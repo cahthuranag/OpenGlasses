@@ -181,13 +181,13 @@ final class SettingsVisibilityPolicyTests: XCTestCase {
     func testTheHubSaysSomethingIsHiddenAndThePageNamesIt() {
         XCTAssertTrue(Policy.hidesSettings(in: technician()))
         XCTAssertEqual(Policy.hiddenSummary(in: technician()), [
-            "AI & Personality", "Voice & Triggers", "Parts of Devices & Privacy", "Tools & Actions",
+            "AI & Personality", "Voice & Triggers", "Parts of Devices & Privacy", "My Manuals", "Tools & Actions",
             "Connections", "Capture & Streaming", "Display & HUD", "Advanced",
             "Turning Field Assist off", "Simple Mode and Lock Settings",
         ])
         let openedEverything = ManagedLockdown(opening: Set(SettingsCategoryID.allCases), locking: [], closedTools: [])
         XCTAssertEqual(Policy.hiddenSummary(in: technician(openedEverything)),
-                       ["Turning Field Assist off", "Simple Mode and Lock Settings"])
+                       ["My Manuals", "Turning Field Assist off", "Simple Mode and Lock Settings"])
         let closedTool = ManagedLockdown(opening: Set(SettingsCategoryID.allCases), locking: [],
                                          closedTools: ["send_message"])
         XCTAssertTrue(Policy.hidesSettings(in: technician(closedTool)))

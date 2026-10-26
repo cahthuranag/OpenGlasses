@@ -37,6 +37,8 @@ struct SettingsView: View {
 
     private var visibleCategories: [SettingsCategory] {
         SettingsVisibilityPolicy.hubCategories(simpleMode: simpleModeEnabled, in: adminGate.settingsContext)
+            .filter { $0.id != .myManuals || !adminGate.isRestricted }
+            .filter { GlassesSupportPolicy.isSupported || $0.id != .display }
     }
 
     private var organization: String { ManagedLockReason.organization }
@@ -97,7 +99,9 @@ struct SettingsView: View {
             OGSection(
                 header: "About",
                 // The tagline and the device line, in the owner's words (Plan FY P2.1).
-                footer: "Your AI. Your terms. On your iPhone, through headphones or AirPods, from your wrist, or hands-free with glasses.\n\nAvenkin © 2026 Skunkworks NZ Ltd.\n\nJoin the Discord for help, ideas, and to share what you've built."
+                footer: GlassesSupportPolicy.isSupported
+                    ? "Your AI. Your terms. On your iPhone, through headphones or AirPods, from your wrist, or hands-free with glasses.\n\nAvenkin © 2026 Skunkworks NZ Ltd.\n\nJoin the Discord for help, ideas, and to share what you've built."
+                    : "Your AI. Your terms. On your iPhone, through headphones or AirPods, or from your wrist.\n\nAvenkin © 2026 Skunkworks NZ Ltd.\n\nJoin the Discord for help, ideas, and to share what you've built."
             ) {
                 OGRow("Version", icon: "info.circle", mutedIcon: true, verbatimValue: Self.appVersion, showsChevron: false)
                 OGDivider()
@@ -221,7 +225,8 @@ struct SettingsView: View {
                 category.title,
                 icon: category.icon,
                 mutedIcon: category.mutedIcon,
-                subtitle: category.subtitle,
+                subtitle: category.id == .devices && !GlassesSupportPolicy.isSupported
+                    ? "Hardware, privacy, and medical compliance" : category.subtitle,
                 value: summary(for: category.id),
                 alwaysStacksValue: true
             )
@@ -264,6 +269,7 @@ struct SettingsView: View {
             case .noGlassesAdded, .addedDisconnected: return nil
             }
         case .fieldAssist: return fieldAssistEnabled ? "On" : nil
+        case .myManuals: return FieldAssistEntitlement.shared.has(.personalManuals) ? "Available" : nil
         case .lookAndFeel: return appearance.capitalized
         case .accessibility: return Config.accessibilityModeEnabled ? "On" : nil
         case .display: return glassesDisplayEnabled ? "On" : nil
@@ -287,6 +293,8 @@ struct SettingsView: View {
             AccessibilitySettingsView().environmentObject(appState)
         case .fieldAssist:
             FieldAssistSettingsView().environmentObject(appState)
+        case .myManuals:
+            MyManualsView().environmentObject(appState)
         case .lookAndFeel:
             LookFeelSettingsScreen()
         case .tools:

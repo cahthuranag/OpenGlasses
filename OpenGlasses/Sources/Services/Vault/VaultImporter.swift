@@ -86,8 +86,37 @@ enum VaultImporter {
     }
 
     /// `install(from:)` plus the validator's advisory warnings (core over budget, and so on).
-    static func installReporting(from sourceDir: URL) throws -> InstallReport {
-        let result = VaultValidator.validate(directory: sourceDir)
+    enum InstallOrigin { case folder, personalPDF, receivedSigned }
+
+    static func installReporting(from sourceDir: URL, origin: InstallOrigin = .folder,
+                                 reservation: UUID? = nil) throws -> InstallReport {
+        let entitlement = FieldAssistEntitlement.shared
+        if entitlement.has(.personalManuals) && !entitlement.has(.ownVaults) {
+            guard origin != .folder else {
+                throw ImportError.documentFailed("Importing a folder or a manifest needs Field Assist. Upload a manual in My Manuals instead.")
+            }
+        }
+        if origin == .personalPDF || origin == .receivedSigned {
+            let data = try Data(contentsOf: sourceDir.appendingPathComponent("manifest.json"))
+            let manifest = try JSONDecoder().decode(VaultManifest.self, from: data)
+            guard origin != .personalPDF || manifest.id == "my-manuals",
+                  manifest.files.isEmpty, manifest.proceduresDir == nil, manifest.promptRules.isEmpty,
+                  manifest.siteFiles.isEmpty, manifest.trades == nil,
+                  !manifest.documents.isEmpty,
+                  manifest.isPersonalLibrary else {
+                throw ImportError.documentFailed("My Manuals accepts document content only.")
+            }
+            return try ManualLibraryAdmission.install(manifest: manifest, root: sourceDir, reservation: reservation) {
+                try installValidated(from: sourceDir, manualOnly: true)
+            }
+        }
+        let proposed = try JSONDecoder().decode(VaultManifest.self, from: Data(contentsOf: sourceDir.appendingPathComponent("manifest.json")))
+        guard !proposed.isPersonalLibrary else { throw ImportError.notEntitled }
+        return try installValidated(from: sourceDir)
+    }
+
+    private static func installValidated(from sourceDir: URL, manualOnly: Bool = false) throws -> InstallReport {
+        let result = VaultValidator.validate(directory: sourceDir, manualOnly: manualOnly)
         guard result.isValid, let validated = result.manifest else {
             throw ImportError.invalid(result.issues)
         }
@@ -95,6 +124,9 @@ enum VaultImporter {
         // manifest always says its manuals are present — even when the folder came from an export
         // that said they were not and the reader supplied them (Plan FS).
         let manifest = validated.markingDocumentsIncluded()
+        if let existing = installedManifest(id: manifest.id), existing.isPersonalLibrary != manifest.isPersonalLibrary {
+            throw ImportError.documentFailed("This identifier belongs to the other manual service. Use a different identifier; its manuals were kept.")
+        }
 
         let fm = FileManager.default
         let baseline = baselineDirectory(for: manifest.id)
@@ -160,10 +192,29 @@ enum VaultImporter {
             // a folder that lists this reserved path cannot forge a signed Office review handoff.
             let suppliedReceipt = staging.appendingPathComponent(VaultReceipt.filename)
             if fm.fileExists(atPath:suppliedReceipt.path) {try fm.removeItem(at:suppliedReceipt)}
-            // Swap staging → baseline (the read-only authoritative copy).
-            try? fm.removeItem(at: baseline)
+            // Preserve the old baseline until its replacement and registry record both succeed.
+            // A failed copy/registry write must not destroy a previously admitted manual set.
+            try fm.createDirectory(at: registryDirectory, withIntermediateDirectories: true)
+            let manifestData = try JSONEncoder().encode(manifest)
+            let backup = baseline.appendingPathExtension("rollback-\(UUID().uuidString)")
             try fm.createDirectory(at: baseline.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fm.moveItem(at: staging, to: baseline)
+            if !isFirstBaseline { try fm.moveItem(at: baseline, to: backup) }
+            var installedReplacement = false
+            do {
+                try fm.moveItem(at: staging, to: baseline)
+                installedReplacement = true
+                try manifestData.write(to: registryDirectory.appendingPathComponent("\(manifest.id).json"), options: .atomic)
+            } catch {
+                let installError = error
+                do {
+                    if installedReplacement { try fm.removeItem(at: baseline) }
+                    if !isFirstBaseline { try fm.moveItem(at: backup, to: baseline) }
+                } catch {
+                    throw ImportError.ioError("Installation failed and its previous files need recovery from \(backup.lastPathComponent): \(error.localizedDescription)")
+                }
+                throw installError
+            }
+            try? fm.removeItem(at: backup)
 
             // Migrate legacy installs: clear a pre-existing overlay only on first baseline creation.
             if isFirstBaseline {
@@ -175,10 +226,6 @@ enum VaultImporter {
                 try? VaultTableChecks.mergeImported(TableChecksFile.parse(data).checks, overlay: overlay)
             }
 
-            // Record the manifest for registry discovery.
-            try fm.createDirectory(at: registryDirectory, withIntermediateDirectories: true)
-            let manifestData = try JSONEncoder().encode(manifest)
-            try manifestData.write(to: registryDirectory.appendingPathComponent("\(manifest.id).json"), options: .atomic)
         } catch let error as ImportError {
             try? fm.removeItem(at: staging)
             throw error
@@ -292,7 +339,8 @@ enum VaultImporter {
         }
         // The gate sits here rather than at the top: work that only forgets is cleanup, and a
         // vault whose licence lapsed still has to be able to shed manuals it no longer lists.
-        guard plan.toIngest.isEmpty || FieldAssistEntitlement.shared.has(.ownVaults) else {
+        let mayIngest = FieldAssistEntitlement.shared.has(manifest.isPersonalLibrary ? .personalManuals : .ownVaults)
+        guard plan.toIngest.isEmpty || mayIngest else {
             throw ImportError.notEntitled
         }
 
@@ -328,11 +376,17 @@ enum VaultImporter {
                 continue
             }
             let extracted: VaultDocumentExtractor.Extracted
+            let personalScan = manifest.documents.first { $0.file == want.file }?.personalCapture == true
+            let effectiveReader: (any ScannedPageReader)? = personalScan
+                ? scanReader.map { PersonalManualPageReader(reader: $0) } : scanReader
             do {
                 // Recognised pages are checkpointed under the content hash so an interrupted
                 // 300-page scan resumes where it stopped on the next sync.
+                let readingDocument = manifest.documents.first { $0.file == want.file }
+                let readingURL = readingDocument?.personalReadingCopy == true
+                    ? readingDocument.flatMap { manifest.documentSourceRelativePath($0) }.map { root.appendingPathComponent($0) } : nil
                 extracted = try await VaultDocumentExtractor.extract(
-                    from: url, reader: scanReader, policy: renderPolicy,
+                    from: readingURL ?? url, reader: effectiveReader, policy: renderPolicy,
                     checkpoint: (
                         load: { OCRCheckpoint.load(from: ledgerDir, contentHash: want.contentHash) },
                         save: { try $0.save(to: ledgerDir) }
@@ -361,7 +415,10 @@ enum VaultImporter {
                     PictureTableReading.context($0, checkpointIn: ledgerDir, contentHash: tablesHash)
                 })
             }.value
-            let ref = await store.ingest(name: want.title, text: extracted.text,
+            // A one-page PDF has no form feed to establish pagination. Its physical page is
+            // known, so establish it explicitly instead of returning a citation without a page.
+            let indexedText = extracted.pageCount == 1 ? "Page 1\n" + extracted.text : extracted.text
+            let ref = await store.ingest(name: want.title, text: indexedText,
                                          sourceType: sourceType, namespace: namespace,
                                          pageLabels: extracted.pageLabels,
                                          tables: tables?.stored ?? []) { done, total in
@@ -380,7 +437,8 @@ enum VaultImporter {
                                  ocrPages: extracted.ocrPages, lowConfidencePages: extracted.lowConfidencePages,
                                  structuredHeadings: extracted.structuredHeadings,
                                  diagramPages: extracted.diagramPages,
-                                 sourceContentHash: want.sourceContentHash))
+                                 sourceContentHash: want.sourceContentHash,
+                                 physicalPageCount: extracted.pageCount))
         }
         ledger.entries = entries
         try ledger.save(to: ledgerDir)

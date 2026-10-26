@@ -42,11 +42,11 @@ final class FieldAssistCapabilityTests: XCTestCase {
         FieldAssistEntitlement.shared.clock = { [now] in now }
     }
 
-    private static let bundled: Set<FieldAssistCapability> = [.bundledVaults]
-    private static let subscription: Set<FieldAssistCapability> = [.bundledVaults, .ownVaults]
-    private static let team: Set<FieldAssistCapability> = [.bundledVaults, .ownVaults, .auditedExport, .orgConfiguration,
+    private static let bundled: Set<FieldAssistCapability> = [.fieldWork, .bundledVaults]
+    private static let subscription: Set<FieldAssistCapability> = [.fieldWork, .bundledVaults, .ownVaults]
+    private static let team: Set<FieldAssistCapability> = [.fieldWork, .bundledVaults, .ownVaults, .auditedExport, .orgConfiguration,
                                                            .teamLearnings, .capturedManualReview]
-    private static let enterprise: Set<FieldAssistCapability> = Set(FieldAssistCapability.allCases)
+    private static let enterprise: Set<FieldAssistCapability> = Set(FieldAssistCapability.allCases).subtracting([.personalManuals])
 
     // MARK: - The table
 
@@ -60,7 +60,7 @@ final class FieldAssistCapabilityTests: XCTestCase {
                        Self.subscription)
         // A product id this build does not know is treated as the weakest thing it could be.
         XCTAssertEqual(capabilities(.verifiedStoreProduct(productID: "com.openglasses.some_future_product", expiration: nil)),
-                       Self.bundled)
+                       [.bundledVaults])
 
         XCTAssertEqual(capabilities(.verifiedOrganizationLicense(licenseIDHash: "s", expiration: nil, tier: .solo)),
                        Self.bundled)
@@ -69,7 +69,7 @@ final class FieldAssistCapabilityTests: XCTestCase {
         XCTAssertEqual(capabilities(.verifiedOrganizationLicense(licenseIDHash: "e", expiration: nil, tier: .enterprise)),
                        Self.enterprise)
         #if DEBUG
-        XCTAssertEqual(capabilities(.internalDeveloper), Self.enterprise)
+        XCTAssertEqual(capabilities(.internalDeveloper), Set(FieldAssistCapability.allCases))
         #endif
     }
 
@@ -100,6 +100,7 @@ final class FieldAssistCapabilityTests: XCTestCase {
     /// state depends on.
     func testEveryCapabilityIsGrantedBySomeEvidenceAndWithheldBySomeOther() {
         let kinds: [FieldAssistEntitlementEvidence] = [
+            .verifiedStoreProduct(productID: StoreKitService.myManualsMonthlyId, expiration: future),
             .verifiedStoreProduct(productID: StoreKitService.fieldAssistId, expiration: nil),
             .verifiedStoreProduct(productID: StoreKitService.fieldAssistMonthlyId, expiration: future),
             .verifiedStoreProduct(productID: StoreKitService.fieldAssistAnnualId, expiration: future),
@@ -114,9 +115,8 @@ final class FieldAssistCapabilityTests: XCTestCase {
             XCTAssertTrue(kinds.contains { !FieldAssistCapability.capabilities(for: $0).contains(capability) },
                           "\(capability.rawValue) is granted by every evidence kind — it is not a gate")
         }
-        // The one capability every entitlement carries, and the reason "entitled but not this" is a
-        // state at all: whatever someone holds, the bundled vaults are in it.
-        XCTAssertTrue(kinds.allSatisfy { FieldAssistCapability.capabilities(for: $0).contains(.bundledVaults) })
+        // Personal manuals are an entitlement without the professional bundled vaults.
+        XCTAssertFalse(kinds.allSatisfy { FieldAssistCapability.capabilities(for: $0).contains(.bundledVaults) })
         for kind in kinds {
             let granted = FieldAssistCapability.capabilities(for: kind)
             XCTAssertFalse(granted.isEmpty, "\(kind) grants a tier but no capability")
@@ -172,7 +172,7 @@ final class FieldAssistCapabilityTests: XCTestCase {
         XCTAssertTrue(VaultImporter.ImportError.notEntitled.localizedDescription.contains("subscription"),
                       "the importer's refusal has to name what would fix it")
         let priced = ["$", "£", "€", "per month", "a month", "a year", "99"]
-        for line in FieldAssistPaywallCopy.all + FieldAssistTier.allCases.map(\.capabilitySummary)
+        for line in FieldAssistPaywallCopy.all + MyManualsPaywallCopy.all + FieldAssistTier.allCases.map(\.capabilitySummary)
             + [VaultImporter.ImportError.notEntitled.localizedDescription] {
             for needle in priced {
                 XCTAssertFalse(line.contains(needle), "\"\(line)\" carries a price; prices come from the store")

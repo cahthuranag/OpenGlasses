@@ -18,10 +18,15 @@ Minimum deployment target is **iOS 17.2** (bumped from 15.2 in 0.9.0; unchanged 
 in any minor, and **apps that use it cannot be published**. In 1.0.0 that is the `MWDATInputs`,
 `MWDATMotion` and `MWDATSpeech` modules, voice invocations in `MWDATCore` (`VoiceInvocationsStream`),
 and in `MWDATCamera` standalone `Camera.photo` capture and camera audio
-(`StreamConfiguration.audioCodec`, `Stream.audioFramePublisher`). **Do not link the experimental
-modules or call the experimental APIs** — the Core/Camera ones ship inside modules we already link,
-so nothing but review stops them. The package stays pinned exact in `project.base.yml` so a 1.y
-is read and adopted deliberately.
+(`StreamConfiguration.audioCodec`, `Stream.audioFramePublisher`). **They never go in a build that
+can be submitted to the store.** The one exception is the TestFlight-only lane in Plan
+[JV](../../docs/plans/JV-dat-experimental-testflight-lane.md) (owner decision 2026-10-26). There,
+experimental modules are linked only by `project.experimental.yml`, which is added by
+`AVENKIN_DAT_EXPERIMENTAL=1`, and experimental APIs are called only from files under
+`Sources/Glasses/Experimental/` wrapped in `#if DAT_EXPERIMENTAL`. A flagged build is never
+submitted for review. Never link or call them anywhere else. The Core/Camera ones ship inside
+modules we already link, so until JV P0's guard tests land nothing but review stops them. The
+package stays pinned exact in `project.base.yml` so a 1.y is read and adopted deliberately.
 
 ## Swift Patterns
 

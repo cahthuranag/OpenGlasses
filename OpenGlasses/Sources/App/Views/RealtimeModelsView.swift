@@ -6,6 +6,7 @@ struct RealtimeModelForm: View {
     @State private var testTask: Task<Void, Never>?
     @State private var testResult: String?
     @State private var testSucceeded = false
+    @State private var regionDrafts = ModelStudioRegionDrafts()
 
     var body: some View {
         Section {
@@ -16,6 +17,14 @@ struct RealtimeModelForm: View {
                 }
             }
             .accessibilityIdentifier("realtime.provider")
+            if let template = RealtimeProviderCatalog.template(configuration.providerID),
+               ModelStudioRegion.region(of: template.endpoint) != nil,
+               let region = ModelStudioRegion.region(of: configuration.endpoint) {
+                Picker("Region", selection: Binding(get: { region }, set: { switchRegion(from: region, to: $0) })) {
+                    ForEach(ModelStudioRegion.allCases) { Text($0.title).tag($0) }
+                }
+                .accessibilityIdentifier("realtime.region")
+            }
             if configuration.providerID == "compatible" || configuration.profile == nil
                 || RealtimeProviderCatalog.profiles(for: configuration.providerID).count > 1 {
                 Picker("Protocol", selection: $configuration.profileID) {
@@ -77,11 +86,23 @@ struct RealtimeModelForm: View {
         let existingID = configuration.id
         let existingName = configuration.name
         let previousDefaultName = RealtimeProviderCatalog.template(configuration.providerID)?.name
+        let previousRegion = ModelStudioRegion.region(of: configuration.endpoint)
         configuration = template.modelConfiguration()
         configuration.id = existingID
+        // Moving between Qwen services keeps the chosen region; workspace and key start fresh.
+        if let previousRegion { configuration.endpoint = ModelStudioRegion.endpoint(template.endpoint, in: previousRegion) }
+        regionDrafts = ModelStudioRegionDrafts()
         if !existingName.isEmpty, existingName != previousDefaultName { configuration.name = existingName }
         // Speech and chat credentials can belong to different services. Never carry a key
         // from the previous provider across a template change.
+    }
+    private func switchRegion(from: ModelStudioRegion, to: ModelStudioRegion) {
+        guard from != to, let template = RealtimeProviderCatalog.template(configuration.providerID) else { return }
+        let draft = regionDrafts.switchRegion(from: from, to: to,
+                                              current: .init(endpoint: configuration.endpoint, apiKey: configuration.apiKey),
+                                              templateEndpoint: template.endpoint)
+        configuration.endpoint = draft.endpoint
+        configuration.apiKey = draft.apiKey
     }
     private func testConnection() {
         let session = RealtimeProviderSession(model: configuration)

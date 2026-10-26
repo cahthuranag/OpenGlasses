@@ -158,6 +158,29 @@ final class ManualFigurePresentationTests: XCTestCase {
         XCTAssertEqual(presentation.controller(for: request, at: 1).model.paging.currentPage, 1)
     }
 
+    /// Plan JW P0: the same page with other marks is a new sheet with a controller of its own,
+    /// whose model carries the new marks; the old one kept the previous answer's row on screen.
+    func testTheSamePageWithOtherMarksIsANewSheet() {
+        func request(chunk: Int) -> AppState.ManualFigureRequest {
+            var figure = FieldSessionService.StagedFigure(documentId: "w", documentTitle: "Invented Book W", page: 4,
+                                                          figure: "Table 99")
+            figure.citedPassages = [CitedPassage(number: 1, anchor: PassageAnchor(documentId: "w", chunkIndex: chunk,
+                                                                                  text: "row \(chunk)", page: 4))]
+            let sheet = ManualPageSheetModel(citation: figure.citation, documentTitle: "Invented Book W", citedPage: 4,
+                                             citedPassages: figure.citedPassages)
+            return .init(presenter: ManualFigurePresenter(figure: figure, sourceURL: nil), sheet: sheet)
+        }
+        let presentation = ManualFigurePresentation(session: nil)
+        let earlier = request(chunk: 7), later = request(chunk: 9)
+        XCTAssertNotEqual(earlier.id, later.id)
+        XCTAssertTrue(earlier.id.hasPrefix("Invented Book W, page 4, Table 99"), earlier.id)
+        let old = presentation.controller(for: earlier, at: 0)
+        let new = presentation.controller(for: later, at: 0)
+        XCTAssertFalse(old === new)
+        XCTAssertEqual(new.model.citedPassages.map(\.anchor.chunkIndex), [9])
+        XCTAssertEqual(request(chunk: 9).id, later.id, "the same marks are the same sheet")
+    }
+
     func testClosingTheReferenceReleasesItsReadingPosition() {
         let presentation = ManualFigurePresentation(session: nil)
         let request = request()

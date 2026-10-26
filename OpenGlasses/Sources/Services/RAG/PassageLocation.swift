@@ -68,7 +68,8 @@ struct PageLabel: Equatable, Hashable {
     enum Source: String, Equatable {
         /// The PDF's own page label (`PDFPage.label`), set by the publisher.
         case pdfLabel = "pdf_label"
-        /// A lone number, or roman numeral, printed in the page's top or bottom band.
+        /// A lone number, or roman numeral, printed in the page's top or bottom band — or a number
+        /// at a band line's end that runs in step with the physical page (Plan JW P0).
         case printed
     }
 
@@ -118,6 +119,80 @@ enum PrintedPageBand {
             if let candidate = candidate(line) { found.insert(candidate) }
         }
         return found.count == 1 ? found.first : nil
+    }
+
+    // MARK: A folio that shares its line (Plan JW P0)
+
+    /// Fewest pages an in-step offset must hold on, over the whole document, before a number at a
+    /// line's end is read as the page.
+    static let minimumInStepPages = 3
+    /// How far either side of a page a neighbour holding the same offset may be: a blank page or a
+    /// full-page drawing with no footer between two pages does not break the run.
+    static let inStepNeighbourReach = 2
+
+    /// The numbers printed at the outer ends of the band's lines: each line's first and last word,
+    /// when it is a plain number of one to four digits ("399", "- 399 -" is a lone-number line
+    /// and read by `label(in:)`). A footer such as "<month> <year> © <year> <publisher> 399" gives
+    /// 399, never the years inside the line.
+    static func lineEndNumbers(in bandText: String) -> Set<Int> {
+        var out = Set<Int>()
+        for line in bandText.split(whereSeparator: \.isNewline) {
+            let words = line.split(whereSeparator: \.isWhitespace)
+            for word in [words.first, words.last].compactMap({ $0 }) {
+                let digits = word.trimmingCharacters(in: CharacterSet(charactersIn: "\u{2014}\u{2013}-|\u{00B7}\u{2022}()[]"))
+                guard (1...4).contains(digits.count), digits.allSatisfy(\.isASCII), digits.allSatisfy(\.isNumber),
+                      let number = Int(digits), number > 0 else { continue }
+                out.insert(number)
+            }
+        }
+        return out
+    }
+
+    /// The printed label of every page of a document (Plan JW P0), from the PDF's own labels and
+    /// the text of each page's top and bottom band. `bands[i]` is physical page `i + 1`'s band;
+    /// `pdfLabels` maps a physical page to the publisher's label where it says something other
+    /// than the physical number. Pure, so every rule is tested without a PDF.
+    ///
+    /// In order, for each page: the publisher's label; else a lone number on a band line
+    /// (`label(in:)`); else a number at the outer end of a band line that runs **in step** with the
+    /// physical page — its offset (number − physical page) is held by a neighbouring page within
+    /// `inStepNeighbourReach`, and by at least `minimumInStepPages` pages over the document. A
+    /// book that prints its folio at the end of the footer line beside a date and a copyright
+    /// notice reads that way, while a year or an edition number, the same on every page, changes
+    /// its offset with every page and never qualifies. Where two in-step numbers compete, the one
+    /// whose offset more pages hold wins; a tie gives no label. A page none of this reads gets no
+    /// entry: unknown is not "the same as the physical page".
+    static func labels(bands: [String], pdfLabels: [Int: String] = [:]) -> [PageLabel] {
+        let ends = bands.map(lineEndNumbers(in:))
+        var pagesByOffset: [Int: Int] = [:]
+        for (index, numbers) in ends.enumerated() {
+            for offset in Set(numbers.map { $0 - (index + 1) }) { pagesByOffset[offset, default: 0] += 1 }
+        }
+        func inStep(_ physical: Int) -> String? {
+            let held = ends[physical - 1].compactMap { number -> (number: Int, pages: Int)? in
+                let offset = number - physical
+                let pages = pagesByOffset[offset] ?? 0
+                guard pages >= minimumInStepPages else { return nil }
+                let neighbours = (physical - inStepNeighbourReach)...(physical + inStepNeighbourReach)
+                let agrees = neighbours.contains { other in
+                    other != physical && other >= 1 && other <= ends.count && ends[other - 1].contains(offset + other)
+                }
+                return agrees ? (number, pages) : nil
+            }
+            guard let best = held.max(by: { $0.pages < $1.pages }),
+                  held.filter({ $0.pages == best.pages }).count == 1 else { return nil }
+            return String(best.number)
+        }
+        var out: [PageLabel] = []
+        for (index, band) in bands.enumerated() {
+            let physical = index + 1
+            if let publisher = pdfLabels[physical] {
+                out.append(PageLabel(page: physical, label: publisher, source: .pdfLabel))
+            } else if let printed = Self.label(in: band) ?? inStep(physical) {
+                out.append(PageLabel(page: physical, label: printed, source: .printed))
+            }
+        }
+        return out
     }
 
     private static let arabic = try! NSRegularExpression(

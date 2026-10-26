@@ -246,6 +246,30 @@ final class ManualStructureTests: XCTestCase {
         XCTAssertEqual(runOn?.inlineTitle, "Wiring")
     }
 
+    /// Plan JW P0: a revision mark in the margin on the caption's line, standing apart or glued to
+    /// the word, does not hide the caption — the table extractor's own rule.
+    func testAMarginMarkBeforeACaptionIsDropped() {
+        let apart = ManualStructure.caption(line("\u{0394} TABLE 99 Widget ratings"))
+        XCTAssertEqual(apart?.label, "Table 99")
+        XCTAssertEqual(apart?.inlineTitle, "Widget ratings")
+        XCTAssertEqual(ManualStructure.caption(line("\u{25B2}TABLE 98A"))?.label, "Table 98A", "glued to the word")
+        XCTAssertEqual(ManualStructure.caption(line("| FIGURE 12 Example wiring"))?.label, "Figure 12", "a figure too")
+        XCTAssertEqual(ManualStructure.caption(line("\u{25BA} \u{2022} TABLE 99"))?.label, "Table 99", "several marks")
+        XCTAssertNil(ManualStructure.caption(line("\u{0394} TABLE 99", 10, false)), "still set in bold")
+        XCTAssertNil(ManualStructure.caption(line("\u{25B2} See TABLE 99 on page 4")), "still a cross-reference")
+        XCTAssertNil(ManualStructure.caption(line("\u{25B2}")))
+        XCTAssertNil(ManualStructure.caption(line("(TABLE 99)")), "a bracket is not a mark")
+    }
+
+    func testAMarkedCaptionNamesItsPassage() {
+        let page = ManualStructure.TypedPage(lines: [
+            line("\u{0394} TABLE 99 Widget ratings"),
+            line("Widget ratings are invented for this test and describe nothing real.", 10, false),
+        ])
+        let rendered = ManualStructure.render(page, bodySize: 10)
+        XCTAssertTrue(rendered.text.hasPrefix("### Table 99 \u{2014} Widget ratings"), rendered.text)
+    }
+
     func testABoldParagraphYieldsNoHeadingsButAnIsolatedLineDoes() {
         let lines = [line("DO NOT USE THE UNIT FOR CONSTRUCTION HEAT"),
                      line("UNLESS ALL OF THE FOLLOWING CRITERIA ARE MET"),

@@ -434,7 +434,7 @@ final class PictureTableReadingTests: XCTestCase {
         XCTAssertEqual(sqlite3_open(dir.appendingPathComponent("documents.sqlite").path, &db), SQLITE_OK)
         sqlite3_exec(db, "UPDATE doc_chunks SET location_version = 5", nil, nil, nil)
         sqlite3_close(db)
-        XCTAssertEqual(DocumentStore.locationVersion, 6)
+        XCTAssertGreaterThanOrEqual(DocumentStore.locationVersion, 6)
         XCTAssertTrue(store.needsLocation(documentId: ref.id))
         let text = store.fullText(documentId: ref.id)
 

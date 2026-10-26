@@ -455,6 +455,57 @@ enum TableFixtureLayouts {
         return items
     }
 
+    // MARK: - A margin mark, a concluding page, a folio beside the footer text (Plan JW P0)
+
+    /// Table 99 with a revision mark set in the margin on its caption's own line, far to the left
+    /// of the word TABLE, in a weight of its own. `bold` sets the caption and the header in bold,
+    /// with the mark not; without, the whole page is set in one weight.
+    static func markedCaption(bold: Bool = true, mark: String = "\u{0394}") -> Page {
+        var items = [Item(text: mark, x: 18, y: 60, size: 10),
+                     Item(text: "TABLE 99 Widget ratings", x: 50, y: 60, size: 10, bold: bold)]
+        items += row(90, [("Widget", 50), ("Rating A", 200), ("Rating B", 320)], bold: bold)
+        let body: [[String]] = [["W1", "11", "21"], ["W2", "13", "24"], ["W3", "17", "29"], ["W4", "19", "33"]]
+        for (index, cells) in body.enumerated() {
+            items += row(106 + Double(index) * 14, zip(cells, [50, 210, 330]).map { ($0, $1) })
+        }
+        return items
+    }
+
+    /// Table 98A over two pages, the second captioned "(Concluded)" and carrying only the table's
+    /// notes. `readable` false puts prose under the first page's caption instead of a grid.
+    static func concluded(readable: Bool = true) -> [Page] {
+        var first = [caption("TABLE 98A Widget limits")]
+        if readable {
+            first += row(90, [("Widget", 50), ("Limit (A)", 200)], bold: true)
+            for (index, name) in ["W5", "W6", "W7", "W8"].enumerated() {
+                first += row(106 + Double(index) * 14, [(name, 50), (String(31 + 4 * index), 210)])
+            }
+        } else {
+            first += (0..<6).map { index in
+                Item(text: "Line \(index + 1) of prose under the caption describes the invented widgets in words.",
+                     x: 50, y: 90 + Double(index) * 14)
+            }
+        }
+        first.append(footer("40"))
+        let second = [caption("TABLE 98A (Concluded)"),
+                      Item(text: "Notes:", x: 50, y: 90, size: 8),
+                      Item(text: "1) The invented limits apply to dry widgets only.", x: 50, y: 102, size: 8),
+                      Item(text: "2) Every value here is made up for a test.", x: 50, y: 114, size: 8),
+                      footer("41")]
+        return [first, second]
+    }
+
+    /// The footer line a book prints its folio at the end of, beside a date and a copyright
+    /// notice whose years are the same on every page.
+    static func footerWithFolio(_ folio: Int) -> String {
+        "March 2031 \u{00A9} 2031 Example Standards Body \(folio)"
+    }
+
+    /// A page of prose whose footer line ends with its folio.
+    static func folioPage(_ folio: Int) -> Page {
+        [lead(60), Item(text: footerWithFolio(folio), x: 50, y: pageHeight - 40, size: 8)]
+    }
+
     // MARK: - As positioned words
 
     /// The page as the extractor's input, each item split into words at the advance a typical

@@ -2370,6 +2370,18 @@ final class FieldSessionService: ObservableObject {
             Citation(kind: .manual, title: documentTitle, page: page, figure: figure)
         }
 
+        /// What the page marks, as part of what identifies the page on screen (Plan JW P0): the
+        /// cited passages by document and chunk, and the outlined regions. Empty for a plain page.
+        /// The sheet used to be identified by its citation alone, so a second "show me" on the same
+        /// table page — a later answer marking other rows — was taken for the page already open,
+        /// and the sheet kept the first answer's row while the reply said the new rows were marked.
+        var marksKey: String {
+            guard !citedPassages.isEmpty || !pictureAreas.isEmpty else { return "" }
+            let passages = citedPassages.map { "\($0.number)@\($0.anchor.documentId)#\($0.anchor.chunkIndex)" }.sorted()
+            let areas = pictureAreas.map { "\($0.physical):\($0.x),\($0.y),\($0.width),\($0.height)" }.sorted()
+            return " [" + (passages + areas).joined(separator: " ") + "]"
+        }
+
         /// Whether the vault holds a page that can be rendered at all. The Markdown route holds
         /// extracted text and has none — the honest limit the vault guide names.
         var hasSourcePage: Bool { sourceFile?.lowercased().hasSuffix(".pdf") == true || documentTitle.hasPrefix("Reviewed photographed manual · ") }

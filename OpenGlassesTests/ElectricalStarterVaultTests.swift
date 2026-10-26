@@ -152,10 +152,10 @@ final class ElectricalStarterVaultTests: XCTestCase {
         let service = FieldSessionService(sessionsRoot: tempRoot.appendingPathComponent("sessions", isDirectory: true))
         _ = try service.startSession(vaultId: VaultRegistry.electricalStarterId, assetId: nil)
         let list = try await RuleChainTool(documentStore: nil, sessionService: service).execute(args: ["action": "list"])
-        XCTAssertTrue(list.contains("• Example: size a conductor for a load — answers: an invented example"), list)
-        XCTAssertTrue(list.contains("• Example: voltage drop on a run"), list)
-        XCTAssertTrue(list.contains("(needs Table 90, Table 98, Table 99, which no loaded manual's tables include"), list)
-        XCTAssertTrue(list.contains("(needs Table 97,"), list)
+        // Plan JW P0: names first, and a chain whose tables no loaded manual prints can't start.
+        XCTAssertTrue(list.contains("• Example: size a conductor for a load (can't start: needs Table 90, Table 98, Table 99)"), list)
+        XCTAssertTrue(list.contains("• Example: voltage drop on a run (can't start: needs Table 97"), list)
+        XCTAssertFalse(list.contains("answers:"), list)
         XCTAssertFalse(list.contains("problem"), list)
     }
 

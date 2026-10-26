@@ -86,9 +86,20 @@ final class ShowSourceTool: NativeTool {
                 + "), so there is no page to show. Nothing was opened."
         }
 
-        let marked = pages.map { markState(of: $0, session: session) }
+        let checked = pages.map { markState(of: $0, session: session) }
+        let rows = checked.reduce(into: RowMarks()) { $0.marked += $1.rows.marked; $0.unmarked += $1.rows.unmarked }
         let onScreen = center.present(pages, notice: ShowSourceCenter.noticeText(for: first.asCitation))
-        return Self.reply(pages: pages, marks: marked, onScreen: onScreen, unavailable: unavailable)
+        return Self.reply(pages: pages, marks: checked.map(\.state), rows: rows, onScreen: onScreen,
+                          unavailable: unavailable)
+    }
+
+    /// The table rows the marks came to, by row heading (Plan JW P0), so the reply names exactly
+    /// the rows on the page — the partner heard "both rows are highlighted" over a page that showed
+    /// neither.
+    struct RowMarks: Equatable {
+        var marked: [String] = []
+        var unmarked: [String] = []
+        var isEmpty: Bool { marked.isEmpty && unmarked.isEmpty }
     }
 
     /// Whether the cited passages could be marked on a staged page, so the reply never claims a
@@ -103,9 +114,9 @@ final class ShowSourceTool: NativeTool {
     }
 
     private func markState(of staged: FieldSessionService.StagedFigure,
-                           session: FieldSessionService) -> MarkState {
+                           session: FieldSessionService) -> (state: MarkState, rows: RowMarks) {
         guard !staged.citedPassages.isEmpty else {
-            return staged.pictureAreas.contains { $0.physical == staged.page } ? .outlined : .noPassage
+            return (staged.pictureAreas.contains { $0.physical == staged.page } ? .outlined : .noPassage, RowMarks())
         }
         var pageText: String?
         if let url = session.sourcePDFURL(for: staged), let document = PDFDocument(url: url),
@@ -116,12 +127,28 @@ final class ShowSourceTool: NativeTool {
                 .first { $0.page == staged.page }?.text
         }
         let marks = PassageMarks(passages: staged.citedPassages, page: staged.page, pageText: pageText)
-        return marks.located.isEmpty ? .unmarked : .marked
+        return (marks.located.isEmpty ? .unmarked : .marked,
+                Self.rowMarks(staged.citedPassages, page: staged.page, pageText: pageText))
+    }
+
+    /// Which of the cited table rows on `page` are found on its text, by heading; passages that are
+    /// not a table's rows are left to the generic line. Pure.
+    static func rowMarks(_ passages: [CitedPassage], page: Int, pageText: String?) -> RowMarks {
+        var rows = RowMarks()
+        for passage in passages where passage.anchor.page == page {
+            guard let name = TableRowPassage.rowName(ofSentence: passage.anchor.text) else { continue }
+            if PassageLocator.locate(passage.anchor, onPageText: pageText).ranges.isEmpty {
+                if !rows.unmarked.contains(name) { rows.unmarked.append(name) }
+            } else if !rows.marked.contains(name) {
+                rows.marked.append(name)
+            }
+        }
+        return rows
     }
 
     /// What the model is told. Pure.
-    static func reply(pages: [FieldSessionService.StagedFigure], marks: [MarkState], onScreen: Bool,
-                      unavailable: [String]) -> String {
+    static func reply(pages: [FieldSessionService.StagedFigure], marks: [MarkState], rows: RowMarks = RowMarks(),
+                      onScreen: Bool, unavailable: [String]) -> String {
         var lines: [String] = []
         let labels = pages.map(\.citation)
         if onScreen {
@@ -134,7 +161,21 @@ final class ShowSourceTool: NativeTool {
                 + "A notification says where it is, and it opens when the technician unlocks the phone. "
                 + "Tell the technician \"It's on your phone.\" Do not say the page is showing.")
         }
-        if marks.contains(.marked) {
+        if !rows.isEmpty {
+            // Table rows are named, so nothing is claimed beyond what the page shows.
+            if !rows.marked.isEmpty {
+                lines.append("Marked on the page: " + rows.marked.map { "row \($0)" }.joined(separator: "; ") + ".")
+            }
+            if !rows.unmarked.isEmpty {
+                lines.append("Could not be marked: " + rows.unmarked.map { "row \($0)" }.joined(separator: "; ")
+                    + ". Do not say \(rows.unmarked.count == 1 ? "it is" : "they are") highlighted; read the value aloud if asked.")
+            }
+            if rows.marked.isEmpty {
+                lines.append("No row is highlighted on the page.")
+            } else {
+                lines.append("Say only that \(rows.marked.count == 1 ? "this row is" : "these rows are") highlighted.")
+            }
+        } else if marks.contains(.marked) {
             lines.append(marks.contains(.unmarked)
                 ? "The cited passage is highlighted where it was found; on the other pages it couldn't be marked, so read the clause aloud if asked."
                 : "The cited passage is highlighted on the page.")

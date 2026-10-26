@@ -5167,7 +5167,15 @@ class AppState: ObservableObject, AppStateProtocol {
         }
 
         var stops: [Stop] { [Stop(presenter: presenter, sheet: sheet)] + others }
-        var id: String { stops.map(\.presenter.citation).joined(separator: " | ") }
+        var id: String { Self.identity(of: stops.map(\.presenter.figure)) }
+
+        /// What identifies a request on screen: each page's citation and what it marks (Plan JW
+        /// P0). The same page with the same marks is the sheet already open — a follow-up about it
+        /// does not blink it or lose the reading position — while the same page with other marks
+        /// is a new sheet, with a new controller and a viewer that marks afresh.
+        static func identity(of figures: [FieldSessionService.StagedFigure]) -> String {
+            figures.map { $0.citation + $0.marksKey }.joined(separator: " | ")
+        }
     }
 
     /// The picker edits this conversation even if the live thread changes while it is open.
@@ -5591,7 +5599,7 @@ class AppState: ObservableObject, AppStateProtocol {
     func presentManualFigure(_ staged: FieldSessionService.StagedFigure) -> ManualFigurePresenter {
         // Already on screen: staging the same drawing again (a follow-up question about it, or
         // "show that again" while it is still up) must not re-log it or blink the sheet.
-        if let open = manualFigureRequest, open.id == staged.citation { return open.presenter }
+        if let open = manualFigureRequest, open.id == ManualFigureRequest.identity(of: [staged]) { return open.presenter }
         let presenter = ManualFigurePresenter.present(staged, session: FieldSessionService.shared)
         manualFigureRequest = ManualFigureRequest(
             presenter: presenter,
@@ -7140,13 +7148,27 @@ class AppState: ObservableObject, AppStateProtocol {
     /// attach a camera image must keep the model shown in the picker.
     private func expectsCameraImage(for query: String) -> Bool {
         guard Config.hasVisionCapableModel else { return false }
+        let context = smartCameraContext
+        // Plan JW P0: "show me the table" with cited pages to show is `show_source`'s turn.
+        if SmartCameraPolicy.isAboutCitedPages(query, context: context) { return false }
         if cameraService.readinessNow.hasFreshVisualEvidence { return true }
         let behavior = Config.activePresetCameraBehavior
         if behavior == "always" { return true }
         guard Config.smartCameraEnabled || behavior == "smart" else { return false }
         if let activation = lastSmartCameraActivation,
            Date().timeIntervalSince(activation) < Config.smartCameraCooldown { return true }
-        return VisionIntentDetector.classify(query) == .vision
+        return SmartCameraPolicy.intent(for: query, context: context) == .vision
+    }
+
+    /// What smart camera knows about a turn beyond its words (Plan JW P0): whether the last answer
+    /// cited manual pages `show_source` can open — in the active Field Assist session, or in the
+    /// personal library's scope, which is where `ShowSourceCenter` keeps them.
+    private var smartCameraContext: SmartCameraPolicy.Context {
+        let memory = ShowSourceCenter.shared.memory
+        guard !memory.citations.isEmpty, let scope = memory.sessionId else { return .init() }
+        let session = FieldSessionService.shared
+        let inSession = Config.fieldAssistActive && session.activeSession?.id == scope
+        return .init(citedManualPagesOpen: inSession || PersonalManualLibrary.shared.sourceScope == scope)
     }
 
     /// Determine image data for a query using smart camera logic:
@@ -7162,6 +7184,11 @@ class AppState: ObservableObject, AppStateProtocol {
                                       scope: PrivacyFilterScope = .directModelTurn,
                                       requiresVisionModel: Bool = true) async -> Data? {
         if requiresVisionModel, !Config.hasVisionCapableModel { return nil }
+
+        // Plan JW P0: a turn asking to see the cited pages takes no frame of any kind — not the
+        // live one, not a capture, not the cooldown's follow-up.
+        let context = smartCameraContext
+        if SmartCameraPolicy.isAboutCitedPages(query, context: context) { return nil }
 
         // Already have a live frame? Use it (cheapest path).
         if let existing = currentVisionFrameDataIfAvailable(scope: scope,
@@ -7188,7 +7215,7 @@ class AppState: ObservableObject, AppStateProtocol {
         }
 
         // Classify the query
-        let intent = VisionIntentDetector.classify(query)
+        let intent = SmartCameraPolicy.intent(for: query, context: context)
         guard intent == .vision else {
             return nil
         }
@@ -7224,6 +7251,14 @@ class AppState: ObservableObject, AppStateProtocol {
             if still.unavailableReason?.mayFallBackToCapture != true { return nil }
         }
 
+        // Plan JW P0: with the glasses link down a glasses capture cannot succeed, and trying ran
+        // the three-attempt permission check (about eight seconds) before the model was called. No
+        // picture, at once — and never the phone camera in its place for a capture nobody framed.
+        guard SmartCameraPolicy.mayStartGlassesCapture(linkUp: cameraService.isGlassesLinkUp()) else {
+            PrivacyLog.camera(.glasses, .unavailable)
+            return nil
+        }
+
         // Plan CU P1: the grab sits between commit and first token, so a vision turn's raw TTFT
         // contains it — uncorrected, the Bluetooth stream's wait reads as model latency. Timed from
         // here rather than from the top of the function: the already-streaming path above returns a
@@ -7231,9 +7266,13 @@ class AppState: ObservableObject, AppStateProtocol {
         let grabStartedAt = Date()
         defer { TurnRecorder.addFrameGrabTime(since: grabStartedAt) }
 
-        // Try to start streaming and capture
+        // Try to start streaming and capture. The app begins this start, not the wearer: with the
+        // camera permission missing it fails with the notice instead of leaving for Meta AI
+        // mid-turn (`CameraPermissionRequestPolicy`).
         do {
-            try await cameraService.startStreaming()
+            _ = try await CameraPermissionRequestPolicy.startedByApp {
+                try await self.cameraService.startStreaming()
+            }
             // Brief wait for first frame
             try await Task.sleep(nanoseconds: 500_000_000)
             if let data = await cameraService.filteredStill(for: scope)

@@ -201,6 +201,83 @@ final class PassageLocationTests: XCTestCase {
                      "a label two pages carry opens neither")
     }
 
+    // MARK: - A folio that shares its footer line (Plan JW P0)
+
+    private typealias L = TableFixtureLayouts
+
+    /// Physical page → label, as the store keeps them.
+    private func labels(_ bands: [String], pdf: [Int: String] = [:]) -> [Int: String] {
+        Dictionary(PrintedPageBand.labels(bands: bands, pdfLabels: pdf).map { ($0.page, $0.label) },
+                   uniquingKeysWith: { first, _ in first })
+    }
+
+    func testAFolioAtTheEndOfTheFooterLineIsReadWhenItRunsInStep() {
+        // A cover and a blank page, then six pages whose footer ends with the folio: physical + 20.
+        let bands = ["", ""] + (3...8).map { "Example Running Head\n" + L.footerWithFolio($0 + 20) }
+        XCTAssertEqual(labels(bands), [3: "23", 4: "24", 5: "25", 6: "26", 7: "27", 8: "28"])
+        XCTAssertTrue(PrintedPageBand.labels(bands: bands).allSatisfy { $0.source == .printed })
+        XCTAssertEqual(PrintedPageBand.lineEndNumbers(in: L.footerWithFolio(41)), [41], "the years inside the line are not candidates")
+    }
+
+    func testAYearInTheFooterIsNeverReadAsAPage() {
+        let bands = (1...8).map { _ in "March 2031 \u{00A9} 2031 Example Standards Body\n2031 Edition" }
+        XCTAssertTrue(labels(bands).isEmpty, "the same number on every page changes its offset with every page")
+        // A year at the line's end beside a folio at the other end: only the folio runs in step.
+        let mixed = (1...6).map { "\($0 + 4) Example Standards Body 2031" }
+        XCTAssertEqual(labels(mixed), [1: "5", 2: "6", 3: "7", 4: "8", 5: "9", 6: "10"])
+    }
+
+    func testAFolioOnAlternatingSidesIsRead() {
+        let bands = (1...6).map { $0 % 2 == 0 ? "\($0 + 10) Example Standards Body" : "Example Standards Body \($0 + 10)" }
+        XCTAssertEqual(labels(bands), [1: "11", 2: "12", 3: "13", 4: "14", 5: "15", 6: "16"])
+    }
+
+    func testTooShortARunIsNotTrusted() {
+        XCTAssertTrue(labels([L.footerWithFolio(7)]).isEmpty, "one page proves nothing")
+        XCTAssertTrue(labels([L.footerWithFolio(7), L.footerWithFolio(8)]).isEmpty,
+                      "two pages are fewer than the run the rule asks for")
+        // Numbers that do not keep step with the page.
+        let scattered = [3, 9, 4, 15, 2, 30].map { "Example Standards Body \($0)" }
+        XCTAssertTrue(labels(scattered).isEmpty)
+    }
+
+    func testALoneNumberLineAndThePublishersLabelStillWin() {
+        var bands = (1...6).map { L.footerWithFolio($0 + 20) }
+        bands[2] = "Example Running Head\n7"          // a lone number prints a different page
+        let read = labels(bands, pdf: [6: "A-6"])
+        XCTAssertEqual(read[3], "7", "a line that is just a number wins as before")
+        XCTAssertEqual(read[6], "A-6", "the publisher's label wins")
+        XCTAssertEqual(read[1], "21")
+        XCTAssertEqual(read[5], "25", "its neighbour across the lone-number page still agrees")
+    }
+
+    func testFrontMatterBlankPagesAndTheBodyAreEachReadTheirOwnWay() {
+        // Roman front matter on lone lines, then the body numbered from 1 at the end of the
+        // footer line, a full-page drawing with no footer in the middle.
+        var bands = ["i", "ii", "iii"] + (1...7).map { L.footerWithFolio($0) }
+        bands[6] = ""
+        let read = labels(bands)
+        XCTAssertEqual(read[1], "i")
+        XCTAssertEqual(read[3], "iii")
+        XCTAssertEqual(read[4], "1")
+        XCTAssertNil(read[7], "a page with no footer gets no label")
+        XCTAssertEqual(read[8], "5", "a neighbour two pages away keeps the run going")
+        XCTAssertEqual(read[10], "7")
+        XCTAssertEqual(read.count, 9)
+        XCTAssertEqual(PageLabelMap(PrintedPageBand.labels(bands: bands)).physical(forPrinted: "5"), 8)
+    }
+
+    func testTheImportReadsAFolioAtTheEndOfARealFooterLine() throws {
+        let pages = [TableFixtures.prosePage()] + (1...4).map { L.folioPage($0 + 98) }
+        let url = try TableFixtures.write(TableFixtures.pdf(pages), named: "folio.pdf", in: tempRoot)
+        let document = try XCTUnwrap(PDFDocument(url: url))
+        let read = VaultDocumentExtractor.pageLabels(of: document)
+        XCTAssertEqual(read.map(\.page), [2, 3, 4, 5])
+        XCTAssertEqual(read.map(\.label), ["99", "100", "101", "102"])
+        XCTAssertNil(VaultDocumentExtractor.printedLabel(on: try XCTUnwrap(document.page(at: 1))),
+                     "the page alone does not prove its folio: the run does")
+    }
+
     // MARK: - The store
 
     private func makeStore() -> (DocumentStore, URL) {

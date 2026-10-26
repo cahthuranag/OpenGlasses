@@ -127,25 +127,28 @@ struct RetrievalEvalMain {
         return out
     }
 
-    /// The printed page numbers, read as the phone reads them (`VaultDocumentExtractor.pageLabels`).
+    /// The printed page numbers, read as the phone reads them (`VaultDocumentExtractor.pageLabels`,
+    /// its decision `PrintedPageBand.labels`).
     static func printedLabels(of document: PDFDocument) -> [Int: String] {
-        var labels: [Int: String] = [:]
+        var pdfLabels: [Int: String] = [:]
+        var bands: [String] = []
         for index in 0..<document.pageCount {
-            guard let page = document.page(at: index) else { continue }
+            guard let page = document.page(at: index) else { bands.append(""); continue }
             let physical = index + 1
             if let label = page.label?.trimmingCharacters(in: .whitespaces), !label.isEmpty, label != String(physical) {
-                labels[physical] = label
+                pdfLabels[physical] = label
+                bands.append("")
                 continue
             }
             let bounds = page.bounds(for: .mediaBox)
-            guard bounds.height > 0 else { continue }
+            guard bounds.height > 0 else { bands.append(""); continue }
             let band = bounds.height * 0.09
             let bottom = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: band)
             let top = CGRect(x: bounds.minX, y: bounds.maxY - band, width: bounds.width, height: band)
-            let text = [top, bottom].compactMap { page.selection(for: $0)?.string }.joined(separator: "\n")
-            if let printed = PrintedPageBand.label(in: text) { labels[physical] = printed }
+            bands.append([top, bottom].compactMap { page.selection(for: $0)?.string }.joined(separator: "\n"))
         }
-        return labels
+        return Dictionary(PrintedPageBand.labels(bands: bands, pdfLabels: pdfLabels).map { ($0.page, $0.label) },
+                          uniquingKeysWith: { first, _ in first })
     }
 
     /// The manifest's documents, read with only the fields this needs.

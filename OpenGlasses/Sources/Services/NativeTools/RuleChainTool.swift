@@ -24,13 +24,14 @@ final class RuleChainTool: NativeTool {
     and a check, and read every step back with its table, row, column and page — for example sizing \
     a conductor for a load, or checking whether an installed one carries it. It also runs a chain \
     proposed with propose_chain once the technician says go, and chains kept on this phone; both are \
-    unreviewed, so say so. Actions: 'list' (the chains, by what they answer), 'start' (pass 'chain', \
-    its name), 'answer' (pass 'value', the technician's reply to the current question, as said), \
+    unreviewed, so say so. Actions: 'list' (the chains by name: read the names out), 'start' (pass \
+    'chain', its name; it replaces a chain already running), 'answer' (pass 'value', the technician's reply to the current question, as said), \
     'status', 'stop', 'keep' (keep the proposed chain that just ran to a result on this phone, when \
     the technician asks), 'share' (the kept chains as a chains.md file, by the share sheet). The \
     current question is in the system prompt: ask it in your own words. Never pass a value the \
     technician did not say, and never work a step yourself. When it finishes, say the result and \
-    read back the steps with their pages; when it stops, say why and offer to show the page. \
+    read back the steps with their pages; when it stops it has ended: say why, offer to show the page \
+    and ask for no more of its values. \
     Requires an active session.
     """
     let parametersSchema: [String: Any] = [
@@ -103,6 +104,12 @@ final class RuleChainTool: NativeTool {
         return session.chainTables(documentStore: documentStore)
     }
 
+    /// Plan JW P0: the names first, one per line and exactly as 'start' takes them, because a chain
+    /// is started by its name and the technician has to hear the names to pick one. Each line
+    /// carries only a short mark — unreviewed, or that it cannot start for want of a table; what a
+    /// chain answers is in the system prompt. The old list, every chain with its "answers" text,
+    /// ran to thousands of characters for a vault of a dozen chains and was summarised as
+    /// categories, so no name was ever said.
     private func list(_ session: FieldSessionService) -> String {
         let vault = session.vaultChains
         let offered = session.offeredChains
@@ -112,27 +119,46 @@ final class RuleChainTool: NativeTool {
                 : "This vault's chains.md has \(vault.problems.count) problem(s), so none of its chains is offered: "
                     + vault.problems.prefix(3).map(\.description).joined(separator: "; ")
         }
-        let labels = tables(session).map(\.table.label)
-        var lines = ["Rule chains in this vault:"]
+        let tables = self.tables(session)
+        var lines = ["Rule chains in this vault, by name:"]
         for entry in offered {
-            let chain = entry.chain
-            var line = "• \(chain.name)" + (chain.answers.isEmpty ? "" : " — answers: \(chain.answers)")
+            var marks: [String] = []
             switch entry.origin {
             case .authored: break
-            case .kept: line += " [\(ChainOrigin.kept.marking ?? ""): offered on this phone only]"
-            case .proposed: line += " [\(ChainOrigin.proposed.marking ?? ""): waiting for the technician's go]"
+            case .kept: marks.append(ChainOrigin.kept.marking ?? "")
+            case .proposed: marks.append((ChainOrigin.proposed.marking ?? "") + ": waiting for the technician's go")
             }
-            let missing = chain.missingTables(available: labels)
-            if !missing.isEmpty {
-                line += " (needs \(missing.joined(separator: ", ")), which no loaded manual's tables include: "
-                    + "it will stop at that step)"
+            let unreadable = Self.unreadableTables(entry.chain, tables: tables)
+            if !unreadable.isEmpty {
+                marks.append("can't start: needs " + unreadable.map(\.label).joined(separator: ", "))
             }
-            lines.append(line)
+            lines.append("• " + entry.chain.name + (marks.isEmpty ? "" : " (" + marks.joined(separator: "; ") + ")"))
         }
+        lines.append("Read these names to the technician as they are: a chain is started by its name. "
+                     + "What each one answers is in the system prompt.")
         if !vault.problems.isEmpty {
             lines.append("\(vault.problems.count) chain problem(s) in chains.md keep some chains out.")
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// A table a chain reads that it cannot: not among the loaded manuals' tables at all, or
+    /// found by its caption with a grid that could not be read.
+    struct UnreadableTable: Equatable {
+        let label: String
+        /// The table as found, when its caption was; nil when no loaded manual prints it.
+        let source: TableLookup.Source?
+    }
+
+    /// The tables `chain` names that no loaded manual lets it read, in the chain's order (Plan JW
+    /// P0). A chain that needs one stops at that step, so it is not started at all. Pure.
+    static func unreadableTables(_ chain: ChainDefinition, tables: [TableLookup.Source]) -> [UnreadableTable] {
+        chain.tableLabels.compactMap { label in
+            let holding = tables.filter { $0.table.label.caseInsensitiveCompare(label) == .orderedSame }
+            if holding.isEmpty { return UnreadableTable(label: label, source: nil) }
+            if holding.contains(where: \.table.isExtracted) { return nil }
+            return UnreadableTable(label: label, source: holding.first)
+        }
     }
 
     private func start(args: [String: Any], session: FieldSessionService) -> String {
@@ -152,15 +178,62 @@ final class RuleChainTool: NativeTool {
             return "More than one chain fits \"\(asked)\": " + matches.map(\.name).joined(separator: "; ")
                 + ". Ask the technician which."
         }
+        // The same chain again (Plan JW P0): it carries on where it is, never restarted.
+        if let running = session.activeChain, running.chain.name == chain.name {
+            var lines = ["The chain '\(chain.name)' is already running, at step \(running.state.position + 1) of "
+                         + "\(running.chain.steps.count). It was not restarted."]
+            if case .ask(let ask) = running.current { lines.append(Self.askLine(ask)) }
+            return lines.joined(separator: "\n")
+        }
+        let tables = self.tables(session)
+        // A chain that cannot read one of its tables would ask its questions and then stop at that
+        // step (Plan JW P0): it is refused before anything starts, and a running chain is left alone.
+        let unreadable = Self.unreadableTables(chain, tables: tables)
+        if !unreadable.isEmpty {
+            noteUnreadable(unreadable, session: session)
+            return Self.refusal(chain, unreadable: unreadable)
+        }
+        // The technician named a chain to start: one already running is stopped, exactly as 'stop'
+        // stops it — nothing recorded — and the named one starts (Plan JW P0, owner decision).
+        var lines: [String] = []
+        if let replaced = session.activeChain {
+            session.stopChain()
+            lines.append("Stopped '\(replaced.chain.name)' at step \(replaced.state.position + 1); nothing was recorded.")
+        }
         do {
-            let progress = try session.startChain(chain, tables: tables(session), origin: entry.origin,
+            let progress = try session.startChain(chain, tables: tables, origin: entry.origin,
                                                   sources: entry.sources)
             note(progress, session: session)
             let marked = entry.origin.marking.map { " (\($0))" } ?? ""
-            return "Started the chain '\(chain.name)'\(marked).\n" + present(progress)
+            lines.append("Started the chain '\(chain.name)'\(marked).\n" + present(progress))
+            return lines.joined(separator: " ")
         } catch {
-            return error.localizedDescription
+            return (lines + [error.localizedDescription]).joined(separator: " ")
         }
+    }
+
+    /// Why a chain was not started, and what can be shown instead. Pure.
+    static func refusal(_ chain: ChainDefinition, unreadable: [UnreadableTable]) -> String {
+        let missing = unreadable.filter { $0.source == nil }.map(\.label)
+        let unread = unreadable.compactMap { table in table.source.map { "\(table.label) (\(TableLookup.spokenPage($0.table.page)) of \($0.documentName))" } }
+        var parts: [String] = []
+        if !missing.isEmpty { parts.append(missing.joined(separator: ", ") + ", which no loaded manual's tables include") }
+        if !unread.isEmpty { parts.append(unread.joined(separator: ", ") + ", whose grid could not be read") }
+        var text = "The chain '\(chain.name)' was not started: it needs " + parts.joined(separator: "; and ")
+            + ". Nothing was started or recorded. Tell the technician which table it needs. "
+        if !unread.isEmpty { text += "Offer to show that table's page with show_source, to work it from the book. " }
+        if !missing.isEmpty { text += "For a table no loaded manual's tables include, offer to look for its page with manual_figure ('figure': its label)." }
+        return text.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The pages of the tables a refused chain needed, for "show me the table": a caption found
+    /// over a grid that could not be read still names its page.
+    private func noteUnreadable(_ unreadable: [UnreadableTable], session: FieldSessionService) {
+        let citations = unreadable.compactMap(\.source).flatMap {
+            TableLookup.citations(documentName: $0.documentName, label: $0.table.label, pages: [$0.table.page])
+        }
+        guard !citations.isEmpty else { return }
+        session.sourceCenter.noteTableLookup(rows: [], citations: citations, sessionId: session.activeSession?.id)
     }
 
     private func answer(args: [String: Any], session: FieldSessionService) -> String {
@@ -265,13 +338,28 @@ final class RuleChainTool: NativeTool {
             }
             lines += ChainRunner.sourceLines(progress.state)
         case .stopped(let stop):
-            lines.append("Stopped at step \(stop.stepIndex + 1): \(stop.reason)")
-            lines.append("Tell the technician why, and do not answer from memory or guess the value. "
-                         + (stop.sourceLine == nil ? "" : "Offer to show the page with show_source. ")
-                         + "What was worked so far is recorded on the job.")
+            lines += Self.stoppedLines(progress.chain, stop: stop)
             lines += ChainRunner.sourceLines(progress.state)
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// A stopped chain, said so that it is plainly over (Plan JW P0). The partner's trace: after a
+    /// stop at a table step the model went on asking the technician for the chain's next value,
+    /// and later started the chain again without saying so. Pure.
+    static func stoppedLines(_ chain: ChainDefinition, stop: ChainStop) -> [String] {
+        var table: String?
+        if stop.stepIndex < chain.steps.count, case .lookup(let lookup) = chain.steps[stop.stepIndex].kind {
+            table = ChainDefinition.label(lookup.table)
+        }
+        var lines = ["The chain '\(chain.name)' has ended and is not running. Stopped at step \(stop.stepIndex + 1): \(stop.reason)"]
+        if let table { lines.append("It could not read \(table) at that step.") }
+        lines.append("Tell the technician why. Do not ask the technician for any more values for this chain, and do "
+                     + "not answer from memory or guess the value. "
+                     + (stop.sourceLine == nil ? "" : "Offer to show the page with show_source. ")
+                     + "What was worked so far is recorded on the job. To try again, the chain must be started "
+                     + "again with rule_chain 'start', only when the technician asks.")
+        return lines
     }
 
     /// Said whenever a step used a value read from a picture of a table (Plan JN P2).

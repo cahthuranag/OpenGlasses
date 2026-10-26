@@ -476,6 +476,41 @@ final class TableLookupSessionTests: XCTestCase {
         XCTAssertTrue(missing.contains("did not cite Table 98"), missing)
     }
 
+    /// Plan JW P0 finding 5: a lookup on the same table page as the answer before, landing between
+    /// two printed rows, marks both of its rows — a sheet of its own, not the page already open
+    /// with the previous answer's row — and the reply names the rows it marked.
+    func testShowMeAfterABetweenRowsLookupMarksBothRowsAsANewSheet() async throws {
+        let (service, store) = try await startSession()
+        let show = ShowSourceTool(documentStore: store, sessionService: service)
+
+        let one = try await lookup(["table": "Table 98", "row": "14", "column": "rating group 1 band a"],
+                                   service: service, store: store)
+        XCTAssertTrue(one.contains("0.83"), one)
+        let first = try await show.execute(args: ["which": "Table 98"])
+        let firstPages = try XCTUnwrap(service.sourceCenter.presented?.pages)
+        XCTAssertEqual(firstPages.first?.citedPassages.count, 1)
+        XCTAssertTrue(first.contains("Marked on the page: row 13-15."), first)
+
+        let between = try await lookup(["table": "Table 98", "row": "9.5", "column": "rating group 1 band a"],
+                                       service: service, store: store)
+        XCTAssertTrue(between.contains("7-9") && between.contains("10-12"), between)
+        let second = try await show.execute(args: ["which": "the table"])
+        let secondPages = try XCTUnwrap(service.sourceCenter.presented?.pages)
+        XCTAssertEqual(secondPages.map(\.page), firstPages.map(\.page), "the same page")
+        XCTAssertEqual(secondPages.first?.citedPassages.count, 2, "both rows either side of 9.5")
+        XCTAssertTrue(second.contains("Marked on the page: row 7-9; row 10-12."), second)
+        XCTAssertTrue(second.contains("Say only that these rows are highlighted."), second)
+        XCTAssertFalse(second.contains("13-15"), second)
+
+        // The sheet already open is identified by its marks too, so the new rows replace it.
+        XCTAssertNotEqual(AppState.ManualFigureRequest.identity(of: firstPages),
+                          AppState.ManualFigureRequest.identity(of: secondPages))
+        // "Show me" again with nothing new is the sheet already open: no blink.
+        _ = try await show.execute(args: ["which": "the table"])
+        XCTAssertEqual(AppState.ManualFigureRequest.identity(of: try XCTUnwrap(service.sourceCenter.presented?.pages)),
+                       AppState.ManualFigureRequest.identity(of: secondPages))
+    }
+
     func testATableWhoseGridWasNotReadSaysSoAndItsPageOpensUnmarked() async throws {
         let (service, store) = try await startSession()
         let reply = try await lookup(["table": "Table 92", "row": "anything"], service: service, store: store)

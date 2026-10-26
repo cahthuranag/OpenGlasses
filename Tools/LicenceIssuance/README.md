@@ -138,6 +138,34 @@ ISO-8601/sorted-key payload bytes, valid signatures, identical app entitlement/p
 exact full code assembly with a fixed valid signature. It does not incorrectly require two
 independent randomized signatures to be equal.
 
+## Customers and presets (P0b)
+
+`SalesBook.signUp` writes a `Customer` and its first sale as **one** journal row (`.signUp`). The customer's
+`licensee`, `organizationID`, `profileId` and profile address (`<base>/p/<profileId>`) are fixed; the ledger
+refuses any later row that changes them, and any order outside the customer API that names its profile.
+Sign-up seals the first code under a new activation key, returns the key and sealed file **once**, and records
+only the file name. Later rows are `.customerChange` (preset, administrator verifier, partner move, key rotation).
+
+- `order(id:customerId:…)` builds the request from the customer, never the partner: a renewal of the
+  customer's current code, or a fresh order once that code has lapsed. One live code per customer.
+- `increaseSeats` is co-termed: an invoice for the added seats, pro-rated **by day** over the whole days left
+  on the live code (a part day counts), rounded half up. On payment the code is replaced by one with the
+  total seats and the same expiry. No code until paid, and no increase while any order is unpaid. The
+  agreement may choose a different rule (plan open question); this is the core's one rule until it does.
+- `ProfilePreset` is vendor-authored and versioned; its digest is recorded on the customer, so an edited preset
+  under the same version is refused (`presetChanged`) rather than reaching every phone. A partner picks only
+  listed values, a listed vault pack whose `licensePack` is in its grant, and a listed AI model (never a key).
+  `leaseDays` is 60–365.
+- `setAdminPasscode` accepts `{salt, iterations, hash}` only, with the app's `AdminSecrets` bounds.
+- `rotateActivationKey` seals the **current** code under a new key and lists the old file for deletion.
+- `profileDocument` builds and signs the customer's profile from its preset, choices, verifier and current code
+  through `ProfileContract`, the same contract `make-org-profile` uses, so both produce the same bytes.
+
+The key-for-life path (key → sealed expired first code → enrolment → the profile's current code active,
+nothing re-sealed) is proven in `LicenceIssuanceIntegrationTests` against the app's own enrolment.
+Not in P0b: the setup link and the administrator contact it uses (P1), renaming a customer, presets that
+carry an `officeAuthority`, and terminal commands for customers (the service is their caller).
+
 ## Validation (2026-10-23)
 
 Local Xcode 27.2 / Swift 6.4.2: 33 package/terminal tests, 17 signing-key checks and the

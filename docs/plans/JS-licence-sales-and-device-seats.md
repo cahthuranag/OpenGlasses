@@ -1,6 +1,6 @@
 # Plan JS — Licence Sales and Device Seats (a partner orders codes, pays by bank transfer, and a code counts its phones)
 
-**Status:** 🚧 P0 merged 2026-10-23 (PR 838); validation recorded in `Tools/LicenceIssuance/README.md`. Hosting for P1 decided the same day (*Hosting*). P1–P3 remain unimplemented.
+**Status:** 🚧 P0 merged 2026-10-23 (PR 838); validation recorded in `Tools/LicenceIssuance/README.md`. Hosting for P1 decided the same day (*Hosting*). **P0b built 2026-10-26** (PR 847; customers, presets, co-termed seat increases, key rotation, the key-for-life test; *P0b implementation notes*). P1–P3 remain unimplemented.
 **Origin:** the pilot partner resells Field Assist team licences and needs to order and pay for them
 without waiting on the vendor. The owner asked whether a licence could be held to a number of
 devices, and whether one server could produce the code and its QR, and let the partner buy and be
@@ -530,7 +530,8 @@ lapse. Bank-statement import to match payments by reference. Emailing invoices f
 - **Which values each first preset enumerates**, notably which AI providers and models a partner
   may pick for a customer. The vendor drafts the two first presets before P1.
 - **Pro-rating a co-termed seat increase:** by day, by month, or whole terms only. The agreement
-  decides; the core needs one rule.
+  decides; the core needs one rule. **P0b uses by day** (whole days left, a part day counting, rounded
+  half up) until the agreement says otherwise.
 - **Whether the provisional window is fixed at 35 days or per grant.** Leaning fixed: it is the
   credit term, and a partner-by-partner number invites negotiation over it.
 
@@ -548,3 +549,31 @@ byte compatibility means payload identity plus exact assembly using a fixed sign
 inline verification deliberately rejects hosted-profile licences, so hosted renewal and the Office
 inline lapse/restore gate are exercised through their distinct existing routes. P1 must still
 implement durable delivery and hosting in the separate private service repository.
+
+## P0b implementation notes (2026-10-26)
+
+In `Tools/LicenceIssuance` (`Customers.swift`, `ProfileContract.swift`); the package README has the rules.
+
+- **One row per sign-up.** The customer record and its first sale are one journal row, so a customer never
+  exists without its first code. The ledger itself refuses a later row that changes `licensee`,
+  `organizationID`, `profileId` or the profile address, and an order outside the customer API that names a
+  customer's profile.
+- **The profile contract is shared, not copied.** `make-org-profile.swift`'s structs, allow-list and checks
+  moved into the package as `ProfileContract`; the script is now a thin caller, gains `--issued-at` for
+  fixtures, and a terminal test runs it against a preset-built profile and compares the payload bytes. The
+  app tests that scraped the script for its provider, category and trade lists now compare the compiled
+  contract instead.
+- **A seat increase issues nothing until paid**, like a renewal. Seats are a label until P2, so waiting costs
+  the customer nothing, and it keeps one live code: a provisional increased code would either cut a paid
+  term to 35 days or need the phones to step back to an older code if unpaid. No increase is accepted while
+  any order for the customer is unpaid, and a renewal must renew the customer's current code.
+- **The preset's digest is recorded on the customer.** A preset edited under the same version is refused
+  rather than applied, so a new version reaches a customer only when the partner moves it there.
+- **The key-for-life path holds with no app change.** The integration test signs up, pays, renews and pays,
+  then at day 400 enters the original key on a fresh phone: the resolver opens the expired first code, the
+  enrolment fetches the profile, keeps the profile's later-issued code (`licenceToActivate` is nil) and
+  activates it, and the sealed file is the one written at sign-up. The re-sealing fallback is not needed.
+- **Not built:** the setup link and the administrator contact (P1), renaming a customer, presets carrying an
+  `officeAuthority` (the second pilot preset's office route still needs the office's key per customer), and
+  terminal commands for customers.
+

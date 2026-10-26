@@ -16,9 +16,9 @@ public enum SalesError: Error, Equatable {
 /// Single-writer value core. The terminal holds a process lock through read, sign, append and fsync.
 /// A service must provide the same transaction boundary before returning any artefact.
 public struct SalesBook {
-    public private(set) var ledger: Ledger
+    public internal(set) var ledger: Ledger
     public init(ledger: Ledger = Ledger()) throws { try ledger.verify(); self.ledger = ledger }
-    private func mint(_ payload: IssuedLicensePayload, id: String, grant: PartnerGrant, operatorId: String,
+    func mint(_ payload: IssuedLicensePayload, id: String, grant: PartnerGrant, operatorId: String,
                       replaces: String?, orderId: String?, phase: IssuanceRecord.Phase, signer: ByteSigner) throws -> IssuedCode {
         guard !ledger.issuances.contains(where: { $0.issuanceId == id }) else { throw SalesError.duplicateId }
         let code = try IssuanceWire.code(payload, signer: signer)
@@ -42,6 +42,15 @@ public struct SalesBook {
                                                   catalog: VerifiedPackCatalog, profileId: String, bankDetails: String,
                                                   renewalOf: String? = nil, operatorId: String, now: Date,
                                                   signer: ByteSigner) throws -> IssuedCode? {
+        let (order, invoice, issued) = try prepareOrder(id: id, request: request, grant: grant, catalog: catalog, profileId: profileId,
+                                                        bankDetails: bankDetails, renewalOf: renewalOf, customerId: nil,
+                                                        operatorId: operatorId, now: now, signer: signer)
+        try ledger.append(.sale(order, invoice, issued?.record)); return issued
+    }
+    /// Validates and builds an order, its invoice and its first code without recording anything.
+    func prepareOrder(id: String, request: IssuanceRequest, grant: PartnerGrant, catalog: VerifiedPackCatalog,
+                      profileId: String, bankDetails: String, renewalOf: String?, customerId: String?,
+                      operatorId: String, now: Date, signer: ByteSigner) throws -> (Order, Invoice?, IssuedCode?) {
         guard !id.isEmpty, !profileId.isEmpty, !operatorId.isEmpty,
               !ledger.orders.contains(where: { $0.id == id }), request.replaces == nil,
               request.profile != nil, let days = request.termDays, request.expiry == nil else {
@@ -52,7 +61,7 @@ public struct SalesBook {
         if let renewalOf {
             guard request.plan != "pilot", let prior = ledger.orders.first(where: { $0.id == renewalOf }),
                   prior.partnerId == grant.partnerId, prior.request.licensee == request.licensee,
-                  prior.profileId == profileId, prior.request.profile == request.profile,
+                  prior.profileId == profileId, prior.request.profile == request.profile, prior.customerId == customerId,
                   ledger.invoices.first(where: { $0.orderId == prior.id }).map(ledger.isPaid) == true,
                   now <= prior.fullExpiry.addingTimeInterval(-35 * IssuancePolicy.day),
                   !ledger.orders.contains(where: { $0.renewalOf == prior.id }) else { throw SalesError.invalidRenewal }
@@ -60,7 +69,8 @@ public struct SalesBook {
         }
         let fullExpiry = start.addingTimeInterval(Double(days) * IssuancePolicy.day)
         let order = Order(id: id, partnerId: grant.partnerId, grantVersion: grant.version, issuedAt: now,
-                          grant: grant, request: request, profileId: profileId, fullExpiry: fullExpiry, renewalOf: renewalOf)
+                          grant: grant, request: request, profileId: profileId, fullExpiry: fullExpiry, renewalOf: renewalOf,
+                          customerId: customerId, increaseOf: nil)
         var invoice: Invoice?
         if request.plan != "pilot" {
             // Short terms would let the provisional outlive the paid term.
@@ -72,7 +82,8 @@ public struct SalesBook {
             invoice = Invoice(number: Ledger.invoiceNumber(ledger.invoices.count + 1), orderId: id,
                               partnerId: grant.partnerId, issuedAt: now, dueAt: now.addingTimeInterval(30 * IssuancePolicy.day),
                               seats: request.seats, termDays: days, unitMinor: unit, totalMinor: total,
-                              currency: grant.prices.currency, taxTreatment: grant.prices.taxTreatment, bankDetails: bankDetails)
+                              currency: grant.prices.currency, taxTreatment: grant.prices.taxTreatment, bankDetails: bankDetails,
+                              coTermedDays: nil)
         }
         var issued: IssuedCode?
         if renewalOf == nil {
@@ -83,7 +94,7 @@ public struct SalesBook {
             issued = try mint(payload, id: id + "/initial", grant: grant, operatorId: operatorId, replaces: nil,
                               orderId: id, phase: request.plan == "pilot" ? .pilot : .provisional, signer: signer)
         }
-        try ledger.append(.sale(order, invoice, issued?.record)); return issued
+        return (order, invoice, issued)
     }
     /// Explicit vendor confirmation is required because a full code is irrevocable offline.
     @discardableResult public mutating func recordPayment(_ payment: Payment, confirmed: Bool, operatorId: String,
@@ -101,11 +112,20 @@ public struct SalesBook {
         var issued: IssuedCode?
         if paid >= invoice.totalMinor && ledger.creditsMinor(invoice) == 0 {
             // A late payment never moves the full expiry. Even a spent term is not extended.
+            // A seat increase replaces the code it co-terms with, carrying its seats plus the increase.
+            let base = order.increaseOf.flatMap { id in ledger.issuances.first { $0.issuanceId == id } }
+            if order.increaseOf != nil {
+                guard let base, let customer = order.customerId, ledger.currentIssuance(for: customer)?.issuanceId == base.issuanceId else {
+                    throw SalesError.invalidOrder
+                }
+            }
+            let (seats, overflow) = (base?.seats ?? 0).addingReportingOverflow(order.request.seats)
+            guard !overflow else { throw SalesError.invalidOrder }
             let payload = IssuedLicensePayload(licensee: order.request.licensee, issued: now, expires: order.fullExpiry,
-                                               tier: order.request.tier, plan: order.request.plan, seats: order.request.seats,
+                                               tier: order.request.tier, plan: order.request.plan, seats: seats,
                                                reference: order.id, packs: order.request.packs.isEmpty ? nil : order.request.packs.sorted(),
                                                profile: order.request.profile)
-            let previous = ledger.issuances.last { $0.orderId == order.id }
+            let previous = base ?? ledger.issuances.last { $0.orderId == order.id }
             issued = try mint(payload, id: order.id + "/full", grant: order.grant, operatorId: operatorId,
                               replaces: previous?.issuanceId, orderId: order.id, phase: .full, signer: signer)
         }

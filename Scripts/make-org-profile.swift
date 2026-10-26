@@ -29,6 +29,8 @@ import CoreImage
 //       Plan CT 3b: prompt (echo off, twice) for the organisation's administrator passcode and
 //       carry a PBKDF2 verifier of it — never the passcode — with a fresh salt. At least eight
 //       characters and not all digits. Never taken as an argument.
+//   make … --issued-at <ISO 8601>
+//       A fixed `issued` time, for fixtures; normal minting uses now.
 //
 // Input fields:
 //   profileId, organizationName, leaseDays (7–365)                                    required
@@ -46,8 +48,7 @@ import CoreImage
 //
 // The signature covers "openglasses.org-profile.v1\n" (or "…org-revocation.v1\n") followed by the
 // payload bytes, which are shipped as-is — so the encoding here only has to be valid, not
-// canonical. The structs, the allow-list and the directions below must stay identical to
-// ConfigProfile, ProfileRevocation and SettingKey in the app (OpenGlasses/Sources/Services/OrgProfile).
+// canonical. The structs, the allow-list and the directions are LicenceIssuance's ProfileContract.
 //
 // The private key is read from a FILE (or stdin with `--key-file -`), else from
 // secrets/org-profile-signing-key.txt (gitignored), and never taken as an argument.
@@ -57,40 +58,13 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
-// MARK: - Mirrors of the app's types
+// MARK: - The profile contract
 
-enum ProfileValue: Codable, Equatable {
-    case bool(Bool)
-    case string(String)
-    case strings([String])
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let flag = try? container.decode(Bool.self) { self = .bool(flag) }
-        else if let text = try? container.decode(String.self) { self = .string(text) }
-        else if let list = try? container.decode([String].self) { self = .strings(list) }
-        else { throw DecodingError.typeMismatch(ProfileValue.self, .init(codingPath: decoder.codingPath, debugDescription: "not a flag, string or string list")) }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .bool(let flag): try container.encode(flag)
-        case .string(let text): try container.encode(text)
-        case .strings(let list): try container.encode(list)
-        }
-    }
-}
-
-struct RawSetting: Codable { let value: ProfileValue; let disposition: String }
-struct VaultPackReference: Codable { let packId: String; let documentsSource: String? }
-struct AIModel: Codable { let provider: String; let model: String; let baseURL: String?; let name: String? }
-struct PasscodeVerifier: Codable { let salt: String; let iterations: Int; let hash: String }
-struct OfficeAuthority: Codable {
-    let organizationID: String
-    let administratorPublicKey: String
-    let transportPolicy: String
-}
+// The structs, the allow-list and the directions live in LicenceIssuance's ProfileContract, shared with
+// preset-built profiles (Plan JS P0b) so both produce the same bytes. They must stay identical to
+// ConfigProfile, ProfileRevocation and SettingKey in the app (OpenGlasses/Sources/Services/OrgProfile).
+typealias PasscodeVerifier = ProfileContract.PasscodeVerifier
+typealias Input = ProfileContract.Input
 
 /// Mirrors AdminSecrets in the app (OpenGlasses/Sources/Services/OrgProfile/AdminSecrets.swift).
 enum AdminSecrets {
@@ -148,67 +122,6 @@ func promptPasscode() -> String {
     return first
 }
 
-/// LLMProvider's raw values in the app (OpenGlasses/Sources/Services/LLMService.swift).
-let knownProviders: Set<String> = ["anthropic", "openai", "chatgpt", "gemini", "geminiVertex", "groq", "deepseek",
-                                   "mistral", "zai", "qwen", "minimax", "xai", "openrouter", "custom", "local",
-                                   "appleOnDevice"]
-
-struct Input: Codable {
-    let profileId: String
-    let organizationName: String
-    let leaseDays: Int
-    let policyExpiry: String?
-    let eraseAfterLapseDays: Int?
-    let undeliveredEraseDays: Int?
-    let licenceCode: String?
-    let vaultPack: VaultPackReference?
-    let skillPacks: [String]?
-    let revokedEnrolmentIds: [String]?
-    let settings: [String: RawSetting]?
-    let aiModel: AIModel?
-    let edition: String?
-    let adminCard: String?
-    let lockdown: LockdownSpec?
-    let officeAuthority: OfficeAuthority?
-}
-
-/// Plan HA C2 — mirrors `ConfigProfile.LockdownSpec`.
-struct LockdownSpec: Codable {
-    let open: [String]?
-    let lock: [String]?
-    let closedTools: [String]?
-}
-
-/// `SettingsCategoryID` raw values, in hub order. Must stay identical to the app's enum.
-let settingsCategoryIds = ["intelligence", "voice", "devices", "accessibility", "field-assist", "my-manuals", "look-and-feel",
-                           "tools", "connections", "capture", "display", "advanced", "diagnostics"]
-/// `ManagedLockdown.pinnedOpen` — never locked by an organisation.
-let pinnedOpenCategoryIds: Set<String> = ["accessibility", "look-and-feel", "diagnostics"]
-
-struct ConfigProfile: Codable {
-    let format: String
-    let schemaVersion: Int
-    let keyId: String
-    let profileId: String
-    let organizationName: String
-    let issued: Date
-    let policyExpiry: Date?
-    let leaseDays: Int
-    let eraseAfterLapseDays: Int?
-    let undeliveredEraseDays: Int?
-    let licenceCode: String?
-    let vaultPack: VaultPackReference?
-    let skillPacks: [String]?
-    let revokedEnrolmentIds: [String]?
-    let aiModel: AIModel?
-    let edition: String?
-    let adminPasscode: PasscodeVerifier?
-    let adminCard: String?
-    let lockdown: LockdownSpec?
-    let officeAuthority: OfficeAuthority?
-    let settings: [String: RawSetting]
-}
-
 struct ProfileRevocation: Codable {
     let format: String
     let keyId: String
@@ -216,141 +129,10 @@ struct ProfileRevocation: Codable {
     let issued: Date
 }
 
-/// SettingKey, by kind. "owned" ignores the disposition; "ceiling:<Bool>" may only be pinned that
-/// way; "default:<type>" is a starting value.
-let allowList: [String: String] = [
-    "organizationDisplayName": "owned:string",
-    "organizationJobSigningKey": "owned:string",
-    "organizationJobReportChannel": "owned:string",
-    "organizationReportRecipients": "owned:strings",
-    "organizationAllowsUnsignedVaults": "ceiling:false",
-    "organizationRequiresSignedJobFiles": "ceiling:true",
-    "organizationRequiresCustomerSignOff": "ceiling:true",
-    "privacyFilterEnabled": "ceiling:true",
-    "remoteInvokeObserveEnabled": "ceiling:false",
-    "remoteInvokeOutputEnabled": "ceiling:false",
-    "remoteInvokeCaptureEnabled": "ceiling:false",
-    "mcpServerEnabled": "ceiling:false",
-    "agentModeEnabled": "ceiling:false",
-    "fieldAssistEnabled": "default:bool",
-    "fieldAssistDefaultVaultId": "default:string",
-    "fieldAssistDefaultMode": "default:string",
-    "supportReportEmail": "default:string",
-    "organizationAccentColor": "owned:string",
-    "organizationToolDefinitionsMode": "owned:string",
-    "accentColorName": "default:string",
-    "refrigerationUnits": "default:string",
-    "fieldAssistDefaultTrades": "default:strings",
-]
-
-/// The trades `fieldAssistDefaultTrades` may name — `FieldTrade`'s raw values.
-let knownTrades: Set<String> = ["refrigeration_hvac", "electrical"]
-
-func typeName(_ value: ProfileValue) -> String {
-    switch value {
-    case .bool: return "bool"
-    case .string: return "string"
-    case .strings: return "strings"
-    }
-}
-
 func check(_ input: Input) {
-    if !(7...365).contains(input.leaseDays) { fail("error: leaseDays must be 7–365 (got \(input.leaseDays))") }
-    for (field, days) in [("eraseAfterLapseDays", input.eraseAfterLapseDays), ("undeliveredEraseDays", input.undeliveredEraseDays)] {
-        if let days, !(1...365).contains(days) { fail("error: \(field) must be 1–365 (got \(days))") }
-    }
-    if input.organizationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        fail("error: organizationName is empty")
-    }
-    if let expiry = input.policyExpiry {
-        guard let date = ISO8601DateFormatter().date(from: expiry) else {
-            fail("error: policyExpiry is not ISO 8601 (e.g. 2027-09-30T00:00:00Z)")
-        }
-        if date < Date() { fail("error: policyExpiry is in the past") }
-    }
-    if let edition = input.edition, edition != "fieldAssist" {
-        fail("error: edition \(edition) is not one this app knows (fieldAssist)")
-    }
-    if let card = input.adminCard {
-        guard card.count == 64, card.allSatisfy({ $0.isHexDigit }) else {
-            fail("error: adminCard must be the 64-character digest `admin-card` printed")
-        }
-    }
-    if input.edition == nil && (input.adminCard != nil || adminPasscodeRequested) {
-        fail("error: an admin card or passcode only applies with an edition")
-    }
-    if let lockdown = input.lockdown {
-        if input.edition == nil { fail("error: a lockdown only applies with an edition") }
-        for id in (lockdown.open ?? []) + (lockdown.lock ?? []) where !settingsCategoryIds.contains(id) {
-            fail("error: lockdown names \(id), which is not a settings category (\(settingsCategoryIds.joined(separator: ", ")))")
-        }
-        for id in lockdown.lock ?? [] where pinnedOpenCategoryIds.contains(id) {
-            fail("error: \(id) is never locked by an organisation")
-        }
-        for tool in lockdown.closedTools ?? [] {
-            guard !tool.isEmpty, tool.count <= 64,
-                  tool.unicodeScalars.allSatisfy({ ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "_" }) else {
-                fail("error: lockdown.closedTools: \(tool) is not a tool name")
-            }
-        }
-    }
-    if let authority = input.officeAuthority {
-        let id = authority.organizationID
-        guard !id.isEmpty, id.utf8.count <= 80, id != ".", id != "..",
-              id.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0)
-                  || (97...122).contains($0) || $0 == 45 || $0 == 95 || $0 == 46 }),
-              ["privateLan", "automatic"].contains(authority.transportPolicy),
-              let key = Data(base64Encoded: authority.administratorPublicKey), key.count == 32,
-              key.base64EncodedString() == authority.administratorPublicKey,
-              (try? Curve25519.Signing.PublicKey(rawRepresentation: key)) != nil else {
-            fail("error: officeAuthority needs a safe organizationID, a 32-byte signing public key and privateLan/automatic policy")
-        }
-    }
-    if let model = input.aiModel {
-        guard knownProviders.contains(model.provider) else {
-            fail("error: aiModel.provider \(model.provider) is not one of \(knownProviders.sorted().joined(separator: ", "))")
-        }
-        if model.model.trimmingCharacters(in: .whitespaces).isEmpty { fail("error: aiModel.model is empty") }
-        if let base = model.baseURL {
-            guard ["custom", "openrouter"].contains(model.provider) else {
-                fail("error: aiModel.baseURL is only for custom and openrouter")
-            }
-            guard let url = URL(string: base), url.scheme?.lowercased() == "https", url.host != nil,
-                  url.user == nil, url.password == nil, url.fragment == nil else {
-                fail("error: aiModel.baseURL must be https with no credentials or fragment")
-            }
-        } else if model.provider == "custom" {
-            fail("error: a custom aiModel needs its baseURL")
-        }
-    }
-    for (key, setting) in input.settings ?? [:] {
-        guard let kind = allowList[key] else {
-            fail("error: \(key) is not a setting a profile may set (see SettingKey)")
-        }
-        let parts = kind.split(separator: ":").map(String.init)
-        switch parts[0] {
-        case "owned":
-            if typeName(setting.value) != parts[1] { fail("error: \(key) takes a \(parts[1])") }
-        case "ceiling":
-            guard setting.disposition == "ceiling" else { fail("error: \(key) may only be a ceiling") }
-            guard case .bool(let flag) = setting.value else { fail("error: \(key) takes a bool") }
-            if String(flag) != parts[1] { fail("error: \(key) may only be pinned to \(parts[1])") }
-        default:
-            guard setting.disposition == "default" else { fail("error: \(key) may only be a default") }
-            if typeName(setting.value) != parts[1] { fail("error: \(key) takes a \(parts[1])") }
-        }
-    }
-    if case .strings(let trades)? = input.settings?["fieldAssistDefaultTrades"]?.value {
-        for trade in trades where !knownTrades.contains(trade) {
-            fail("error: fieldAssistDefaultTrades names \(trade), which is not a trade (\(knownTrades.sorted().joined(separator: ", ")))")
-        }
-    }
-    if case .string(let key)? = input.settings?["organizationJobSigningKey"]?.value {
-        guard let data = Data(base64Encoded: key),
-              (try? Curve25519.Signing.PublicKey(rawRepresentation: data)) != nil else {
-            fail("error: organizationJobSigningKey is not a Curve25519 public key (use make-job-file.swift keygen)")
-        }
-    }
+    do { try ProfileContract.check(input, adminPasscode: adminPasscodeRequested, now: Date()) }
+    catch let invalid as ProfileContract.Invalid { fail("error: " + invalid.message) }
+    catch { fail("error: \(error)") }
 }
 
 // MARK: - Keys
@@ -427,6 +209,7 @@ var positional: [String] = []
 var keyFile: String?
 var keyId = "og-profile-2026-09"
 var adminPasscodeRequested = false
+var issuedAt: Date?
 var iterator = arguments.dropFirst().makeIterator()
 while let argument = iterator.next() {
     switch argument {
@@ -435,6 +218,9 @@ while let argument = iterator.next() {
     case "--key-file":
         guard let path = iterator.next() else { fail("error: --key-file needs a path") }
         keyFile = path
+    case "--issued-at":
+        guard let text = iterator.next(), let date = ISO8601DateFormatter().date(from: text) else { fail("error: --issued-at needs an ISO 8601 time") }
+        issuedAt = date
     case "--key-id":
         guard let id = iterator.next() else { fail("error: --key-id needs a value") }
         keyId = id
@@ -443,7 +229,7 @@ while let argument = iterator.next() {
 }
 
 let usage = """
-usage: make-org-profile.swift make <input.json> <output.txt> [--key-file <path|->] [--key-id <id>] [--admin-passcode]
+usage: make-org-profile.swift make <input.json> <output.txt> [--key-file <path|->] [--key-id <id>] [--admin-passcode] [--issued-at <ISO 8601>]
        make-org-profile.swift admin-card <card.png>
        make-org-profile.swift revoke <profileId> <output.txt> [--key-file <path|->] [--key-id <id>]
        make-org-profile.swift keygen <privateKeyFile>
@@ -507,20 +293,8 @@ case "make":
     do { input = try JSONDecoder().decode(Input.self, from: raw) } catch { fail("error: the input is not a profile: \(error)") }
     check(input)
     let key = readKey(keyFile)
-    let profile = ConfigProfile(
-        format: "openglasses.org-profile", schemaVersion: input.officeAuthority == nil ? 1 : 2, keyId: keyId,
-        profileId: input.profileId, organizationName: input.organizationName, issued: now(),
-        policyExpiry: input.policyExpiry.flatMap { ISO8601DateFormatter().date(from: $0) },
-        leaseDays: input.leaseDays, eraseAfterLapseDays: input.eraseAfterLapseDays,
-        undeliveredEraseDays: input.undeliveredEraseDays, licenceCode: input.licenceCode,
-        vaultPack: input.vaultPack, skillPacks: input.skillPacks,
-        revokedEnrolmentIds: input.revokedEnrolmentIds, aiModel: input.aiModel,
-        edition: input.edition,
-        adminPasscode: adminPasscodeRequested ? AdminSecrets.verifier(for: promptPasscode()) : nil,
-        adminCard: input.adminCard?.lowercased(),
-        lockdown: input.lockdown,
-        officeAuthority: input.officeAuthority,
-        settings: input.settings ?? [:])
+    let profile = ProfileContract.document(input, keyId: keyId, issued: issuedAt ?? now(),
+        adminPasscode: adminPasscodeRequested ? AdminSecrets.verifier(for: promptPasscode()) : nil)
     guard let payload = try? encoder.encode(profile) else { fail("error: could not encode the profile") }
     let document = sign(payload, domain: "openglasses.org-profile.v1\n", key: key)
     guard FileManager.default.createFile(atPath: positional[2], contents: Data((document + "\n").utf8)) else {

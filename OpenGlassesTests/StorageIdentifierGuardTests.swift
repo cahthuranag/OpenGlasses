@@ -148,13 +148,14 @@ final class StorageIdentifierGuardTests: XCTestCase {
     /// domains. They are scripts, not app code, so a constant cannot reach them.
     func testSigningScriptsMirrorTheDomains() throws {
         let orgProfile = try sourceText("Scripts/make-org-profile.swift")
+            + sourceText("Tools/LicenceIssuance/Sources/LicenceIssuance/ProfileContract.swift")
         for literal in ["\"\(Self.slug).org-profile.v1\\n\"",
                         "\"\(Self.slug).org-revocation.v1\\n\"",
                         "\"\(Self.slug).admin-card.v1\\n\"",
                         "\"\(Self.slug).org-profile\"",
                         "\"\(Self.slug).org-revocation\""] {
             XCTAssertTrue(orgProfile.contains(literal),
-                          "Scripts/make-org-profile.swift no longer mints with \(literal). Profiles, "
+                          "Scripts/make-org-profile.swift / ProfileContract no longer mint with \(literal). Profiles, "
                               + "revocations and admin cards it issues would stop verifying on phones.")
         }
 

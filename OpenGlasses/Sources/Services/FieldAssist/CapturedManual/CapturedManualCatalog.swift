@@ -5,7 +5,10 @@ import Foundation
 @MainActor
 final class CapturedManualCatalog {
     static let shared = CapturedManualCatalog()
-    var documents: DocumentStore?
+    /// Weak: the store belongs to whoever hands it over (AppState's lives for the process). A
+    /// strong hold here kept every store a test gave the shared catalog — and its SQLite
+    /// connection — alive after the test deleted the file under it.
+    weak var documents: DocumentStore?
     var injectedSource: CapturedManualStore?
     var onForget: ((String) -> Void)?
     var accessAllowed: () -> Bool = { CapturedManualCatalog.mayUse }

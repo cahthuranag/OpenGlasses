@@ -13,7 +13,7 @@
 > Field Assist redirect/upsell have been removed. Current capacity is in the purchase sheet's
 > Plan limits disclosure. Live App Store Connect setup and sandbox qualification remain open.
 >
-> **Owner revision — 2026-10-26 (drafted, not built):** five on the shelf is not a limit on its
+> **Owner revision — 2026-10-26 (P1e built headless 2026-10-26; device and owner items owed):** five on the shelf is not a limit on its
 > own, because removal frees a slot at once and nothing records it — a technician could load the
 > day's five job manuals each morning and delete them at night. §8 adds a **new-manual
 > allowance**: three new manuals in any rolling 30 days, a returning manual free, the allowance
@@ -533,6 +533,19 @@ entry present without `fieldWork`, hidden under an edition; the catalogue guard 
 letters in copy).
 
 ### P1e — New-manual allowance (one PR, before purchase offers are enabled)
+
+**Status (2026-10-26): 🛠 built, headless.** `ManualAdditionAllowance` (pure) beside `ManualQuota`;
+`ManualAdditionHistoryStore` over a backend seam (live: synchronizable keychain secret, KVS
+history, local keychain copy; tests: in memory); admission at the signed-set install, the link
+preflight (decides, spends nothing), capture reserve/validate and the Files door; the read mark
+from lookup, table and page opening; the unread undo on removal; the refusal, plan-limits line,
+upload-sheet line and privacy disclosure; three `DataStoreRegistry` entries; the KVS entitlement
+in `project.base.yml` and the personal example. The history is keyed by the personal
+subscription's verified original transaction id (`store-<id>`), or one per-device key when no
+store transaction is recorded. The read flag is carried on the record (synced, only turns on), so
+a read on another device also ends the undo. Still owed, not done: the iCloud capability in the
+developer portal before the next archive (and in each developer's personal entitlements file),
+a phone + iPad check on one iCloud, the terms clause, and the erasure decision below.
 
 §8, headless core first: `ManualAdditionAllowance` and its tests; the fingerprint and
 `ManualAdditionHistoryStore` behind a seam (an in-memory store in tests, never the live keychain or

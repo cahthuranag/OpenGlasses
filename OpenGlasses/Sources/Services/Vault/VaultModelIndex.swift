@@ -57,8 +57,10 @@ struct VaultModelIndex: Equatable {
     static let seriesMinimumLength = 5
 
     /// The section names the series is read from: those that are one model number (a heading such
-    /// as `R-454B (A2L) refrigerant detection` is a topic, not a model), in the largest group that
-    /// starts alike. A tie between groups is no series.
+    /// as `R-454B (A2L) refrigerant detection` is a topic, not a model), in the group that starts
+    /// alike — when that group is more than half of them. A vault covering several product
+    /// families (`QRF…`, `QRS…`, `QXT…`) is not written for whichever family happens to list the
+    /// most models, so its largest group is no series; a strict majority also rules out a tie.
     private var seriesNames: [String] {
         let single = models.map(\.name)
             .filter { !$0.contains(where: \.isWhitespace) }
@@ -66,8 +68,7 @@ struct VaultModelIndex: Equatable {
             .filter { $0.count > Self.seriesMinimumLength }
         let groups = Dictionary(grouping: single) { String($0.prefix(Self.seriesMinimumLength)) }
             .values.sorted { $0.count > $1.count }
-        guard let largest = groups.first, largest.count >= 2 else { return [] }
-        if groups.count > 1, groups[1].count == largest.count { return [] }
+        guard let largest = groups.first, largest.count >= 2, largest.count * 2 > single.count else { return [] }
         return largest
     }
 

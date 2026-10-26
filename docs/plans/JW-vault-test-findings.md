@@ -1,6 +1,6 @@
 # Plan JW — Vault Test Findings (revised tables, printed pages, "show me", chains that stop)
 
-**Status:** 🚧 P0 built 2026-10-27 (all seven items, headless); P1 = partner re-run. Drafted 2026-10-27 from the partner's three
+**Status:** 🚧 P0 built 2026-10-27 (PR 861) (all seven items, headless); P1 = partner re-run. Drafted 2026-10-27 from the partner's three
 structured vault test sessions on build 564 (2026-10-26). No later build changes any of it:
 nothing merged between 564 and 570 touches table reading, page labels, `show_source`, the smart
 camera or `rule_chain`.

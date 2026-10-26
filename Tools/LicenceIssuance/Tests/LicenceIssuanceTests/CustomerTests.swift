@@ -1,5 +1,9 @@
 import XCTest
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto // swift-crypto: the same API on Linux (the service's containers)
+#endif
 @testable import LicenceIssuance
 
 /// Plan JS P0b — customers and presets.
@@ -41,6 +45,10 @@ final class CustomerTests: XCTestCase {
         let canonical = display.replacingOccurrences(of: "-", with: "")
         let derived = HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: Data(canonical.utf8)), info: Data("openglasses.activation-key.v1".utf8), outputByteCount: 32)
         return String(decoding: try AES.GCM.open(AES.GCM.SealedBox(combined: XCTUnwrap(Data(base64Encoded: sealed))), using: derived), as: UTF8.self)
+    }
+    /// Typed, so a value compares the same on every platform (Linux's JSONSerialization reads `true` back as 1).
+    func profile(_ document: String) throws -> ProfileContract.Document {
+        try IssuanceWire.decoder().decode(ProfileContract.Document.self, from: XCTUnwrap(Data(base64Encoded: String(document.split(separator: ".")[0]))))
     }
     func payload(ofProfile document: String) throws -> [String: Any] {
         let data = try XCTUnwrap(Data(base64Encoded: String(document.split(separator: ".")[0])))
@@ -188,7 +196,8 @@ final class CustomerTests: XCTestCase {
         XCTAssertNil(try doc()["adminPasscode"])
         let good = ProfileContract.PasscodeVerifier(salt: salt, iterations: 210_000, hash: hash)
         try set(good)
-        XCTAssertEqual(try doc()["adminPasscode"] as? [String: AnyHashable], ["salt": salt, "iterations": 210_000, "hash": hash])
+        let signed = try book.profileDocument(customerId: "c1", code: full.code, preset: preset, grant: grant, keyID: "fixture", issued: date(2), signer: profileKey.signature(for:))
+        XCTAssertEqual(try profile(signed).adminPasscode, good)
         var edited = preset; edited.leaseDays = 200
         XCTAssertThrowsError(try set(good, edited)) { XCTAssertEqual($0 as? PresetRefusal, .presetChanged) }
     }
@@ -203,9 +212,9 @@ final class CustomerTests: XCTestCase {
         XCTAssertEqual(first["profileId"] as? String, "fixture-profile"); XCTAssertEqual(first["leaseDays"] as? Int, 365)
         XCTAssertEqual(first["edition"] as? String, "fieldAssist"); XCTAssertNil(first["eraseAfterLapseDays"]); XCTAssertNil(first["policyExpiry"])
         XCTAssertEqual((first["vaultPack"] as? [String: Any])?["packId"] as? String, "fixture.hvac")
-        let settings = try XCTUnwrap(first["settings"] as? [String: [String: AnyHashable]])
-        XCTAssertEqual(settings["refrigerationUnits"], ["value": "kPa,C,kg", "disposition": "default"])
-        XCTAssertEqual(settings["privacyFilterEnabled"], ["value": true, "disposition": "ceiling"])
+        let settings = try profile(doc(s.code.code)).settings
+        XCTAssertEqual(settings["refrigerationUnits"], .init(value: .string("kPa,C,kg"), disposition: "default"))
+        XCTAssertEqual(settings["privacyFilterEnabled"], .init(value: .bool(true), disposition: "ceiling"))
         let full = try XCTUnwrap(pay(&book))
         XCTAssertThrowsError(try doc(s.code.code)) { XCTAssertEqual($0 as? CustomerRefusal, .notCurrentCode) }
         XCTAssertEqual(try payload(ofProfile: doc(full.code))["licenceCode"] as? String, full.code)
@@ -214,8 +223,7 @@ final class CustomerTests: XCTestCase {
         let next = ProfilePreset(id: edited.id, version: 2, edition: edited.edition, leaseDays: edited.leaseDays, settings: edited.settings, choices: edited.choices)
         XCTAssertThrowsError(try doc(full.code, next)) { XCTAssertEqual($0 as? PresetRefusal, .unknownPreset) }
         try book.changePreset(customerId: "c1", to: next, selection: newCustomer.selection, grant: grant, operatorId: "fixture", now: date(2))
-        let moved = try payload(ofProfile: doc(full.code, next))
-        XCTAssertEqual((moved["settings"] as? [String: [String: AnyHashable]])?["agentModeEnabled"], ["value": false, "disposition": "ceiling"])
+        XCTAssertEqual(try profile(doc(full.code, next)).settings["agentModeEnabled"], .init(value: .bool(false), disposition: "ceiling"))
     }
 
     func testRotatedKeyOpensToTheCurrentCodeAndListsTheOldFile() throws {

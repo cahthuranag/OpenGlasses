@@ -1,6 +1,16 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
+#if canImport(Darwin)
 import Darwin
+let posixWrite = Darwin.write
+#else
+import Glibc
+let posixWrite = Glibc.write
+#endif
 import LicenceIssuance
 
 // JSON input avoids fragile argument parsing and prevents keys being passed as arguments.
@@ -93,7 +103,7 @@ do {
     guard fd >= 0 else { fail("cannot open journal") }
     defer { close(fd) }
     // A failed write emits no bearer code; recovery must inspect/restore the journal before retrying.
-    let count = bytes.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
+    let count = bytes.withUnsafeBytes { posixWrite(fd, $0.baseAddress, $0.count) }
     guard count == bytes.count, fsync(fd) == 0 else { fail("journal write failed; inspect journal before retrying") }
     if let output { print(output.code) } else { print("recorded") }
     FileHandle.standardError.write(Data(("journal row \(row.sequence): \(row.rowHash)\n").utf8))

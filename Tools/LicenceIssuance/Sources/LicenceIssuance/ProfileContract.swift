@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto // swift-crypto: the same API on Linux (the service's containers)
+#endif
 
 /// The organisation-profile contract, shared by `make-org-profile` and preset-built profiles (JS P0b), so a
 /// profile minted by hand and one built from a preset are the same bytes. The structs, the allow-list and the

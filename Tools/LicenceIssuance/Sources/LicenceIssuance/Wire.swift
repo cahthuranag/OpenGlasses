@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto // swift-crypto: the same API on Linux (the service's containers)
+#endif
 
 /// Vendor-side only. No production verifier depends on this package.
 public struct IssuedLicensePayload: Codable, Equatable {

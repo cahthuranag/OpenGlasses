@@ -1,6 +1,6 @@
 # Plan JS — Licence Sales and Device Seats (a partner orders codes, pays by bank transfer, and a code counts its phones)
 
-**Status:** 🚧 P0 merged 2026-10-23 (PR 838); validation recorded in `Tools/LicenceIssuance/README.md`. Hosting for P1 decided the same day (*Hosting*). **P0b built 2026-10-26** (PR 847; customers, presets, co-termed seat increases, key rotation, the key-for-life test; *P0b implementation notes*). P1–P3 remain unimplemented.
+**Status:** 🚧 P0 merged 2026-10-23 (PR 838); validation recorded in `Tools/LicenceIssuance/README.md`. Hosting for P1 decided the same day (*Hosting*). **P0b built 2026-10-26** (PR 847; customers, presets, co-termed seat increases, key rotation, the key-for-life test; *P0b implementation notes*). P1 started 2026-10-26 (PR 853): the package runs on Linux, and the private `avenkin-licence` repository exists; the service itself is unbuilt. P2–P3 remain unimplemented.
 **Origin:** the pilot partner resells Field Assist team licences and needs to order and pay for them
 without waiting on the vendor. The owner asked whether a licence could be held to a number of
 devices, and whether one server could produce the code and its QR, and let the partner buy and be
@@ -383,9 +383,10 @@ would list them all.
 - **Keys:** one 0600 file per key on the FileVault disk, mounted **read-only into `signer` only**.
   Never baked into an image, never in an environment variable, never in a log. The manual generator
   reads the same files, so it remains the recovery path when the box is down.
-- **Linux:** OrbStack containers are Linux, so the P0 package needs the swift-crypto adapter its
-  README already defers to a later phase. That settles the language question: **Swift on Linux**,
-  using the P0 package directly rather than a port held to golden fixtures.
+- **Linux:** OrbStack containers are Linux, so the P0 package needs swift-crypto there. That settles
+  the language question: **Swift on Linux**, using the P0 package directly rather than a port held to
+  golden fixtures. **Done 2026-10-26:** the package builds and passes its suite in the `swift:6.4`
+  image, bytes pinned across both platforms, with a Linux CI job.
 
 ### Backups, and running on a home Mac
 

@@ -177,7 +177,9 @@ enum PDFTableReader {
                     // A grid the text layer does not give, printed as a picture under the caption
                     // (Plan JN P1): read from its recognition, which must pass the extractor's own
                     // tests. A picture that makes no table leaves the caption's own failure.
-                    if found.placement != .listed,
+                    // Only on a page shown as it is drawn: the region is drawn in the page's own
+                    // space, and a turned page's picture would be read on its side.
+                    if found.placement != .listed, displayRotation(of: page) == 0,
                        let region = PictureTableReading.region(for: found.caption, failure: failure, words: words,
                                                                pageBounds: page.bounds(for: .mediaBox)) {
                         candidates.append(.init(physical: physical, kind: .caption(found.caption), region: region))
@@ -275,26 +277,153 @@ enum PDFTableReader {
     /// The page's words, each with its box in top-down page coordinates and the size and weight
     /// of its type. A run of letters is split where the type size changes, so a superscript
     /// footnote marker printed against a number ("45" and a raised "1") stays apart from it.
+    ///
+    /// A page the PDF turns to show it (its `/Rotate`, most often a wide table set across a
+    /// landscape page) is read as it is shown (Plan JW follow-up): in the page's own space the
+    /// table's words are drawn on their side, and every line of it would read as a column. On such
+    /// a page the words still drawn the page's own way up — its running head and footer — are on
+    /// their side as shown, and are marked so (`PositionedWord.sideways`): a word whose letters do
+    /// not run left to right as shown, and a one-letter word on the same printed line as one.
     static func positionedWords(on page: PDFPage) -> [PositionedWord] {
         guard let string = page.string, !string.isEmpty else { return [] }
         let ns = string as NSString
         let attributed = page.attributedString
         let bounds = page.bounds(for: .mediaBox)
+        let rotation = displayRotation(of: page)
         var words: [PositionedWord] = []
+        // On a turned page, each word's box in the page's own space and whether its letters run
+        // left to right as shown (nil for a single letter, which has no direction).
+        var own: [(box: CGRect, reads: Bool?)] = []
         guard let regex = try? NSRegularExpression(pattern: #"\S+"#) else { return [] }
         for match in regex.matches(in: string, range: NSRange(location: 0, length: ns.length)) {
             for piece in splitBySize(match.range, in: attributed) {
-                guard let selection = page.selection(for: piece.range) else { continue }
-                let box = selection.bounds(for: page)
-                guard box.width > 0 || box.height > 0 else { continue }
-                // PDF space has its origin at the bottom left; the extractor reads top-down.
-                let rect = CGRect(x: box.minX - bounds.minX, y: bounds.maxY - box.maxY,
-                                  width: box.width, height: box.height)
-                words.append(PositionedWord(ns.substring(with: piece.range), rect: rect,
-                                            size: piece.size, bold: piece.bold))
+                for (range, cut) in splitAtGaps(piece.range, size: piece.size, on: page, in: bounds, rotation: rotation) {
+                    guard let selection = page.selection(for: range) else { continue }
+                    let box = selection.bounds(for: page)
+                    guard box.width > 0 || box.height > 0 else { continue }
+                    // PDF space has its origin at the bottom left; the extractor reads top-down.
+                    let rect = cut ?? displayed(box, in: bounds, rotation: rotation)
+                    words.append(PositionedWord(ns.substring(with: range), rect: rect,
+                                                size: piece.size, bold: piece.bold))
+                    if rotation != 0 {
+                        own.append((box, readsLeftToRight(range, on: page, in: bounds, rotation: rotation)))
+                    }
+                }
+            }
+        }
+        if rotation != 0 {
+            for index in words.indices {
+                if let reads = own[index].reads {
+                    words[index].sideways = !reads
+                } else {
+                    words[index].sideways = own.indices.contains { other in
+                        own[other].reads == false && onOnePrintedLine(own[index].box, own[other].box)
+                    }
+                }
             }
         }
         return words
+    }
+
+    /// Widest a word's letters are taken to set, on average, in ems: wider and the word is looked
+    /// at letter by letter for a gap a space was lost from.
+    static let widestLetterEms = 1.2
+
+    /// The word at `range` cut where the text layer lost the space between two cells (Plan JW
+    /// follow-up): a word set far wider than its letters could make — a row key and the dash in
+    /// the cell beside it read as one word — is looked at letter by letter. The text layer gives
+    /// the gap a space was lost from to the letters either side of it, half each, so two letters
+    /// side by side both wider than `widestLetterEms` share a gap: the word is cut between them
+    /// when, each taken at most an em wide from its own far side, the gap left is wider than half
+    /// the type size — the gap `TableExtractor.Line.phrases` reads as two cells. Each piece comes
+    /// with its box as shown, those letters trimmed; a word not cut is `range` alone, with no box.
+    private static func splitAtGaps(_ range: NSRange, size: Double, on page: PDFPage, in bounds: CGRect,
+                                    rotation: Int) -> [(range: NSRange, shown: CGRect?)] {
+        let uncut = [(range: range, shown: CGRect?.none)]
+        guard range.length >= 2, let whole = page.selection(for: range)?.bounds(for: page) else { return uncut }
+        let shown = displayed(whole, in: bounds, rotation: rotation)
+        guard Double(shown.width) > Double(range.length) * size * widestLetterEms else { return uncut }
+        let letters = (0..<range.length).map { offset -> CGRect? in
+            page.selection(for: NSRange(location: range.location + offset, length: 1))
+                .map { displayed($0.bounds(for: page), in: bounds, rotation: rotation) }
+        }
+        guard let pieces = cuts(letters: letters, size: size) else { return uncut }
+        return pieces.map { (NSRange(location: range.location + $0.range.lowerBound, length: $0.range.count), $0.box) }
+    }
+
+    /// The pieces a word is cut into by `splitAtGaps`, from its letters' boxes as shown (nil, or
+    /// empty, for a letter with no box): each piece's letters and its box, the letters either side
+    /// of a cut trimmed to an em. Nil when the word is not cut. Pure, for the tests.
+    static func cuts(letters: [CGRect?], size: Double) -> [(range: Range<Int>, box: CGRect)]? {
+        let widest = widestLetterEms * size
+        let boxed = letters.enumerated().compactMap { offset, box -> (offset: Int, box: CGRect)? in
+            guard let box, box.width > 0 || box.height > 0 else { return nil }
+            return (offset, box)
+        }
+        var pieces: [(range: Range<Int>, box: CGRect)] = []
+        var start = 0
+        var box = CGRect.null
+        for (index, letter) in boxed.enumerated() {
+            var own = letter.box
+            if index > 0 {
+                let previous = boxed[index - 1].box
+                let right = min(previous.maxX, previous.minX + size)
+                let left = max(own.minX, own.maxX - size)
+                if previous.width > widest, own.width > widest, Double(left - right) > max(2, 0.5 * size) {
+                    box.size.width = right - box.minX
+                    pieces.append((start..<letter.offset, box))
+                    start = letter.offset
+                    box = .null
+                    own.size.width = own.maxX - left
+                    own.origin.x = left
+                }
+            }
+            box = box.union(own)
+        }
+        guard !pieces.isEmpty else { return nil }
+        pieces.append((start..<letters.count, box))
+        return pieces
+    }
+
+    /// Whether the letters of the word at `range` run left to right on the page as shown: its last
+    /// letter sits further right than it sits above or below its first. Nil for one letter.
+    private static func readsLeftToRight(_ range: NSRange, on page: PDFPage, in bounds: CGRect, rotation: Int) -> Bool? {
+        guard range.length >= 2,
+              let first = page.selection(for: NSRange(location: range.location, length: 1))?.bounds(for: page),
+              let last = page.selection(for: NSRange(location: NSMaxRange(range) - 1, length: 1))?.bounds(for: page)
+        else { return nil }
+        let a = displayed(first, in: bounds, rotation: rotation), b = displayed(last, in: bounds, rotation: rotation)
+        return b.midX - a.midX > abs(b.midY - a.midY)
+    }
+
+    /// Two boxes in the page's own space on one line of type set the page's own way up: their
+    /// heights mostly shared, and no more than a line's height apart along it.
+    private static func onOnePrintedLine(_ a: CGRect, _ b: CGRect) -> Bool {
+        let shared = min(a.maxY, b.maxY) - max(a.minY, b.minY)
+        let height = min(a.height, b.height)
+        guard height > 0, shared >= 0.5 * height else { return false }
+        let apart = max(a.minX, b.minX) - min(a.maxX, b.maxX)
+        return apart <= max(a.height, b.height)
+    }
+
+    /// The page's `/Rotate`, clockwise, as one of 0, 90, 180 and 270.
+    static func displayRotation(of page: PDFPage) -> Int {
+        ((page.rotation % 360) + 360) % 360 / 90 * 90
+    }
+
+    /// A box in the page's own PDF space (origin at the bottom left of `bounds`) in top-down
+    /// coordinates of the page as it is shown, turned `rotation` degrees clockwise: the origin at
+    /// the shown page's top left, y growing downwards. With no rotation, the page's own top-down
+    /// coordinates, exactly as every page was read before.
+    static func displayed(_ box: CGRect, in bounds: CGRect, rotation: Int) -> CGRect {
+        let x0 = box.minX - bounds.minX, x1 = box.maxX - bounds.minX
+        let y0 = box.minY - bounds.minY, y1 = box.maxY - bounds.minY
+        switch rotation {
+        case 90: return CGRect(x: y0, y: x0, width: y1 - y0, height: x1 - x0)
+        case 180: return CGRect(x: bounds.width - x1, y: y0, width: x1 - x0, height: y1 - y0)
+        case 270: return CGRect(x: bounds.height - y1, y: bounds.width - x1, width: y1 - y0, height: x1 - x0)
+        default: return CGRect(x: x0, y: bounds.height - y1, width: x1 - x0, height: y1 - y0)
+        }
     }
 
     /// A word's character range cut where its font size changes, each piece with its size and

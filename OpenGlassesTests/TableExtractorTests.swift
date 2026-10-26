@@ -492,6 +492,155 @@ final class TableExtractorTests: XCTestCase {
         XCTAssertEqual(result.concludingPieces, 0, "a continuation with rows is joined by its rows")
         XCTAssertEqual(result.tables.first?.rows.count, 6)
     }
+
+    // MARK: - Headings printed as quantities, bracketed titles, sparse and banded rows, turned pages (Plan JW follow-up)
+
+    func testHeadingsPrintedAsQuantitiesHeadTheColumnsOnAPageSetInOneWeight() throws {
+        let table = try only(L.quantityHeadings())
+        XCTAssertEqual(table.label, "Table 99")
+        XCTAssertTrue(table.title.hasSuffix("(See the invented notes, the example rules and the other example tables.)"),
+                      "a long bracketed line under a three-line title is part of the title: \(table.title)")
+        XCTAssertEqual(table.rowHeaders, ["Widget, size or grade"], "the row-header heading wrapped over three lines")
+        XCTAssertEqual(table.rows.map(\.path), L.quantityKeys.map { [$0] }, "the heading lines are not rows")
+        XCTAssertEqual(table.rows[0].cells.map(\.value), [11, 17, 23, 29, 34, 41])
+        XCTAssertEqual(table.columns.count, 6)
+        for (index, heading) in ["40 kg\u{2021}", "55 kg\u{2021}", "70 kg\u{2021}"].enumerated() {
+            XCTAssertEqual(table.columns[index].path.last, heading)
+        }
+        XCTAssertTrue(table.columns[3].path.contains("85 kg\u{2021}"))
+        XCTAssertEqual(table.notes.map(\.marker), ["\u{2021}", "\u{00A7}", "**", nil],
+                       "the section sign keys a note of its own, and \"Note:\" is unmarked")
+    }
+
+    func testAKeyWithAMarkerGluedToItIsStillFoundByItsNumber() throws {
+        let table = try only(L.quantityHeadings())
+        let first = TableExtractor.parseCell(try XCTUnwrap(table.rows.first?.path.last), markers: [], columnUnit: nil)
+        XCTAssertEqual(first.value, 71)
+        XCTAssertEqual(first.markers, ["**"])
+        let section = TableExtractor.parseCell("14\u{00A7}", markers: [], columnUnit: nil)
+        XCTAssertEqual(section.value, 14, "a section sign after a number is a marker, as a dagger is")
+        XCTAssertEqual(section.markers, ["\u{00A7}"])
+        XCTAssertEqual(section.text, "14\u{00A7}", "kept as printed")
+    }
+
+    func testAShortBracketedUnitUnderTheTitleIsNotReadAsTheTitle() {
+        XCTAssertTrue(TableExtractor.opensBracket("(see the notes below)"))
+        XCTAssertFalse(TableExtractor.opensBracket("(A)"), "a unit heads a column")
+        XCTAssertFalse(TableExtractor.opensBracket("(mm\u{00B2} each)"))
+        XCTAssertFalse(TableExtractor.opensBracket("Widget ratings"))
+        XCTAssertTrue(TableExtractor.bracketOpen("Widget limits (see the rules"))
+        XCTAssertFalse(TableExtractor.bracketOpen("Widget limits (see the rules)"))
+    }
+
+    func testRowsOfQuantitiesAreHeadingsOnlyOverRowsOfBareNumbers() {
+        typealias Row = TableExtractor.HeaderRuleRow
+        func row(_ cells: [String]) -> Row { Row(cells: cells.map { ($0, []) }) }
+        let headings = [row(["Widget", "40 kg", "80 kg"]), row(["grade", "Rating A", "Rating B"])]
+        let body = [row(["W1", "11", "21"]), row(["W2", "12", "22"]), row(["W3", "13", "23"])]
+        XCTAssertTrue(headings[0].isUnitHeading)
+        XCTAssertEqual(TableExtractor.pastUnitHeadings(0, in: headings + body), 2, "both heading lines")
+        XCTAssertEqual(TableExtractor.pastUnitHeadings(0, in: [headings[0]] + body), 1)
+        // Every row prints its units: none of them is a heading.
+        let withUnits = [row(["W1", "16 A", "20 A"]), row(["W2", "25 A", "32 A"]), row(["W3", "40 A", "50 A"]),
+                         row(["W4", "63 A", "80 A"])]
+        XCTAssertEqual(TableExtractor.pastUnitHeadings(0, in: withUnits), 0)
+        // Words over the rows, not quantities: nothing to pass.
+        XCTAssertEqual(TableExtractor.pastUnitHeadings(0, in: body), 0)
+    }
+
+    func testARowOfDashesAndAFewNumbersIsARowOfNumbers() throws {
+        typealias Row = TableExtractor.HeaderRuleRow
+        let sparse = Row(cells: ["W1", "\u{2014}", "\u{2014}", "9.5", "71", "\u{2014}", "\u{2014}"].map { ($0, []) })
+        XCTAssertEqual(sparse.dashesAfterFirst, 4)
+        XCTAssertTrue(sparse.isNumeric)
+        XCTAssertFalse(Row(cells: ["W1", "\u{2014}", "\u{2014}"].map { ($0, []) }).isNumeric, "dashes alone are no numbers")
+        XCTAssertTrue(TableExtractor.isDash("\u{2014}"))
+        XCTAssertTrue(TableExtractor.isDash("--"))
+        XCTAssertFalse(TableExtractor.isDash("-5"))
+
+        let table = try only(L.sparseFirstRow())
+        XCTAssertEqual(table.rows.map(\.path), [["W1"], ["W2"], ["W3"], ["W4"]], "the first row is a row, not a heading")
+        XCTAssertEqual(table.columns.map(\.path), [["Inner A"], ["Outer A"], ["Inner B"], ["Outer B"], ["Inner C"], ["Outer C"]])
+        XCTAssertEqual(table.rows[0].cells.map(\.value), [nil, nil, 8.7, 64, nil, nil])
+    }
+
+    func testARowOfNumbersOverHeadingWordsHeadsTheColumns() throws {
+        let table = try only(L.numberedColumnHeadings())
+        XCTAssertEqual(table.rows.map(\.path), [["W2"], ["W4"], ["W6"], ["W8"]])
+        XCTAssertEqual(table.columns.count, 4)
+        for index in 0..<4 {
+            XCTAssertTrue(table.columns[index].path.contains("\(index + 1) Area, mm\u{00B2}"),
+                          "\(table.columns[index].path)")
+        }
+        XCTAssertEqual(table.rows[1].cells.map(\.value), [7, 14, 21, 28])
+    }
+
+    func testANumbersRowIsAHeadingOnlyWhenItRisesAndWordsFollowIt() {
+        typealias Row = TableExtractor.HeaderRuleRow
+        XCTAssertTrue(Row(cells: ["1", "2", "3", "10"].map { ($0, []) }).ascendingNumbers)
+        XCTAssertTrue(Row(cells: ["Group B", "1", "2", "3"].map { ($0, []) }).ascendingNumbers, "a word at its left")
+        XCTAssertFalse(Row(cells: ["4", "2", "3"].map { ($0, []) }).ascendingNumbers)
+        XCTAssertFalse(Row(cells: ["1", "Widget", "2"].map { ($0, []) }).ascendingNumbers)
+        XCTAssertFalse(Row(cells: ["1", "20 kg", "30 kg"].map { ($0, []) }).ascendingNumbers, "quantities, not numbers")
+    }
+
+    func testRowsPrintedInBandsReadAsOneBody() throws {
+        let result = TableExtractor.extractAll(words: L.words(L.bandedRows()), page: .init(physical: 1))
+        let table = try XCTUnwrap(result.first?.outcome.table)
+        XCTAssertEqual(table.rows.map(\.path), (1...9).map { ["W\($0)"] }, "every band, not the first only")
+        XCTAssertEqual(table.rows[8].cells.map(\.value), [12, 24, 36])
+        XCTAssertEqual(table.columns.map(\.unit), ["A", "A", "A"])
+    }
+
+    func testAWordWhoseLostSpaceWasSplitBetweenTwoLettersIsCut() throws {
+        // A two-digit key and a dash read as one word, the gap between them shared by the key's
+        // last digit and the dash: each letter's box runs to the middle of the gap.
+        let letters: [CGRect?] = [CGRect(x: 50, y: 0, width: 4, height: 8), CGRect(x: 54, y: 0, width: 16, height: 8),
+                                  CGRect(x: 70, y: 0, width: 20, height: 8)]
+        let pieces = try XCTUnwrap(PDFTableReader.cuts(letters: letters, size: 8))
+        XCTAssertEqual(pieces.map(\.range), [0..<2, 2..<3])
+        XCTAssertEqual(pieces[0].box.minX, 50)
+        XCTAssertEqual(pieces[0].box.maxX, 62, accuracy: 0.01, "the digit trimmed to an em")
+        XCTAssertEqual(pieces[1].box.minX, 82, accuracy: 0.01, "the dash trimmed to an em")
+        XCTAssertEqual(pieces[1].box.maxX, 90)
+        // Letters of their own widths are never cut, nor is one wide letter beside a narrow one.
+        XCTAssertNil(PDFTableReader.cuts(letters: [CGRect(x: 0, y: 0, width: 5, height: 8), CGRect(x: 5, y: 0, width: 5, height: 8)],
+                                         size: 8))
+        XCTAssertNil(PDFTableReader.cuts(letters: [CGRect(x: 0, y: 0, width: 5, height: 8), CGRect(x: 5, y: 0, width: 20, height: 8)],
+                                         size: 8))
+    }
+
+    func testABoxIsReadAsThePageIsShown() {
+        let bounds = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let box = CGRect(x: 100, y: 700, width: 50, height: 10)
+        XCTAssertEqual(PDFTableReader.displayed(box, in: bounds, rotation: 0), CGRect(x: 100, y: 82, width: 50, height: 10),
+                       "unturned, the page's own top-down space as before")
+        XCTAssertEqual(PDFTableReader.displayed(box, in: bounds, rotation: 90), CGRect(x: 700, y: 100, width: 10, height: 50))
+        XCTAssertEqual(PDFTableReader.displayed(box, in: bounds, rotation: 180), CGRect(x: 462, y: 700, width: 50, height: 10))
+        XCTAssertEqual(PDFTableReader.displayed(box, in: bounds, rotation: 270), CGRect(x: 82, y: 462, width: 10, height: 50))
+    }
+
+    func testATableOnATurnedPageReadsAsItIsShown() throws {
+        let document = try XCTUnwrap(TableFixtures.turnedDocument(shown: L.turnedTable(), own: L.turnedFooter()))
+        let result = PDFTableReader.read(document: document, printedLabels: [1: "41"])
+        XCTAssertEqual(result.captioned, 1)
+        XCTAssertEqual(result.extracted, 1)
+        let table = try XCTUnwrap(result.tables.first)
+        XCTAssertEqual(table.label, "Table 98A")
+        XCTAssertEqual(table.page, ManualTable.Page(physical: 1, printed: "41"))
+        XCTAssertEqual(table.columns.map(\.path), [["Rating A"], ["Rating B"], ["Rating C"]])
+        XCTAssertEqual(table.rows.map(\.path), (1...5).map { ["W\($0)"] }, "the footer beside the rows is not part of them")
+        XCTAssertEqual(table.rows[2].cells.map(\.value), [13, 25, 37])
+
+        // The footer, printed the page's own way up, is on its side as shown — a one-letter word
+        // on its line too.
+        let words = PDFTableReader.positionedWords(on: try XCTUnwrap(document.page(at: 0)))
+        let sideways = Set(words.filter(\.sideways).map(\.text))
+        XCTAssertTrue(sideways.isSuperset(of: ["March", "2031", "\u{00A9}", "41"]), "\(sideways)")
+        XCTAssertFalse(sideways.contains("W1"))
+
+        // The same page unturned: its table's words are on their side, and nothing is read.
+        document.page(at: 0)?.rotation = 0
+        XCTAssertEqual(PDFTableReader.read(document: document).extracted, 0)
+    }
 }
-
-

@@ -251,12 +251,54 @@ after (counts only):
 | Older edition | 161 → 172 | 77 → 88 | 84 → 84 | none → over 99% of pages |
 | Newer edition | 139 → 179 | 56 → 87 | 83 → 92 | under 1% → over 99% of pages |
 
-Every label read in both books has one offset from the physical page. The two tables of finding
-1 that never answered now read, each cited on its grid page with no second entry under its label,
-the concluding page's notes joined. "Captions not read" rises in the newer edition because marked
-captions the reader never saw are now counted, some over grids the extractor still refuses
-(varying column counts, rows too few); those are P1 material, not regressions. The lookups on the
-partner's question set were not re-run in P0.
+Every label read in both books has one offset from the physical page. One of the two tables of
+finding 1 that never answered now reads, cited on its grid page with no second entry under its
+label, the concluding page's notes joined. The other, and the two tables the conduit-fill chain
+names, still did not read after P0: they needed the follow-up below. "Captions not read" rises in
+the newer edition because marked captions the reader never saw are now counted, some over grids
+the extractor still refuses (varying column counts, rows too few); those are P1 material, not
+regressions. The lookups on the partner's question set were not re-run in P0.
+
+**Follow-up (after P0).** A private re-measurement after P0 found three tables the partner needs
+still unread, for two reasons the margin mark had hidden:
+
+- *A one-weight page whose header the rule misread* (the second rating table). Its title wraps
+  three lines with a long bracketed cross-reference under them, which the header rule read as
+  prose; and its value columns are headed by quantities with a unit, printed on the same lines as
+  a row-header heading wrapped over three lines, which read as rows of numbers. The body was looked
+  for above the rows, and the caption failed for too few rows.
+- *A landscape page the PDF turns to show* (both conduit-fill tables). In the page's own space
+  every word of the table, its caption included, is on its side, so the caption was never seen.
+  Read as shown, they also needed a first row printed mostly as dashes, a row of numbers heading
+  the columns with words under it, a footer drawn the page's own way up beside the rows, and a text
+  layer that lost the space between a row key and the dash beside it.
+
+The fix is general: `PDFTableReader.positionedWords` reads a page with a `/Rotate` as it is shown
+(`displayed`), marks the words still drawn the page's own way as `sideways` (left out of the lines
+and of the rotated-headings reason), and cuts a word whose lost space the text layer split between
+two letters (`cuts`); no picture is read on a turned page, since the region is drawn unturned.
+`TableExtractor`'s one-weight header rule reads a bracketed line under a three-line title as part
+of the title (`plainBracketMaximumLines`), passes up to two lines of headings printed as quantities
+over rows of bare numbers (`pastUnitHeadings`), counts a dash for neither side of a row of
+numbers, and reads a rising row of numbers with heading words under it as the columns' headings
+(`numberedHeadingsAbove`); the body carries on past a wider space between bands of rows that print
+in the same columns (`continuesBand`); and the section sign, double bar and pilcrow mark notes and
+cells as the dagger does. 11 new tests in `TableExtractorTests`, all on invented fixtures
+(`TableFixtureLayouts.quantityHeadings`, `numberedColumnHeadings`, `sparseFirstRow`, `bandedRows`,
+and `turnedTable` drawn on a page turned a quarter). Measured privately, after P0 → after the
+follow-up (counts only):
+
+| Book | Captions found | Tables read | Captions not read |
+|---|---|---|---|
+| Older edition | 172 → 231 | 88 → 118 | 84 → 113 |
+| Newer edition | 179 → 227 | 87 → 113 | 92 → 114 |
+
+All three tables now read, in both editions, each with its rows on its grid page; no table that
+read before stops reading. A few that read already change shape: header lines that had been
+read as rows are dropped, and a first row printed mostly as dashes is kept. The new captions are all on turned pages, none of which was read before: about half of
+them read (24 of 48 in the newer edition, 28 of 59 in the older), and most of the rest fail for
+columns that do not agree — P1 material, not regressions. The lookups on the partner's question
+set were not re-run.
 
 ### P1 — Partner pass and what P0 leaves
 

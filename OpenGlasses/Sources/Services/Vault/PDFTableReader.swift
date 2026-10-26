@@ -48,6 +48,10 @@ enum PDFTableReader {
         /// Recognised regions whose checkpoint could not be saved (Plan JN P2): the import carries
         /// on, and a relaunch would recognise them again. Counted, never silent.
         var checkpointSaveFailures = 0
+        /// Continuing captions with no grid of their own ("(Concluded)" over the table's notes)
+        /// joined to the table they carry on, or left out because that table's own caption was
+        /// kept unread (Plan JW P0). Not counted in `captioned`, never a failure.
+        var concludingPieces = 0
 
         var extracted: Int { tables.count }
 
@@ -197,6 +201,33 @@ enum PDFTableReader {
                                 fail(found.caption, .unclearInPicture, at: place, listed: false)
                                 continue
                             }
+                        }
+                    }
+                    // A continuing caption with no grid under it (too few rows, or no text where
+                    // one would be) — most often a "(Concluded)" page that carries only the
+                    // table's notes (Plan JW P0) — never stands in for the table it concludes:
+                    // where that table was read, the piece joins it (its notes with the table's,
+                    // within two pages), and where it was captioned and not read, the table's own
+                    // caption keeps pointing at its page. Neither is a table of its own nor a
+                    // failure. Read after the picture under it, which may print the rows.
+                    if found.caption.continues, failure == .tooFewRows || failure == .noTextInTable {
+                        if let index = pieces.lastIndex(where: {
+                            $0.label.caseInsensitiveCompare(found.caption.label) == .orderedSame
+                        }) {
+                            if let last = pieces[index].pages.last?.physical, physical - last <= 2 {
+                                for note in TableExtractor.notes(under: found.caption, words: words)
+                                where !pieces[index].notes.contains(note) {
+                                    pieces[index].notes.append(note)
+                                }
+                            }
+                            result.concludingPieces += 1
+                            continue
+                        }
+                        if failed.contains(where: {
+                            !$0.listed && $0.table.label.caseInsensitiveCompare(found.caption.label) == .orderedSame
+                        }) {
+                            result.concludingPieces += 1
+                            continue
                         }
                     }
                     if found.placement == .atFoot {

@@ -57,7 +57,8 @@ final class LookCloselyTool: NativeTool {
             any request for a specific printed value such as a price, a total, a dose or a date. \
             Do not read printed text out of the streamed video when this tool is available. Only \
             useful when the current view contains the thing to read; ask the user to hold it steady \
-            first if needed.
+            first if needed. A manual page the app has open on the phone is read with table_lookup or \
+            manual_lookup, not the camera.
             """
     }
 

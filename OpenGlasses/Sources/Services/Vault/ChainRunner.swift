@@ -366,7 +366,7 @@ enum ChainRunner {
         } else {
             asked = render(lookup.row ?? "", state: state, precise: true)
             request = .init(table: label, row: asked, column: column)
-            outcome = TableLookup.resolve(request, rule: lookup.rule, in: tables)
+            outcome = resolveRow(request, rule: lookup.rule, in: tables)
         }
         let table = { () -> TableLookup.Source? in
             if case .success(let resolved) = TableLookup.resolveTable(request, in: tables) { return resolved.source }
@@ -424,6 +424,64 @@ enum ChainRunner {
                                        unit: record.cell.unit ?? columnUnit, stepIndex: index, line: line,
                                        source: .lookup(record)))
         }
+    }
+
+    /// A row lookup, retried once without the unit or size words of the asked row when it did
+    /// not land on a row (Plan JW P0). A technician answers "as the table prints it" with the
+    /// unit he says out loud ("7 <unit>", "number 7"); a table whose row keys print only "7" then
+    /// matched nothing, or — with a key read unclearly from a picture — refused any match by
+    /// number. The retry is taken only when it finds the row; an asked row that already resolved
+    /// is never changed, and a word some row key does print is never dropped.
+    private static func resolveRow(_ request: TableLookup.Request, rule: TableLookup.RowRule,
+                                   in tables: [TableLookup.Source]) -> TableLookup.Outcome {
+        let outcome = TableLookup.resolve(request, rule: rule, in: tables)
+        switch outcome {
+        case .notFound(.row, _, _), .ambiguous(.row, _, _), .unclear(_, _, .rowKey): break
+        default: return outcome
+        }
+        guard case .success(let resolved) = TableLookup.resolveTable(request, in: tables),
+              let bare = withoutSizeWords(request.row, keptBy: resolved.source.table) else { return outcome }
+        let retry = TableLookup.resolve(.init(table: request.table, row: bare, column: request.column,
+                                              document: request.document), rule: rule, in: tables)
+        if case .found = retry { return retry }
+        return outcome
+    }
+
+    /// Words that say what unit a size is in, or that it is a size, rather than which size.
+    static let sizeWords: Set<String> = ["awg", "kcmil", "mcm", "mm", "mm²", "mm2", "no", "number", "#",
+                                         "gauge", "size"]
+
+    /// `asked` without its unit or size words — those no row key of `table` prints — or nil when
+    /// none was dropped or nothing would be left. Case-insensitive; a "#" glued to the number
+    /// ("#7") and a unit glued after it ("7mm²") are dropped as well. Pure.
+    static func withoutSizeWords(_ asked: String, keptBy table: ManualTable) -> String? {
+        let printed = Set(table.rows.flatMap { row in
+            row.path.flatMap { $0.lowercased().split(whereSeparator: \.isWhitespace).map(String.init) }
+        })
+        func droppable(_ word: String) -> Bool {
+            sizeWords.contains(word) && !printed.contains(word) && !printed.contains(word + ".")
+        }
+        var kept: [String] = []
+        var dropped = false
+        for raw in asked.split(whereSeparator: \.isWhitespace).map(String.init) {
+            let lower = raw.lowercased()
+            let bare = lower.trimmingCharacters(in: CharacterSet(charactersIn: ".,:;"))
+            if droppable(bare) { dropped = true; continue }
+            if lower.hasPrefix("#"), lower.count > 1, droppable("#") {
+                kept.append(String(raw.dropFirst()))
+                dropped = true
+                continue
+            }
+            if let glued = bare.range(of: #"^\d+(?:[./]\d+)?"#, options: .regularExpression),
+               glued.upperBound < bare.endIndex, droppable(String(bare[glued.upperBound...])) {
+                kept.append(String(bare[glued]))
+                dropped = true
+                continue
+            }
+            kept.append(raw)
+        }
+        guard dropped, !kept.isEmpty else { return nil }
+        return kept.joined(separator: " ")
     }
 
     private static func ruleWords(_ rule: TableLookup.RowRule) -> String {

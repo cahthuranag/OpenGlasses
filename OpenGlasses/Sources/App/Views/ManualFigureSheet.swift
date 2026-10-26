@@ -316,12 +316,17 @@ private struct ManualPDFPageView: UIViewRepresentable {
     func updateUIView(_ view: PDFView, context: Context) {
         context.coordinator.onPageChanged = onPageChanged
         context.coordinator.onMarked = onMarked
+        // Plan JW P0: new marks on the page already marked are drawn, not skipped. The coordinator
+        // marks a page once (`markedPage`), so marks handed to a viewer that stays up used to be
+        // kept aside while the page went on showing the previous answer's.
+        let remark = context.coordinator.passages != passages || context.coordinator.pictureAreas != pictureAreas
         context.coordinator.passages = passages
         context.coordinator.pictureAreas = pictureAreas
         if view.document?.documentURL != source {
             view.document = PDFDocument(url: source)
         }
         goToPage(view)
+        if remark { context.coordinator.remarkCurrentPage() }
     }
 
     private func goToPage(_ view: PDFView) {
@@ -375,6 +380,14 @@ private struct ManualPDFPageView: UIViewRepresentable {
             }
             let report = onMarked
             DispatchQueue.main.async { report(marks, text) }
+        }
+
+        /// Take this app's marks off the page last marked and mark the page on screen again, with
+        /// the passages and regions as they are now.
+        func remarkCurrentPage() {
+            if let previous = markedPage { PassageHighlighter.clear(previous) }
+            markedPage = nil
+            markCurrentPage(scrolling: true)
         }
 
         func observe(_ view: PDFView) {

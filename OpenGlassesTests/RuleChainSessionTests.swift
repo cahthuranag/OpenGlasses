@@ -99,13 +99,20 @@ final class RuleChainSessionTests: XCTestCase {
                                                                             missing: ["Table 89"])), "\(warnings)")
         XCTAssertEqual(warnings.filter { $0.contains("chain") }.count, 1, "the example's tables are all in the book: \(warnings)")
 
+        // Plan JW P0: the names lead, one per line, exactly as 'start' takes them.
         let list = try await chain(["action": "list"], service, store)
-        XCTAssertTrue(list.contains("• Size a conductor for a load — answers: which conductor carries a load"), list)
-        XCTAssertTrue(list.contains("• Check an installed conductor"), list)
-        XCTAssertTrue(list.contains("• Voltage drop on a run"), list)
-        XCTAssertTrue(list.contains("• Needs another book — answers: a value from a table this vault does not carry. "
-                                    + "(needs Table 89, which no loaded manual's tables include"), list)
-        XCTAssertEqual(list.components(separatedBy: "(needs").count, 2, "only that chain is marked: \(list)")
+        let lines = list.components(separatedBy: "\n")
+        XCTAssertEqual(Array(lines.prefix(5)), [
+            "Rule chains in this vault, by name:",
+            "• Size a conductor for a load",
+            "• Check an installed conductor",
+            "• Voltage drop on a run",
+            "• Needs another book (can't start: needs Table 89)",
+        ], list)
+        XCTAssertTrue(list.contains("Read these names to the technician as they are"), list)
+        XCTAssertFalse(list.contains("answers:"), "what a chain answers is in the prompt, not the list: \(list)")
+        XCTAssertEqual(list.components(separatedBy: "can't start").count, 2, "only that chain is marked: \(list)")
+        XCTAssertLessThan(list.count, 400, list)
     }
 
     func testABadStepFailsTheImportWithItsLine() throws {
@@ -231,6 +238,11 @@ final class RuleChainSessionTests: XCTestCase {
         let stopped = try await chain(["action": "answer", "value": "3"], service, store)
         XCTAssertTrue(stopped.contains("Stopped at step 7: Table 98 has no column \"Rating group 3 › Band B\""), stopped)
         XCTAssertTrue(stopped.contains("Offer to show the page with show_source"), stopped)
+        // Plan JW P0: said so that it is plainly over, the table named, no further values asked.
+        XCTAssertTrue(stopped.contains("The chain 'Check an installed conductor' has ended and is not running."), stopped)
+        XCTAssertTrue(stopped.contains("It could not read Table 98 at that step."), stopped)
+        XCTAssertTrue(stopped.contains("Do not ask the technician for any more values for this chain"), stopped)
+        XCTAssertTrue(stopped.contains("started again with rule_chain 'start', only when the technician asks"), stopped)
         XCTAssertTrue(stopped.contains("Source: \(Self.book), page 3, Table 98"), stopped)
         let reading = try XCTUnwrap(service.activeSession?.spokenReadings.last)
         XCTAssertTrue(reading.value.contains("Stopped at step 7 of 10"), reading.value)
@@ -246,15 +258,59 @@ final class RuleChainSessionTests: XCTestCase {
         XCTAssertTrue(none.contains("No rule chain is running"), none)
     }
 
+    func testAChainWhoseTablesCannotBeReadIsNotStarted() async throws {
+        let extra = RuleChainFixtures.chainsMarkdown + """
+
+
+        ## Size widgets for a load
+        Answers: an invented widget size, from two tables the book cannot give.
+
+        ```chain
+        ask key (text): Which widget?
+        lookup first = Table 92 row {key} column Value rule exact
+        lookup second = Table 89 row {key} column Value rule exact
+        say "{first} {second}"
+        ```
+        """
+        let (service, store, _) = try await startSession(chains: extra)
+        _ = try await chain(["action": "start", "chain": "Voltage drop on a run"], service, store)
+
+        let refused = try await chain(["action": "start", "chain": "Size widgets for a load"], service, store)
+        XCTAssertTrue(refused.hasPrefix("The chain 'Size widgets for a load' was not started: it needs Table 89, which no "
+                                        + "loaded manual's tables include; and Table 92 (PDF page 6 of Invented Book A), "
+                                        + "whose grid could not be read. Nothing was started or recorded."), refused)
+        XCTAssertTrue(refused.contains("Offer to show that table's page with show_source"), refused)
+        XCTAssertTrue(refused.contains("manual_figure"), refused)
+        XCTAssertEqual(service.activeChain?.chain.name, "Voltage drop on a run", "the running chain is left alone")
+        // "Show me the table" opens the unread table's page.
+        XCTAssertEqual(service.sourceCenter.memory.citations.map(\.figure), ["Table 92"])
+
+        let list = try await chain(["action": "list"], service, store)
+        XCTAssertTrue(list.contains("• Size widgets for a load (can't start: needs Table 92, Table 89)"), list)
+    }
+
     func testStartingNeedsAJobAndANameItKnows() async throws {
         let (service, store, _) = try await startSession()
         let unknown = try await chain(["action": "start", "chain": "breaker sizing"], service, store)
         XCTAssertTrue(unknown.contains("No chain is named like \"breaker sizing\""), unknown)
         XCTAssertTrue(unknown.contains("Size a conductor for a load; Check an installed conductor; Voltage drop on a run"), unknown)
 
+        // Plan JW P0 (owner decision): naming another chain to start replaces the running one,
+        // which records nothing, as 'stop' does; naming the running one carries on with it.
+        let readings = service.activeSession?.spokenReadings.count
         _ = try await chain(["action": "start", "chain": "Voltage drop on a run"], service, store)
+        _ = try await chain(["action": "answer", "value": "QX6"], service, store)
+        let again = try await chain(["action": "start", "chain": "voltage drop"], service, store)
+        XCTAssertTrue(again.hasPrefix("The chain 'Voltage drop on a run' is already running, at step 2 of 9. It was not restarted."), again)
+        XCTAssertTrue(again.contains("Next, ask the technician: What current does the run carry, in amps?"), again)
+        XCTAssertEqual(service.activeChain?.answers, ["QX6"], "not restarted")
+
         let second = try await chain(["action": "start", "chain": "Check an installed conductor"], service, store)
-        XCTAssertTrue(second.contains("The chain 'Voltage drop on a run' is running"), second)
+        XCTAssertTrue(second.hasPrefix("Stopped 'Voltage drop on a run' at step 2; nothing was recorded. "
+                                       + "Started the chain 'Check an installed conductor'.\n"), second)
+        XCTAssertTrue(second.contains("Next, ask the technician: Which conductor is installed"), second)
+        XCTAssertEqual(service.activeChain?.chain.name, "Check an installed conductor")
+        XCTAssertEqual(service.activeSession?.spokenReadings.count, readings, "the replaced chain records nothing")
 
         let idle = FieldSessionService(sessionsRoot: tempRoot.appendingPathComponent("idle", isDirectory: true))
         let noJob = try await RuleChainTool(documentStore: store, sessionService: idle).execute(args: ["action": "list"])

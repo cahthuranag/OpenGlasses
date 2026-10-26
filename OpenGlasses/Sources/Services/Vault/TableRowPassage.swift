@@ -34,6 +34,16 @@ enum TableRowPassage {
         return "\(table.displayName)\(rowName): \(values.joined(separator: ", ")) \u{2014} page \(row.page.spoken)"
     }
 
+    /// The row heading a row passage's sentence names ("7", "QXRT, two conductors"), read back out
+    /// of what `sentence(for:in:)` wrote — or nil for a passage that is not a row's (Plan JW P0:
+    /// `show_source` says which rows it marked). Pure.
+    static func rowName(ofSentence text: String) -> String? {
+        guard let start = text.range(of: ", row "),
+              let end = text.range(of: ": ", range: start.upperBound..<text.endIndex) else { return nil }
+        let name = text[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
+    }
+
     /// What the row looks like on its printed line, for marking it on the page (Plan JJ P1): its
     /// header path's trailing parts then its filled cells, longest first. A row header printed once
     /// over several rows, or a group heading on a line of its own, is not on the row's line, so the

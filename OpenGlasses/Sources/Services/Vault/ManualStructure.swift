@@ -133,15 +133,19 @@ enum ManualStructure {
     /// cross-reference ("See FIGURE 58 on page 44").
     static func caption(_ line: TypedLine) -> (label: String, inlineTitle: String)? {
         guard line.bold else { return nil }
+        // A revision mark in the margin on the caption's line, standing apart or glued to the word
+        // (Plan JW P0), is dropped first — the table extractor's own rule, so a marked caption names
+        // the passage and the table alike.
+        let text = TableExtractor.droppingMarginMarks(line.text)
         // The label as printed, a letter beside the number included ("TABLE 95A", "FIGURE Q7"):
         // the rule the table extractor reads captions by (Plan JJ P5), so a passage's figure and
         // its table carry the same label.
-        guard let match = line.text.range(of: #"^(?i:FIGURE|TABLE)\s+"# + TableExtractor.labelPattern,
-                                          options: .regularExpression) else { return nil }
-        let head = String(line.text[match])
+        guard let match = text.range(of: #"^(?i:FIGURE|TABLE)\s+"# + TableExtractor.labelPattern,
+                                     options: .regularExpression) else { return nil }
+        let head = String(text[match])
         let word = head.range(of: "^FIGURE", options: [.regularExpression, .caseInsensitive]) != nil ? "Figure" : "Table"
         let number = head.range(of: TableExtractor.labelPattern + "$", options: .regularExpression).map { String(head[$0]) } ?? ""
-        let rest = String(line.text[match.upperBound...])
+        let rest = String(text[match.upperBound...])
             .trimmingCharacters(in: CharacterSet(charactersIn: " \t.:\u{2014}\u{2013}-"))
         return ("\(word) \(number)", rest)
     }

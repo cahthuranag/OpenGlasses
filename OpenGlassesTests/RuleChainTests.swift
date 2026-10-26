@@ -246,6 +246,60 @@ final class RuleChainTests: XCTestCase {
         XCTAssertTrue(state.entries[1].text.contains("ambient: 14 °C (said as 57.2 °F)"), state.entries[1].text)
     }
 
+    // MARK: - A size said with its unit (Plan JW P0)
+
+    /// An invented Table 98A read from a picture, keyed by widget size: "7", "9" and "11" read
+    /// clearly, a fourth row's key not — so no row is matched by number, only by its exact name.
+    private func widgetSizes(keys: [String] = ["7", "9", "11"]) -> [TableLookup.Source] {
+        var rows = zip(keys, [15.0, 20, 25]).map { key, rating in
+            ManualTable.Row(path: [key], cells: [.init(text: ChainRunner.display(rating), value: rating)],
+                            page: .init(physical: 4))
+        }
+        rows.append(.init(path: ["1?"], cells: [.init(text: "30", value: 30)], page: .init(physical: 4), keyUncertain: true))
+        let table = ManualTable(label: "Table 98A", title: "Invented widget sizes", page: .init(physical: 4),
+                                rowHeaders: ["Size"], columns: [.init(path: ["Rating"])], rows: rows,
+                                source: .recognised(reader: .documentGrid, meanConfidence: 0.9))
+        return [TableLookup.Source(documentId: "w", documentName: "Invented Book W", table: table)]
+    }
+
+    private func widgetChain() throws -> ChainDefinition {
+        try XCTUnwrap(ChainParser.parse("""
+        ## Size widgets for a load
+        ```chain
+        ask size (text): Which widget size, as the table prints it?
+        lookup rating = Table 98A row {size} column Rating rule exact
+        say "{rating}"
+        ```
+        """).chains.first)
+    }
+
+    func testASizeSaidWithItsUnitIsTakenWhenTheKeysDoNotPrintTheUnit() throws {
+        let chain = try widgetChain()
+        for said in ["7 gauge", "No. 7", "#7", "size 7", "7mm²", "number 7", "7"] {
+            let (step, state) = run(chain, answers: [said], tables: widgetSizes())
+            guard case .finished(let result) = step else { return XCTFail("\(said): \(step)") }
+            XCTAssertEqual(result, ["15"], said)
+            XCTAssertEqual(state.values["rating"]?.lookup?.rowName, "7", said)
+            XCTAssertTrue(state.entries[1].text.contains("(row asked for: \(said); rule exact)"),
+                          "the read-back keeps what was said: \(state.entries[1].text)")
+        }
+        // A size the table does not print still stops, unit or none.
+        let (missing, _) = run(chain, answers: ["8 gauge"], tables: widgetSizes())
+        guard case .stopped = missing else { return XCTFail("\(missing)") }
+    }
+
+    func testAWordTheRowKeysPrintIsNeverDropped() {
+        let printed = widgetSizes(keys: ["7 gauge", "9 gauge", "11 gauge"])[0].table
+        XCTAssertNil(ChainRunner.withoutSizeWords("7 gauge", keptBy: printed))
+        XCTAssertEqual(ChainRunner.withoutSizeWords("No. 7 gauge", keptBy: printed), "7 gauge")
+        let plain = widgetSizes()[0].table
+        XCTAssertEqual(ChainRunner.withoutSizeWords("7 GAUGE", keptBy: plain), "7")
+        XCTAssertEqual(ChainRunner.withoutSizeWords("7 mm²", keptBy: plain), "7")
+        XCTAssertNil(ChainRunner.withoutSizeWords("7", keptBy: plain), "nothing to drop")
+        XCTAssertNil(ChainRunner.withoutSizeWords("gauge", keptBy: plain), "nothing would be left")
+        XCTAssertNil(ChainRunner.withoutSizeWords("7 widgets", keptBy: plain), "only unit and size words go")
+    }
+
     // MARK: - Stops
 
     func testAMissingTableStopsTheChainAndAnUnreadOneShowsItsPage() {

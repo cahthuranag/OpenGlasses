@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 
 /// Gives manuals indexed before passages knew their place on the page (Plan IN P0) the place, on a
 /// later launch, without anyone importing anything again.
@@ -15,7 +16,8 @@ import Foundation
 /// mean recognising every scanned page a second time, and a recognised page has no text layer to
 /// mark anyway. Its rows keep working; the locator splits their sentences itself.
 ///
-/// **Tables (Plan JJ P0, location version 3; pictures, Plan JN P1, version 6).** The same pass reads each document's tables from
+/// **Tables (Plan JJ P0, location version 3; pictures, Plan JN P1, version 6; marked captions and
+/// in-step folios, Plan JW P0, version 7).** The same pass reads each document's tables from
 /// its PDF — the document itself, or the original a text import was made from, when that is still
 /// on the phone — and adds their row passages beside the existing chunks, which are only located,
 /// never re-chunked, when their text is unchanged. A document with no PDF has no positions to read
@@ -94,10 +96,19 @@ enum PassageLocationMigration {
         }
         // Text already located by location version 3 (Plan JJ P0): only the tables changed since —
         // version 4 keeps the captions whose page did not resolve to a grid (Plan JJ P1), 5 reads
-        // more of the layouts a code book prints (Plan JJ P5), and 6 reads the tables printed as
-        // pictures (Plan JN P1) — so the tables are read again and the document's text is left
-        // exactly as it is.
+        // more of the layouts a code book prints (Plan JJ P5), 6 reads the tables printed as
+        // pictures (Plan JN P1), and 7 reads marked captions, "(Concluded)" pages and a folio at
+        // the end of the footer line (Plan JW P0) — so the tables are read again and the
+        // document's text is left exactly as it is. A document that is itself a PDF has its
+        // printed page labels read again with them (version 7): the tables' pages are named from
+        // the same labels, and `manual_figure`'s printed page and `show_source` read them back.
         if let floor = store.textLocationVersion(documentId: entry.documentId), floor >= 3 {
+            if fileURL.pathExtension.lowercased() == "pdf" {
+                let labels = await Task.detached(priority: .utility) {
+                    PDFDocument(url: fileURL).map(VaultDocumentExtractor.pageLabels(of:))
+                }.value
+                if let labels { store.setPageLabels(labels, documentId: entry.documentId) }
+            }
             let tables = await readTables()
             var dropped = 0
             if let tables {

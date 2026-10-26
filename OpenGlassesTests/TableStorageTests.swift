@@ -221,6 +221,44 @@ final class TableStorageTests: XCTestCase {
         XCTAssertFalse(store.needsLocation(documentId: ref.id), "and it is not tried again")
     }
 
+    /// Plan JW P0, location version 7: a manual imported by a reader that missed a marked caption
+    /// and a folio at the end of the footer line has its tables and its printed pages read again
+    /// on the next launch, its text untouched — no reindex, no re-import.
+    func testLocationVersionSevenReadsMarkedTablesAndFolioLabelsAgain() async throws {
+        let (store, dir) = makeStore()
+        typealias L = TableFixtureLayouts
+        let tablePage = L.markedCaption() + [L.Item(text: L.footerWithFolio(42), x: 50, y: L.pageHeight - 40, size: 8)]
+        let url = try TableFixtures.write(TableFixtures.pdf([L.folioPage(41), tablePage, L.folioPage(43), L.folioPage(44)]),
+                                          named: "marked.pdf", in: tempRoot)
+        let extracted = try VaultDocumentExtractor.extract(from: url)
+        XCTAssertEqual(extracted.pageLabels.map(\.label), ["41", "42", "43", "44"], "a fresh import reads them")
+        // What the earlier reader stored: the text, no printed pages, no tables; location version 6.
+        let ref = try await XCTUnwrapAsync(await store.ingest(name: "Invented Widget Book", text: extracted.text,
+                                                              sourceType: "vault_document", namespace: "vault:x"))
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(dir.appendingPathComponent("documents.sqlite").path, &db), SQLITE_OK)
+        sqlite3_exec(db, "UPDATE doc_chunks SET location_version = 6", nil, nil, nil)
+        sqlite3_close(db)
+        XCTAssertTrue(store.pageLabels(documentId: ref.id).isEmpty)
+        XCTAssertTrue(store.needsLocation(documentId: ref.id))
+        let text = store.fullText(documentId: ref.id)
+
+        let entry = VaultDocumentLedger.Entry(file: "marked.pdf", title: ref.name, documentId: ref.id,
+                                              contentHash: "hash-w", chunkCount: ref.chunkCount)
+        let outcome = await PassageLocationMigration.migrate(entry: entry, fileURL: url, store: store, pictureReader: nil)
+        XCTAssertEqual(outcome, .located)
+        XCTAssertEqual(store.fullText(documentId: ref.id), text, "the text is as it was")
+        let table = try XCTUnwrap(store.tables(documentId: ref.id).first)
+        XCTAssertEqual(table.label, "Table 99")
+        XCTAssertTrue(table.isExtracted)
+        XCTAssertEqual(table.page, ManualTable.Page(physical: 2, printed: "42"))
+        XCTAssertEqual(store.pageLabels(documentId: ref.id).physical(forPrinted: "42"), 2,
+                       "printed page 42 opens the table's page")
+        XCTAssertFalse(store.needsLocation(documentId: ref.id))
+        let again = await PassageLocationMigration.migrate(entry: entry, fileURL: url, store: store, pictureReader: nil)
+        XCTAssertEqual(again, .current, "a second launch has nothing to do")
+    }
+
     // MARK: - Import, and never in an export
 
     private func writeVault() throws -> URL {

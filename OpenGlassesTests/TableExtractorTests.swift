@@ -367,5 +367,131 @@ final class TableExtractorTests: XCTestCase {
         XCTAssertEqual(result.failures, [.varyingColumnCount: 1, .tooFewRows: 1])
         XCTAssertEqual(result.pagesWithoutText, 1, "the scanned page has no text layer to read")
     }
+    // MARK: - A revision mark beside the caption (Plan JW P0)
+
+    private typealias L = TableFixtureLayouts
+
+    /// One line of positioned words, as `TableExtractor.lines` reads it.
+    private func line(_ items: [TableFixtureLayouts.Item]) throws -> TableExtractor.Line {
+        try XCTUnwrap(TableExtractor.lines(of: L.words(items)).first)
+    }
+
+    func testAMarkedCaptionIsReadOnAPageThatCarriesBold() throws {
+        for mark in ["\u{0394}", "\u{25B2}", "\u{25BA}", "|", "\u{2022}"] {
+            let table = try only(L.markedCaption(mark: mark))
+            XCTAssertEqual(table.label, "Table 99", mark)
+            XCTAssertEqual(table.title, "Widget ratings", "the mark is not part of the title")
+            XCTAssertEqual(table.rows.map(\.path), [["W1"], ["W2"], ["W3"], ["W4"]])
+            XCTAssertEqual(table.rows[2].cells.map(\.value), [17, 29])
+        }
+    }
+
+    func testAMarkedCaptionIsReadOnAPageSetInOneWeight() throws {
+        let table = try only(L.markedCaption(bold: false))
+        XCTAssertEqual(table.label, "Table 99")
+        XCTAssertEqual(table.title, "Widget ratings")
+        XCTAssertEqual(table.rows.count, 4)
+    }
+
+    func testTheMarkCountsTowardNoOtherCaptionRule() throws {
+        // Twelve words is the longest plain caption; the mark is not a thirteenth.
+        let twelve = "Table 99 Invented widget ratings for the example widgets of this test"
+        XCTAssertEqual(twelve.split(separator: " ").count, TableExtractor.plainCaptionMaximumWords)
+        let marked = try line([.init(text: "\u{25B2}", x: 18, y: 60), .init(text: twelve, x: 50, y: 60)])
+        XCTAssertEqual(TableExtractor.caption(of: marked, pageHasBold: false)?.label, "Table 99")
+        // The bold rule reads the first word after the mark: a bold mark over plain prose is not a caption.
+        let boldMark = try line([.init(text: "\u{25B2}", x: 18, y: 60, bold: true), .init(text: "Table 99 lists widgets", x: 50, y: 60)])
+        XCTAssertNil(TableExtractor.caption(of: boldMark, pageHasBold: true))
+        let plainMark = try line([.init(text: "\u{25B2}", x: 18, y: 60), .init(text: "TABLE 99 Widget ratings", x: 50, y: 60, bold: true)])
+        XCTAssertEqual(TableExtractor.caption(of: plainMark, pageHasBold: true)?.label, "Table 99",
+                       "an unbolded mark before a bold caption")
+    }
+
+    func testAMarkAloneDoesNotMakeProseACaption() throws {
+        let sentence = "Table 99 shows the ratings of every invented widget on this page and the next one."
+        let marked = try line([.init(text: "\u{0394}", x: 18, y: 60), .init(text: sentence, x: 50, y: 60)])
+        XCTAssertNil(TableExtractor.caption(of: marked, pageHasBold: false), "a sentence is still a sentence")
+        XCTAssertNil(TableExtractor.caption(of: marked, pageHasBold: true), "and prose is not bold")
+        let reference = try line([.init(text: "\u{25B2}", x: 18, y: 60), .init(text: "See TABLE 99 for widgets", x: 50, y: 60, bold: true)])
+        XCTAssertNil(TableExtractor.caption(of: reference, pageHasBold: true), "a cross-reference after a mark")
+        let onlyMarks = try line([.init(text: "\u{25B2}", x: 18, y: 60), .init(text: "|", x: 40, y: 60)])
+        XCTAssertNil(TableExtractor.caption(of: onlyMarks, pageHasBold: false))
+        // A prose page with a mark before its sentence extracts nothing.
+        var page = L.proseTableReference()
+        page.append(.init(text: "\u{0394}", x: 18, y: 102))
+        XCTAssertTrue(TableExtractor.extractAll(words: L.words(page), page: .init(physical: 1))
+            .allSatisfy { $0.outcome.table == nil })
+    }
+
+    func testMarksGluedToTheWordOrBracketsAroundItAreToldApart() {
+        XCTAssertEqual(TableExtractor.droppingMarginMarks("\u{25B2}TABLE 98A Widget limits"), "TABLE 98A Widget limits")
+        XCTAssertEqual(TableExtractor.droppingMarginMarks("\u{0394}TABLE 99"), "TABLE 99")
+        XCTAssertEqual(TableExtractor.droppingMarginMarks("\u{0394} | TABLE 99"), "TABLE 99")
+        XCTAssertEqual(TableExtractor.droppingMarginMarks("(TABLE 99)"), "(TABLE 99)", "a bracket is not a mark")
+        XCTAssertEqual(TableExtractor.droppingMarginMarks("* TABLE 99 applies"), "* TABLE 99 applies", "a footnote marker is not a mark")
+        XCTAssertEqual(TableExtractor.droppingMarginMarks("12 TABLE 99"), "12 TABLE 99", "a digit is not a mark")
+        XCTAssertEqual(TableExtractor.droppingMarginMarks("TABLE 99"), "TABLE 99")
+    }
+
+    func testAMarkedCaptionExtractsFromARealPDFTextLayer() throws {
+        let result = try readPDF([TableFixtures.prosePage(), L.markedCaption()])
+        XCTAssertEqual(result.captioned, 1)
+        XCTAssertEqual(result.extracted, 1)
+        let table = try XCTUnwrap(result.tables.first)
+        XCTAssertEqual(table.label, "Table 99")
+        XCTAssertEqual(table.page.physical, 2)
+        XCTAssertEqual(table.rows.count, 4)
+    }
+
+    // MARK: - "(Concluded)" (Plan JW P0)
+
+    func testConcludedReadsAsAContinuation() throws {
+        let concluding = try line([.init(text: "TABLE 98A (Concluded)", x: 50, y: 60, size: 10, bold: true)])
+        let caption = try XCTUnwrap(TableExtractor.caption(of: concluding))
+        XCTAssertEqual(caption.label, "Table 98A")
+        XCTAssertTrue(caption.continues)
+        XCTAssertEqual(caption.title, "")
+        let continued = try line([.init(text: "TABLE 98A (Continued)", x: 50, y: 60, size: 10, bold: true)])
+        XCTAssertEqual(TableExtractor.caption(of: continued)?.continues, true, "as before")
+    }
+
+    func testAConcludingPageOfNotesJoinsTheTableItConcludes() throws {
+        let result = try readPDF(L.concluded(), printed: [1: "40", 2: "41"])
+        XCTAssertEqual(result.captioned, 1, "one table, not two")
+        XCTAssertEqual(result.extracted, 1)
+        XCTAssertTrue(result.unextracted.isEmpty, "the notes page is never a table of its own")
+        XCTAssertTrue(result.failures.isEmpty, "nor a failure")
+        XCTAssertEqual(result.concludingPieces, 1)
+        let table = try XCTUnwrap(result.tables.first)
+        XCTAssertEqual(table.page, ManualTable.Page(physical: 1, printed: "40"), "cited and opened on the grid page")
+        XCTAssertEqual(table.rows.map(\.page.physical), [1, 1, 1, 1])
+        XCTAssertEqual(table.notes, [ManualTable.Note(marker: "1", text: "The invented limits apply to dry widgets only."),
+                                     ManualTable.Note(marker: "2", text: "Every value here is made up for a test.")],
+                       "the concluding page's notes join the table's")
+        XCTAssertFalse(table.continues)
+    }
+
+    func testAConcludingPageNeverStandsInForATableThatWasNotRead() throws {
+        let result = try readPDF(L.concluded(readable: false))
+        XCTAssertEqual(result.extracted, 0)
+        XCTAssertEqual(result.unextracted.map(\.label), ["Table 98A"], "one pointer, not two")
+        XCTAssertEqual(result.unextracted.first?.page.physical, 1, "it points at the caption's own page")
+        XCTAssertEqual(result.captioned, 1)
+        XCTAssertEqual(result.concludingPieces, 1)
+    }
+
+    func testAConcludingPageWithNothingBeforeItIsStillKept() throws {
+        let result = try readPDF([TableFixtures.prosePage(), L.concluded()[1]])
+        XCTAssertEqual(result.unextracted.map(\.label), ["Table 98A"], "the only pointer there is")
+        XCTAssertEqual(result.concludingPieces, 0)
+    }
+
+    func testAContinuedTableStillMergesAsBefore() throws {
+        let result = try readPDF(L.continued(), printed: [1: "40", 2: "41"])
+        XCTAssertEqual(result.extracted, 1)
+        XCTAssertEqual(result.concludingPieces, 0, "a continuation with rows is joined by its rows")
+        XCTAssertEqual(result.tables.first?.rows.count, 6)
+    }
 }
+
 

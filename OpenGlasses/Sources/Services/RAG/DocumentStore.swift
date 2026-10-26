@@ -1074,7 +1074,10 @@ final class DocumentStore: ObservableObject {
     /// belongs to, the pages a table carries on to with no caption, cells that are marks and groups
     /// printed side by side (Plan JJ P5) — again the tables only. 6: tables printed as pictures
     /// are read from the page's recognition (Plan JN P1) — the tables only, the text untouched.
-    nonisolated static let locationVersion = 6
+    /// 7: a caption with a revision mark in its margin, a "(Concluded)" page and a folio printed at
+    /// the end of the footer line are read (Plan JW P0) — the tables again, and a PDF document's
+    /// printed page labels with them; the text untouched.
+    nonisolated static let locationVersion = 7
 
     /// The oldest location version among a document's own text chunks (its table rows left out),
     /// or nil when it has none. A never-located row counts as 0.

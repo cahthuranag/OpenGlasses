@@ -183,33 +183,46 @@ enum VaultDocumentExtractor {
     /// The printed page each physical page carries. The publisher's own label wins when it says
     /// something other than the physical number — PDFKit reports "1", "2", … for a document with
     /// no labels, which says nothing. Otherwise a lone number or roman numeral in the top or bottom
-    /// band is read, so a code book whose PDF carries no labels still maps page 112 to PDF page 130.
-    /// A page that shows neither gets no entry: unknown is not "the same as the physical page".
+    /// band is read, so a code book whose PDF carries no labels still maps page 112 to PDF page 130;
+    /// and failing that a number at the end of a band line that runs in step with the physical page
+    /// over the document (Plan JW P0), for a book that prints its folio at the end of the footer
+    /// line beside a date and a copyright notice. The decision is `PrintedPageBand.labels`, pure
+    /// over each page's band text. A page that shows none of these gets no entry: unknown is not
+    /// "the same as the physical page".
     static func pageLabels(of document: PDFDocument) -> [PageLabel] {
-        var labels: [PageLabel] = []
+        var pdfLabels: [Int: String] = [:]
+        var bands: [String] = []
         for index in 0..<document.pageCount {
-            let label: PageLabel? = autoreleasepool {
-                guard let page = document.page(at: index) else { return nil }
+            let band: String = autoreleasepool {
+                guard let page = document.page(at: index) else { return "" }
                 let physical = index + 1
                 if let label = page.label?.trimmingCharacters(in: .whitespaces), !label.isEmpty,
-                   label != String(physical) { return PageLabel(page: physical, label: label, source: .pdfLabel) }
-                return printedLabel(on: page).map { PageLabel(page: physical, label: $0, source: .printed) }
+                   label != String(physical) {
+                    pdfLabels[physical] = label
+                    return ""
+                }
+                return bandText(on: page)
             }
-            if let label { labels.append(label) }
+            bands.append(band)
         }
-        return labels
+        return PrintedPageBand.labels(bands: bands, pdfLabels: pdfLabels)
     }
 
-    /// The page number printed in a page's header or footer band, else nil.
+    /// The page number printed in a page's header or footer band, read from that page alone (a
+    /// lone number on a band line), else nil.
     static func printedLabel(on page: PDFPage) -> String? {
+        PrintedPageBand.label(in: bandText(on: page))
+    }
+
+    /// The text of a page's top and bottom bands, the top first.
+    static func bandText(on page: PDFPage) -> String {
         let bounds = page.bounds(for: .mediaBox)
-        guard bounds.height > 0 else { return nil }
+        guard bounds.height > 0 else { return "" }
         let band = bounds.height * pageNumberBand
         // PDF space has its origin at the bottom left.
         let bottom = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: band)
         let top = CGRect(x: bounds.minX, y: bounds.maxY - band, width: bounds.width, height: band)
-        let text = [top, bottom].compactMap { page.selection(for: $0)?.string }.joined(separator: "\n")
-        return PrintedPageBand.label(in: text)
+        return [top, bottom].compactMap { page.selection(for: $0)?.string }.joined(separator: "\n")
     }
 
     // MARK: - Tables (Plan JJ P0)

@@ -155,8 +155,7 @@ final class ChainProposalSessionTests: XCTestCase {
         let waiting = try XCTUnwrap(job.service.promptContext())
         XCTAssertTrue(waiting.contains("PROPOSED RULE CHAIN — \(F.name) (proposed, unreviewed), read back and waiting"), waiting)
         let listed = try await chain(["action": "list"], job)
-        XCTAssertTrue(listed.contains("• \(F.name) — answers: \(F.answers) [proposed, unreviewed: waiting for the "
-                                      + "technician's go]"), listed)
+        XCTAssertTrue(listed.contains("• \(F.name) (proposed, unreviewed: waiting for the technician's go)"), listed)
 
         // "Ask me the ambient instead."
         let changed = try await propose(["action": "change", "step": 2, "text": F.askAmbient], job)
@@ -224,9 +223,8 @@ final class ChainProposalSessionTests: XCTestCase {
                        "a kept chain is offered by name, never read in as text")
 
         let list = try await chain(["action": "list"], job)
-        XCTAssertTrue(list.contains("• \(F.name) — answers: \(F.answers) [unreviewed — kept on this phone: offered on "
-                                    + "this phone only]"), list)
-        XCTAssertTrue(list.contains("• Size a conductor for a load — answers:"), "the authored chains are still offered")
+        XCTAssertTrue(list.contains("• \(F.name) (unreviewed — kept on this phone)"), list)
+        XCTAssertTrue(list.contains("• Size a conductor for a load\n"), "the authored chains are still offered")
         XCTAssertTrue(try XCTUnwrap(job.service.promptContext()).contains("- \(F.name) (unreviewed — kept on this phone)"))
 
         // It runs like any other chain, and files marked as kept.
@@ -256,7 +254,7 @@ final class ChainProposalSessionTests: XCTestCase {
         _ = try job.service.endSession(outcome: .resolved)
         _ = try job.service.startSession(vaultId: Self.vaultId, assetId: nil, jobReference: "1043")
         let later = try await chain(["action": "list"], job)
-        XCTAssertTrue(later.contains("[unreviewed — kept on this phone"), later)
+        XCTAssertTrue(later.contains("(unreviewed — kept on this phone)"), later)
         let keepAgain = try await chain(["action": "keep"], job)
         XCTAssertTrue(keepAgain.hasPrefix("There is no proposed chain that ran to a result on this job"), keepAgain)
     }
@@ -304,7 +302,7 @@ final class ChainProposalSessionTests: XCTestCase {
 
         XCTAssertEqual(job.service.keptChains, [], "the reviewed chain supersedes the kept one")
         let list = try await chain(["action": "list"], job)
-        XCTAssertTrue(list.contains("• \(F.name) — answers: the reviewed answer."), list)
+        XCTAssertTrue(list.contains("• \(F.name)\n"), list)
         XCTAssertFalse(list.contains("kept on this phone"), list)
         XCTAssertEqual(list.components(separatedBy: "• \(F.name)").count, 2, "offered once: \(list)")
         let started = try await chain(["action": "start", "chain": F.name], job)

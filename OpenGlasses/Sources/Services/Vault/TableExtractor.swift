@@ -544,7 +544,9 @@ enum TableExtractor {
     static let labelPattern = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:[A-Za-z](?![\p{L}\p{N}]))?"#
     private static let captionPattern = #"^(?i:TABLE)\s+("# + labelPattern + ")"
     private static let figurePattern = #"^(?i:FIGURE)\s+"# + labelPattern
-    private static let continuedPattern = #"[\(\[]?\s*\b(?:continued|cont'd|cont\.)\s*[\)\]]?"#
+    /// "(Continued)", and "(Concluded)" on a table's last page (Plan JW P0): either way the caption
+    /// carries on a table begun on an earlier page.
+    private static let continuedPattern = #"[\(\[]?\s*\b(?:continued|concluded|cont'd|cont\.)\s*[\)\]]?"#
 
     /// Longest line read as a caption on a page set in one weight.
     static let plainCaptionMaximumWords = 12
@@ -562,9 +564,13 @@ enum TableExtractor {
     /// extracting anything. `ManualStructure.caption` is unchanged: it names passages and decides
     /// which pages open (Plan IV measured it), and a table found here only on a plain page is not
     /// named there.
+    ///
+    /// A revision mark printed in the margin on the caption's own line (Plan JW P0) is not part of
+    /// it: the rules read the line from its first word after the marks (`captionHead(of:)`), so the
+    /// bold rule applies to that word and the mark counts toward no other rule.
     static func caption(of line: Line, pageHasBold: Bool = true) -> Caption? {
-        guard let first = line.words.first else { return nil }
-        let text = line.text
+        guard let start = captionHead(of: line) else { return nil }
+        let first = start.first, text = start.text
         if pageHasBold {
             guard first.bold else { return nil }
         } else {
@@ -583,6 +589,48 @@ enum TableExtractor {
         }
         title = title.trimmingCharacters(in: CharacterSet(charactersIn: " \t.:\u{2014}\u{2013}-"))
         return Caption(label: "Table \(number)", title: title, continues: continues)
+    }
+
+    // MARK: Margin marks (Plan JW P0)
+
+    /// Characters a mark glued to a caption's first word may not be: an opening bracket or a quote
+    /// starts a cross-reference ("(Table 99)"), and a footnote marker starts a note.
+    private static let notMarginMark: Set<Character> = ["(", "[", "{", "\"", "'", "\u{201C}", "\u{2018}",
+                                                         "*", "\u{2020}", "\u{2021}"]
+
+    /// A character a code book prints in the margin to flag a revision: a triangle, a bar, an
+    /// arrow, a bullet — anything that is neither a letter nor a digit — or the triangle set as a
+    /// Greek capital delta, which a text layer reads as a letter.
+    static func isMarginMarkCharacter(_ character: Character) -> Bool {
+        if character == "\u{0394}" { return true }
+        return !character.isLetter && !character.isNumber && !character.isWhitespace && !notMarginMark.contains(character)
+    }
+
+    /// A word that is only a margin mark: one or more mark characters, no letter or digit.
+    static func isMarginMark<S: StringProtocol>(_ word: S) -> Bool {
+        !word.isEmpty && word.allSatisfy(isMarginMarkCharacter)
+    }
+
+    /// `text` from its first word after the margin marks: mark words standing apart dropped, and a
+    /// mark glued to the first word ("\u{25B2}TABLE") cut from it. Shared by the table and passage
+    /// caption rules, so a marked caption names the same label in both.
+    static func droppingMarginMarks(_ text: String) -> String {
+        var rest = Substring(text).drop(while: \.isWhitespace)
+        while let word = rest.split(whereSeparator: \.isWhitespace).first, isMarginMark(word) {
+            rest = rest[word.endIndex...].drop(while: \.isWhitespace)
+        }
+        // A mark glued to a word is cut only when a word follows it: "\u{0394}TABLE", not "\u{0394}".
+        let glued = rest.prefix(while: isMarginMarkCharacter)
+        if !glued.isEmpty, rest.dropFirst(glued.count).first?.isLetter == true { rest = rest.dropFirst(glued.count) }
+        return String(rest)
+    }
+
+    /// The caption rules' view of a line: its first word after any margin marks, and its text from
+    /// there. Nil for a line of marks only.
+    static func captionHead(of line: Line) -> (first: PositionedWord, text: String)? {
+        guard let start = line.words.firstIndex(where: { !isMarginMark($0.text) }) else { return nil }
+        let words = line.words[start...]
+        return (words[start], droppingMarginMarks(words.map(\.text).joined(separator: " ")))
     }
 
     /// A short line that is not a sentence: at most `plainCaptionMaximumWords` words, and no full
@@ -840,8 +888,10 @@ enum TableExtractor {
         for index in start..<all.count {
             let line = all[index]
             if Self.caption(of: line, pageHasBold: pageHasBold) != nil
-                || ((pageHasBold ? line.words.first?.bold == true : standsAlone(line.text))
-                    && line.text.range(of: figurePattern, options: .regularExpression) != nil) {
+                || captionHead(of: line).map({ head in
+                    (pageHasBold ? head.first.bold : standsAlone(head.text))
+                        && head.text.range(of: figurePattern, options: .regularExpression) != nil
+                }) == true {
                 end = index
                 break
             }
@@ -1299,6 +1349,21 @@ enum TableExtractor {
             previousLine = line
         }
         return (rows, Grid.Carry(group: heading, stubs: previousStubs), boxes)
+    }
+
+    /// The notes printed under a continuing caption whose page reads no grid of its own (Plan JW
+    /// P0): a "(Concluded)" page that carries only the table's notes. Read from the first note line
+    /// under the caption to the next caption; empty when the caption is not on the page or nothing
+    /// under it is a note.
+    static func notes(under caption: Caption, words: [PositionedWord]) -> [ManualTable.Note] {
+        let all = lines(of: words)
+        let bold = hasBold(words)
+        guard let found = captionLines(in: all, pageHasBold: bold)
+            .first(where: { $0.caption.label.caseInsensitiveCompare(caption.label) == .orderedSame }) else { return [] }
+        let region = layout(lines: all, at: found.index, titleLines: found.titleLines, caption: found.caption,
+                            pageHasBold: bold).region
+        guard let first = region.firstIndex(where: isNoteLine) else { return [] }
+        return notes(in: Array(region[first...])).notes
     }
 
     /// Notes: the marked lines at the head of `lines`, each with its wrapped lines, and how many

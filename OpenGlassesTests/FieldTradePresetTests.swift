@@ -263,13 +263,9 @@ final class FieldTradePresetTests: XCTestCase {
         XCTAssertEqual(key.startingValueDescription(.strings([])), "Field Assist starts with no trade tiles")
     }
 
-    func testTheProfileWriterKnowsTheKeyAndTheTrades() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-        let script = try String(contentsOf: root.appendingPathComponent("Scripts/make-org-profile.swift"), encoding: .utf8)
-        XCTAssertTrue(script.contains(#""fieldAssistDefaultTrades": "default:strings""#))
-        let line = try XCTUnwrap(script.components(separatedBy: "let knownTrades: Set<String> = ").dropFirst().first)
-        let list = String(line.prefix { $0 != "]" })
-        let names = list.components(separatedBy: "\"").enumerated().filter { $0.offset % 2 == 1 }.map(\.element)
-        XCTAssertEqual(Set(names), Set(FieldTrade.allCases.map(\.rawValue)))
+    /// The shared profile contract `Scripts/make-org-profile.swift` checks with is compiled into this bundle.
+    func testTheProfileWriterKnowsTheKeyAndTheTrades() {
+        XCTAssertEqual(ProfileContract.allowList["fieldAssistDefaultTrades"], "default:strings")
+        XCTAssertEqual(ProfileContract.knownTrades, Set(FieldTrade.allCases.map(\.rawValue)))
     }
 }

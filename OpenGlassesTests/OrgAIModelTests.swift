@@ -123,14 +123,10 @@ final class OrgAIModelTests: XCTestCase {
         XCTAssertEqual(result.drops.map(\.key), ["aiModel"])
     }
 
-    /// `Scripts/make-org-profile.swift` refuses a provider the app does not know, from its own list.
-    func testTheProfileScriptKnowsEveryProvider() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-        let script = try String(contentsOf: root.appendingPathComponent("Scripts/make-org-profile.swift"),
-                                encoding: .utf8)
-        for provider in LLMProvider.allCases {
-            XCTAssertTrue(script.contains("\"\(provider.rawValue)\""), "the script's list lacks \(provider.rawValue)")
-        }
+    /// `Scripts/make-org-profile.swift` and preset-built profiles refuse a provider the app does not know,
+    /// from the shared contract's list (compiled into this test bundle).
+    func testTheProfileScriptKnowsEveryProvider() {
+        XCTAssertEqual(ProfileContract.knownProviders, Set(LLMProvider.allCases.map(\.rawValue)))
     }
 
     func testTheKeyFormatCheckIsOnboardings() throws {

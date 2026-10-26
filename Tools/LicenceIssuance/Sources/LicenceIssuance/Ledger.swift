@@ -44,6 +44,8 @@ public struct Invoice: Codable, Equatable {
     public let currency: String
     public let taxTreatment: String
     public let bankDetails: String
+    /// A co-termed seat increase (JS P0b): the whole days left on the live code the total is pro-rated over.
+    public let coTermedDays: Int?
     public var paymentReference: String { number }
 }
 public struct CreditNote: Codable, Equatable {
@@ -78,6 +80,10 @@ public struct Order: Codable, Equatable {
     public let profileId: String
     public let fullExpiry: Date
     public let renewalOf: String?
+    /// The customer this order belongs to (JS P0b). Nil for an order placed without one.
+    public let customerId: String?
+    /// A co-termed seat increase: the issuance whose seats it adds to and whose expiry it keeps.
+    public let increaseOf: String?
     public enum State: String, Codable { case provisional, lapsed, awaitingPayment, paid, active, replaced, credited }
 }
 /// One atomic journal row per command, including invoice + order + issuance or payment + replacement.
@@ -87,6 +93,9 @@ public enum LedgerEvent: Codable, Equatable {
     case issuance(IssuanceRecord)
     case payment(Payment, IssuanceRecord?)
     case credit(CreditNote)
+    /// JS P0b: a new customer and its first sale in one row, so a customer never exists without its first code.
+    case signUp(Customer, Order, Invoice?, IssuanceRecord?)
+    case customerChange(CustomerChange)
 }
 public struct LedgerEntry: Codable, Equatable {
     public let sequence: Int
@@ -105,7 +114,7 @@ public struct LedgerEntry: Codable, Equatable {
 public struct Ledger: Codable, Equatable {
     public private(set) var entries: [LedgerEntry] = []
     public init() {}
-    public enum IntegrityError: Error, Equatable { case brokenChain(Int), duplicate, invalidRecord }
+    public enum IntegrityError: Error, Equatable { case brokenChain(Int), duplicate, invalidRecord, customerMismatch(Int) }
     public func verify(expectedHead: String? = nil) throws {
         if let expectedHead, expectedHead != (entries.last?.rowHash ?? "genesis") { throw IntegrityError.invalidRecord }
         var previous = "genesis"
@@ -122,6 +131,35 @@ public struct Ledger: Codable, Equatable {
               invoices.enumerated().allSatisfy({ $0.element.number == Self.invoiceNumber($0.offset + 1) }) else {
             throw IntegrityError.duplicate
         }
+        try verifyCustomers()
+    }
+    /// A customer's name, organisation, profile and address never change, and its orders always name them.
+    private func verifyCustomers() throws {
+        var known: [String: Customer] = [:]
+        func matches(_ o: Order, _ c: Customer) -> Bool {
+            o.customerId == c.customerId && o.partnerId == c.partnerId && o.profileId == c.profileId
+                && o.request.licensee == c.licensee && o.request.profile == c.profileAddress
+        }
+        for row in entries {
+            switch row.event {
+            case .signUp(let c, let o, _, _):
+                guard known[c.customerId] == nil, !known.values.contains(where: { $0.profileId == c.profileId || $0.profileAddress == c.profileAddress }),
+                      o.increaseOf == nil, o.renewalOf == nil, matches(o, c) else { throw IntegrityError.customerMismatch(row.sequence) }
+                known[c.customerId] = c
+            case .customerChange(let change):
+                let c = change.customer
+                guard let old = known[c.customerId], old.licensee == c.licensee, old.organizationID == c.organizationID,
+                      old.profileId == c.profileId, old.profileAddress == c.profileAddress else { throw IntegrityError.customerMismatch(row.sequence) }
+                known[c.customerId] = c
+            case .sale(let o, _, _):
+                if let id = o.customerId {
+                    guard let c = known[id], matches(o, c) else { throw IntegrityError.customerMismatch(row.sequence) }
+                } else if known.values.contains(where: { $0.profileId == o.profileId || $0.profileAddress == o.request.profile }) {
+                    throw IntegrityError.customerMismatch(row.sequence)
+                }
+            default: break
+            }
+        }
     }
     public mutating func append(_ event: LedgerEvent) throws {
         try verify()
@@ -134,10 +172,18 @@ public struct Ledger: Codable, Equatable {
         return "INV-" + String(repeating: "0", count: max(0, 6 - digits.count)) + digits
     }
     public var issuances: [IssuanceRecord] { entries.compactMap {
-        switch $0.event { case .issuance(let i): return i; case .sale(_, _, let i), .payment(_, let i): return i; default: return nil }
+        switch $0.event {
+        case .issuance(let i): return i
+        case .sale(_, _, let i), .payment(_, let i), .signUp(_, _, _, let i): return i
+        default: return nil
+        }
     } }
-    public var orders: [Order] { entries.compactMap { if case .sale(let o, _, _) = $0.event { return o }; return nil } }
-    public var invoices: [Invoice] { entries.compactMap { if case .sale(_, let i, _) = $0.event { return i }; return nil } }
+    public var orders: [Order] { entries.compactMap {
+        switch $0.event { case .sale(let o, _, _), .signUp(_, let o, _, _): return o; default: return nil }
+    } }
+    public var invoices: [Invoice] { entries.compactMap {
+        switch $0.event { case .sale(_, let i, _), .signUp(_, _, let i, _): return i; default: return nil }
+    } }
     public var payments: [Payment] { entries.compactMap { if case .payment(let p, _) = $0.event { return p }; return nil } }
     public var credits: [CreditNote] { entries.compactMap { if case .credit(let c) = $0.event { return c }; return nil } }
     public func paymentsMinor(_ invoice: Invoice) -> Int64 { payments.filter { $0.invoiceNumber == invoice.number }.reduce(0) { $0 + $1.amountMinor } }
@@ -146,7 +192,10 @@ public struct Ledger: Codable, Equatable {
     /// Credit notes settle accounting only. They never authorize a paid licence.
     public func isPaid(_ invoice: Invoice) -> Bool { paymentsMinor(invoice) >= invoice.totalMinor }
     public func state(of order: Order, now: Date) -> Order.State {
-        if orders.contains(where: { next in next.renewalOf == order.id && issuances.contains { $0.orderId == next.id && $0.phase == .full } }) { return .replaced }
+        if orders.contains(where: { next in
+            (next.renewalOf == order.id || issuances.contains { $0.issuanceId == next.increaseOf && $0.orderId == order.id })
+                && issuances.contains { $0.orderId == next.id && $0.phase == .full }
+        }) { return .replaced }
         if let invoice = invoices.first(where: { $0.orderId == order.id }) {
             if isPaid(invoice) {
                 if now >= order.fullExpiry { return .lapsed }

@@ -125,7 +125,10 @@ public enum IssuancePolicy {
             // Bill on issuance: seats are lifetime issued seats, including expired codes and renewals.
             let reserved = ledger.orders.filter { o in o.partnerId == g.partnerId && !ledger.issuances.contains { $0.orderId == o.id }
                 && ledger.invoices.first(where: { $0.orderId == o.id }).map({ ledger.balance($0) > 0 }) == true }.reduce(0) { $0 + $1.request.seats }
-            let used = reserved + ledger.issuances.filter { $0.partnerId == g.partnerId && $0.replaces == nil }.reduce(0) { $0 + $1.seats }
+            // A paid seat increase's code replaces the live one and carries the total, so its added seats count here.
+            let increased = ledger.orders.filter { o in o.partnerId == g.partnerId && o.increaseOf != nil && ledger.issuances.contains { $0.orderId == o.id } }
+                .reduce(0) { $0 + $1.request.seats }
+            let used = reserved + increased + ledger.issuances.filter { $0.partnerId == g.partnerId && $0.replaces == nil }.reduce(0) { $0 + $1.seats }
             let remaining = max(0, g.seatQuota - used)
             guard r.seats <= remaining else { throw IssuanceRefusal.quotaExceeded(remaining) }
         }

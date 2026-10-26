@@ -61,16 +61,10 @@ final class SettingsHubTests: XCTestCase {
 
     // MARK: - The profile script mirrors the ids
 
-    func testTheProfileScriptKnowsTheSameCategories() throws {
-        let script = try String(contentsOf: Self.repoRoot.appendingPathComponent("Scripts/make-org-profile.swift"),
-                                encoding: .utf8)
-        let line = try XCTUnwrap(script.components(separatedBy: "let settingsCategoryIds = ").dropFirst().first)
-        let list = String(line.prefix { $0 != "]" })
-        let ids = list.components(separatedBy: "\"").enumerated().filter { $0.offset % 2 == 1 }.map(\.element)
-        XCTAssertEqual(ids, SettingsCategoryID.allCases.map(\.rawValue))
-        for pinned in ManagedLockdown.pinnedOpen {
-            XCTAssertTrue(script.contains("\"\(pinned.rawValue)\""), pinned.rawValue)
-        }
+    /// The shared profile contract `Scripts/make-org-profile.swift` checks with is compiled into this bundle.
+    func testTheProfileScriptKnowsTheSameCategories() {
+        XCTAssertEqual(ProfileContract.settingsCategoryIds, SettingsCategoryID.allCases.map(\.rawValue))
+        XCTAssertEqual(ProfileContract.pinnedOpenCategoryIds, Set(ManagedLockdown.pinnedOpen.map(\.rawValue)))
     }
 
     // MARK: - Nothing the old hub reached became unreachable

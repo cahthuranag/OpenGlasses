@@ -42,6 +42,46 @@ final class TerminalTests: XCTestCase {
         let privateText = key.rawRepresentation.base64EncodedString()
         XCTAssertFalse(result.1.contains(privateText)); XCTAssertFalse(result.2.contains(privateText))
     }
+    func testPresetProfileIsByteIdenticalToTheManualProfileTool() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let licenceKey = Curve25519.Signing.PrivateKey(), profileKey = Curve25519.Signing.PrivateKey()
+        let keyFile = tmp.appendingPathComponent("synthetic-profile-key.txt")
+        try profileKey.rawRepresentation.base64EncodedString().write(to: keyFile, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyFile.path)
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-01-15T08:00:00Z"))
+        let grant = PartnerGrant(partnerId: "fixture", packs: ["hvac"], maxTermDays: 365, maxSeatsPerCode: 10, seatQuota: 100,
+            pilotsAllowed: false, maxPilotDays: 14, validFrom: now.addingTimeInterval(-86_400), validUntil: now.addingTimeInterval(400 * 86_400),
+            prices: PriceTable(currency: "XXX", taxTreatment: "fixture", perSeatByTermDays: [365: 100]), maxUnpaidSeats: 10)
+        let preset = ProfilePreset(id: "field-assist", version: 1, edition: "fieldAssist", leaseDays: 365,
+            lockdown: .init(open: ["voice"], closedTools: ["send_via"]),
+            settings: ["privacyFilterEnabled": .init(value: .bool(true), disposition: "ceiling"),
+                       "fieldAssistDefaultTrades": .init(value: .strings(["refrigeration_hvac"]), disposition: "default")],
+            choices: .init(vaultPacks: [.init(packId: "fixture.hvac", documentsSource: "https://fixture.invalid/docs", licensePack: "hvac")],
+                           aiModels: [.init(provider: "openrouter", model: "fixture/model", baseURL: "https://fixture.invalid/v1", name: "Fixture")],
+                           settings: ["refrigerationUnits": .init(disposition: "default", values: [.string("kPa,C,kg")])]))
+        var book = try SalesBook()
+        let signUp = try book.signUp(NewCustomer(customerId: "c1", licensee: "Fixture Ltd", organizationID: "fixture-org", profileId: "fixture-profile",
+                                                 selection: .init(vaultPack: "fixture.hvac", aiModel: preset.choices.aiModels[0], settings: ["refrigerationUnits": .string("kPa,C,kg")])),
+                                     orderId: "o1", order: .init(seats: 2, termDays: 365, packs: ["hvac"], reference: "fixture"), preset: preset,
+                                     profileBase: "https://fixture.invalid", grant: grant, catalog: VerifiedPackCatalog(verifiedKeys: ["hvac"]),
+                                     bankDetails: "FIXTURE", operatorId: "fixture", now: now, signer: licenceKey.signature(for:))
+        let input = try book.profileInput(customerId: "c1", code: signUp.code.code, preset: preset, grant: grant)
+        let inputFile = tmp.appendingPathComponent("input.json"), output = tmp.appendingPathComponent("profile.txt")
+        try JSONEncoder().encode(input).write(to: inputFile)
+        let result = try run("make-org-profile", ["make", inputFile.path, output.path, "--key-file", keyFile.path, "--key-id", "fixture-profile", "--issued-at", "2027-01-16T00:00:00Z"])
+        XCTAssertEqual(result.0, 0, result.2)
+        let manual = try String(contentsOf: output, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".")
+        let issued = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-01-16T00:00:00Z"))
+        let built = try book.profileDocument(customerId: "c1", code: signUp.code.code, preset: preset, grant: grant, keyID: "fixture-profile",
+                                             issued: issued, signer: profileKey.signature(for:)).split(separator: ".")
+        let bytes = try XCTUnwrap(Data(base64Encoded: String(built[0])))
+        XCTAssertEqual(Data(base64Encoded: String(manual[0])), bytes)
+        XCTAssertTrue(profileKey.publicKey.isValidSignature(try XCTUnwrap(Data(base64Encoded: String(manual[1]))), for: Data("openglasses.org-profile.v1\n".utf8) + bytes))
+        let privateText = profileKey.rawRepresentation.base64EncodedString()
+        XCTAssertFalse(result.1.contains(privateText)); XCTAssertFalse(result.2.contains(privateText))
+    }
     func testJournalReopensAcrossProcessesAndPaymentConfirmationAndTamperDetection() throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)

@@ -137,6 +137,84 @@ final class LicenceIssuanceIntegrationTests: XCTestCase {
         }
         XCTAssertNoThrow(try verify(full))
     }
+    /// JS P0b's key-for-life rule: the key opens the first code, long expired, and enrolment ends on the profile's current code.
+    func testOneActivationKeyOpensAnExpiredFirstCodeAndEnrolsOnTheProfilesCurrentCode() async throws {
+        let start = clock
+        let preset = ProfilePreset(id: "fixture-preset", version: 1, leaseDays: 365,
+                                   settings: ["privacyFilterEnabled": .init(value: .bool(true), disposition: "ceiling")],
+                                   choices: .init(settings: ["refrigerationUnits": .init(disposition: "default", values: [.string("kPa,C,kg")])]))
+        let catalog = VerifiedPackCatalog(verifiedKeys: grant.packs)
+        var book = try SalesBook()
+        let signUp = try book.signUp(NewCustomer(customerId: "fixture-customer", licensee: "Fixture Ltd", organizationID: "fixture-org",
+                                                 profileId: "customer", selection: .init(settings: ["refrigerationUnits": .string("kPa,C,kg")])),
+                                     orderId: "fixture-order", order: .init(seats: 2, termDays: 365, packs: ["hvac_rtu"], reference: "fixture"),
+                                     preset: preset, profileBase: "https://fixture.invalid", grant: grant, catalog: catalog,
+                                     bankDetails: "FIXTURE", operatorId: "fixture", now: start, signer: licenceKey.signature(for:))
+        let sealed = signUp.sealedFile, file = signUp.customer.activationFile
+        // Paid, then renewed and paid again: the profile now carries a code issued long after the sealed one.
+        clock = start.addingTimeInterval(10 * 86_400)
+        _ = try book.recordPayment(Payment(id: "fixture-payment", invoiceNumber: "INV-000001", amountMinor: 200, receivedAt: clock, bankReference: "fixture"),
+                                   confirmed: true, operatorId: "fixture-vendor", now: clock, signer: licenceKey.signature(for:))
+        clock = start.addingTimeInterval(300 * 86_400)
+        _ = try book.order(id: "fixture-renewal", customerId: "fixture-customer", order: .init(seats: 2, termDays: 365, packs: ["hvac_rtu"], reference: "renewal"),
+                           renewalOf: "fixture-order", grant: grant, catalog: catalog, bankDetails: "FIXTURE", operatorId: "fixture", now: clock, signer: licenceKey.signature(for:))
+        let renewed = try XCTUnwrap(book.recordPayment(Payment(id: "fixture-renewal-payment", invoiceNumber: "INV-000002", amountMinor: 200, receivedAt: clock, bankReference: "fixture"),
+                                                       confirmed: true, operatorId: "fixture-vendor", now: clock, signer: licenceKey.signature(for:)))
+        clock = start.addingTimeInterval(400 * 86_400)
+        XCTAssertFalse(FieldAssistEntitlementEvaluator.decide(evidence(signUp.code.code), now: clock).isGranted, "the sealed first code has long expired")
+        response = Data(try book.profileDocument(customerId: "fixture-customer", code: renewed.code, preset: preset, grant: grant,
+                                                 keyID: "fixture-profile", issued: clock, signer: profileKey.signature(for:)).utf8)
+        let resolver = ActivationKeyResolver(directory: try XCTUnwrap(URL(string: "https://fixture.invalid/a")), fetch: { url in
+            (url.lastPathComponent == file ? 200 : 404, Data(sealed.utf8))
+        })
+        let m = manager()
+        let service = OrgEnrolmentService(manager: m, fetch: { _ in self.response }, isPastOnboarding: { false }, licenceKey: publicKey,
+                                          profileKeys: profileKeys, now: { self.clock }, activationResolver: resolver)
+        guard case .licence(let entered) = await service.resolveEntry(signUp.activationKey) else { return XCTFail("the key did not resolve") }
+        XCTAssertEqual(entered, signUp.code.code)
+        XCTAssertEqual(service.openLicence(entered), .enrolling(licensee: "Fixture Ltd"))
+        for _ in 0..<200 {
+            if case .reviewing = service.stage { break }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        guard case .reviewing(let review) = service.stage else { return XCTFail("profile enrolment failed: \(service.stage)") }
+        XCTAssertNil(review.licenceToActivate, "the profile's later-issued code wins over the entered one")
+        XCTAssertTrue(review.result.drops.isEmpty, "\(review.result.drops)")
+        try m.apply(review).get()
+        XCTAssertEqual(storedCode, renewed.code)
+        XCTAssertTrue(FieldAssistEntitlementEvaluator.decide(evidence(try XCTUnwrap(storedCode)), now: clock).satisfies(.team))
+        // Nothing was re-sealed: the key's file is the one written at sign-up.
+        XCTAssertEqual(book.ledger.customers["fixture-customer"]?.activationFile, file)
+        XCTAssertTrue(book.ledger.retiredActivationFiles(for: "fixture-customer").isEmpty)
+    }
+    func testPresetProfileWithAnAdministratorVerifierVerifiesAndAppliesWithoutDrops() throws {
+        XCTAssertEqual(ProfileContract.passcodeIterationRange, AdminSecrets.iterationRange)
+        let model = ProfileContract.AIModel(provider: "anthropic", model: "claude-sonnet-5-5")
+        let preset = ProfilePreset(id: "fixture-field-assist", version: 1, edition: "fieldAssist", leaseDays: 365,
+                                   lockdown: .init(open: ["voice"]),
+                                   settings: ["privacyFilterEnabled": .init(value: .bool(true), disposition: "ceiling")],
+                                   choices: .init(aiModels: [model]))
+        var book = try SalesBook()
+        let signUp = try book.signUp(NewCustomer(customerId: "fixture-customer", licensee: "Fixture Ltd", organizationID: "fixture-org",
+                                                 profileId: "customer", selection: .init(aiModel: model)),
+                                     orderId: "fixture-order", order: .init(seats: 2, termDays: 365, packs: ["hvac_rtu"], reference: "fixture"),
+                                     preset: preset, profileBase: "https://fixture.invalid", grant: grant,
+                                     catalog: VerifiedPackCatalog(verifiedKeys: grant.packs), bankDetails: "FIXTURE", operatorId: "fixture",
+                                     now: clock, signer: licenceKey.signature(for:))
+        let salt = Data((0..<16).map { UInt8($0 * 7) })
+        let hash = try XCTUnwrap(AdminSecrets.pbkdf2("fixture passcode", salt: salt, iterations: 210_000))
+        try book.setAdminPasscode(customerId: "fixture-customer", verifier: .init(salt: salt.base64EncodedString(), iterations: 210_000, hash: hash.base64EncodedString()),
+                                  preset: preset, grant: grant, operatorId: "fixture-setup-link", now: clock)
+        let document = try book.profileDocument(customerId: "fixture-customer", code: signUp.code.code, preset: preset, grant: grant,
+                                                keyID: "fixture-profile", issued: clock, signer: profileKey.signature(for:))
+        guard case .profile(let profile) = try ProfileVerification.verify(document, keys: profileKeys) else { return XCTFail("not a profile") }
+        XCTAssertNil(ProfileVerification.enrolmentRefusal(for: profile, now: clock, licenceKey: publicKey))
+        XCTAssertEqual(profile.licenceCode, signUp.code.code); XCTAssertEqual(profile.organizationName, "Fixture Ltd")
+        let result = ProfileApplier.apply(profile: profile, resolvableVaultIds: [])
+        XCTAssertTrue(result.drops.isEmpty, "\(result.drops)")
+        guard case .success(let passcode) = AdminSecrets.resolve(try XCTUnwrap(profile.adminPasscode)) else { return XCTFail("verifier refused") }
+        XCTAssertEqual(AdminSecrets.pbkdf2("fixture passcode", salt: passcode.salt, iterations: passcode.iterations), passcode.hash)
+    }
     func testSealedActivationFileOpensWithTheExistingAppContract() throws {
         let payload = try IssuancePolicy.validate(request, grant: grant, ledger: Ledger(), catalog: VerifiedPackCatalog(verifiedKeys: grant.packs), now: clock).get()
         let code = try IssuanceWire.code(payload, signer: licenceKey.signature(for:))

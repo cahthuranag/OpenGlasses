@@ -2045,15 +2045,26 @@ enum PrivacyLog {
         /// Meta camera permission's status each time it changes. `state` is the app's own case
         /// name in both.
         case reachabilityRead, cameraPermissionRead
+        /// Temple taps' Now Playing claim. `claimLapsed` is a standby claim found with its silent
+        /// player stopped (`state` = the mode, `reason` = what asked for the check), taken afresh
+        /// unless one was just taken; `claimChecked` is a re-check after a tap's action or a
+        /// deferred hand-back that found the claim live, with the shared session's shape
+        /// (`detail`, e.g. `playAndRecord-mixable`). `commandDropped` is a media command that
+        /// arrived and fired nothing; `state` is why (`notClaimed`, `disabled`, `coalesced`,
+        /// `unmapped`, `debounced`) and `command` the command's name. `released` carries the
+        /// condition that won in `state`.
+        case claimLapsed, claimChecked, commandDropped
     }
 
     /// `state` is a registration or activation state — a small fixed SDK vocabulary. `command` is
     /// a *known* command name from the app's own watch/car protocol; an unrecognised one is
     /// reported as `commandUnknown` with no name, because an unknown command is text that arrived
-    /// from a peer. `item` is a system-generated activity id, fingerprinted.
+    /// from a peer. `reason` and `detail` are the app's own fixed tokens (a cause, an audio-session
+    /// shape). `item` is a system-generated activity id, fingerprinted.
     @discardableResult
     static func device(_ surface: DeviceSurface, _ event: DeviceEvent,
                        state: PrivacyToken? = nil, command: PrivacyToken? = nil,
+                       reason: PrivacyToken? = nil, detail: PrivacyToken? = nil,
                        item: PrivateIdentifier? = nil, count: Int? = nil,
                        minutes: Int? = nil, success: Bool? = nil,
                        error: SafeErrorSummary? = nil) -> PrivacyEvent {
@@ -2063,6 +2074,8 @@ enum PrivacyLog {
         ]
         if let state { fields.append(.init(.state, .token(state))) }
         if let command { fields.append(.init(.command, .token(command))) }
+        if let reason { fields.append(.init(.reason, .token(reason))) }
+        if let detail { fields.append(.init(.detail, .token(detail))) }
         if let item { fields.append(.init(.item, .identifier(item))) }
         if let count { fields.append(.init(.count, .count(count))) }
         if let minutes { fields.append(.init(.minutes, .count(minutes))) }

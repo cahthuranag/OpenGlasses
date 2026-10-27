@@ -8,6 +8,18 @@ reaching the app during its own Direct, Gemini Live or OpenAI Realtime conversat
 unverified. Also owed on device: single-tap latency, locked-phone behaviour, taps with music
 playing, glasses-camera capture from a locked phone, and how each live provider treats a muted
 (silent) mic. "Experimental" stays on the setting until P2 confirms at least one model.
+**2026-10-27 — first P2 findings, from a tester's Ray-Ban Meta Gen 2 support report (build 564).**
+The table is confirmed on that model: test mode heard one tap as `pause`, two as `nextTrack`, three
+as `previousTrack` (`TempleCalibration.deviceConfirmed` is now true; session control still
+unobserved). The same report showed taps going dead after the first tap's action: the wake word
+reconfigured the shared session for it and no command arrived after. Fixed in the claim, not the
+table — the policy now reads the silent player's health (`standbyClaimLive`) and takes a dead
+standby claim afresh, the claim is re-checked after every tap's action and every rider-deferred
+hand-back, and is polled for while the user's audio holds it off. The support log now names the
+condition behind every release, every command that fired nothing and why, every lapsed claim, and
+the session's shape (`playAndRecord-mixable`) beside each claim. **Owed:** a fresh report from the
+same tester, which says whether the player was stopped (fixed) or iOS took Now Playing from a
+live mixable claim (then the remaining fix is in the wake word's session shape, not here).
 **Continues:** Plan [CH](CH-media-button-trigger.md) (media-button trigger). CH's P1 policy and P2
 wiring shipped 2026-08-02; its P3 device smoke — *which temple gestures arrive as which AVRCP
 commands* — was never run, and this plan cannot be finished without it.

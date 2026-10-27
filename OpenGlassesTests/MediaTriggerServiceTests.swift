@@ -14,15 +14,48 @@ final class MediaTriggerServiceTests: XCTestCase {
         var releaseCount = 0
         var modes: [NowPlayingClaimMode] = []
         var onCommand: ((MediaRemoteCommand) -> Void)?
+        /// Whether the (pretend) silent player is still playing. A fresh claim starts it.
+        var playerPlaying = false
+        var sessionShape = "playAndRecord-mixable"
+        var standbyClaimLive: Bool { playerPlaying }
         func claim(mode: NowPlayingClaimMode, onCommand: @escaping (MediaRemoteCommand) -> Void) {
             claimCount += 1
             modes.append(mode)
             self.onCommand = onCommand
+            playerPlaying = mode == .standby
         }
         func release() {
             releaseCount += 1
             onCommand = nil
+            playerPlaying = false
         }
+    }
+
+    /// Stands in for the service's delays: each sleep waits until the test wakes it, so the
+    /// settle, poll and stand-down re-checks run exactly when a test says.
+    @MainActor
+    private final class ManualSleeper {
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        var pending: Int { waiting.count }
+        func sleep() async {
+            await withCheckedContinuation { waiting.append($0) }
+        }
+        func wakeAll() {
+            let woken = waiting
+            waiting = []
+            woken.forEach { $0.resume() }
+        }
+    }
+
+    /// Collects the `nowPlaying` support-log lines.
+    private final class LineSink: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [String] = []
+        func record(_ line: String) {
+            guard line.contains("surface=nowPlaying") else { return }
+            lock.lock(); stored.append(line); lock.unlock()
+        }
+        var lines: [String] { lock.lock(); defer { lock.unlock() }; return stored }
     }
 
     /// Mutable world the injected closures read — one place to flip conditions mid-test.
@@ -38,26 +71,31 @@ final class MediaTriggerServiceTests: XCTestCase {
 
     private var world = World()
     private var claimer = SpyClaimer()
+    private var sleeper = ManualSleeper()
 
     override func setUp() {
         super.setUp()
         world = World()
         claimer = SpyClaimer()
+        sleeper = ManualSleeper()
     }
 
-    private func makeService(debounce: TimeInterval = 2.0) -> MediaTriggerService {
+    private func makeService(debounce: TimeInterval = 2.0,
+                             table: [MediaRemoteCommand: TempleGesture]? = nil) -> MediaTriggerService {
         let service = MediaTriggerService(
             claimer: claimer,
             isEnabled: { [world] in world.enabled },
             isOtherAudioPlaying: { [world] in world.otherAudio },
             leaseOwner: { [world] in world.owner },
             calibration: { [world] in
-                var calibration = TempleCalibration.assumedDefault
+                var calibration = TempleCalibration.standard
                 calibration.sessionControlAvailable = world.sessionControl
+                if let table { calibration.table = table }
                 return calibration
             },
             clock: { [world] in world.now },
-            debounceInterval: debounce)
+            debounceInterval: debounce,
+            sleep: { [sleeper] _ in await sleeper.sleep() })
         service.realtimeSessionActive = { [world] in world.realtime }
         service.conversationActive = { [world] in world.conversation }
         return service
@@ -285,6 +323,282 @@ final class MediaTriggerServiceTests: XCTestCase {
         XCTAssertFalse(service.isClaimed)
         XCTAssertEqual(claimer.releaseCount, 1)
         service.stop()
+    }
+
+    // MARK: - Claim health (Gen 2: dead after the first tap's action)
+
+    /// Let the tasks a wake (or a notification) released run to their end.
+    private func settle(until condition: () -> Bool = { false }) async {
+        for _ in 0..<50 where !condition() {
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+    }
+
+    func testStoppedPlayerIsReclaimedOnTheNextEvaluation() {
+        let service = makeService()
+        service.start()
+        XCTAssertEqual(claimer.claimCount, 1)
+        // iOS stopped the silent player under us (the wake word reshaped the session).
+        claimer.playerPlaying = false
+        world.now = 5
+        service.evaluate()
+        XCTAssertEqual(claimer.claimCount, 2)
+        XCTAssertEqual(claimer.releaseCount, 1)   // the dead claim's handlers dropped first
+        XCTAssertEqual(service.claimedMode, .standby)
+        XCTAssertTrue(claimer.standbyClaimLive)
+        service.stop()
+    }
+
+    func testLivePlayerIsLeftAlone() {
+        let service = makeService()
+        service.start()
+        world.now = 5
+        service.evaluate()
+        XCTAssertEqual(claimer.claimCount, 1)
+        service.stop()
+    }
+
+    func testDeadClaimIsNotRetakenInsideTheCooldown() {
+        let service = makeService()
+        service.start()                 // claimed at 0
+        claimer.playerPlaying = false
+        world.now = 1
+        service.evaluate()
+        XCTAssertEqual(claimer.claimCount, 1)   // a player that will not stay up is not chased
+        world.now = 3
+        service.evaluate()
+        XCTAssertEqual(claimer.claimCount, 2)
+        service.stop()
+    }
+
+    func testSessionControlWithoutPlayerIsNotADeadClaim() {
+        let service = makeService()
+        service.start()
+        world.owner = .geminiLive
+        service.evaluate()
+        XCTAssertEqual(service.claimedMode, .sessionControl)
+        XCTAssertFalse(claimer.standbyClaimLive)
+        world.now = 10
+        service.evaluate()
+        XCTAssertEqual(claimer.modes, [.standby, .sessionControl])
+        service.stop()
+    }
+
+    func testDeadClaimWithUserAudioIsReleasedWithItsReason() {
+        let sink = LineSink()
+        let tap = PrivacyLog.addTap { _, line in sink.record(line) }
+        defer { PrivacyLog.removeTap(tap) }
+        let service = makeService()
+        service.start()
+        claimer.playerPlaying = false
+        world.otherAudio = true
+        world.now = 5
+        service.evaluate()
+        XCTAssertFalse(service.isClaimed)
+        XCTAssertTrue(sink.lines.contains { $0.contains("event=released") && $0.contains("state=userAudio") },
+                      "\(sink.lines)")
+        service.stop()
+    }
+
+    func testTapActionRecheckRetakesADeadClaimAtOnce() {
+        let service = makeService()
+        service.start()
+        claimer.playerPlaying = false
+        world.now = 5
+        service.recheckClaim(after: .tapAction)
+        XCTAssertEqual(claimer.claimCount, 2)
+        service.stop()
+    }
+
+    func testTapActionRecheckLooksAgainOnceTheSessionSettles() async {
+        let service = makeService()
+        service.start()
+        service.recheckClaim(after: .tapAction)
+        XCTAssertEqual(claimer.claimCount, 1)       // still live right after the action
+        await settle { sleeper.pending == 1 }
+        XCTAssertEqual(sleeper.pending, 1)
+        // The wake word reconfigures a moment later and the player stops.
+        claimer.playerPlaying = false
+        world.now = 5
+        sleeper.wakeAll()
+        await settle { claimer.claimCount == 2 }
+        XCTAssertEqual(claimer.claimCount, 2)
+        XCTAssertEqual(service.claimedMode, .standby)
+        service.stop()
+    }
+
+    func testRecheckDoesNothingWhenStopped() {
+        let service = makeService()
+        service.recheckClaim(after: .tapAction)
+        XCTAssertEqual(claimer.claimCount, 0)
+        XCTAssertEqual(sleeper.pending, 0)
+    }
+
+    func testDeferredRiderHandBackRechecksTheClaim() async {
+        let service = makeService()
+        service.start()
+        claimer.playerPlaying = false
+        world.now = 5
+        NotificationCenter.default.post(name: AudioSessionCoordinator.riderHandBackDeferred, object: nil)
+        await settle { claimer.claimCount == 2 }
+        XCTAssertEqual(claimer.claimCount, 2)
+        service.stop()
+    }
+
+    func testRecheckOfALiveClaimLogsTheSessionShape() {
+        let sink = LineSink()
+        let tap = PrivacyLog.addTap { _, line in sink.record(line) }
+        defer { PrivacyLog.removeTap(tap) }
+        let service = makeService()
+        service.start()
+        service.recheckClaim(after: .tapAction)
+        XCTAssertTrue(sink.lines.contains {
+            $0.contains("event=claimChecked") && $0.contains("reason=tapAction")
+                && $0.contains("detail=playAndRecord-mixable")
+        }, "\(sink.lines)")
+        service.stop()
+    }
+
+    func testLapseIsLoggedWithItsCause() {
+        let sink = LineSink()
+        let tap = PrivacyLog.addTap { _, line in sink.record(line) }
+        defer { PrivacyLog.removeTap(tap) }
+        let service = makeService()
+        service.start()
+        claimer.playerPlaying = false
+        world.now = 5
+        service.recheckClaim(after: .handBackDeferred)
+        XCTAssertTrue(sink.lines.contains {
+            $0.contains("event=claimLapsed") && $0.contains("reason=handBackDeferred")
+        }, "\(sink.lines)")
+        service.stop()
+    }
+
+    // MARK: - The user's audio ending
+
+    func testClaimReturnsWhenTheUsersAudioStops() async {
+        world.otherAudio = true
+        let service = makeService()
+        service.start()
+        XCTAssertFalse(service.isClaimed)
+        await settle { sleeper.pending == 1 }
+        XCTAssertEqual(sleeper.pending, 1)          // nothing is posted when their audio stops
+        world.otherAudio = false
+        sleeper.wakeAll()
+        await settle { service.isClaimed }
+        XCTAssertTrue(service.isClaimed)
+        await settle()
+        XCTAssertEqual(sleeper.pending, 0)          // claimed: the poll ends
+        service.stop()
+    }
+
+    func testPollKeepsLookingWhileTheUsersAudioPlays() async {
+        let service = makeService()
+        service.start()
+        world.otherAudio = true
+        service.evaluate()
+        XCTAssertFalse(service.isClaimed)
+        await settle { sleeper.pending == 1 }
+        XCTAssertEqual(sleeper.pending, 1)
+        sleeper.wakeAll()
+        await settle { sleeper.pending == 1 }
+        XCTAssertFalse(service.isClaimed)           // their music still wins
+        XCTAssertEqual(sleeper.pending, 1)          // and the next look is booked
+        // Repeated evaluations never stack a second poll.
+        service.evaluate()
+        service.evaluate()
+        await settle()
+        XCTAssertEqual(sleeper.pending, 1)
+        service.stop()
+    }
+
+    func testOtherReleaseReasonsDoNotPoll() async {
+        let service = makeService()
+        service.start()
+        world.owner = .expertCall
+        service.evaluate()
+        XCTAssertFalse(service.isClaimed)
+        await settle()
+        XCTAssertEqual(sleeper.pending, 0)
+        service.stop()
+    }
+
+    func testStoppedServiceIgnoresAPollThatWakes() async {
+        world.otherAudio = true
+        let service = makeService()
+        service.start()
+        await settle { sleeper.pending == 1 }
+        service.stop()
+        world.otherAudio = false
+        sleeper.wakeAll()
+        await settle()
+        XCTAssertFalse(service.isClaimed)
+        XCTAssertEqual(claimer.claimCount, 0)
+    }
+
+    func testStandDownComesBackAfterItsDelay() async {
+        let service = makeService()
+        service.start()
+        service.standDownForUserPlayback()
+        XCTAssertFalse(service.isClaimed)
+        await settle { sleeper.pending == 1 }
+        sleeper.wakeAll()
+        await settle { service.isClaimed }
+        XCTAssertTrue(service.isClaimed)            // their playback never started
+        service.stop()
+    }
+
+    // MARK: - Commands that fire nothing are logged with why
+
+    func testDroppedCommandsSayWhy() {
+        let sink = LineSink()
+        let tap = PrivacyLog.addTap { _, line in sink.record(line) }
+        defer { PrivacyLog.removeTap(tap) }
+        let service = makeService(debounce: 2.0, table: [.pause: .one, .play: .one, .nextTrack: .two])
+        service.start()
+        XCTAssertEqual(service.handleRemoteCommand(.pause), .one)
+        world.now = 0.05
+        XCTAssertNil(service.handleRemoteCommand(.play))            // same tap
+        world.now = 1
+        XCTAssertNil(service.handleRemoteCommand(.nextTrack))       // inside the debounce
+        world.now = 5
+        XCTAssertNil(service.handleRemoteCommand(.previousTrack))   // not in this table
+        service.stop()
+        XCTAssertNil(service.handleRemoteCommand(.nextTrack))       // no claim
+        let dropped = sink.lines.filter { $0.contains("event=commandDropped") }
+        XCTAssertEqual(dropped.count, 4, "\(dropped)")
+        for (reason, command) in [("coalesced", "play"), ("debounced", "nextTrack"),
+                                  ("unmapped", "previousTrack"), ("notClaimed", "nextTrack")] {
+            XCTAssertTrue(dropped.contains { $0.contains("state=\(reason)") && $0.contains("command=\(command)") },
+                          "\(reason): \(dropped)")
+        }
+    }
+
+    func testStopLogsItsOwnReleaseReason() {
+        let sink = LineSink()
+        let tap = PrivacyLog.addTap { _, line in sink.record(line) }
+        defer { PrivacyLog.removeTap(tap) }
+        let service = makeService()
+        service.start()
+        service.standDownForUserPlayback()
+        service.evaluate()
+        service.stop()
+        let released = sink.lines.filter { $0.contains("event=released") }
+        XCTAssertTrue(released.contains { $0.contains("state=userPlaybackRequested") }, "\(released)")
+        XCTAssertTrue(released.contains { $0.contains("state=stopped") }, "\(released)")
+    }
+
+    // MARK: - Session shape
+
+    func testShapeTokenNamesCategoryAndMixing() {
+        XCTAssertEqual(SilentNowPlayingClaimer.shapeToken(category: .playAndRecord,
+                                                         options: [.mixWithOthers, .allowBluetoothA2DP]),
+                       "playAndRecord-mixable")
+        XCTAssertEqual(SilentNowPlayingClaimer.shapeToken(category: .playback, options: []),
+                       "playback-exclusive")
+        XCTAssertEqual(SilentNowPlayingClaimer.shapeToken(category: .soloAmbient, options: []),
+                       "soloAmbient-exclusive")
     }
 
     // MARK: - Silent asset

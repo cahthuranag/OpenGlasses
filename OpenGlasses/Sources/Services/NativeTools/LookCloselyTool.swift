@@ -98,6 +98,10 @@ final class LookCloselyTool: NativeTool {
     /// holding a medicine box steady needs to know the picture exists — and must not be told it
     /// does when the capture timed out, or when what came back was too blurred to read.
     private let onCaptureSucceeded: @MainActor () -> Void
+    /// Whether a manual page is cited or open on the phone (Plan JW P1a), read at execution time.
+    private let manualPageContext: @MainActor () -> SmartCameraPolicy.Context
+    /// The wearer's words for the turn in flight, when the turn has them (`TurnUtteranceScope`).
+    private let utterance: () -> String?
 
     /// A capture that never arrives must not strand the model's function call.
     static let captureTimeout: Duration = .seconds(6)
@@ -120,7 +124,11 @@ final class LookCloselyTool: NativeTool {
             await OCRService().recognizeText(in: data)
         },
         now: @escaping () -> Date = Date.init,
-        onCaptureSucceeded: @escaping @MainActor () -> Void = {}
+        onCaptureSucceeded: @escaping @MainActor () -> Void = {},
+        manualPageContext: @escaping @MainActor () -> SmartCameraPolicy.Context = {
+            AppStateProvider.shared?.smartCameraContext ?? .init()
+        },
+        utterance: @escaping () -> String? = { RelativeTimeGuard.utteranceForCurrentCall() }
     ) {
         self.captureSharpStill = captureSharpStill
         self.injectorProvider = injectorProvider
@@ -129,9 +137,19 @@ final class LookCloselyTool: NativeTool {
         self.recognizeText = recognizeText
         self.now = now
         self.onCaptureSucceeded = onCaptureSucceeded
+        self.manualPageContext = manualPageContext
+        self.utterance = utterance
     }
 
     func execute(args: [String: Any]) async throws -> String {
+        // Plan JW P1a: "read the row on this page" with a manual page cited or open on the phone is
+        // the manual's turn. Decided before anything else — the no-session reply below points at
+        // `vision_assess`, which would take the picture this declines.
+        if let reply = SmartCameraPolicy.cameraToolReply(utterance: utterance(), toolReason: args["reason"] as? String,
+                                                         context: manualPageContext()) {
+            PrivacyLog.vision(.lookClosely, .declined)
+            return reply
+        }
         guard let injector = injectorProvider(), injector.canInject, injector.supportsVision else {
             // Direct mode (or a session that dropped mid-call): there is no live view to add an
             // image to. Point the model at the tools that carry their own vision instead.

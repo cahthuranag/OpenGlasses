@@ -26,6 +26,33 @@ final class VisionAssessToolTests: XCTestCase {
         XCTAssertTrue(result.contains("instrument_reading"))
     }
 
+    // MARK: - A manual page on the phone (Plan JW P1a)
+
+    func testAManualPageTurnIsDeclinedBeforeTheCamera() async throws {
+        AssessmentSchemaRegistry.shared.register(InstrumentReadingSchema())
+        var reached = false
+        let tool = VisionAssessTool(assess: { kind, _ in
+            reached = true
+            return AssessmentCard(kind: kind, title: "Reading", tier: .ok, summary: "reached")
+        }, manualPageContext: { .init(citedManualPagesOpen: true) },
+           utterance: { "read the row in the second column on this page" })
+        let answer = try await tool.execute(args: ["kind": "instrument_reading"])
+        XCTAssertEqual(answer, SmartCameraPolicy.manualPageReply)
+        XCTAssertFalse(reached, "the camera was reached for a page on the phone")
+    }
+
+    func testAGaugeIsStillReadWithAManualPageOpen() async throws {
+        AssessmentSchemaRegistry.shared.register(InstrumentReadingSchema())
+        var reached = false
+        let tool = VisionAssessTool(assess: { kind, _ in
+            reached = true
+            return AssessmentCard(kind: kind, title: "Reading", tier: .ok, summary: "reached")
+        }, manualPageContext: { .init(manualPageOnScreen: true) },
+           utterance: { "what does the gauge read" })
+        _ = try await tool.execute(args: ["kind": "instrument_reading"])
+        XCTAssertTrue(reached)
+    }
+
     func testToolMetadata() {
         XCTAssertEqual(tool.name, "vision_assess")
         XCTAssertTrue(tool.description.contains("instrument_reading"))

@@ -54,7 +54,9 @@ final class LookCloselyToolTests: XCTestCase {
         injector: FakeInjector?,
         posture: PowerPosture = .normal,
         capture: @escaping () async throws -> Data = { Data(count: 1024) },
-        cues: Recorder? = nil
+        cues: Recorder? = nil,
+        manualPages: SmartCameraPolicy.Context = .init(),
+        utterance: String? = nil
     ) -> LookCloselyTool {
         LookCloselyTool(
             captureSharpStill: { [recorder] identity in
@@ -67,7 +69,31 @@ final class LookCloselyToolTests: XCTestCase {
             cameraSession: { 0 },
             posture: { posture },
             recognizeText: { _ in OCRService.Result(text: "", blocks: []) },
-            onCaptureSucceeded: { cues?.events.append("captureCue") })
+            onCaptureSucceeded: { cues?.events.append("captureCue") },
+            manualPageContext: { manualPages },
+            utterance: { utterance })
+    }
+
+    // MARK: - A manual page on the phone (Plan JW P1a)
+
+    func testReadingAnOpenManualPageTakesNoPhoto() async throws {
+        let recorder = Recorder()
+        let injector = FakeInjector(recorder: recorder)
+        let tool = makeTool(recorder: recorder, injector: injector,
+                            manualPages: .init(manualPageOnScreen: true),
+                            utterance: "Read the W3 row in the Rating B column on this page")
+        let result = try await tool.execute(args: ["reason": "read the row"])
+        XCTAssertEqual(result, SmartCameraPolicy.manualPageReply)
+        XCTAssertEqual(recorder.events, [], "no capture and no injection for a page on the phone")
+    }
+
+    func testANameplateIsStillReadWithAManualPageCited() async throws {
+        let recorder = Recorder()
+        let injector = FakeInjector(recorder: recorder)
+        let tool = makeTool(recorder: recorder, injector: injector,
+                            manualPages: .init(citedManualPagesOpen: true), utterance: "read this nameplate")
+        _ = try await tool.execute(args: ["reason": "read this nameplate"])
+        XCTAssertEqual(recorder.events.first, "capture(1024B)")
     }
 
     func testCapturesThenInjectsThenReturnsInstruction() async throws {

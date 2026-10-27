@@ -66,6 +66,8 @@ final class ShowSourceTool: NativeTool {
         }
 
         var pages: [FieldSessionService.StagedFigure] = []
+        var checked: [Checked] = []
+        var retrievedRowsOf: [String] = []
         var unavailable: [String] = []
         for source in sources {
             guard case .figure(var staged) = session.resolveCitation(source.citation) else {
@@ -78,19 +80,42 @@ final class ShowSourceTool: NativeTool {
             staged.citedPassages = center.citedPassages(for: source.citation, documentId: staged.documentId,
                                                         store: documentStore, number: source.number)
             staged.pictureAreas = center.pictureAreas(for: source.citation)
+            // Plan JW P1a: rows of a table the answer read without a lookup — say so, and how to
+            // mark one row.
+            if center.memory.marking(source.citation).basis == .retrievedTableRows, let label = source.citation.figure,
+               !staged.citedPassages.isEmpty, !retrievedRowsOf.contains(label) {
+                retrievedRowsOf.append(label)
+            }
+            let check = markState(of: staged, session: session)
+            // A passage that cannot be found on the page is not staged beside one that can: the sheet
+            // would say "2 of the passages couldn't be marked" over a page whose marks are the
+            // answer's. The reply still names what was not marked.
+            staged.citedPassages = check.kept
             session.logCitationOpened(source.citation, origin: .voice)
             pages.append(staged)
+            checked.append(check)
         }
         guard let first = pages.first else {
             return "The cited manual is no longer in this vault (" + unavailable.joined(separator: "; ")
                 + "), so there is no page to show. Nothing was opened."
         }
 
-        let checked = pages.map { markState(of: $0, session: session) }
         let rows = checked.reduce(into: RowMarks()) { $0.marked += $1.rows.marked; $0.unmarked += $1.rows.unmarked }
         let onScreen = center.present(pages, notice: ShowSourceCenter.noticeText(for: first.asCitation))
         return Self.reply(pages: pages, marks: checked.map(\.state), rows: rows, onScreen: onScreen,
-                          unavailable: unavailable)
+                          unavailable: unavailable, unmarkedPassages: checked.reduce(0) { $0 + $1.unmarkedText },
+                          retrievedRowsOf: retrievedRowsOf)
+    }
+
+    /// What marking one staged page came to.
+    struct Checked: Equatable {
+        var state: MarkState
+        var rows: RowMarks
+        /// The cited passages to stage: all of them, unless some are found on the page and some are
+        /// not, when only the found ones.
+        var kept: [CitedPassage]
+        /// Passages that are not a table's rows left unmarked beside marked ones on the page.
+        var unmarkedText: Int = 0
     }
 
     /// The table rows the marks came to, by row heading (Plan JW P0), so the reply names exactly
@@ -114,9 +139,10 @@ final class ShowSourceTool: NativeTool {
     }
 
     private func markState(of staged: FieldSessionService.StagedFigure,
-                           session: FieldSessionService) -> (state: MarkState, rows: RowMarks) {
+                           session: FieldSessionService) -> Checked {
         guard !staged.citedPassages.isEmpty else {
-            return (staged.pictureAreas.contains { $0.physical == staged.page } ? .outlined : .noPassage, RowMarks())
+            return Checked(state: staged.pictureAreas.contains { $0.physical == staged.page } ? .outlined : .noPassage,
+                           rows: RowMarks(), kept: [])
         }
         var pageText: String?
         if let url = session.sourcePDFURL(for: staged), let document = PDFDocument(url: url),
@@ -126,9 +152,25 @@ final class ShowSourceTool: NativeTool {
             pageText = documentStore?.pageTexts(documentId: staged.documentId)
                 .first { $0.page == staged.page }?.text
         }
-        let marks = PassageMarks(passages: staged.citedPassages, page: staged.page, pageText: pageText)
-        return (marks.located.isEmpty ? .unmarked : .marked,
-                Self.rowMarks(staged.citedPassages, page: staged.page, pageText: pageText))
+        return Self.check(staged.citedPassages, page: staged.page, pageText: pageText)
+    }
+
+    /// Marks the cited passages on one page's text and decides which to stage (Plan JW P1a). Pure.
+    static func check(_ passages: [CitedPassage], page: Int, pageText: String?) -> Checked {
+        let marks = PassageMarks(passages: passages, page: page, pageText: pageText)
+        let rows = rowMarks(passages, page: page, pageText: pageText)
+        guard !marks.located.isEmpty else { return Checked(state: .unmarked, rows: rows, kept: passages) }
+        var kept: [CitedPassage] = []
+        var unmarkedText = 0
+        for passage in passages {
+            guard passage.anchor.page == page,
+                  PassageLocator.locate(passage.anchor, onPageText: pageText).ranges.isEmpty else {
+                kept.append(passage)
+                continue
+            }
+            if TableRowPassage.rowName(ofSentence: passage.anchor.text) == nil { unmarkedText += 1 }
+        }
+        return Checked(state: .marked, rows: rows, kept: kept, unmarkedText: unmarkedText)
     }
 
     /// Which of the cited table rows on `page` are found on its text, by heading; passages that are
@@ -148,7 +190,8 @@ final class ShowSourceTool: NativeTool {
 
     /// What the model is told. Pure.
     static func reply(pages: [FieldSessionService.StagedFigure], marks: [MarkState], rows: RowMarks = RowMarks(),
-                      onScreen: Bool, unavailable: [String]) -> String {
+                      onScreen: Bool, unavailable: [String], unmarkedPassages: Int = 0,
+                      retrievedRowsOf: [String] = []) -> String {
         var lines: [String] = []
         let labels = pages.map(\.citation)
         if onScreen {
@@ -175,6 +218,17 @@ final class ShowSourceTool: NativeTool {
             } else {
                 lines.append("Say only that \(rows.marked.count == 1 ? "this row is" : "these rows are") highlighted.")
             }
+            if !retrievedRowsOf.isEmpty {
+                // Plan JW P1a: the answer quoted a row passage, so these are the rows retrieved for
+                // the table, not a row a lookup read.
+                lines.append("These are the rows of " + retrievedRowsOf.joined(separator: " and ")
+                    + " retrieved for the answer, not a row a lookup read. To mark one row, read the value with "
+                    + "table_lookup (table, row, column).")
+            }
+        } else if marks.contains(.marked), unmarkedPassages > 0 {
+            lines.append("Only the passages found on the page are highlighted; \(unmarkedPassages) other "
+                + "\(unmarkedPassages == 1 ? "passage" : "passages") the answer drew on couldn't be marked, so read "
+                + "\(unmarkedPassages == 1 ? "it" : "them") aloud if asked.")
         } else if marks.contains(.marked) {
             lines.append(marks.contains(.unmarked)
                 ? "The cited passage is highlighted where it was found; on the other pages it couldn't be marked, so read the clause aloud if asked."

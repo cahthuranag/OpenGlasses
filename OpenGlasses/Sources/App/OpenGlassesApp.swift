@@ -7215,13 +7215,17 @@ class AppState: ObservableObject, AppStateProtocol {
 
     /// What smart camera knows about a turn beyond its words (Plan JW P0): whether the last answer
     /// cited manual pages `show_source` can open — in the active Field Assist session, or in the
-    /// personal library's scope, which is where `ShowSourceCenter` keeps them.
-    private var smartCameraContext: SmartCameraPolicy.Context {
+    /// personal library's scope, which is where `ShowSourceCenter` keeps them — and whether a manual
+    /// page sheet is open on the phone now (Plan JW P1a). Read by `look_closely` and `vision_assess`
+    /// too, so the camera tools and smart camera decide alike.
+    var smartCameraContext: SmartCameraPolicy.Context {
+        var context = SmartCameraPolicy.Context(manualPageOnScreen: manualFigureRequest != nil)
         let memory = ShowSourceCenter.shared.memory
-        guard !memory.citations.isEmpty, let scope = memory.sessionId else { return .init() }
+        guard !memory.citations.isEmpty, let scope = memory.sessionId else { return context }
         let session = FieldSessionService.shared
         let inSession = Config.fieldAssistActive && session.activeSession?.id == scope
-        return .init(citedManualPagesOpen: inSession || PersonalManualLibrary.shared.sourceScope == scope)
+        context.citedManualPagesOpen = inSession || PersonalManualLibrary.shared.sourceScope == scope
+        return context
     }
 
     /// Determine image data for a query using smart camera logic:

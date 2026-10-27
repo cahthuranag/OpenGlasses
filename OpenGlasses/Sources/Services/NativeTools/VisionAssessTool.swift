@@ -34,13 +34,21 @@ final class VisionAssessTool: NativeTool {
     /// Whether this phone is a work tool, read on every call. The live facts by default; a test
     /// injects them.
     private let editionFacts: @MainActor () -> EditionFacts
+    /// Whether a manual page is cited or open on the phone (Plan JW P1a), read on every call.
+    private let manualPageContext: @MainActor () -> SmartCameraPolicy.Context
+    /// The wearer's words for the turn in flight, when the turn has them (`TurnUtteranceScope`).
+    private let utterance: () -> String?
 
     init(assess: (@MainActor (_ kind: String, _ note: String?) async throws -> AssessmentCard)? = nil,
-         editionFacts: (@MainActor () -> EditionFacts)? = nil) {
+         editionFacts: (@MainActor () -> EditionFacts)? = nil,
+         manualPageContext: (@MainActor () -> SmartCameraPolicy.Context)? = nil,
+         utterance: (() -> String?)? = nil) {
         self.assess = assess ?? { kind, note in
             try await StructuredVisionService.shared.assessCurrentFrame(kind: kind, note: note)
         }
         self.editionFacts = editionFacts ?? { EditionFacts.current() }
+        self.manualPageContext = manualPageContext ?? { AppStateProvider.shared?.smartCameraContext ?? .init() }
+        self.utterance = utterance ?? { RelativeTimeGuard.utteranceForCurrentCall() }
     }
 
     /// Assessment kinds that belong to a switchable AI feature, and the feature whose switch gates
@@ -97,6 +105,12 @@ final class VisionAssessTool: NativeTool {
 
         guard !kind.isEmpty else {
             return "Specify what to assess via `kind`. Available: \(availableList)."
+        }
+        // Plan JW P1a: a value on a manual page cited or open on the phone is read from the manual,
+        // not photographed — the partner's "read the row in the Rating B column on this page".
+        if let reply = SmartCameraPolicy.cameraToolReply(utterance: utterance(), toolReason: args["note"] as? String,
+                                                         context: manualPageContext()) {
+            return reply
         }
         // Before the feature switch: on a work phone, turning first aid on would not help, so the
         // switch is not the reason to give.

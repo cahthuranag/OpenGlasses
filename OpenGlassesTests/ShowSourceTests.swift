@@ -279,4 +279,99 @@ final class ShowSourceTests: XCTestCase {
         XCTAssertTrue(reply.contains("Nothing was opened"), reply)
         XCTAssertNil(service.sourceCenter.presented)
     }
+
+    // MARK: - A table cited without a lookup (Plan JW P1a)
+
+    private func row(_ name: String, values: String, chunk: Int, table: String = "Table 99") -> AnswerSourceMemory.Retrieved {
+        var passage = retrieved(Self.bookA, page: 4, chunk: chunk,
+                                text: "\(table) (Sample ratings), row \(name): \(values) \u{2014} page 4")
+        passage.figure = table
+        passage.isTableRow = true
+        return passage
+    }
+
+    func testATableCitedWithoutALookupMarksOnlyThatTablesRows() {
+        var memory = AnswerSourceMemory()
+        let qx = row("QX", values: "41 in Group A, 47 in Group B", chunk: 10)
+        let qz = row("QZ", values: "52 in Group A, 58 in Group B", chunk: 11)
+        let otherTable = row("QX", values: "3 in Group C", chunk: 12, table: "Table 98")
+        let prose = retrieved(Self.bookA, page: 4, chunk: 2, text: "Notes printed beside the grid.")
+        memory.noteRetrieved([qx, qz, otherTable, prose], sessionId: "s")
+        let cite = Citation(kind: .manual, title: Self.bookA, page: 4, figure: "Table 99")
+
+        // The answer's words name no row: the rows of the cited table the turn retrieved, nothing else.
+        memory.noteAnswer([cite], text: "Both groups are listed there.", sessionId: "s")
+        XCTAssertEqual(memory.marking(cite).passages, [qx, qz])
+        XCTAssertEqual(memory.marking(cite).basis, .retrievedTableRows)
+
+        // The answer names a row and a value from it: that row.
+        memory.noteAnswer([cite], text: "Row QX gives 47 in Group B.", sessionId: "s")
+        XCTAssertEqual(memory.marking(cite).passages, [qx])
+        XCTAssertEqual(memory.marking(cite).basis, .answerRows)
+
+        // A citation that names only the page still means the page.
+        XCTAssertEqual(memory.retrieved(for: Citation(kind: .manual, title: Self.bookA, page: 4)).count, 4)
+
+        // A lookup's rows win.
+        memory.noteTableLookup(rows: [qz], citations: [cite], sessionId: "s")
+        XCTAssertEqual(memory.marking(cite).passages, [qz])
+        XCTAssertEqual(memory.marking(cite).basis, .lookupRows)
+    }
+
+    func testATableCitedWithNoRowsRetrievedMarksNothingElseOnThePage() {
+        var memory = AnswerSourceMemory()
+        memory.noteRetrieved([retrieved(Self.bookA, page: 4, chunk: 2, text: "Notes printed beside the grid.")],
+                             sessionId: "s")
+        let cite = Citation(kind: .manual, title: Self.bookA, page: 4, figure: "Table 99")
+        XCTAssertEqual(memory.retrieved(for: cite), [])
+    }
+
+    func testARowPassageGivesBackItsValues() {
+        XCTAssertEqual(TableRowPassage.values(ofSentence: "Table 99 (Sample ratings), row QX, two runs: 41 in Group A, "
+                                              + "47 in Group B \u{2014} page 4"), ["41", "47"])
+        XCTAssertEqual(TableRowPassage.values(ofSentence: "A sentence with no row in it."), [])
+        XCTAssertTrue(AnswerSourceMemory.answer("For QX, two runs, use 41.",
+                                                readsRow: "Table 99 (Sample ratings), row QX, two runs: 41 in Group A \u{2014} page 4"))
+        XCTAssertFalse(AnswerSourceMemory.answer("For QX use 52.",
+                                                 readsRow: "Table 99 (Sample ratings), row QX: 41 in Group A \u{2014} page 4"),
+                       "a value from another row")
+    }
+
+    func testOnlyPassagesFoundOnThePageAreStaged() {
+        let pageText = "Example heading\nThe first sentence printed here is long enough to find.\nMore text follows it.\n"
+        let found = CitedPassage(number: 1, anchor: PassageAnchor(
+            documentId: "d", chunkIndex: 1, text: "The first sentence printed here is long enough to find.", page: 4))
+        let missing = CitedPassage(number: 1, anchor: PassageAnchor(
+            documentId: "d", chunkIndex: 2, text: "A sentence that is printed nowhere on this page at all.", page: 4))
+        let checked = ShowSourceTool.check([found, missing], page: 4, pageText: pageText)
+        XCTAssertEqual(checked.state, .marked)
+        XCTAssertEqual(checked.kept, [found], "the sheet is not told about a passage it cannot mark")
+        XCTAssertEqual(checked.unmarkedText, 1)
+        let none = ShowSourceTool.check([missing], page: 4, pageText: pageText)
+        XCTAssertEqual(none.state, .unmarked)
+        XCTAssertEqual(none.kept, [missing], "with nothing found the page still says so")
+
+        let staged = FieldSessionService.StagedFigure(documentId: "d", documentTitle: Self.bookA, page: 4,
+                                                      figure: "Table 99")
+        let reply = ShowSourceTool.reply(pages: [staged], marks: [.marked], onScreen: true, unavailable: [],
+                                         unmarkedPassages: 1)
+        XCTAssertTrue(reply.contains("1 other passage the answer drew on couldn't be marked"), reply)
+        let rows = ShowSourceTool.RowMarks(marked: ["QX", "QZ"], unmarked: [])
+        let fallback = ShowSourceTool.reply(pages: [staged], marks: [.marked], rows: rows, onScreen: true,
+                                            unavailable: [], retrievedRowsOf: ["Table 99"])
+        XCTAssertTrue(fallback.contains("rows of Table 99 retrieved for the answer"), fallback)
+        XCTAssertTrue(fallback.contains("table_lookup (table, row, column)"), fallback)
+    }
+
+    func testTheTurnsPassagesAskForTableValuesThroughTheLookup() {
+        func passage(_ kind: DocumentChunker.Kind) -> VaultRetriever.Passage {
+            .init(documentId: "d", documentName: Self.bookA, chunkIndex: 1,
+                  text: "Table 99 (Sample ratings), row QX: 41 in Group A \u{2014} page 4", page: 4, section: nil,
+                  similarity: 0.9, score: 0.9, matchedTokens: [], kind: kind, figure: "Table 99")
+        }
+        XCTAssertTrue(VaultRetriever.promptBlock(.sufficient([passage(.tableRow)])).contains(VaultRetriever.tableRowRule))
+        XCTAssertTrue(VaultRetriever.toolResult(.sufficient([passage(.tableRow)]), query: "q")
+            .contains(VaultRetriever.tableRowRule))
+        XCTAssertFalse(VaultRetriever.promptBlock(.sufficient([passage(.prose)])).contains(VaultRetriever.tableRowRule))
+    }
 }

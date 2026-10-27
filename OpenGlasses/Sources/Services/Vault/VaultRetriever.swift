@@ -491,11 +491,13 @@ struct VaultRetriever {
     /// given (document order, from the token search).
     static func sharingMostWords(_ passages: [DocumentStore.Passage], queryTerms: Set<String>,
                                  limit: Int) -> [DocumentStore.Passage] {
-        passages.enumerated()
-            .map { (offset: $0.offset, passage: $0.element,
-                    shared: LexicalSupport.sharedTermCount(text: $0.element.text, queryTerms: queryTerms)) }
-            .sorted { $0.shared != $1.shared ? $0.shared > $1.shared : $0.offset < $1.offset }
-            .prefix(limit).map(\.passage)
+        // Typed step by step: as one chain this took seconds to type-check (Plan JW P1a).
+        let counted: [(offset: Int, passage: DocumentStore.Passage, shared: Int)] = passages.enumerated().map { item in
+            (offset: item.offset, passage: item.element,
+             shared: LexicalSupport.sharedTermCount(text: item.element.text, queryTerms: queryTerms))
+        }
+        let ranked = counted.sorted { (a, b) -> Bool in a.shared != b.shared ? a.shared > b.shared : a.offset < b.offset }
+        return ranked.prefix(limit).map { $0.passage }
     }
 
     private func scored(_ raw: DocumentStore.Passage, matched: [String]) -> Passage {
@@ -574,6 +576,22 @@ struct VaultRetriever {
     /// The standing instruction beside any team-learning passage (Plan FP §5).
     static let teamLearningRule = "Passages marked \(Passage.teamLearningLabel) are your organisation's crew's approved findings, not the manufacturer's manual: when you use one, say it is your crew's finding and repeat its Source line, and never let it override a safety note."
 
+    /// The standing instruction beside any table-row passage (Plan JW P1a). The partner's table
+    /// question was answered with no tool call, its value quoted from a row passage in this block —
+    /// which may be a neighbouring row or column, and which `show_source` cannot then mark as the
+    /// row the answer read. The value goes through `table_lookup`, which reads the cell and notes its
+    /// row for "show me".
+    static let tableRowRule = "Passages marked (table row …) are sentences the app wrote from a table's rows: "
+        + "before you say a value from a table, read it with table_lookup (table, row, column) — never quote it from these."
+
+    /// The rules a set of passages calls for, each on its own paragraph after them.
+    private static func rules(for passages: [Passage]) -> String {
+        var rules: [String] = []
+        if passages.contains(where: { $0.source == .teamLearning }) { rules.append(teamLearningRule) }
+        if passages.contains(where: { $0.kind == .tableRow }) { rules.append(tableRowRule) }
+        return rules.map { "\n\n" + $0 }.joined()
+    }
+
     /// What a learning-only answer is told: the manual is silent, open with the fixed sentence,
     /// then the finding named as the crew's.
     static func teamLearningOnlyInstruction(leadIn: String?) -> String {
@@ -589,7 +607,7 @@ struct VaultRetriever {
         switch outcome {
         case .sufficient(let passages):
             let body = passages.enumerated().map { passageLine($0, $1) }.joined(separator: "\n\n")
-            let rule = passages.contains { $0.source == .teamLearning } ? "\n\n" + teamLearningRule : ""
+            let rule = rules(for: passages)
             return """
             MANUAL PASSAGES (retrieved for this turn — the only reference material available beyond the vault core; \
             answer from these and repeat each passage's Source line for any claim drawn from it):
@@ -615,7 +633,7 @@ struct VaultRetriever {
         switch outcome {
         case .sufficient(let passages):
             let body = passages.enumerated().map { passageLine($0, $1) }.joined(separator: "\n\n")
-            let rule = passages.contains { $0.source == .teamLearning } ? "\n\n" + teamLearningRule : ""
+            let rule = rules(for: passages)
             return "Manual passages for '\(query)' — answer using only these and cite each Source line you rely on:\n\n\(body)" + rule
         case .teamLearningOnly(let passages):
             let body = passages.enumerated().map { passageLine($0, $1) }.joined(separator: "\n\n")

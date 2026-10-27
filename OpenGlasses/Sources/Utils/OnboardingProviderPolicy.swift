@@ -42,6 +42,16 @@ enum OnboardingProviderPolicy {
             .replacingOccurrences(of: "{workspace}", with: workspace)
     }
 
+    /// The key page the model editor links to: a chat template's own service (a Model Studio
+    /// template follows the region in its endpoint), else the provider's console.
+    static func keyPageURL(provider: LLMProvider, templateID: String?, baseURL: String) -> URL? {
+        if let template = RealtimeProviderCatalog.chatTemplates.first(where: { $0.id == templateID }) {
+            let region = ModelStudioRegion.region(of: baseURL) ?? .beijing
+            return keyPage(for: template, region: region).flatMap { URL(string: $0.url) }
+        }
+        return provider.consoleURL
+    }
+
     /// Where to create a key for `template`. Model Studio keys belong to one region, so the link
     /// follows the region chosen.
     static func keyPage(for template: RealtimeProviderCatalog.ChatTemplate, region: ModelStudioRegion) -> (url: String, host: String)? {

@@ -72,6 +72,34 @@ final class OnboardingProviderPolicyTests: XCTestCase {
         XCTAssertEqual(NetworkCategory.categorize(host: "ark.cn-beijing.volces.com"), .aiProvider)
     }
 
+    func testTheEditorLinksEachTemplateToItsOwnKeyPage() {
+        let beijing = "https://ws-1.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions"
+        let singapore = "https://ws-1.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions"
+        XCTAssertEqual(OnboardingProviderPolicy.keyPageURL(provider: .custom, templateID: "qwen", baseURL: beijing)?.host,
+                       "bailian.console.aliyun.com")
+        XCTAssertEqual(OnboardingProviderPolicy.keyPageURL(provider: .custom, templateID: "qwen", baseURL: singapore)?.host,
+                       "modelstudio.console.alibabacloud.com")
+        XCTAssertEqual(OnboardingProviderPolicy.keyPageURL(provider: .custom, templateID: "qwen", baseURL: "https://relay.example/v1")?.host,
+                       "bailian.console.aliyun.com", "An unrecognised host falls back to the template's own region")
+        XCTAssertEqual(OnboardingProviderPolicy.keyPageURL(provider: .custom, templateID: "doubao", baseURL: "")?.host,
+                       "console.volcengine.com")
+        XCTAssertEqual(OnboardingProviderPolicy.keyPageURL(provider: .custom, templateID: "siliconflow", baseURL: "")?.host,
+                       "cloud.siliconflow.cn")
+        for template in RealtimeProviderCatalog.chatTemplates {
+            XCTAssertNotNil(OnboardingProviderPolicy.keyPageURL(provider: .custom, templateID: template.id, baseURL: template.endpoint),
+                            "\(template.id) has no key page")
+        }
+    }
+
+    func testBuiltInProvidersKeepTheirConsoleAndZaiPointsAtItsCodingPlanConsole() {
+        XCTAssertEqual(OnboardingProviderPolicy.keyPageURL(provider: .deepseek, templateID: nil, baseURL: "")?.host,
+                       "platform.deepseek.com")
+        // api.z.ai serves the GLM Coding Plan; a key from Zhipu's mainland console is refused there.
+        XCTAssertEqual(LLMProvider.zai.consoleURL?.host, "z.ai")
+        XCTAssertNil(OnboardingProviderPolicy.keyPageURL(provider: .custom, templateID: nil, baseURL: "http://my-mac.local:11434/v1"))
+        XCTAssertNil(OnboardingProviderPolicy.keyPageURL(provider: .custom, templateID: "retired-template", baseURL: ""))
+    }
+
     func testEveryChatTemplateIdIsUnique() {
         let ids = RealtimeProviderCatalog.chatTemplates.map(\.id)
         XCTAssertEqual(Set(ids).count, ids.count)

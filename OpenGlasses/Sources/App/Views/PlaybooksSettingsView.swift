@@ -84,7 +84,7 @@ struct PlaybooksSettingsView: View {
                                 }
                             }
                             Spacer()
-                            Image(systemName: "chevron.right")
+                            Image(systemName: "chevron.forward")
                                 .font(.footnote)
                                 .foregroundStyle(Color(.tertiaryLabel))
                         }
@@ -119,7 +119,7 @@ struct PlaybooksSettingsView: View {
 // MARK: - Step Status Helpers
 
 private func stepStatusIcon(_ status: StepStatus, isCurrent: Bool) -> String {
-    if isCurrent && status == .pending { return "arrow.right.circle.fill" }
+    if isCurrent && status == .pending { return "arrow.forward.circle.fill" }
     switch status {
     case .pending:   return "circle"
     case .completed: return "checkmark.circle.fill"
@@ -200,7 +200,7 @@ struct PlaybookEditorView: View {
                                         .padding(.vertical, 2)
                                         .background(Color(.tertiarySystemFill), in: Capsule())
                                 }
-                                Image(systemName: "chevron.right")
+                                Image(systemName: "chevron.forward")
                                     .font(.footnote)
                                     .foregroundStyle(Color(.tertiaryLabel))
                             }
@@ -232,7 +232,7 @@ struct PlaybookEditorView: View {
                             Spacer()
                             Text(referenceText.isEmpty ? "None" : "\(referenceText.count) chars")
                                 .foregroundStyle(Color(.secondaryLabel))
-                            Image(systemName: "chevron.right")
+                            Image(systemName: "chevron.forward")
                                 .font(.footnote)
                                 .foregroundStyle(Color(.tertiaryLabel))
                         }

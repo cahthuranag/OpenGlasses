@@ -46,7 +46,7 @@ struct PersonasView: View {
                                 }
                             }
                             Spacer()
-                            Image(systemName: "chevron.right")
+                            Image(systemName: "chevron.forward")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)

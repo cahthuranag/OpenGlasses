@@ -119,7 +119,7 @@ struct SettingsView: View {
                     UIApplication.shared.open(PublicSite.privacy)
                 } label: {
                     OGRow("Privacy Policy", icon: "hand.raised", mutedIcon: true, showsChevron: false) {
-                        Image(systemName: "arrow.up.right")
+                        Image(systemName: "arrow.up.forward")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -135,7 +135,7 @@ struct SettingsView: View {
                             Text("Avenkin Discord")
                                 .font(.body)
                                 .foregroundStyle(.secondary)
-                            Image(systemName: "arrow.up.right")
+                            Image(systemName: "arrow.up.forward")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

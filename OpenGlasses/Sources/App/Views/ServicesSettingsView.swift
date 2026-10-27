@@ -190,7 +190,7 @@ struct ServicesSettingsView: View {
                 if elevenLabsKeyInput.isEmpty {
                     Link(destination: URL(string: "https://elevenlabs.io/app/settings/api-keys")!) {
                         HStack {
-                            Label("Get API Key", systemImage: "arrow.up.right.square")
+                            Label("Get API Key", systemImage: "arrow.up.forward.square")
                             Spacer()
                             Text("elevenlabs.io")
                                 .font(.caption)
@@ -571,7 +571,7 @@ struct ServicesSettingsView: View {
                 if perplexityKeyInput.isEmpty {
                     Link(destination: URL(string: "https://www.perplexity.ai/settings/api")!) {
                         HStack {
-                            Label("Get API Key", systemImage: "arrow.up.right.square")
+                            Label("Get API Key", systemImage: "arrow.up.forward.square")
                             Spacer()
                             Text("perplexity.ai")
                                 .font(.caption)
@@ -588,7 +588,7 @@ struct ServicesSettingsView: View {
                 if tavilyKeyInput.isEmpty {
                     Link(destination: URL(string: "https://app.tavily.com/home")!) {
                         HStack {
-                            Label("Get API Key", systemImage: "arrow.up.right.square")
+                            Label("Get API Key", systemImage: "arrow.up.forward.square")
                             Spacer()
                             Text("tavily.com")
                                 .font(.caption)
@@ -605,7 +605,7 @@ struct ServicesSettingsView: View {
                 if braveKeyInput.isEmpty {
                     Link(destination: URL(string: "https://api-dashboard.search.brave.com/")!) {
                         HStack {
-                            Label("Get API Key", systemImage: "arrow.up.right.square")
+                            Label("Get API Key", systemImage: "arrow.up.forward.square")
                             Spacer()
                             Text("brave.com")
                                 .font(.caption)
@@ -625,7 +625,7 @@ struct ServicesSettingsView: View {
                 if searxngBaseURLInput.isEmpty {
                     Link(destination: URL(string: "https://searx.space")!) {
                         HStack {
-                            Label("Find a public instance", systemImage: "arrow.up.right.square")
+                            Label("Find a public instance", systemImage: "arrow.up.forward.square")
                             Spacer()
                             Text("searx.space")
                                 .font(.caption)

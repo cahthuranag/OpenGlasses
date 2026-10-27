@@ -256,7 +256,7 @@ struct AgenticFeaturesView: View {
                                 Text("\(agentDocs.content(for: type).count) chars")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
-                                Image(systemName: "chevron.right")
+                                Image(systemName: "chevron.forward")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }

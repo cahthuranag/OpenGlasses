@@ -37,7 +37,7 @@ struct CustomToolsView: View {
                                         .lineLimit(2)
                                 }
                                 Spacer()
-                                Image(systemName: "chevron.right")
+                                Image(systemName: "chevron.forward")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }

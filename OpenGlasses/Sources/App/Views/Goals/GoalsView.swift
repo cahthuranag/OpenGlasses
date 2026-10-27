@@ -356,7 +356,7 @@ struct GoalDetailView: View {
         case .done: return "checkmark.circle.fill"
         case .skipped: return "minus.circle"
         case .inProgress: return "circle.lefthalf.filled"
-        case .open, .next: return row.isNext ? "arrow.right.circle" : "circle"
+        case .open, .next: return row.isNext ? "arrow.forward.circle" : "circle"
         }
     }
 

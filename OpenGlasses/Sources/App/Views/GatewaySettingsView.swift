@@ -238,7 +238,7 @@ struct GatewaySettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Image(systemName: "chevron.right")
+            Image(systemName: "chevron.forward")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -289,7 +289,7 @@ struct AddGatewaySheet: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Image(systemName: "chevron.right")
+                                Image(systemName: "chevron.forward")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }

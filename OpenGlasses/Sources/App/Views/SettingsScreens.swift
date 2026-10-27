@@ -609,7 +609,7 @@ struct AIPersonalitySettingsScreen: View {
                 OGStatusLabel(badge.label, kind: badge.isReady ? .ok : .warn)
             }
             Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
+            Image(systemName: "chevron.forward")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)

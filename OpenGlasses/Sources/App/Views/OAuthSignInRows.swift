@@ -386,7 +386,7 @@ struct ChatGPTDeviceCodeSignInRows: View {
                     }
 
                     Link(destination: authorization.verificationURL) {
-                        Label("Open ChatGPT authorization", systemImage: "arrow.up.right.square")
+                        Label("Open ChatGPT authorization", systemImage: "arrow.up.forward.square")
                             .frame(minHeight: rowMinHeight)
                     }
 

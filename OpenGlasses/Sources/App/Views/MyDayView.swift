@@ -102,7 +102,7 @@ struct MyDayView: View {
                                 NavigationLink {
                                     GoalPage(goalID: goalID)
                                 } label: {
-                                    Image(systemName: "chevron.right")
+                                    Image(systemName: "chevron.forward")
                                         .frame(width: OGMetrics.minTouchTarget, height: OGMetrics.minTouchTarget)
                                 }
                                 .buttonStyle(.plain)
@@ -196,7 +196,7 @@ struct MyDayView: View {
                 let seconds = dueAt.timeIntervalSinceReferenceDate
                 if let url = URL(string: "calshow:\(seconds)") { openURL(url) }
             } label: {
-                Image(systemName: "arrow.up.right.square")
+                Image(systemName: "arrow.up.forward.square")
                     .frame(width: OGMetrics.minTouchTarget, height: OGMetrics.minTouchTarget)
             }
             .buttonStyle(.plain)
@@ -651,7 +651,7 @@ struct MyDayHomeView: View {
                 let seconds = dueAt.timeIntervalSinceReferenceDate
                 if let url = URL(string: "calshow:\(seconds)") { openURL(url) }
             } label: {
-                Image(systemName: "arrow.up.right.square")
+                Image(systemName: "arrow.up.forward.square")
                     .frame(width: OGMetrics.minTouchTarget, height: OGMetrics.minTouchTarget)
             }
             .buttonStyle(.plain)

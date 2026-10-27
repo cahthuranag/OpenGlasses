@@ -154,7 +154,7 @@ struct DockLayoutEditorView: View {
                     .padding(.vertical, 2)
                     .background(Color(.tertiarySystemFill), in: Capsule())
             } else if editable != nil {
-                Image(systemName: "chevron.right")
+                Image(systemName: "chevron.forward")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)

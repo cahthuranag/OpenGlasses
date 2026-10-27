@@ -24866,7 +24866,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "منظمة العفو الدولية"
+            "value" : "الذكاء الاصطناعي"
           }
         },
         "es-MX" : {
@@ -25096,7 +25096,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "منظمة العفو الدولية هيكا · %1$@"
+            "value" : "HECA بالذكاء الاصطناعي · %1$@"
           }
         },
         "es-MX" : {
@@ -49853,6 +49853,82 @@
         }
       }
     },
+    "China (Beijing)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الصين (بكين)"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "China (Beijing)"
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chine (Pékin)"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kína (Peking)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cina (Pechino)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中国（北京）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "중국(베이징)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "China (Beijing)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "China (Pequim)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Китай (Пекин)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中国（北京）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中國（北京）"
+          }
+        }
+      }
+    },
     "Choice" : {
       "localizations" : {
         "ar" : {
@@ -51018,6 +51094,158 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇伺服器實作的通訊協定，並輸入完整的 WebSocket URL。公開端點必須使用 wss://。"
+          }
+        }
+      }
+    },
+    "Choose the region your Model Studio workspace is in, replace {workspace} with its ID and use an API key from that workspace. Images are limited to one per second. App context updates are supported; text turns are unavailable." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختر المنطقة التي توجد فيها مساحة عمل Model Studio، واستبدل {workspace} بمعرّفها، واستخدم مفتاح API من تلك المساحة. الحد الأقصى صورة واحدة في الثانية. تحديثات سياق التطبيق مدعومة؛ الأدوار النصية غير متاحة."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige la región de tu espacio de trabajo de Model Studio, reemplaza {workspace} con su ID y usa una clave de API de ese espacio. Las imágenes se limitan a una por segundo. Admite actualizaciones del contexto de la app; los turnos de texto no están disponibles."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez la région de votre espace de travail Model Studio, remplacez {workspace} par son identifiant et utilisez une clé API de cet espace. Les images sont limitées à une par seconde. Les mises à jour du contexte de l’app sont prises en charge; les tours de texte ne sont pas disponibles."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Válassza ki a Model Studio-munkaterület régióját, cserélje le a {workspace} értéket az azonosítójára, és használjon egy API-kulcsot abból a munkaterületből. Másodpercenként legfeljebb egy kép küldhető. Az alkalmazáskörnyezet frissítése támogatott; a szöveges fordulók nem érhetők el."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli la regione dell’area di lavoro Model Studio, sostituisci {workspace} con il suo ID e usa una chiave API di quell’area. Le immagini sono limitate a una al secondo. Gli aggiornamenti del contesto dell’app sono supportati; i turni di testo non sono disponibili."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio ワークスペースのリージョンを選び、{workspace} をその ID に置き換えて、そのワークスペースの API キーを使ってください。画像は毎秒1枚までです。アプリのコンテキスト更新に対応しています。テキストターンには対応していません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio 작업 공간의 리전을 선택하고 {workspace}를 해당 ID로 바꾼 뒤 그 작업 공간의 API 키를 사용하세요. 이미지는 초당 한 장으로 제한됩니다. 앱 컨텍스트 업데이트를 지원하며 텍스트 턴은 지원하지 않습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies de regio van je Model Studio-werkruimte, vervang {workspace} door de ID ervan en gebruik een API-sleutel van die werkruimte. Afbeeldingen zijn beperkt tot één per seconde. Updates van appcontext worden ondersteund; tekstbeurten zijn niet beschikbaar."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolha a região do seu espaço de trabalho do Model Studio, substitua {workspace} pelo ID dele e use uma chave de API desse espaço. O limite é de uma imagem por segundo. Oferece suporte a atualizações do contexto do app; turnos de texto não estão disponíveis."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выберите регион рабочей области Model Studio, замените {workspace} на её ID и используйте ключ API этой рабочей области. Допускается одно изображение в секунду. Обновления контекста приложения поддерживаются; текстовые ходы недоступны."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Model Studio 工作空间所在的地域，将 {workspace} 替换为其 ID，并使用该工作空间的 API 密钥。图像限制为每秒一张。支持应用上下文更新；不支持文本轮次。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇 Model Studio 工作空間所在的區域，將 {workspace} 替換為其 ID，並使用該工作空間的 API 金鑰。影像限制為每秒一張。支援 App 上下文更新；不支援文字回合。"
+          }
+        }
+      }
+    },
+    "Choose the region your Model Studio workspace is in, replace {workspace} with its ID and use an API key from that workspace. Supports voice, tools and text turns; images are unavailable." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختر المنطقة التي توجد فيها مساحة عمل Model Studio، واستبدل {workspace} بمعرّفها، واستخدم مفتاح API من تلك المساحة. يدعم الصوت والأدوات والأدوار النصية؛ الصور غير متاحة."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige la región de tu espacio de trabajo de Model Studio, reemplaza {workspace} con su ID y usa una clave de API de ese espacio. Admite voz, herramientas y turnos de texto; las imágenes no están disponibles."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez la région de votre espace de travail Model Studio, remplacez {workspace} par son identifiant et utilisez une clé API de cet espace. Prend en charge la voix, les outils et les tours de texte; les images ne sont pas disponibles."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Válassza ki a Model Studio-munkaterület régióját, cserélje le a {workspace} értéket az azonosítójára, és használjon egy API-kulcsot abból a munkaterületből. Támogatja a hangot, az eszközöket és a szöveges fordulókat; a képek nem érhetők el."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli la regione dell’area di lavoro Model Studio, sostituisci {workspace} con il suo ID e usa una chiave API di quell’area. Supporta voce, strumenti e turni di testo; le immagini non sono disponibili."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio ワークスペースのリージョンを選び、{workspace} をその ID に置き換えて、そのワークスペースの API キーを使ってください。音声、ツール、テキストターンに対応しています。画像には対応していません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio 작업 공간의 리전을 선택하고 {workspace}를 해당 ID로 바꾼 뒤 그 작업 공간의 API 키를 사용하세요. 음성, 도구, 텍스트 턴을 지원하며 이미지는 지원하지 않습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies de regio van je Model Studio-werkruimte, vervang {workspace} door de ID ervan en gebruik een API-sleutel van die werkruimte. Ondersteunt spraak, tools en tekstbeurten; afbeeldingen zijn niet beschikbaar."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escolha a região do seu espaço de trabalho do Model Studio, substitua {workspace} pelo ID dele e use uma chave de API desse espaço. Oferece suporte a voz, ferramentas e turnos de texto; imagens não estão disponíveis."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выберите регион рабочей области Model Studio, замените {workspace} на её ID и используйте ключ API этой рабочей области. Поддерживаются голос, инструменты и текстовые ходы; изображения недоступны."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Model Studio 工作空间所在的地域，将 {workspace} 替换为其 ID，并使用该工作空间的 API 密钥。支持语音、工具和文本轮次；不支持图像。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇 Model Studio 工作空間所在的區域，將 {workspace} 替換為其 ID，並使用該工作空間的 API 金鑰。支援語音、工具和文字回合；不支援影像。"
           }
         }
       }
@@ -69605,7 +69833,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "وصف لمنظمة العفو الدولية"
+            "value" : "وصف للذكاء الاصطناعي"
           }
         },
         "es-MX" : {
@@ -86156,6 +86384,82 @@
         }
       }
     },
+    "Enter your Model Studio workspace ID: letters, numbers and hyphens only." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أدخل معرّف مساحة عمل Model Studio: أحرف وأرقام وشرطات فقط."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingresa el ID de tu espacio de trabajo de Model Studio: solo letras, números y guiones."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entrez l’identifiant de votre espace de travail Model Studio : lettres, chiffres et traits d’union seulement."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adja meg a Model Studio-munkaterület azonosítóját: csak betűk, számok és kötőjelek."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inserisci l’ID dell’area di lavoro Model Studio: solo lettere, numeri e trattini."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio ワークスペース ID を入力してください（英字、数字、ハイフンのみ）。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio 작업 공간 ID를 입력하세요. 문자, 숫자, 하이픈만 사용할 수 있습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voer je Model Studio-werkruimte-ID in: alleen letters, cijfers en koppeltekens."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Digite o ID do seu espaço de trabalho do Model Studio: apenas letras, números e hifens."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введите ID рабочей области Model Studio: только буквы, цифры и дефисы."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入 Model Studio 工作空间 ID：只能包含字母、数字和连字符。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "輸入 Model Studio 工作空間 ID：只能包含字母、數字和連字號。"
+          }
+        }
+      }
+    },
     "Enterprise customers receive a code with their order. Codes are signed and validated on-device — no network required." : {
       "comment" : "A description of how enterprise customers can purchase Field Assist.",
       "extractionState" : "stale",
@@ -94455,6 +94759,82 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 searx.space 找到公開實例"
+          }
+        }
+      }
+    },
+    "Find the workspace ID on its details page in the Model Studio console. Beijing and Singapore workspaces have separate IDs and keys." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تجد معرّف مساحة العمل في صفحة تفاصيلها في وحدة تحكم Model Studio. لمساحات العمل في بكين وسنغافورة معرّفات ومفاتيح منفصلة."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encuentra el ID del espacio de trabajo en su página de detalles en la consola de Model Studio. Los espacios de Beijing y Singapur tienen ID y claves distintos."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’identifiant de l’espace de travail se trouve sur sa page de détails dans la console Model Studio. Les espaces de Pékin et de Singapour ont des identifiants et des clés distincts."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A munkaterület azonosítója a Model Studio konzolon, a munkaterület részletei oldalon található. A pekingi és a szingapúri munkaterületek azonosítói és kulcsai különbözőek."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trovi l’ID dell’area di lavoro nella sua pagina dei dettagli nella console di Model Studio. Le aree di Pechino e di Singapore hanno ID e chiavi separati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークスペース ID は、Model Studio コンソールのワークスペース詳細ページで確認できます。北京とシンガポールのワークスペースは ID もキーも別々です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "작업 공간 ID는 Model Studio 콘솔의 작업 공간 세부 정보 페이지에서 확인할 수 있습니다. 베이징과 싱가포르 작업 공간은 ID와 키가 서로 다릅니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je vindt de werkruimte-ID op de detailpagina van de werkruimte in de Model Studio-console. Werkruimten in Beijing en Singapore hebben aparte ID’s en sleutels."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encontre o ID do espaço de trabalho na página de detalhes dele no console do Model Studio. Os espaços de Pequim e de Singapura têm IDs e chaves separados."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID рабочей области указан на её странице сведений в консоли Model Studio. У рабочих областей в Пекине и Сингапуре разные ID и ключи."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Model Studio 控制台中工作空间的详情页面可以找到其 ID。北京和新加坡的工作空间 ID 和密钥各不相同。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Model Studio 主控台中工作空間的詳細資料頁面可以找到其 ID。北京和新加坡的工作空間 ID 和金鑰各不相同。"
           }
         }
       }
@@ -116508,6 +116888,82 @@
         }
       }
     },
+    "International (Singapore)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدولية (سنغافورة)"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Internacional (Singapur)"
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "International (Singapour)"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nemzetközi (Szingapúr)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Internazionale (Singapore)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "国際（シンガポール）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "국제(싱가포르)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Internationaal (Singapore)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Internacional (Singapura)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Международный (Сингапур)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "国际（新加坡）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "國際（新加坡）"
+          }
+        }
+      }
+    },
     "International Frameworks" : {
       "localizations" : {
         "ar" : {
@@ -120842,6 +121298,82 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在這支手機上保存了14天以供支援報告使用。沒有文字 — 只有模型、時間、手冊頁面和錯誤。"
+          }
+        }
+      }
+    },
+    "Kept on this phone for up to 14 days for support reports: models, timings, manual pages, errors, and web search queries and returned text. Keys and tokens are masked." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُحتفظ بها على هذا الهاتف لمدة تصل إلى 14 يومًا لتقارير الدعم: النماذج والتوقيتات وصفحات الأدلة والأخطاء، واستعلامات البحث على الويب والنصوص المُعادة. تُخفى المفاتيح والرموز المميزة."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se conserva en este celular hasta 14 días para los reportes de soporte: modelos, tiempos, páginas de manuales, errores, y las búsquedas web y el texto que devuelven. Las claves y los tokens se ocultan."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conservé sur ce téléphone jusqu’à 14 jours pour les rapports de support : modèles, durées, pages de manuel, erreurs, ainsi que les recherches Web et le texte renvoyé. Les clés et les jetons sont masqués."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Legfeljebb 14 napig ezen a telefonon marad a támogatási jelentésekhez: modellek, időzítések, kézikönyvoldalak, hibák, valamint a webes keresések és a visszakapott szöveg. A kulcsok és tokenek el vannak takarva."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conservato su questo telefono fino a 14 giorni per i rapporti di supporto: modelli, tempi, pagine dei manuali, errori, e le ricerche web con il testo restituito. Chiavi e token sono mascherati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サポートレポートのため、この電話に最大14日間保存されます：モデル、所要時間、マニュアルのページ、エラー、ウェブ検索のクエリと返されたテキスト。キーとトークンは伏せられます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지원 보고서를 위해 이 전화기에 최대 14일 동안 보관됩니다: 모델, 소요 시간, 매뉴얼 페이지, 오류, 웹 검색어와 반환된 텍스트. 키와 토큰은 가려집니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tot 14 dagen op deze telefoon bewaard voor ondersteuningsrapporten: modellen, tijden, handleidingpagina’s, fouten, en webzoekopdrachten met de teruggegeven tekst. Sleutels en tokens worden gemaskeerd."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mantido neste telefone por até 14 dias para relatórios de suporte: modelos, tempos, páginas de manuais, erros, e as pesquisas na web com o texto retornado. Chaves e tokens são mascarados."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Хранится на этом телефоне до 14 дней для отчётов в поддержку: модели, время выполнения, страницы руководств, ошибки, а также веб-запросы и полученный текст. Ключи и токены скрыты."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为支持报告在这部手机上最多保留 14 天：模型、耗时、手册页面、错误，以及网页搜索查询和返回的文本。密钥和令牌会被遮盖。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為支援報告在這支手機上最多保留 14 天：模型、耗時、手冊頁面、錯誤，以及網頁搜尋查詢和傳回的文字。金鑰和權杖會被遮蓋。"
           }
         }
       }
@@ -135402,6 +135934,82 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型庫"
+          }
+        }
+      }
+    },
+    "Model Studio" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio（百炼）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Studio"
           }
         }
       }
@@ -192790,6 +193398,82 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將 URL 中的 {workspace} 替換為北京區域的 Model Studio 工作空間 ID。使用該工作空間的 API 金鑰。這與 Qwen Coding Plan 訂閱不同。"
+          }
+        }
+      }
+    },
+    "Replace {workspace} in the URL with your Model Studio workspace ID, and use an API key from that workspace. Beijing and Singapore workspaces have separate IDs and keys. This is separate from the Qwen Coding Plan subscription." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استبدل {workspace} في عنوان URL بمعرّف مساحة عمل Model Studio، واستخدم مفتاح API من تلك المساحة. لمساحات العمل في بكين وسنغافورة معرّفات ومفاتيح منفصلة. وهذا منفصل عن اشتراك Qwen Coding Plan."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplaza {workspace} en la URL con el ID de tu espacio de trabajo de Model Studio y usa una clave de API de ese espacio. Los espacios de Beijing y Singapur tienen ID y claves distintos. Es independiente de la suscripción Qwen Coding Plan."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplacez {workspace} dans l’URL par l’identifiant de votre espace de travail Model Studio et utilisez une clé API de cet espace. Les espaces de Pékin et de Singapour ont des identifiants et des clés distincts. C’est distinct de l’abonnement Qwen Coding Plan."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cserélje le az URL-ben a {workspace} értéket a Model Studio-munkaterület azonosítójára, és használjon egy API-kulcsot abból a munkaterületből. A pekingi és a szingapúri munkaterületek azonosítói és kulcsai különbözőek. Ez különálló a Qwen Coding Plan-előfizetéstől."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sostituisci {workspace} nell’URL con l’ID dell’area di lavoro Model Studio e usa una chiave API di quell’area. Le aree di Pechino e di Singapore hanno ID e chiavi separati. È distinto dall’abbonamento Qwen Coding Plan."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL の {workspace} を Model Studio ワークスペース ID に置き換え、そのワークスペースの API キーを使ってください。北京とシンガポールのワークスペースは ID もキーも別々です。Qwen Coding Plan のサブスクリプションとは別です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL의 {workspace}를 Model Studio 작업 공간 ID로 바꾸고 그 작업 공간의 API 키를 사용하세요. 베이징과 싱가포르 작업 공간은 ID와 키가 서로 다릅니다. Qwen Coding Plan 구독과 별개입니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vervang {workspace} in de URL door je Model Studio-werkruimte-ID en gebruik een API-sleutel van die werkruimte. Werkruimten in Beijing en Singapore hebben aparte ID’s en sleutels. Dit staat los van het Qwen Coding Plan-abonnement."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Substitua {workspace} na URL pelo ID do seu espaço de trabalho do Model Studio e use uma chave de API desse espaço. Os espaços de Pequim e de Singapura têm IDs e chaves separados. Isso é independente da assinatura Qwen Coding Plan."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Замените {workspace} в URL на ID рабочей области Model Studio и используйте ключ API этой рабочей области. У рабочих областей в Пекине и Сингапуре разные ID и ключи. Это не относится к подписке Qwen Coding Plan."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 URL 中的 {workspace} 替换为 Model Studio 工作空间 ID，并使用该工作空间的 API 密钥。北京和新加坡的工作空间 ID 和密钥各不相同。这与 Qwen Coding Plan 订阅不同。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將 URL 中的 {workspace} 替換為 Model Studio 工作空間 ID，並使用該工作空間的 API 金鑰。北京和新加坡的工作空間 ID 和金鑰各不相同。這與 Qwen Coding Plan 訂閱不同。"
           }
         }
       }
@@ -271425,6 +272109,82 @@
         }
       }
     },
+    "Use a SiliconFlow API key. One key reaches Qwen, DeepSeek, GLM and more. Pick a vision model, such as Qwen3-VL, to send camera images." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استخدم مفتاح API من SiliconFlow. مفتاح واحد يصل إلى Qwen وDeepSeek وGLM وغيرها. اختر نموذج رؤية، مثل Qwen3-VL، لإرسال صور الكاميرا."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa una clave de API de SiliconFlow. Una sola clave da acceso a Qwen, DeepSeek, GLM y más. Elige un modelo de visión, como Qwen3-VL, para enviar imágenes de la cámara."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisez une clé API SiliconFlow. Une seule clé donne accès à Qwen, DeepSeek, GLM et plus. Choisissez un modèle de vision, comme Qwen3-VL, pour envoyer les images de la caméra."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Használjon SiliconFlow API-kulcsot. Egyetlen kulccsal elérhető a Qwen, a DeepSeek, a GLM és még sok más. A kamera képeinek küldéséhez válasszon képfelismerő modellt, például a Qwen3-VL-t."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa una chiave API di SiliconFlow. Una sola chiave dà accesso a Qwen, DeepSeek, GLM e altri. Scegli un modello di visione, come Qwen3-VL, per inviare le immagini della fotocamera."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SiliconFlow の API キーを使ってください。1つのキーで Qwen、DeepSeek、GLM などを利用できます。カメラの画像を送るには、Qwen3-VL などの画像対応モデルを選んでください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SiliconFlow API 키를 사용하세요. 키 하나로 Qwen, DeepSeek, GLM 등을 사용할 수 있습니다. 카메라 이미지를 보내려면 Qwen3-VL 같은 비전 모델을 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gebruik een SiliconFlow-API-sleutel. Met één sleutel bereik je Qwen, DeepSeek, GLM en meer. Kies een visiemodel, zoals Qwen3-VL, om camerabeelden te versturen."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use uma chave de API da SiliconFlow. Uma só chave dá acesso a Qwen, DeepSeek, GLM e outros. Escolha um modelo de visão, como o Qwen3-VL, para enviar imagens da câmera."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Используйте ключ API SiliconFlow. Один ключ открывает доступ к Qwen, DeepSeek, GLM и другим моделям. Чтобы отправлять изображения с камеры, выберите модель с поддержкой изображений, например Qwen3-VL."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 SiliconFlow（硅基流动）API 密钥。一个密钥即可使用 Qwen、DeepSeek、GLM 等模型。要发送相机图像，请选择视觉模型，例如 Qwen3-VL。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 SiliconFlow API 金鑰。一個金鑰即可使用 Qwen、DeepSeek、GLM 等模型。要傳送相機影像，請選擇視覺模型，例如 Qwen3-VL。"
+          }
+        }
+      }
+    },
     "Use a Speech Console API key, separate from an Ark chat key. Full duplex 3.0 uses model version 1.2.6.1. Supports audio, tools, app context updates and speaking supplied text. Images and model-generated text turns are unavailable." : {
       "localizations" : {
         "ar" : {
@@ -286512,6 +287272,82 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可與您的 iPhone 配合使用"
+          }
+        }
+      }
+    },
+    "Workspace ID" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "معرّف مساحة العمل"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID del espacio de trabajo"
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identifiant de l’espace de travail"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Munkaterület-azonosító"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID area di lavoro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークスペース ID"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "작업 공간 ID"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werkruimte-ID"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID do espaço de trabalho"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID рабочей области"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工作空间 ID"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工作空間 ID"
           }
         }
       }

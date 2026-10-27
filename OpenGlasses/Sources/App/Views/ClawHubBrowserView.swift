@@ -413,8 +413,9 @@ struct ClawHubBrowserView: View {
             if more.isEmpty {
                 canLoadMore = false
             } else {
-                let existingSlugs = Set(skills.map(\.slug))
-                let newSkills = more.filter { !existingSlugs.contains($0.slug) }
+                // A page can repeat a slug within itself as well as from the page before.
+                var seenSlugs = Set(skills.map(\.slug))
+                let newSkills = more.filter { seenSlugs.insert($0.slug).inserted }
                 skills.append(contentsOf: newSkills)
                 canLoadMore = more.count >= 30
             }

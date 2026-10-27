@@ -153,7 +153,7 @@ struct VaultManagerView: View {
 
             if !warnings.isEmpty {
                 Section {
-                    ForEach(warnings, id: \.self) { warning in
+                    ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
                         Label(warning, systemImage: "exclamationmark.triangle")
                             .font(.caption)
                             .foregroundStyle(.secondary)

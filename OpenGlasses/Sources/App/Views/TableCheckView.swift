@@ -23,13 +23,16 @@ struct PicturedTablesList: View {
 
     private struct OpenedTable: Identifiable {
         let table: ManualTable
-        var id: String { table.label }
+        let index: Int
+        var id: Int { index }
     }
 
     var body: some View {
-        ForEach(tables, id: \.label) { table in
+        // By position, not caption: one manual can print the same caption twice ("Table 2" in two
+        // chapters, or a continuation that was not joined), and rows sharing an id can crash the list.
+        ForEach(Array(tables.enumerated()), id: \.offset) { index, table in
             Button {
-                opened = OpenedTable(table: table)
+                opened = OpenedTable(table: table, index: index)
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "tablecells")

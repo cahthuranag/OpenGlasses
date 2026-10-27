@@ -69,6 +69,18 @@ enum ModelFetcher {
 
     /// Fetch models for a provider. Returns an empty array on failure.
     static func fetchModels(provider: LLMProvider, apiKey: String, baseURL: String) async -> [RemoteModel] {
+        uniqueByID(await fetchListing(provider: provider, apiKey: apiKey, baseURL: baseURL))
+    }
+
+    /// The first model under each id, in the order the provider listed them. The model pickers
+    /// are SwiftUI lists keyed by id, and a list with two rows under one id can crash UIKit when it
+    /// updates; a provider's `/models` is not promised to list each id once.
+    static func uniqueByID(_ models: [RemoteModel]) -> [RemoteModel] {
+        var seen = Set<String>()
+        return models.filter { seen.insert($0.id).inserted }
+    }
+
+    private static func fetchListing(provider: LLMProvider, apiKey: String, baseURL: String) async -> [RemoteModel] {
         guard MedicalEgressGuard.allows(.providerModelCatalog) else { return [] }
         // An xAI model with no key lists what the signed-in account can use: its token carries
         // `api:access`, so the public `/v1/models` takes it as a bearer like a key.

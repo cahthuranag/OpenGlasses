@@ -2,8 +2,10 @@
 
 **Status:** 🚧 P0 built 2026-10-27 (PR 861) (all seven items, headless); P1a built 2026-10-28 (the
 three open items: page reads are not camera turns, table values through `table_lookup` and "show
-me" marking only the cited table's rows; a rename on launch measured and left out); P1 = partner
-re-run; finding a table from plain words is open. Drafted 2026-10-27 from the partner's three
+me" marking only the cited table's rows; a rename on launch measured and left out); P1b built 2026-10-28
+(finding a table from plain words: a table directory scored on titles, headings and units names one
+or two tables beside a value question that names none, and `table_lookup` reads title words through
+it); P1 = partner re-run. Drafted 2026-10-27 from the partner's three
 structured vault test sessions on build 564 (2026-10-26). No later build changes any of it:
 nothing merged between 564 and 570 touches table reading, page labels, `show_source`, the smart
 camera or `rule_chain`.
@@ -377,6 +379,69 @@ in the top 30 — the one worded the way the partner asked). The rename would no
 table. Finding
 a table from plain words alone stays open for P1; item 2 sends any value the model does find to
 `table_lookup`.
+
+### P1b — Finding a table from plain words (headless)
+
+A technician asks for a tabulated value without the table's number. The row passages are mostly
+numbers, so the passage search rarely brings the table's own rows; the words that tell one table
+from another are in its title, its column and row-key headings and its units. Invented fixtures
+only (widgets, housings, sprockets).
+
+**✅ Built.** `TableDirectory` (pure) scores every read table of the searched manuals against the
+question on those words alone: [[LexicalSupport]] content terms with "-ies" read as "-y" (a plural
+title meets a singular question), a number with its unit as one term ("30 °C" = "30 degrees") and a
+unit named on its own; each shared term weighed by how few of the tables print it (inverse document
+frequency over the tables, scaled so a term only one table prints weighs 1 in a vault of any size),
+a heading or unit word at 0.6 of a title word, and "table" itself left out. `candidates(for:in:)`
+offers the best when it scores at least 0.65 with two or more shared terms, and the next when it
+clears the same and scores at least 0.6 of the best — never more than two; each carries its score
+and margin. A table continued under the same caption is one table. `TableReference.Entry` now
+carries the document name and the headings (`init(table:documentName:)`); recognising a table a
+question names still reads the label and title only, so retrieval is unchanged.
+
+- **Per-turn hint.** `TableDirectory.asksForValue` (generic words: "how many/much/far/deep",
+  "what size", "good for", "rating", "factor", "size", "maximum", "minimum", "fill", a number with
+  a unit …) and no table named (`TableReference.references`) → `FieldSessionService.manualPassagesContext`
+  appends one line after the passages: "Tables that may answer this: Table N — <title> (…); …. Read
+  the value with table_lookup (table, row, column), and ask the technician for any input the table
+  needs." Titles lose a trailing "(See …)" cross-reference and are cut at 90 characters on a word;
+  the document is named only when the tables come from more than one. Nothing when no table clears
+  the threshold. The catalogue is read only for a value question.
+- **`table_lookup` by words.** A `table` given as words resolves through the same score
+  (`TableLookup.byTitle`): the best table, or the existing ambiguous outcome listing every table
+  within 0.9 of the best; words the score cannot weigh (short words, bare numbers) fall back to the
+  old shared-title-word count. The tool description is unchanged.
+
+11 tests in `TableDirectoryTests` (ranking, threshold and margin, plural/unit folding, continued
+captions, the value detector, hint format and length, the document named only for several books,
+no hint for a named table / a non-value turn / nothing fitting, title shortening, lookup by words
+and its ambiguity) and 1 in `TableLookupTests` (the hint in the per-turn block of a session, absent
+for a named table and a non-value turn).
+
+**Measured privately (counts only)** over the newer edition with its tables read (113 of 227
+captions), questions written privately the way an electrician asks:
+
+| Set | Questions | Passages carry the table, top four (before) | Directory: first / top two (after) | Hint names it | Hint fires |
+|---|---|---|---|---|---|
+| New plain-words set (13 tables) | 14 | 11 | 11 / 12 | 12 | 14 of 14 |
+| Earlier table-cells set, no table named | 26 | 15 | 21 / 23 | 23 | 25 of 26 |
+| P1a's three questions | 3 | 1 | 2 / 3 | 3 | 3 of 3 |
+
+"Passages carry the table" is the retrieval eval's hit@4: a passage printing the table's label,
+prose that cites it included — so it overstates what the model is handed of the table itself. The
+hint fires on none of the 5 questions that are not table questions (one reads as a value question;
+no table clears the threshold) and on none of the 13 that name a table (6 new, 7 earlier). It
+averages about 300 characters. The misses are tables whose titles barely describe them (a factor
+table titled after the tables it corrects) or a neighbouring table whose title shares the question's
+words. Retrieval is unchanged by construction (the hint is appended after the passages; recognising
+a named table reads the title only), and the retrieval eval agrees: the code book's answer key (66 scored), the three sets above and the 13 questions naming a table give the same hit@1 and hit@4 before and after (66: 26 / 35). Not measured: a
+model's turn end to end, or `table_lookup` with words a model would pass.
+
+**Both editions loaded** (as the partner's vault has them): at first the same table's other edition
+took the second place, and the hint named the expected table for 11 of the 14 new questions. Two
+editions are now one candidate per label, naming every edition that prints it, and the hint names
+the expected table for 12 of 14, the same as with one edition (P1a's three: 3 of 3). It averages
+about 350 characters with the editions named. One test in `TableDirectoryTests` covers it.
 
 ## Owner decisions taken (reversible)
 

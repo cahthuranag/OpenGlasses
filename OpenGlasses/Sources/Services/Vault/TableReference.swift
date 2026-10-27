@@ -19,14 +19,28 @@ import Foundation
 /// "Table 99", "Table 95A", "Table Q7". Pure and deterministic.
 enum TableReference {
 
-    /// One table a vault holds, by label and title — what title words are matched against.
+    /// One table a vault holds, by label and title — what title words are matched against — and,
+    /// for [[TableDirectory]] (Plan JW P1b), its document, its column and row-key headings and its
+    /// units. Recognising a table a question names reads the label and title only.
     struct Entry: Equatable, Hashable {
         let label: String
         let title: String
+        var documentName: String?
+        /// Column heading paths, row-key headings and units, as printed.
+        var headings: [String]
 
-        init(label: String, title: String) {
+        init(label: String, title: String, documentName: String? = nil, headings: [String] = []) {
             self.label = label
             self.title = title
+            self.documentName = documentName
+            self.headings = headings
+        }
+
+        /// A stored table as the directory reads it.
+        init(table: ManualTable, documentName: String? = nil) {
+            let columns = table.columns.flatMap { $0.path + ($0.unit.map { [$0] } ?? []) }
+            self.init(label: table.label, title: table.title, documentName: documentName,
+                      headings: table.rowHeaders + columns)
         }
     }
 

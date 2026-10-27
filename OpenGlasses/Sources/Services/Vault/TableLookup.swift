@@ -216,8 +216,32 @@ enum TableLookup {
         return TableReference.labels(in: "table " + trimmed).first
     }
 
-    /// The tables whose titles share the most of the asked words — all of them on a tie.
+    /// The tables the asked words describe best — all of them when two score within
+    /// `titleTieShare` of each other, so the lookup asks which.
+    ///
+    /// Scored by [[TableDirectory]] (Plan JW P1b), the score the per-turn hint offers tables by:
+    /// title, headings and units, each shared word weighed by how few of the searched tables print
+    /// it — so "the widget ratings table" and the words of a long descriptive title both land on
+    /// the table the hint named. Words it cannot weigh (a short word, a bare number) fall back to
+    /// counting the title words shared, as before.
     private static func byTitle(_ words: String, in pool: [Source]) -> [Source] {
+        let entries = pool.map { TableReference.Entry(table: $0.table, documentName: $0.documentId) }
+        let ranked = TableDirectory.ranked(words, in: entries)
+        if let best = ranked.first {
+            let close = ranked.filter { $0.score >= best.score * titleTieShare }
+            return pool.filter { source in
+                close.contains { $0.entry.documentName == source.documentId
+                    && $0.entry.label.caseInsensitiveCompare(source.table.label) == .orderedSame }
+            }
+        }
+        return byTitleWordCount(words, in: pool)
+    }
+
+    /// Two tables whose scores for the asked words are this close are both offered.
+    static let titleTieShare = 0.9
+
+    /// The tables whose titles share the most of the asked words — all of them on a tie.
+    private static func byTitleWordCount(_ words: String, in pool: [Source]) -> [Source] {
         let asked = significantWords(words).subtracting(["table", "tables"])
         guard !asked.isEmpty else { return [] }
         let scored = pool.map { ($0, asked.intersection(significantWords($0.table.title)).count) }

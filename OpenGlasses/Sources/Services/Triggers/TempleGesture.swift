@@ -33,11 +33,13 @@ enum TempleGesture: String, CaseIterable, Codable, Identifiable {
 
 /// Which media command each tap count arrives as, for one glasses model.
 ///
-/// **Device-unverified (Plan GJ P2, formerly CH P3).** The default table is the conventional AVRCP
-/// reading of a headset's touch surface — single press = play/pause, double = next track, triple =
-/// previous track — and has never been observed on the glasses. Some Bluetooth stacks deliver a
-/// single press as a discrete `play` or `pause` rather than a toggle, so all three count as one tap.
-/// When the device run reports, its findings go into `forModel(_:)` and the confirmation flags below.
+/// **Confirmed on a Ray-Ban Meta Gen 2 (Plan GJ P2, 2026-10).** The default table is the
+/// conventional AVRCP reading of a headset's touch surface — single press = play/pause, double =
+/// next track, triple = previous track. A tester's test-mode run on build 564 heard one tap as
+/// `pause`, two as `nextTrack` and three as `previousTrack`. Some Bluetooth stacks deliver a single
+/// press as a toggle or a discrete `play` instead, so all three still count as one tap. Session
+/// control (taps during the app's own conversation) is still unobserved, and other models are
+/// assumed to match until a run says otherwise; findings go into `forModel(_:)` and the flags.
 struct TempleCalibration: Equatable {
     var table: [MediaRemoteCommand: TempleGesture]
     /// A device run has confirmed `table` on real glasses.
@@ -51,8 +53,8 @@ struct TempleCalibration: Equatable {
     /// A device run has confirmed `sessionControlAvailable`.
     var sessionControlConfirmed: Bool
 
-    /// The assumed, unconfirmed default.
-    static let assumedDefault = TempleCalibration(
+    /// The conventional AVRCP table, confirmed on a Ray-Ban Meta Gen 2.
+    static let standard = TempleCalibration(
         table: [
             .togglePlayPause: .one,
             .play: .one,
@@ -60,14 +62,14 @@ struct TempleCalibration: Equatable {
             .nextTrack: .two,
             .previousTrack: .three,
         ],
-        deviceConfirmed: false,
+        deviceConfirmed: true,
         sessionControlAvailable: true,
         sessionControlConfirmed: false)
 
-    /// The table for a glasses model. Every model uses the assumed default until a device run
-    /// records otherwise.
+    /// The table for a glasses model. Every model uses the Gen 2 table until a device run records
+    /// otherwise.
     static func forModel(_ model: String?) -> TempleCalibration {
-        assumedDefault
+        standard
     }
 
     /// The calibration in force now.

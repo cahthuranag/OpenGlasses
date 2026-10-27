@@ -30,6 +30,11 @@ import Foundation
 final class AudioSessionCoordinator: @unchecked Sendable {
     static let shared = AudioSessionCoordinator()
 
+    /// Posted when a hand-back is deferred because a coexisting rider is on the session, so the
+    /// caller reconfigures it in place under that rider. The temple taps' silent player is one,
+    /// and re-checks its claim on this (a reconfigure is exactly what was seen to end it).
+    static let riderHandBackDeferred = Notification.Name("AudioSessionRiderHandBackDeferred")
+
     private let stateQueue = DispatchQueue(label: "audio.session.coordinator.state")
     /// BJ PR1 — one serial queue for BOTH activation and deactivation, so their order is total.
     /// Internal (not private) so a test can block it and drive the release race deterministically.
@@ -247,6 +252,9 @@ final class AudioSessionCoordinator: @unchecked Sendable {
             PrivacyLog.audio(.coordinator, .handBackDeferred,
                              owner: lease.map { PrivacyToken($0.owner.rawValue) },
                              detail: PrivacyToken(Self.token(for: decision)))
+            if case .reconfigureInPlace(.coexistingRider) = decision {
+                NotificationCenter.default.post(name: Self.riderHandBackDeferred, object: self)
+            }
             return decision
         }
         do {

@@ -13,7 +13,8 @@ final class MediaTriggerPolicyTests: XCTestCase {
         owner: AudioSessionOwner? = nil,
         claimed: NowPlayingClaimMode? = nil,
         conversation: Bool = false,
-        sessionControl: Bool = true
+        sessionControl: Bool = true,
+        live: Bool = true
     ) -> MediaTriggerConditions {
         MediaTriggerConditions(
             triggerEnabled: enabled,
@@ -22,7 +23,75 @@ final class MediaTriggerPolicyTests: XCTestCase {
             leaseOwner: owner,
             claimedMode: claimed,
             conversationActive: conversation,
-            sessionControlEnabled: sessionControl)
+            sessionControlEnabled: sessionControl,
+            standbyClaimLive: live)
+    }
+
+    // MARK: - Claim health (a standby claim whose player stopped)
+
+    func testDeadStandbyClaimIsTakenAfresh() {
+        // The Gen 2 report: the claim stayed `.standby` while its player had stopped, so the
+        // policy deferred and no tap arrived again.
+        XCTAssertEqual(MediaTriggerPolicy.decide(conditions(claimed: .standby, live: false)),
+                       .claim(.standby))
+    }
+
+    func testDeadStandbyClaimIsReleasedWhenNoClaimIsWanted() {
+        XCTAssertEqual(MediaTriggerPolicy.decide(conditions(userAudio: true, claimed: .standby,
+                                                            live: false)), .release)
+    }
+
+    func testDeadStandbyClaimSwitchesToSessionControlInAConversation() {
+        XCTAssertEqual(MediaTriggerPolicy.decide(conditions(owner: .geminiLive, claimed: .standby,
+                                                            live: false)), .claim(.sessionControl))
+    }
+
+    func testHealthIsIgnoredForSessionControl() {
+        // Session control has no player, so "not playing" is its normal state.
+        XCTAssertEqual(MediaTriggerPolicy.decide(conditions(owner: .geminiLive,
+                                                            claimed: .sessionControl, live: false)),
+                       .defer)
+    }
+
+    func testUnclaimedAndUnwantedStillDefers() {
+        XCTAssertEqual(MediaTriggerPolicy.decide(conditions(userAudio: true, live: false)), .defer)
+    }
+
+    // MARK: - Release reasons (what the support log says)
+
+    func testReleaseReasonNamesTheConditionThatWon() {
+        XCTAssertEqual(MediaTriggerPolicy.releaseReason(conditions(enabled: false)), .disabled)
+        XCTAssertEqual(MediaTriggerPolicy.releaseReason(conditions(userAudio: true)), .userAudio)
+        XCTAssertEqual(MediaTriggerPolicy.releaseReason(conditions(owner: .expertCall)), .otherParty)
+        XCTAssertEqual(MediaTriggerPolicy.releaseReason(conditions(owner: .liveTranslation)), .otherParty)
+        XCTAssertEqual(MediaTriggerPolicy.releaseReason(conditions(realtime: true, sessionControl: false)),
+                       .sessionControlUnavailable)
+        XCTAssertNil(MediaTriggerPolicy.releaseReason(conditions()))
+        XCTAssertNil(MediaTriggerPolicy.releaseReason(conditions(owner: .geminiLive)))
+    }
+
+    func testDisabledOutranksUserAudioInTheReason() {
+        XCTAssertEqual(MediaTriggerPolicy.releaseReason(conditions(enabled: false, userAudio: true)),
+                       .disabled)
+    }
+
+    func testAReasonExactlyWhenNoModeIsWanted() {
+        // The reason and the desired mode are one decision; they must never disagree.
+        for enabled in [true, false] {
+            for userAudio in [true, false] {
+                for owner in [nil] + AudioSessionOwner.allCases.map(Optional.some) {
+                    for conversation in [true, false] {
+                        for sessionControl in [true, false] {
+                            let c = conditions(enabled: enabled, userAudio: userAudio, owner: owner,
+                                               conversation: conversation,
+                                               sessionControl: sessionControl)
+                            XCTAssertEqual(MediaTriggerPolicy.releaseReason(c) == nil,
+                                           MediaTriggerPolicy.desiredMode(c) != nil, "\(c)")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Standby matrix (Plan CH, unchanged)

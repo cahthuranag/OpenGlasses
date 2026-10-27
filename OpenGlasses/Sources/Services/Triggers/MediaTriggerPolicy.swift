@@ -55,8 +55,31 @@ struct MediaTriggerConditions: Equatable {
     var conversationActive: Bool = false
     /// Whether taps may be taken during the app's own conversations (`TempleCalibration`).
     var sessionControlEnabled: Bool = true
+    /// Whether a `.standby` claim is still holding on as far as the app can tell — its silent player
+    /// is playing, or about to. iOS stops that player under us (another owner reshaping the shared
+    /// session, an interruption) without telling the claim, and a dead standby claim receives no
+    /// taps, so the policy treats it as no claim at all. Ignored for `.sessionControl`, which has
+    /// no player.
+    var standbyClaimLive: Bool = true
 
     var isClaimed: Bool { claimedMode != nil }
+
+    /// The claim as it really stands: a standby claim whose player has stopped counts as none.
+    var effectiveClaimedMode: NowPlayingClaimMode? {
+        claimedMode == .standby && !standbyClaimLive ? nil : claimedMode
+    }
+}
+
+/// Why the temple taps hold no claim — the condition that won, as written to the support log.
+enum MediaTriggerReleaseReason: String, Equatable {
+    /// The setting is off, or the service is not running.
+    case disabled
+    /// The user's own audio is playing; their taps control it.
+    case userAudio
+    /// Another person is on the line (live translation, an expert call).
+    case otherParty
+    /// The app's own conversation holds the session and the calibration says taps don't reach it.
+    case sessionControlUnavailable
 }
 
 /// The pure claim/release/defer policy for the temple taps (Plan CH, extended by GJ).
@@ -98,24 +121,41 @@ enum MediaTriggerPolicy {
         classify(owner) != .ambient
     }
 
-    /// The mode the claim should be in, or nil for no claim.
-    static func desiredMode(_ conditions: MediaTriggerConditions) -> NowPlayingClaimMode? {
-        guard conditions.triggerEnabled, !conditions.userAudioPlaying else { return nil }
-        let lease = classify(conditions.leaseOwner)
-        if lease == .otherParty { return nil }
-        let ownConversation = lease == .ownConversation
+    /// Whether the app's own conversation is under way, by lease or by state.
+    static func ownConversation(_ conditions: MediaTriggerConditions) -> Bool {
+        classify(conditions.leaseOwner) == .ownConversation
             || conditions.realtimeSessionActive
             || conditions.conversationActive
-        if ownConversation {
-            return conditions.sessionControlEnabled ? .sessionControl : nil
-        }
-        return .standby
     }
 
-    /// Decide what to do with the Now Playing claim given the current conditions.
+    /// The condition that rules a claim out, or nil when one should be held. Checked in this
+    /// order, so the log names the first condition that won.
+    static func releaseReason(_ conditions: MediaTriggerConditions) -> MediaTriggerReleaseReason? {
+        guard conditions.triggerEnabled else { return .disabled }
+        if conditions.userAudioPlaying { return .userAudio }
+        if classify(conditions.leaseOwner) == .otherParty { return .otherParty }
+        if ownConversation(conditions), !conditions.sessionControlEnabled {
+            return .sessionControlUnavailable
+        }
+        return nil
+    }
+
+    /// The mode the claim should be in, or nil for no claim.
+    static func desiredMode(_ conditions: MediaTriggerConditions) -> NowPlayingClaimMode? {
+        guard releaseReason(conditions) == nil else { return nil }
+        return ownConversation(conditions) ? .sessionControl : .standby
+    }
+
+    /// Decide what to do with the Now Playing claim given the current conditions. A standby claim
+    /// whose player has stopped is compared as no claim, so it is taken afresh when one is wanted
+    /// and dropped cleanly when not.
     static func decide(_ conditions: MediaTriggerConditions) -> MediaTriggerAction {
         let desired = desiredMode(conditions)
-        if desired == conditions.claimedMode { return .defer }
+        let held = conditions.effectiveClaimedMode
+        if desired == held {
+            // A lapsed claim with nothing wanted still has handlers to drop.
+            return held == nil && conditions.isClaimed ? .release : .defer
+        }
         guard let desired else { return .release }
         return .claim(desired)
     }

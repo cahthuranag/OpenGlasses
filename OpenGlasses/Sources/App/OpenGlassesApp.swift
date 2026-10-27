@@ -4593,6 +4593,9 @@ class AppState: ObservableObject, AppStateProtocol {
                 guard let self else { return }
                 self.noteUserInteraction()
                 await self.templeTaps.handle(gesture, command: command)
+                // The action may have reshaped the shared session (the wake word reconfigures for
+                // a photo) and with it stopped the silent player that keeps the taps coming.
+                self.mediaTrigger.recheckClaim(after: .tapAction)
             }
         }
         // Conversation state is not an audio-session notification, so the claim mode is

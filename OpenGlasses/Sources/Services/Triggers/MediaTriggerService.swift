@@ -16,6 +16,29 @@ protocol NowPlayingClaiming: AnyObject {
     func claim(mode: NowPlayingClaimMode, onCommand: @escaping (MediaRemoteCommand) -> Void)
     /// Drop the claim: stop playback, unregister handlers, clear our Now Playing info.
     func release()
+    /// Whether the standby claim's silent player is playing, or about to start. False with no
+    /// standby claim. iOS can stop the player under us without a word to the claim, and a standby
+    /// claim with no audio running is not one, so the service takes the claim afresh when it
+    /// reads false.
+    var standbyClaimLive: Bool { get }
+    /// The shared audio session's shape as a log token (`playAndRecord-mixable`): what iOS weighs
+    /// when it picks the Now Playing app, so the support log can say what the claim was up against.
+    var sessionShape: String { get }
+}
+
+/// What asked for a look at the claim, as written to the support log.
+enum ClaimRecheckCause: String {
+    /// An audio-session or lifecycle notification, or a change in the conversation's state.
+    case inputsChanged
+    /// A tap's action has finished. Actions reshape the shared session (the wake word
+    /// reconfigures for a photo, a reply is spoken), and that is when the claim was seen to die.
+    case tapAction
+    /// A conversation's hand-back was deferred because a rider is on the session, so the session
+    /// was reconfigured in place under the claim's player.
+    case handBackDeferred
+    /// The poll while the user's audio plays. iOS posts nothing when another app's audio stops,
+    /// so the claim would otherwise not come back until some unrelated notification.
+    case otherAudioPoll
 }
 
 /// Temple taps (Plans CH + GJ): claims Now Playing so the glasses' temple gestures (standard AVRCP
@@ -28,6 +51,13 @@ protocol NowPlayingClaiming: AnyObject {
 /// What a tap *does* is not decided here — `TempleActionResolver` does that with the conversation
 /// state in hand, which is why there is no suppression flag any more: "already listening" is an
 /// answer the resolver gives, not a reason to drop the tap.
+///
+/// A standby claim is only as good as its silent player, and iOS stops that player without telling
+/// us — a tester's Gen 2 heard the first tap after launch and nothing after the wake word
+/// reconfigured the session for it. So the policy reads the player's health, a dead standby claim
+/// is taken afresh, the claim is looked at again after every tap's action and every deferred
+/// hand-back, and while the user's audio holds it off it is polled for, since nothing is posted
+/// when their audio stops. Every release says which condition won and every unheard command why.
 ///
 /// All inputs are injected closures and the claimer is a protocol, so every state transition is
 /// drivable headlessly; only `SilentNowPlayingClaimer` needs a device (GJ P2).
@@ -61,16 +91,38 @@ final class MediaTriggerService {
     private(set) var isRunning = false
     private var observers: [NSObjectProtocol] = []
     private var standDownReevaluation: Task<Void, Never>?
+    private var settleRecheck: Task<Void, Never>?
+    private var otherAudioWatch: Task<Void, Never>?
+    private let sleep: (TimeInterval) async -> Void
+    private let settleDelay: TimeInterval
+    private let otherAudioPollInterval: TimeInterval
+    private let reclaimCooldown: TimeInterval
+    private var lastClaimAt: TimeInterval?
 
-    /// - Parameter debounceInterval: a second tap inside this window of the last one that fired is
-    ///   dropped — a fumble while adjusting the glasses, not a new instruction.
+    /// - Parameters:
+    ///   - debounceInterval: a second tap inside this window of the last one that fired is
+    ///     dropped — a fumble while adjusting the glasses, not a new instruction.
+    ///   - settleDelay: how long after a tap's action (or a deferred hand-back) the claim is
+    ///     looked at a second time, once the session reshaping it set off has run.
+    ///   - otherAudioPollInterval: how often the claim is reconsidered while the user's audio
+    ///     plays, so it comes back when their audio stops.
+    ///   - reclaimCooldown: a standby claim found dead within this long of being taken is not
+    ///     taken again yet, so a player that will not stay up is not restarted on every
+    ///     notification.
+    ///   - sleep: the delay behind the settle, poll and stand-down re-checks (a test drives it).
     init(claimer: NowPlayingClaiming? = nil,
          isEnabled: @escaping () -> Bool = { Config.mediaTriggerEnabled },
          isOtherAudioPlaying: @escaping () -> Bool = { AVAudioSession.sharedInstance().isOtherAudioPlaying },
          leaseOwner: @escaping () -> AudioSessionOwner? = { AudioSessionCoordinator.shared.currentOwner },
          calibration: @escaping () -> TempleCalibration = { TempleCalibration.current },
          clock: @escaping () -> TimeInterval = { Date().timeIntervalSinceReferenceDate },
-         debounceInterval: TimeInterval = 1.0) {
+         debounceInterval: TimeInterval = 1.0,
+         settleDelay: TimeInterval = 2.0,
+         otherAudioPollInterval: TimeInterval = 10.0,
+         reclaimCooldown: TimeInterval = 2.0,
+         sleep: @escaping (TimeInterval) async -> Void = { seconds in
+             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+         }) {
         self.claimer = claimer ?? SilentNowPlayingClaimer()
         self.isEnabled = isEnabled
         self.isOtherAudioPlaying = isOtherAudioPlaying
@@ -79,12 +131,17 @@ final class MediaTriggerService {
         self.clock = clock
         self.gate = TriggerGate(debounceInterval: debounceInterval, minimumConfidence: 1.0)
         self.decoder = TempleGestureDecoder(calibration: calibration())
+        self.settleDelay = settleDelay
+        self.otherAudioPollInterval = otherAudioPollInterval
+        self.reclaimCooldown = reclaimCooldown
+        self.sleep = sleep
     }
 
     // MARK: - Policy application (tested)
 
-    /// Re-run the claim/release policy against the live inputs and apply the decision.
-    func evaluate() {
+    /// Re-run the claim/release policy against the live inputs and apply the decision. A standby
+    /// claim whose silent player has stopped counts as no claim, so it is taken afresh.
+    func evaluate(cause: ClaimRecheckCause = .inputsChanged) {
         let conditions = MediaTriggerConditions(
             triggerEnabled: isRunning && isEnabled(),
             userAudioPlaying: isOtherAudioPlaying(),
@@ -92,33 +149,68 @@ final class MediaTriggerService {
             leaseOwner: leaseOwner(),
             claimedMode: claimedMode,
             conversationActive: conversationActive(),
-            sessionControlEnabled: calibration().sessionControlAvailable)
+            sessionControlEnabled: calibration().sessionControlAvailable,
+            standbyClaimLive: claimedMode == .standby ? claimer.standbyClaimLive : true)
+        if conditions.effectiveClaimedMode != conditions.claimedMode {
+            PrivacyLog.device(.nowPlaying, .claimLapsed,
+                              state: PrivacyToken(NowPlayingClaimMode.standby.rawValue),
+                              reason: PrivacyToken(cause.rawValue),
+                              detail: PrivacyToken(claimer.sessionShape))
+            if let last = lastClaimAt, clock() - last < reclaimCooldown,
+               MediaTriggerPolicy.desiredMode(conditions) == .standby {
+                return
+            }
+        }
         switch MediaTriggerPolicy.decide(conditions) {
         case .claim(let mode):
             // A mode switch is a release and a fresh claim: the standby player must stop before a
             // conversation's audio runs, and must only start again once the conversation is over.
+            // A lapsed standby claim is released the same way, so its handlers are not doubled.
             if claimedMode != nil { claimer.release() }
-            claimedMode = mode
-            claimer.claim(mode: mode) { [weak self] command in
-                self?.handleRemoteCommand(command)
-            }
-            PrivacyLog.device(.nowPlaying, .claimed, state: PrivacyToken(mode.rawValue))
+            takeClaim(mode)
         case .release:
-            releaseClaim()
+            releaseClaim(reason: MediaTriggerPolicy.releaseReason(conditions)?.rawValue ?? "lapsed")
         case .defer:
             break
+        }
+        if MediaTriggerPolicy.releaseReason(conditions) == .userAudio {
+            watchForOtherAudioEnd()
+        }
+    }
+
+    /// Look at the claim after something that may have reshaped the shared session under it:
+    /// now, and once more after `settleDelay`, because the reshaping (the wake word reconfiguring
+    /// for a tap's photo, say) runs a moment after the action that set it off. A live claim is
+    /// logged with the session's shape, so a tap that then goes unheard can be read against it.
+    func recheckClaim(after cause: ClaimRecheckCause) {
+        guard isRunning else { return }
+        recheckNow(cause)
+        settleRecheck?.cancel()
+        let sleep = self.sleep, delay = settleDelay
+        settleRecheck = Task { [weak self] in
+            await sleep(delay)
+            guard !Task.isCancelled, let self else { return }
+            self.settleRecheck = nil
+            guard self.isRunning else { return }
+            self.recheckNow(cause)
         }
     }
 
     /// Feed a temple-gesture command. Fires `onGesture` iff the claim is live, the command decodes
     /// to a tap (not coalesced into the previous one, known to the calibration table) and the
-    /// debounce passes. Returns the gesture that fired, if any.
+    /// debounce passes. Returns the gesture that fired, if any. A command that fires nothing is
+    /// logged with why, so "the tap did nothing" can be told apart from "no tap arrived".
     @discardableResult
     func handleRemoteCommand(_ command: MediaRemoteCommand) -> TempleGesture? {
-        guard isClaimed, isEnabled() else { return nil }
+        guard isClaimed else { return drop(command, "notClaimed") }
+        guard isEnabled() else { return drop(command, "disabled") }
         let now = clock()
-        guard let gesture = decoder.decode(command, at: now) else { return nil }
-        guard gate.shouldFire(at: now, confidence: 1.0, suppressed: false) else { return nil }
+        guard let gesture = decoder.decode(command, at: now) else {
+            return drop(command, decoder.calibration.gesture(for: command) == nil ? "unmapped" : "coalesced")
+        }
+        guard gate.shouldFire(at: now, confidence: 1.0, suppressed: false) else {
+            return drop(command, "debounced")
+        }
         PrivacyLog.device(.nowPlaying, .commandReceived, state: PrivacyToken(gesture.rawValue),
                           command: PrivacyToken(command.rawValue))
         onGesture?(gesture, command)
@@ -129,10 +221,11 @@ final class MediaTriggerService {
     /// way to their player): release now so we never race them for Now Playing, then re-evaluate
     /// shortly after — if their playback didn't materialise, the trigger resumes.
     func standDownForUserPlayback() {
-        releaseClaim()
+        releaseClaim(reason: "userPlaybackRequested")
         standDownReevaluation?.cancel()
+        let sleep = self.sleep
         standDownReevaluation = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            await sleep(5)
             guard !Task.isCancelled else { return }
             self?.evaluate()
         }
@@ -165,6 +258,11 @@ final class MediaTriggerService {
         ) { [weak self] _ in
             Task { @MainActor in self?.standDownForUserPlayback() }
         })
+        observers.append(center.addObserver(
+            forName: AudioSessionCoordinator.riderHandBackDeferred, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.recheckClaim(after: .handBackDeferred) }
+        })
         evaluate()
     }
 
@@ -174,7 +272,11 @@ final class MediaTriggerService {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers = []
         standDownReevaluation?.cancel()
-        releaseClaim()
+        settleRecheck?.cancel()
+        settleRecheck = nil
+        otherAudioWatch?.cancel()
+        otherAudioWatch = nil
+        releaseClaim(reason: "stopped")
     }
 
     /// Re-apply the setting (call when the user toggles it in Settings).
@@ -187,11 +289,53 @@ final class MediaTriggerService {
 
     // MARK: - Private
 
-    private func releaseClaim() {
+    private func takeClaim(_ mode: NowPlayingClaimMode) {
+        claimedMode = mode
+        lastClaimAt = clock()
+        claimer.claim(mode: mode) { [weak self] command in
+            self?.handleRemoteCommand(command)
+        }
+        PrivacyLog.device(.nowPlaying, .claimed, state: PrivacyToken(mode.rawValue),
+                          detail: PrivacyToken(claimer.sessionShape))
+    }
+
+    /// `reason` is the condition that won (`MediaTriggerReleaseReason`), `userPlaybackRequested`
+    /// or `stopped`.
+    private func releaseClaim(reason: String) {
         guard isClaimed else { return }
         claimedMode = nil
         claimer.release()
-        PrivacyLog.device(.nowPlaying, .released)
+        PrivacyLog.device(.nowPlaying, .released, state: PrivacyToken(reason))
+    }
+
+    private func recheckNow(_ cause: ClaimRecheckCause) {
+        let wasLive = claimedMode == .standby && claimer.standbyClaimLive
+        evaluate(cause: cause)
+        if wasLive, claimedMode == .standby {
+            PrivacyLog.device(.nowPlaying, .claimChecked, state: PrivacyToken("live"),
+                              reason: PrivacyToken(cause.rawValue),
+                              detail: PrivacyToken(claimer.sessionShape))
+        }
+    }
+
+    /// While the user's audio holds the claim off, look again every `otherAudioPollInterval`
+    /// until it no longer does. One pending look at a time; each look schedules the next.
+    private func watchForOtherAudioEnd() {
+        guard otherAudioWatch == nil, isRunning else { return }
+        let sleep = self.sleep, interval = otherAudioPollInterval
+        otherAudioWatch = Task { [weak self] in
+            await sleep(interval)
+            guard !Task.isCancelled, let self else { return }
+            self.otherAudioWatch = nil
+            guard self.isRunning else { return }
+            self.evaluate(cause: .otherAudioPoll)
+        }
+    }
+
+    private func drop(_ command: MediaRemoteCommand, _ reason: String) -> TempleGesture? {
+        PrivacyLog.device(.nowPlaying, .commandDropped, state: PrivacyToken(reason),
+                          command: PrivacyToken(command.rawValue))
+        return nil
     }
 }
 
@@ -206,9 +350,11 @@ final class MediaTriggerService {
 /// entry. The conversation that owns the session (and its interruption / resume handling, Plans
 /// AO/AP) is left exactly as it was; the handlers are just not taken away from under it.
 ///
-/// Device-pending (Plan GJ P2, formerly CH P3): whether iOS grants Now Playing to a
-/// `mixWithOthers` session, whether it routes the commands to a record-and-play conversation, and
-/// which temple gestures arrive as which AVRCP commands can only be confirmed on hardware.
+/// Device-pending (Plan GJ P2, formerly CH P3): whether iOS keeps Now Playing with a
+/// `mixWithOthers` session, and whether it routes the commands to a record-and-play conversation,
+/// can only be confirmed on hardware; `sessionShape` puts the session's shape beside every claim
+/// in the support log so the next report can say. Which temple gestures arrive as which commands
+/// is confirmed on a Ray-Ban Meta Gen 2 (`TempleCalibration`).
 @MainActor
 final class SilentNowPlayingClaimer: NowPlayingClaiming {
 
@@ -222,8 +368,38 @@ final class SilentNowPlayingClaimer: NowPlayingClaiming {
     }
 
     private var player: AVAudioPlayer?
+    /// The silent loop is waiting for the session to activate before it starts.
+    private var playPending = false
     private var commandTargets: [(MPRemoteCommand, Any)] = []
     private var coexistToken: UUID?
+
+    var standbyClaimLive: Bool {
+        guard let player else { return false }
+        return playPending || player.isPlaying
+    }
+
+    var sessionShape: String {
+        let session = AVAudioSession.sharedInstance()
+        return Self.shapeToken(category: session.category, options: session.categoryOptions)
+    }
+
+    /// `playAndRecord-mixable`: the category's short name and whether it mixes with others. iOS
+    /// does not give Now Playing to an app whose session mixes, which is the first thing to rule
+    /// in or out when a claim that looks live hears no taps.
+    nonisolated static func shapeToken(category: AVAudioSession.Category,
+                                       options: AVAudioSession.CategoryOptions) -> String {
+        let name: String
+        switch category {
+        case .playAndRecord: name = "playAndRecord"
+        case .playback: name = "playback"
+        case .ambient: name = "ambient"
+        case .soloAmbient: name = "soloAmbient"
+        case .record: name = "record"
+        case .multiRoute: name = "multiRoute"
+        default: name = "other"
+        }
+        return name + (options.contains(.mixWithOthers) ? "-mixable" : "-exclusive")
+    }
 
     func claim(mode: NowPlayingClaimMode, onCommand: @escaping (MediaRemoteCommand) -> Void) {
         guard commandTargets.isEmpty, player == nil else { return }
@@ -255,6 +431,7 @@ final class SilentNowPlayingClaimer: NowPlayingClaiming {
             silent.volume = 0
             silent.numberOfLoops = -1
             player = silent
+            playPending = true
             // Activate off-main first (BJ PR2) so `play()` never implicitly activates the shared
             // session on the main thread, then start the silent loop — unless the claim was
             // released or switched to session control while activation was in flight, in which
@@ -262,7 +439,11 @@ final class SilentNowPlayingClaimer: NowPlayingClaiming {
             Task { @MainActor [weak self] in
                 await AudioSessionCoordinator.shared.ensureActiveOffMain()
                 guard let self, self.player === silent else { return }
-                silent.play()
+                self.playPending = false
+                if !silent.play() {
+                    PrivacyLog.device(.nowPlaying, .startFailed, state: PrivacyToken("silentLoop"),
+                                      detail: PrivacyToken(self.sessionShape))
+                }
             }
         } catch {
             PrivacyLog.device(.nowPlaying, .startFailed, error: SafeErrorSummary(error))
@@ -273,6 +454,7 @@ final class SilentNowPlayingClaimer: NowPlayingClaiming {
     func release() {
         player?.stop()
         player = nil
+        playPending = false
         for (command, target) in commandTargets { command.removeTarget(target) }
         commandTargets = []
         let infoCenter = MPNowPlayingInfoCenter.default()

@@ -51,6 +51,6 @@ struct ManagedHiddenScreen: View {
 @MainActor
 enum ManagedLockReason {
     static var organization: String {
-        PolicyEnvelope.organizationName ?? OrgProfileManager.shared.profile?.organizationName ?? "your organisation"
+        PolicyEnvelope.organizationName ?? OrgProfileManager.shared.profile?.organizationName ?? String(localized: "your organisation")
     }
 }

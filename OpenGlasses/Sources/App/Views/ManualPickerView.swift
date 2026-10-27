@@ -112,14 +112,14 @@ struct ManualPickerView: View {
         var id = threadID
         if id == nil {
             guard store.activeThreadId == nil else {
-                notice = "The conversation changed. Close this picker and choose manuals again."
+                notice = String(localized: "The conversation changed. Close this picker and choose manuals again.")
                 return
             }
             if selected.isEmpty { dismiss(); return }
             id = store.startThread(mode: appState.currentMode.rawValue, personaId: appState.activePersona?.id).id
         }
         guard let id, store.setManualIDs(Array(selected), for: id) else {
-            notice = "This conversation is unavailable. Close this picker and try again."
+            notice = String(localized: "This conversation is unavailable. Close this picker and try again.")
             return
         }
         library.selectionDidChange()
@@ -139,9 +139,10 @@ struct ManualSelectionButton: View {
         library.manuals.filter { ids.contains($0.id) }.map(\.document.title).joined(separator: ", ")
     }
     private var label: String {
-        if !answersEnabled { return "Manual answers off" }
-        if ids.isEmpty { return "Choose manuals" }
-        return ids.count == 1 ? (titles.isEmpty ? "Selected manual unavailable" : titles) : "\(ids.count) manuals selected"
+        if !answersEnabled { return String(localized: "Manual answers off") }
+        if ids.isEmpty { return String(localized: "Choose manuals") }
+        guard ids.count == 1 else { return String(localized: "\(ids.count) manuals selected") }
+        return titles.isEmpty ? String(localized: "Selected manual unavailable") : titles
     }
 
     var body: some View {

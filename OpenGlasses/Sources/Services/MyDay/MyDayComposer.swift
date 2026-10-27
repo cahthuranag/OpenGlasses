@@ -272,7 +272,7 @@ struct MyDayComposer: Sendable {
             : "Leave by \(formatTime(estimate.leaveAt)) for \(estimate.eventTitle)"
         let routeMinutes = max(1, Int((estimate.travelDuration / 60).rounded()))
         let bufferMinutes = max(0, Int((estimate.bufferDuration / 60).rounded()))
-        var detail = "\(routeMinutes) min \(estimate.mode.displayName.lowercased()) to \(estimate.destination)"
+        var detail = "\(routeMinutes) min \(estimate.mode.spokenName.lowercased()) to \(estimate.destination)"
         if bufferMinutes > 0 {
             detail += " + \(bufferMinutes) min buffer"
         }

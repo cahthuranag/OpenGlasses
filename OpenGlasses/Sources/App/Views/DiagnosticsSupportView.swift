@@ -236,14 +236,14 @@ struct DiagnosticsSupportView: View {
                 .autocorrectionDisabled()
                 .accessibilityHint("Where support reports from this phone are emailed.")
             if !trimmed.isEmpty && !SupportReportRecipient.isPlausible(trimmed) {
-                Text(verbatim: fallback.map { "That doesn't look like an email address, so reports will go to \($0) until it's fixed." }
-                     ?? "That doesn't look like an email address. Reports can only be shared until it's fixed.")
+                Text(verbatim: fallback.map { String(localized: "That doesn't look like an email address, so reports will go to \($0) until it's fixed.") }
+                     ?? String(localized: "That doesn't look like an email address. Reports can only be shared until it's fixed."))
                     .font(.caption)
                     .foregroundStyle(OGTheme.warnLabel)
                     .fixedSize(horizontal: false, vertical: true)
             } else if trimmed.isEmpty {
-                Text(verbatim: fallback.map { "Empty: reports go to \($0)." }
-                     ?? "Empty: this phone belongs to an organisation, so reports can only be shared until its support address is added.")
+                Text(verbatim: fallback.map { String(localized: "Empty: reports go to \($0).") }
+                     ?? String(localized: "Empty: this phone belongs to an organisation, so reports can only be shared until its support address is added."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

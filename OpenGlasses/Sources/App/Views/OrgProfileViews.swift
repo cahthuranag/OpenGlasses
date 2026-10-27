@@ -341,33 +341,39 @@ struct ManagedByOrganisationSection: View {
     private func leaseNotice(profile: ConfigProfile, record: OrgEnrolmentRecord) -> (text: String, icon: String)? {
         let name = profile.organizationName
         let host = record.profileURL.map { OrgEnrolmentService.displayHost($0) }
+        let hostOrOrganisation = host ?? String(localized: "your organisation")
         switch manager.lease {
         case .renewSoon(let renewBy)?:
-            return ("Connect to the internet to renew by \(renewBy.formatted(date: .abbreviated, time: .omitted)). This phone renews on its own whenever it can reach \(host ?? "your organisation").",
+            let renewDate = renewBy.formatted(date: .abbreviated, time: .omitted)
+            return (String(localized: "Connect to the internet to renew by \(renewDate). This phone renews on its own whenever it can reach \(hostOrOrganisation)."),
                     "clock")
         case .lapsed(let since)?:
+            let sinceDate = since.formatted(date: .abbreviated, time: .omitted)
             if !manager.contentLocked {
-                return ("Management expired on \(since.formatted(date: .abbreviated, time: .omitted)). \(name)'s content locks when this job closes.",
+                return (String(localized: "Management expired on \(sinceDate). \(name)'s content locks when this job closes."),
                         "exclamationmark.triangle")
             }
-            let reach = host.map { " until this phone reaches \($0) again" } ?? " until your organisation re-issues its link"
+            let reach = host.map { String(localized: " until this phone reaches \($0) again") }
+                ?? String(localized: " until your organisation re-issues its link")
             if record.lapseErasedAt != nil {
                 // Plan CT PR 4: the organisation's opt-in erasure after a lapse has run.
-                return ("Management expired on \(since.formatted(date: .abbreviated, time: .omitted)), and as \(name) asked, its content has been erased from this phone. Its vault pack is reinstalled when this phone reaches \(host ?? "your organisation") again. \(OrgDepartureService.erasureLimits)",
+                let limits = OrgDepartureService.erasureLimits
+                return (String(localized: "Management expired on \(sinceDate), and as \(name) asked, its content has been erased from this phone. Its vault pack is reinstalled when this phone reaches \(hostOrOrganisation) again. \(limits)"),
                         "exclamationmark.triangle")
             }
             if let days = profile.eraseAfterLapseDays, ConfigProfile.erasureDaysRange.contains(days) {
                 let eraseOn = since.addingTimeInterval(TimeInterval(days) * 86_400)
-                return ("Management expired on \(since.formatted(date: .abbreviated, time: .omitted)). \(name)'s content is locked\(reach), and \(name) has asked for it to be erased on \(eraseOn.formatted(date: .abbreviated, time: .omitted)) if it has not been renewed by then.",
+                let eraseDate = eraseOn.formatted(date: .abbreviated, time: .omitted)
+                return (String(localized: "Management expired on \(sinceDate). \(name)'s content is locked\(reach), and \(name) has asked for it to be erased on \(eraseDate) if it has not been renewed by then."),
                         "exclamationmark.triangle")
             }
-            return ("Management expired on \(since.formatted(date: .abbreviated, time: .omitted)). \(name)'s settings still apply and its content is locked\(reach).",
+            return (String(localized: "Management expired on \(sinceDate). \(name)'s settings still apply and its content is locked\(reach)."),
                     "exclamationmark.triangle")
         case .clockWoundBack?:
-            return ("This phone's clock is behind a time it has already seen, so \(name)'s content is locked. Set the date and time automatically, then check for renewal.",
+            return (String(localized: "This phone's clock is behind a time it has already seen, so \(name)'s content is locked. Set the date and time automatically, then check for renewal."),
                     "exclamationmark.triangle")
         case .revoked?:
-            return ("\(name) has revoked this phone. Its settings no longer apply and its content is locked.",
+            return (String(localized: "\(name) has revoked this phone. Its settings no longer apply and its content is locked."),
                     "xmark.octagon")
         case .live?, nil:
             return nil
@@ -376,17 +382,20 @@ struct ManagedByOrganisationSection: View {
 
 
     static func subtitle(profile: ConfigProfile, record: OrgEnrolmentRecord) -> String {
-        var parts = ["Since \(record.enrolledAt.formatted(date: .abbreviated, time: .omitted))"]
+        let since = record.enrolledAt.formatted(date: .abbreviated, time: .omitted)
+        var parts = [String(localized: "Since \(since)")]
         if let expiry = profile.policyExpiry {
-            parts.append("ends \(expiry.formatted(date: .abbreviated, time: .omitted))")
+            let ends = expiry.formatted(date: .abbreviated, time: .omitted)
+            parts.append(String(localized: "ends \(ends)"))
         }
-        parts.append("enrolment \(record.enrolmentId)")
+        let enrolmentId = record.enrolmentId
+        parts.append(String(localized: "enrolment \(enrolmentId)"))
         return parts.joined(separator: " · ")
     }
 
     private func finishModel(_ model: OrgAIModel, key: String) -> String? {
         if model.access == .key, let problem = model.keyProblem(key) { return problem }
-        guard manager.completeModelSetup(apiKey: key) else { return "Couldn't save the key. Try again." }
+        guard manager.completeModelSetup(apiKey: key) else { return String(localized: "Couldn't save the key. Try again.") }
         finishingModel = false
         return nil
     }
@@ -421,7 +430,7 @@ struct OrganisationProfilePage: View {
                 }
             }
         }
-        .navigationTitle(manager.profile?.organizationName ?? "Organisation")
+        .navigationTitle(manager.profile?.organizationName ?? String(localized: "Organisation"))
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: manager.record == nil) { _, removed in
             if removed { dismiss() }
@@ -618,7 +627,7 @@ struct OrganisationProfilePage: View {
             do {
                 files += try FieldSessionService.shared.exportSession(id: id).map(\.fileURL)
             } catch {
-                exportProblem = "Couldn't export every job record: \(error.localizedDescription)"
+                exportProblem = String(localized: "Couldn't export every job record: \(error.localizedDescription)")
             }
         }
         if !files.isEmpty { recordsShare = ShareItem(items: files) }
@@ -627,10 +636,10 @@ struct OrganisationProfilePage: View {
     private func remove() {
         removalError = nil
         leaving = false
-        OwnerGateAuth.authenticate(reason: "Remove your organisation's profile from this phone") { granted in
+        OwnerGateAuth.authenticate(reason: String(localized: "Remove your organisation's profile from this phone")) { granted in
             Task { @MainActor in
                 guard granted else {
-                    removalError = "Couldn't verify it's you — the profile stays."
+                    removalError = String(localized: "Couldn't verify it's you — the profile stays.")
                     return
                 }
                 if case .failure(let refusal) = manager.remove() {

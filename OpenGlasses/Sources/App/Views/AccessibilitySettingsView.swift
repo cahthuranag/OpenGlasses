@@ -23,7 +23,7 @@ struct AccessibilitySettingsView: View {
     /// what will happen *before* the launch that does or does not happen.
     /// Never empty: an empty `Text` is an accessibility element with nothing to say, on the one
     /// row whose whole job is to say what will happen.
-    @State private var launchStatus: String = "Checking what will happen when you open the app…"
+    @State private var launchStatus: String = String(localized: "Checking what will happen when you open the app…")
     @State private var launchBlockedByPreset = false
     /// Disables the tour button for its duration, so a second tap cannot start a second tour
     /// over the first — which, for a control whose whole purpose is teaching sounds apart, would
@@ -40,7 +40,7 @@ struct AccessibilitySettingsView: View {
     private func refreshLaunchStatus() {
         Task { @MainActor in
             guard let appState = AppStateProvider.shared else {
-                launchStatus = "Open the app to see what will happen."
+                launchStatus = String(localized: "Open the app to see what will happen.")
                 launchBlockedByPreset = false
                 return
             }
@@ -67,8 +67,8 @@ struct AccessibilitySettingsView: View {
                     // grow under their thumb, and on the app's own accessibility screen of all
                     // places, that must not be the sighted-only affordance.
                     .onChange(of: enabled) { _, on in
-                        SessionAnnouncer.say(on ? "Reading accessibility on. More settings added below."
-                                                : "Reading accessibility off. Its settings are hidden.")
+                        SessionAnnouncer.say(on ? String(localized: "Reading accessibility on. More settings added below.")
+                                                : String(localized: "Reading accessibility off. Its settings are hidden."))
                     }
             } footer: {
                 Text("Reads text through the camera using on-device OCR. When enabled, the `reading_assist` tool can read aloud, simplify, translate, or define text you're looking at. Images never leave your device.")
@@ -145,7 +145,7 @@ struct AccessibilitySettingsView: View {
                         Button("Use Blind Assistant as the Live Mode") {
                             Config.setActiveLiveAIModeId(BlindAssistanceContract.presetID)
                             refreshLaunchStatus()
-                            SessionAnnouncer.say("Blind Assistant is now the selected live mode.")
+                            SessionAnnouncer.say(String(localized: "Blind Assistant is now the selected live mode."))
                         }
                     }
                     Button("Open iOS Settings for Avenkin") {

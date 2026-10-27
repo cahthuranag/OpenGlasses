@@ -34,8 +34,9 @@ struct AddTeleprompterScriptIntent: AppIntent {
         guard !trimmed.isEmpty else { throw IntentError.emptyScript }
 
         let saved = appState.teleprompterStore.add(title: title ?? "", text: trimmed)
-        let dialog = "Saved teleprompter script \u{201C}\(saved.title)\u{201D}."
-        return .result(value: saved.title, dialog: IntentDialog(stringLiteral: dialog))
+        let scriptTitle = saved.title
+        return .result(value: saved.title,
+                       dialog: IntentDialog("Saved teleprompter script \u{201C}\(scriptTitle)\u{201D}."))
     }
 
     enum IntentError: Error, CustomLocalizedStringResourceConvertible {

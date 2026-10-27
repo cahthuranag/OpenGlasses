@@ -55,9 +55,9 @@ enum SkillCompatibility: Codable {
 
     var label: String {
         switch self {
-        case .compatible: return "Works on device"
-        case .partiallyCompatible: return "Partial — some features need OpenClaw"
-        case .openclawRequired: return "Requires OpenClaw"
+        case .compatible: return String(localized: "Works on device")
+        case .partiallyCompatible: return String(localized: "Partial — some features need OpenClaw")
+        case .openclawRequired: return String(localized: "Requires OpenClaw")
         }
     }
 

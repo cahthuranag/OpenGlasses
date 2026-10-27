@@ -35,8 +35,8 @@ struct VaultManualRowState: Equatable, Identifiable {
         /// The button's words. A trailing ellipsis because a confirmation follows.
         var title: String {
             switch self {
-            case .remove: return "Remove manual…"
-            case .retryRemoval: return "Retry removal"
+            case .remove: return String(localized: "Remove manual…")
+            case .retryRemoval: return String(localized: "Retry removal")
             }
         }
     }
@@ -62,11 +62,11 @@ struct VaultManualRowState: Equatable, Identifiable {
     var statusText: String {
         switch status {
         case .indexed(let summary): return summary
-        case .notIndexed: return "not indexed"
-        case .indexing: return "Indexing…"
-        case .waitingToIndex: return "Waiting to index"
-        case .removing: return "Removing…"
-        case .removalIncomplete: return "Removal incomplete"
+        case .notIndexed: return String(localized: "not indexed")
+        case .indexing: return String(localized: "Indexing…")
+        case .waitingToIndex: return String(localized: "Waiting to index")
+        case .removing: return String(localized: "Removing…")
+        case .removalIncomplete: return String(localized: "Removal incomplete")
         }
     }
 
@@ -90,12 +90,12 @@ struct VaultManualRowState: Equatable, Identifiable {
     /// row carries in two separate labels: which manual, and what state it is in.
     var accessibilityLabel: String {
         switch status {
-        case .indexed(let summary): return "\(title), \(summary)"
-        case .notIndexed: return "\(title), not indexed"
-        case .indexing: return "\(title), indexing"
-        case .waitingToIndex: return "\(title), waiting to index"
-        case .removing: return "\(title), removing"
-        case .removalIncomplete: return "\(title), removal incomplete"
+        case .indexed(let summary): return String(localized: "\(title), \(summary)")
+        case .notIndexed: return String(localized: "\(title), not indexed")
+        case .indexing: return String(localized: "\(title), indexing")
+        case .waitingToIndex: return String(localized: "\(title), waiting to index")
+        case .removing: return String(localized: "\(title), removing")
+        case .removalIncomplete: return String(localized: "\(title), removal incomplete")
         }
     }
 
@@ -103,8 +103,8 @@ struct VaultManualRowState: Equatable, Identifiable {
     /// the row's own text then, so nothing is announced twice.
     var accessibilityActionHint: String? {
         switch action {
-        case .remove: return "Removes this manual from the vault on this device. You confirm first."
-        case .retryRemoval: return "Finishes removing this manual. It is already unavailable."
+        case .remove: return String(localized: "Removes this manual from the vault on this device. You confirm first.")
+        case .retryRemoval: return String(localized: "Finishes removing this manual. It is already unavailable.")
         case nil: return nil
         }
     }
@@ -156,11 +156,10 @@ struct VaultManualRowState: Equatable, Identifiable {
             reason = nil
         case .protectedPack(let name):
             action = nil
-            reason = "“\(name)” is a signed pack, so its manuals are the publisher's to change. "
-                + "Remove the whole pack to take them off this device."
+            reason = String(localized: "“\(name)” is a signed pack, so its manuals are the publisher's to change. Remove the whole pack to take them off this device.")
         case .notInstalled:
             action = nil
-            reason = "This vault ships with the app. Its manuals cannot be removed one at a time."
+            reason = String(localized: "This vault ships with the app. Its manuals cannot be removed one at a time.")
         }
 
         // A removal already running for *this* manual is not something to start again; one running
@@ -176,20 +175,19 @@ struct VaultManualRowState: Equatable, Identifiable {
 
     /// Why a vault's manual controls are greyed out while something holds the vault.
     static func busyReason(isIndexing: Bool) -> String {
-        isIndexing ? "Available when indexing finishes" : "Available when the current task on this vault finishes"
+        isIndexing ? String(localized: "Available when indexing finishes") : String(localized: "Available when the current task on this vault finishes")
     }
 
     /// The reason under "Re-index manuals" when it is greyed out, or nil when it is available.
     static func reindexDisabledReason(isIndexing: Bool, isVaultBusy: Bool) -> String? {
-        if isIndexing { return "Available when indexing finishes" }
-        return isVaultBusy ? "Available when the current task on this vault finishes" : nil
+        if isIndexing { return String(localized: "Available when indexing finishes") }
+        return isVaultBusy ? String(localized: "Available when the current task on this vault finishes") : nil
     }
 
     /// What the indexing section says about leaving the app, so a technician who locks the phone
     /// after importing knows why it has not finished.
     static let backgroundNotice =
-        "Indexing carries on for a short while if you leave the app, then pauses until you come back. "
-        + "Keep the app open to finish sooner."
+        String(localized: "Indexing carries on for a short while if you leave the app, then pauses until you come back. Keep the app open to finish sooner.")
 }
 
 /// The words the removal flow says: the confirmation, what a success reports, and what each failure
@@ -204,19 +202,17 @@ enum VaultManualRemovalPresentation {
     /// is being asked about three different things: the index, what is untouched, and whether this
     /// can be undone.
     static let confirmationBody =
-        "Remove this manual from this device's vault and search index? "
-        + "Existing conversations and core reference files are unchanged. "
-        + "Importing a vault containing this manual again can restore it."
+        String(localized: "Remove this manual from this device's vault and search index? Existing conversations and core reference files are unchanged. Importing a vault containing this manual again can restore it.")
 
     /// The dialog's title. It names the manual, because a vault row and a manual row are inches
     /// apart and only one of them deletes the whole vault.
     static func confirmationTitle(manual: String) -> String {
-        "Remove “\(manual)”?"
+        String(localized: "Remove “\(manual)”?")
     }
 
     /// The dialog's message: which manual, which vault, then the body.
     static func confirmationMessage(manual: String, vault: String) -> String {
-        "“\(manual)” in \(vault).\n\n" + confirmationBody
+        String(localized: "“\(manual)” in \(vault).\n\n\(confirmationBody)")
     }
 
     /// What the screen does with the result of an attempt.
@@ -260,50 +256,46 @@ enum VaultManualRemovalPresentation {
     /// a new conversation gives a clean result is true; saying the model has forgotten the manual
     /// would not be.
     static func success(_ result: VaultManualRemoval.RemovalResult, vaultName: String) -> Outcome {
-        .removed("Removed “\(result.title)”. \(vaultName) now has \(manualCount(result.remainingDocuments)). "
-            + "Earlier conversations may still quote it; start a new conversation for a clean result.")
+        .removed(String(localized: "Removed “\(result.title)”. \(vaultName) now has \(manualCount(result.remainingDocuments)). Earlier conversations may still quote it; start a new conversation for a clean result."))
     }
 
     /// What a thrown removal means to the reader.
     static func outcome(for error: Error, manual: String, vaultName: String) -> Outcome {
         guard let removal = error as? VaultManualRemoval.RemovalError else {
-            return .retryable("Removing “\(manual)” did not finish: \(error.localizedDescription)")
+            return .retryable(String(localized: "Removing “\(manual)” did not finish: \(error.localizedDescription)"))
         }
         switch removal {
         case .unknownDocument:
             // The manifest no longer lists it and nothing is left pending: it has already gone,
             // and the only thing wrong is this screen's copy of the list.
-            return .alreadyGone("“\(manual)” is no longer in \(vaultName).")
+            return .alreadyGone(String(localized: "“\(manual)” is no longer in \(vaultName)."))
         case .cleanupFailed(let detail):
-            return .retryable("Removing “\(manual)” did not finish: \(detail). "
-                + "It stays unavailable until the removal completes — try again.")
+            return .retryable(String(localized: "Removing “\(manual)” did not finish: \(detail). It stays unavailable until the removal completes — try again."))
         case .repairRequired(let detail):
-            return .blocked("“\(manual)” cannot be removed yet: \(detail). "
-                + "Importing this vault's folder again repairs its manual index.")
+            return .blocked(String(localized: "“\(manual)” cannot be removed yet: \(detail). Importing this vault's folder again repairs its manual index."))
         case .protectedPack, .notInstalled, .invalidPath:
-            return .blocked(removal.errorDescription ?? "“\(manual)” cannot be removed from this vault.")
+            return .blocked(removal.errorDescription ?? String(localized: "“\(manual)” cannot be removed from this vault."))
         }
     }
 
     /// The notice a citation to a manual this vault no longer holds puts on screen, in place of
     /// opening a page that is not there or doing nothing at all.
     static func removedCitationNotice(manual: String) -> String {
-        "Manual removed from this vault. “\(manual)” is no longer on this device; "
-            + "earlier answers may still quote it."
+        String(localized: "Manual removed from this vault. “\(manual)” is no longer on this device; earlier answers may still quote it.")
     }
 
     /// The same notice for a citation this vault cannot place at all — a title no manual in it
     /// answers to. Distinct wording, because "removed" would be a claim about something that may
     /// never have been here.
     static func unknownCitationNotice(manual: String) -> String {
-        "No manual in this vault answers to “\(manual)”."
+        String(localized: "No manual in this vault answers to “\(manual)”.")
     }
 
     static func manualCount(_ count: Int) -> String {
         switch count {
-        case 0: return "no manuals"
-        case 1: return "1 manual"
-        default: return "\(count) manuals"
+        case 0: return String(localized: "no manuals")
+        case 1: return String(localized: "1 manual")
+        default: return String(localized: "\(count) manuals")
         }
     }
 }

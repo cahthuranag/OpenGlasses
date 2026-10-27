@@ -144,7 +144,7 @@ struct ReadingBookDetailView: View {
             }
         }
         .ogFormStyle()
-        .navigationTitle(store.stats(forBook: bookID)?.bookTitle ?? "Book")
+        .navigationTitle(store.stats(forBook: bookID)?.bookTitle ?? String(localized: "Book"))
         .fileImporter(isPresented: $showingImporter,
                       allowedContentTypes: [.pdf, .epub, .plainText, .text]) { result in
             guard case .success(let url) = result else { return }
@@ -166,18 +166,18 @@ struct ReadingBookDetailView: View {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
         guard let extracted = BookFileExtractor.extract(from: url) else {
-            attachMessage = "Couldn't read text from that file (scanned PDFs aren't supported)."
+            attachMessage = String(localized: "Couldn't read text from that file (scanned PDFs aren't supported).")
             return
         }
 
         guard let ref = await appState.documentStore.ingest(
             name: extracted.name, text: extracted.text, sourceType: "book") else {
-            attachMessage = "Couldn't import the file."
+            attachMessage = String(localized: "Couldn't import the file.")
             return
         }
         ReadingReferenceAttacher.attach(documentId: ref.id, documentName: extracted.name,
                                         text: extracted.text, toBook: bookID, store: store)
-        attachMessage = "Attached \(extracted.name)."
+        attachMessage = String(localized: "Attached \(extracted.name).")
     }
 }
 
@@ -196,9 +196,9 @@ private struct ReadingReferencePickerView: View {
                     ReadingReferenceAttacher.attach(documentId: document.id, documentName: document.name,
                                                     text: text, toBook: bookID,
                                                     store: ReadingSessionStore.shared)
-                    onAttached("Attached \(document.name).")
+                    onAttached(String(localized: "Attached \(document.name)."))
                 } else {
-                    onAttached("That document has no readable text.")
+                    onAttached(String(localized: "That document has no readable text."))
                 }
                 dismiss()
             } label: {

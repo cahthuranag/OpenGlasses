@@ -240,7 +240,8 @@ struct MyManualsView: View {
             if let info = store.myManualsSubscription {
                 Text("Personal · \(info.planName)").font(.headline)
                 if let expiry = info.expirationDate {
-                    Text("\(info.willAutoRenew ? "Renews" : "Access ends") \(expiry.formatted(date: .abbreviated, time: .omitted))").font(.caption)
+                    let expiryDate = expiry.formatted(date: .abbreviated, time: .omitted)
+                    Text(info.willAutoRenew ? "Renews \(expiryDate)" : "Access ends \(expiryDate)").font(.caption)
                 }
                 Button("View in-app plans") { showingPurchase = true }
             } else {
@@ -300,7 +301,9 @@ private struct MyManualsPlanButtons: View {
                     if PersonalManualLibrary.canManage { onPurchased?() }
                 }
             } label: {
-                Text("\(product.id == StoreKitService.myManualsAnnualId ? "Subscribe annually" : "Subscribe monthly") · \(product.displayPrice)")
+                Text(product.id == StoreKitService.myManualsAnnualId
+                     ? "Subscribe annually · \(product.displayPrice)"
+                     : "Subscribe monthly · \(product.displayPrice)")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)

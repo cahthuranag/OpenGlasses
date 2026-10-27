@@ -47,7 +47,9 @@ struct SkillPacksSettingsView: View {
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(pack.name)
-                        Text("v\(pack.activeVersion) · \(pack.actionCount) action\(pack.actionCount == 1 ? "" : "s")")
+                        Text(pack.actionCount == 1
+                             ? "v\(pack.activeVersion) · 1 action"
+                             : "v\(pack.activeVersion) · \(pack.actionCount) actions")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

@@ -907,11 +907,11 @@ enum JobTranscriptExporter {
         var message: String {
             switch self {
             case .conversationsLocked:
-                return "Conversations are locked. Unlock them with Face ID to export what was said."
+                return String(localized: "Conversations are locked. Unlock them with Face ID to export what was said.")
             case .nothingToExport:
-                return "There's nothing on this phone for that."
+                return String(localized: "There's nothing on this phone for that.")
             case .writeFailed:
-                return "The file could not be written on this phone. Try again."
+                return String(localized: "The file could not be written on this phone. Try again.")
             }
         }
     }

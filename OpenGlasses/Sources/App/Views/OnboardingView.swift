@@ -209,10 +209,10 @@ struct OnboardingView: View {
 
     /// Where in the flow this page sits, spoken as the title's *value* so it is heard on arrival
     /// and re-heard on every page change, without becoming a stop of its own.
-    private var pagePosition: String { "Page \(page + 1) of \(totalPages)" }
+    private var pagePosition: String { String(localized: "Page \(page + 1) of \(totalPages)") }
 
     /// The title block every page opens with — the VoiceOver landing point.
-    private func pageTitle(_ title: String, _ subtitle: String? = nil, page index: OnboardingFlow.Page) -> some View {
+    private func pageTitle(_ title: LocalizedStringKey, _ subtitle: LocalizedStringKey? = nil, page index: OnboardingFlow.Page) -> some View {
         VStack(spacing: 6) {
             Text(title)
                 .font(.title2.weight(.bold))
@@ -415,7 +415,7 @@ struct OnboardingView: View {
         case .plain:
             do {
                 let payload = try license.activate(code: code)
-                orgEntryMessage = "Field Assist is licensed to \(payload.licensee)."
+                orgEntryMessage = String(localized: "Field Assist is licensed to \(payload.licensee).")
             } catch {
                 orgEntryMessage = error.localizedDescription
             }
@@ -491,7 +491,7 @@ struct OnboardingView: View {
                     if FirstRunDefaults.appleIntelligenceAvailable {
                         providerRow(
                             .appleOnDevice,
-                            name: "Start without an API key",
+                            name: String(localized: "Start without an API key"),
                             model: "Apple Intelligence",
                             detail: "Runs on this iPhone. Add a provider key later in Settings.",
                             icon: "iphone"
@@ -499,7 +499,7 @@ struct OnboardingView: View {
                     } else if offlineModelIsOfferable {
                         providerRow(
                             .local,
-                            name: "Start without an API key",
+                            name: String(localized: "Start without an API key"),
                             model: offeredLocalModelId,
                             detail: "Downloads a model to this iPhone. No account, works offline.",
                             icon: "iphone"
@@ -565,7 +565,7 @@ struct OnboardingView: View {
                         // host; a pay-as-you-go Model Studio key fails here, so it isn't "Qwen".
                         providerRow(
                             .qwen,
-                            name: "Qwen Coding Plan",
+                            name: String(localized: "Qwen Coding Plan"),
                             model: LLMProvider.qwen.defaultModel,
                             detail: "Only for a Coding Plan subscription key (sk-sp-…)",
                             icon: "chevron.left.forwardslash.chevron.right"
@@ -688,7 +688,7 @@ struct OnboardingView: View {
         }
     }
 
-    private func keyPageTitle(_ provider: LLMProvider) -> String {
+    private func keyPageTitle(_ provider: LLMProvider) -> LocalizedStringKey {
         if provider == .chatgpt { return "Connect ChatGPT" }
         if provider == .local || provider == .appleOnDevice { return "On this iPhone" }
         if provider.requiresAPIKey {
@@ -697,7 +697,7 @@ struct OnboardingView: View {
         return "You're all set"
     }
 
-    private func keyPageSubtitle(_ provider: LLMProvider, name templateName: String? = nil) -> String? {
+    private func keyPageSubtitle(_ provider: LLMProvider, name templateName: String? = nil) -> LocalizedStringKey? {
         if provider == .chatgpt {
             return "Sign in with your ChatGPT account — no API key needed"
         }
@@ -705,9 +705,9 @@ struct OnboardingView: View {
             return "There's nothing to paste — this one runs on your iPhone."
         }
         guard provider.requiresAPIKey else { return nil }
-        return provider == .anthropic
-            ? "Sign in with your Claude account, or paste an API key"
-            : "Paste your \(templateName.map { String(localized: String.LocalizationValue($0)) } ?? provider.displayName) access key below"
+        if provider == .anthropic { return "Sign in with your Claude account, or paste an API key" }
+        let name = templateName.map { String(localized: String.LocalizationValue($0)) } ?? provider.displayName
+        return "Paste your \(name) access key below"
     }
 
     /// The key field, its "get a key" link, and the validation state — a stock
@@ -985,7 +985,7 @@ struct OnboardingView: View {
                 DownloadProgressRow(service: service) {
                     service.cancelDownload()
                     isDownloadingOfflineModel = false
-                    SessionAnnouncer.say("Offline model download cancelled")
+                    SessionAnnouncer.say(String(localized: "Offline model download cancelled"))
                 }
             } else {
                 Button("Download") { downloadOfflineModel(modelId) }
@@ -1036,7 +1036,7 @@ struct OnboardingView: View {
 
     private func downloadOfflineModel(_ modelId: String) {
         guard let service = appState.llmService.localLLMService else {
-            offlineDownloadError = "On-device models aren't available on this build."
+            offlineDownloadError = String(localized: "On-device models aren't available on this build.")
             SessionAnnouncer.say(offlineDownloadError ?? "", interrupts: true)
             return
         }
@@ -1047,20 +1047,20 @@ struct OnboardingView: View {
         if selectedProvider == .local { selectedModelId = modelId }
         // Both ends of a long wait are spoken. A progress spinner that replaces a button says
         // nothing to a user who isn't looking at it, and this is the longest wait in the flow.
-        SessionAnnouncer.say("Downloading the offline model. You can carry on setting up.")
+        SessionAnnouncer.say(String(localized: "Downloading the offline model. You can carry on setting up."))
         Task {
             do {
                 try await service.downloadModel(modelId)
                 isDownloadingOfflineModel = false
                 ensureLocalModelIsSelectable(modelId)
                 refreshOfflineOffer()
-                SessionAnnouncer.say("Offline model ready")
+                SessionAnnouncer.say(String(localized: "Offline model ready"))
             } catch is CancellationError {
                 isDownloadingOfflineModel = false   // the user cancelled; not an error to report
             } catch {
                 isDownloadingOfflineModel = false
                 offlineDownloadError = error.localizedDescription
-                SessionAnnouncer.say("Offline model download failed. \(error.localizedDescription)",
+                SessionAnnouncer.say(String(localized: "Offline model download failed. \(error.localizedDescription)"),
                                      interrupts: true)
             }
         }
@@ -1100,7 +1100,7 @@ struct OnboardingView: View {
 
             List {
                 Section {
-                    SecretInputField(placeholder: "ElevenLabs API Key", text: $elevenLabsKey)
+                    SecretInputField(placeholder: String(localized: "ElevenLabs API Key"), text: $elevenLabsKey)
                         .frame(minHeight: rowMinHeight)
 
                     if elevenLabsKey.isEmpty {
@@ -1118,7 +1118,7 @@ struct OnboardingView: View {
                 }
 
                 Section {
-                    SecretInputField(placeholder: "Perplexity API Key", text: $perplexityKey)
+                    SecretInputField(placeholder: String(localized: "Perplexity API Key"), text: $perplexityKey)
                         .frame(minHeight: rowMinHeight)
 
                     if perplexityKey.isEmpty {
@@ -1595,16 +1595,16 @@ struct OnboardingView: View {
 
     private func connectToMetaAI() async {
         guard bluetoothConfigured else {
-            registrationStatus = "Grant Bluetooth permission first, on the Permissions page"
+            registrationStatus = String(localized: "Grant Bluetooth permission first, on the Permissions page")
             SessionAnnouncer.say(registrationStatus, interrupts: true)
             return
         }
         isRegistering = true
-        registrationStatus = "Registering with Meta AI…"
+        registrationStatus = String(localized: "Registering with Meta AI…")
         // This step leaves the app entirely — the user approves in another app and comes back —
         // so the one thing that must not happen is returning to a screen that says nothing about
         // whether it worked. Both ends of the wait are spoken: it started, and how it finished.
-        SessionAnnouncer.say("Registering with Meta AI")
+        SessionAnnouncer.say(String(localized: "Registering with Meta AI"))
         await appState.connectGlasses(awaitLink: false)
         // Behind the bootstrap's truth: `connectGlasses` degrades to "SDK unavailable" without
         // configuring, and an unconfigured `Wearables.shared` is a fatalError.
@@ -1740,7 +1740,7 @@ struct OnboardingView: View {
         .padding(.bottom, 10)
     }
 
-    private func primaryButton(_ label: String, action: @escaping () -> Void) -> some View {
+    private func primaryButton(_ label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(label, action: action)
             .buttonStyle(.ogProminent)
             .frame(maxWidth: 340)
@@ -1757,7 +1757,7 @@ struct OnboardingView: View {
         _ provider: LLMProvider,
         name: String,
         model: String,
-        detail: String,
+        detail: LocalizedStringKey,
         icon: String
     ) -> some View {
         let selected = selectedProvider == provider && selectedTemplateID == nil
@@ -1772,7 +1772,7 @@ struct OnboardingView: View {
             providerRowLabel(name: name, detail: detail, icon: icon, selected: selected)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(name) — \(detail)")
+        .accessibilityLabel(Text("\(name) — \(Text(detail))"))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
@@ -1801,7 +1801,7 @@ struct OnboardingView: View {
 
     /// A row for an OpenAI-compatible chat template from `RealtimeProviderCatalog`.
     @ViewBuilder
-    private func templateRow(_ id: String, name: String, detail: String, icon: String) -> some View {
+    private func templateRow(_ id: String, name: String, detail: LocalizedStringKey, icon: String) -> some View {
         if let template = RealtimeProviderCatalog.chatTemplates.first(where: { $0.id == id }) {
             let selected = selectedTemplateID == id
             Button {
@@ -1814,12 +1814,12 @@ struct OnboardingView: View {
                 providerRowLabel(name: name, detail: detail, icon: icon, selected: selected)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(name) — \(detail)")
+            .accessibilityLabel(Text("\(name) — \(Text(detail))"))
             .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         }
     }
 
-    private func providerRowLabel(name: String, detail: String, icon: String, selected: Bool) -> some View {
+    private func providerRowLabel(name: String, detail: LocalizedStringKey, icon: String, selected: Bool) -> some View {
         HStack(spacing: OGMetrics.rowSpacing) {
             OGIconTile(systemName: icon)
 
@@ -1859,12 +1859,12 @@ struct OnboardingView: View {
 
         // Basic format validation
         if provider == .anthropic && !trimmed.hasPrefix("sk-ant-") {
-            validationError = "Anthropic keys start with sk-ant-"
+            validationError = String(localized: "Anthropic keys start with sk-ant-")
             SessionAnnouncer.say(validationError ?? "", interrupts: true)
             return
         }
         if provider == .openai && !trimmed.hasPrefix("sk-") {
-            validationError = "OpenAI keys start with sk-"
+            validationError = String(localized: "OpenAI keys start with sk-")
             SessionAnnouncer.say(validationError ?? "", interrupts: true)
             return
         }
@@ -1943,7 +1943,7 @@ struct OnboardingView: View {
                     ?? models.first?.id
                     ?? ChatGPTOAuth.defaultModel
                 if models.isEmpty {
-                    validationError = "ChatGPT is connected, but its model list couldn't be loaded. You can continue with the current default and refresh models later in Settings."
+                    validationError = String(localized: "ChatGPT is connected, but its model list couldn't be loaded. You can continue with the current default and refresh models later in Settings.")
                 }
             }
         }
@@ -2065,21 +2065,25 @@ struct OnboardingView: View {
     }
 
     private func apiKeyURLLabel(for provider: LLMProvider) -> String {
+        // One catalog key, "Get a key at %@": the host is an address, never translated.
+        let host: String
         if let template = selectedTemplate, let page = OnboardingProviderPolicy.keyPage(for: template, region: modelStudioRegion) {
-            return "Get a key at \(page.host)"
+            host = page.host
+        } else {
+            switch provider {
+            case .anthropic: host = "console.anthropic.com"
+            case .openai: host = "platform.openai.com"
+            case .gemini: host = "aistudio.google.com"
+            case .groq: host = "console.groq.com"
+            case .deepseek: host = "platform.deepseek.com"
+            case .mistral: host = "admin.mistral.ai"
+            case .openrouter: host = "openrouter.ai"
+            case .qwen: host = "dashscope.console.aliyun.com"
+            case .zai: host = "z.ai"
+            case .xai: host = "console.x.ai"
+            default: return String(localized: "Get an access key")
+            }
         }
-        switch provider {
-        case .anthropic: return "Get a key at console.anthropic.com"
-        case .openai: return "Get a key at platform.openai.com"
-        case .gemini: return "Get a key at aistudio.google.com"
-        case .groq: return "Get a key at console.groq.com"
-        case .deepseek: return "Get a key at platform.deepseek.com"
-        case .mistral: return "Get a key at admin.mistral.ai"
-        case .openrouter: return "Get a key at openrouter.ai"
-        case .qwen: return "Get a key at dashscope.console.aliyun.com"
-        case .zai: return "Get a key at z.ai"
-        case .xai: return "Get a key at console.x.ai"
-        default: return "Get an access key"
-        }
+        return String(localized: "Get a key at \(host)")
     }
 }

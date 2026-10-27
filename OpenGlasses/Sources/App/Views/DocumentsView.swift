@@ -82,7 +82,7 @@ struct DocumentsView: View {
 
     private func ingest(name: String, text: String, sourceType: String) async {
         if await store.ingest(name: name, text: text, sourceType: sourceType) == nil {
-            message = "Couldn't save \"\(name)\" — the text may be too short."
+            message = String(localized: "Couldn't save \"\(name)\" — the text may be too short.")
         }
     }
 
@@ -94,7 +94,7 @@ struct DocumentsView: View {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty else {
-            message = "Couldn't read \(url.lastPathComponent) as text."
+            message = String(localized: "Couldn't read \(url.lastPathComponent) as text.")
             return
         }
         let name = url.deletingPathExtension().lastPathComponent

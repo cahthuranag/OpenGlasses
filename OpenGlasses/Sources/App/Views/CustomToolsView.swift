@@ -125,9 +125,9 @@ struct CustomToolEditorView: View {
     private var nameError: String? {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return nil }  // Don't show error for empty
-        if trimmed.contains(" ") { return "Use underscores instead of spaces" }
+        if trimmed.contains(" ") { return String(localized: "Use underscores instead of spaces") }
         if existingNames.contains(trimmed) && trimmed != tool?.name {
-            return "A built-in tool with this name already exists"
+            return String(localized: "A built-in tool with this name already exists")
         }
         return nil
     }

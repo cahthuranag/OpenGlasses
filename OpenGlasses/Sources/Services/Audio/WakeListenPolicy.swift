@@ -15,7 +15,7 @@ enum WakeListenMic: String, CaseIterable, Identifiable, Sendable {
     var label: String {
         switch self {
         case .iPhone: return "iPhone"
-        case .sameAsMicrophone: return "Same as Microphone"
+        case .sameAsMicrophone: return String(localized: "Same as Microphone")
         }
     }
 }

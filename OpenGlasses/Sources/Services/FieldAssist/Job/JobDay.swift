@@ -122,11 +122,11 @@ struct JobDay: Equatable {
 
             var label: String {
                 switch self {
-                case .scheduled: return "Scheduled"
-                case .overdue: return "Overdue"
-                case .inProgress: return "In progress"
-                case .paused: return "Paused"
-                case .done: return "Done"
+                case .scheduled: return String(localized: "Scheduled")
+                case .overdue: return String(localized: "Overdue")
+                case .inProgress: return String(localized: "In progress")
+                case .paused: return String(localized: "Paused")
+                case .done: return String(localized: "Done")
                 }
             }
 

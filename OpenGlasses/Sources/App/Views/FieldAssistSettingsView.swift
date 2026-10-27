@@ -91,21 +91,18 @@ struct FieldAssistSettingsView: View {
         // rather than discovered at the customer's door.
         if !appState.listeningEnabled {
             return wakeWordEditable
-                ? "Listening is switched off, so this phrase won't start a turn. Turn on Listen "
-                    + "for Wake Phrase in Settings › Voice & Triggers."
-                : "Listening is switched off, so this phrase won't start a turn. Your administrator "
-                    + "can turn it on."
+                ? String(localized: "Listening is switched off, so this phrase won't start a turn. Turn on Listen for Wake Phrase in Settings › Voice & Triggers.")
+                : String(localized: "Listening is switched off, so this phrase won't start a turn. Your administrator can turn it on.")
         }
         // The phrase is the technician's whole interface on a job, so it is always said; where the
         // organisation set it, there is just nowhere to change it (Plan HA C4).
-        guard wakeWordEditable else { return "Say this to start a hands-free turn." }
+        guard wakeWordEditable else { return String(localized: "Say this to start a hands-free turn.") }
         let global = Config.wakePhrase
         if let persona = governingPersona, persona.wakePhrase != global {
-            return "Say this to start a hands-free turn. It belongs to the \(persona.name) persona; "
-                + "\u{201C}\(global)\u{201D} from Voice settings still works too. Tap to change it."
+            let personaName = persona.name
+            return String(localized: "Say this to start a hands-free turn. It belongs to the \(personaName) persona; \u{201C}\(global)\u{201D} from Voice settings still works too. Tap to change it.")
         }
-        return "Say this to start a hands-free turn. Tap to change it, or to add the spellings the "
-            + "recogniser writes it down as — a short phrase is matched exactly."
+        return String(localized: "Say this to start a hands-free turn. Tap to change it, or to add the spellings the recogniser writes it down as — a short phrase is matched exactly.")
     }
 
     /// The screen that owns the phrase — Personas or Voice & Triggers — is one the person may open.
@@ -535,7 +532,7 @@ struct FieldAssistSettingsView: View {
                       allowedContentTypes: [UTType(exportedAs: OfficeSetupPackage.typeIdentifier), .json]) { result in
             switch result {
             case .failure:
-                officeImportError = "Couldn't open the Avenkin Office setup file. Try selecting it again."
+                officeImportError = String(localized: "Couldn't open the Avenkin Office setup file. Try selecting it again.")
             case .success(let url):
                 Task {
                     do {
@@ -548,7 +545,7 @@ struct FieldAssistSettingsView: View {
                         }.value
                         appState.orgEnrolment.openOfficePackageFile(bytes)
                     } catch {
-                        officeImportError = "Couldn't read the Avenkin Office setup file. Try selecting it again."
+                        officeImportError = String(localized: "Couldn't read the Avenkin Office setup file. Try selecting it again.")
                     }
                 }
             }
@@ -964,7 +961,7 @@ struct FieldAssistSettingsView: View {
         guard sessionService.workRecord() != nil else { return }
         let policy = DeliveryPolicy(settings: Config.deliverySettings)
         guard let channel = policy.defaultChannel else {
-            deliveryError = "No channel is allowed for job reports. Set one up under Job Reports above."
+            deliveryError = String(localized: "No channel is allowed for job reports. Set one up under Job Reports above.")
             return
         }
         switch policy.decide(channel: channel) {
@@ -1269,7 +1266,7 @@ struct FieldAssistSettingsView: View {
                     if let seats = lic.seats { LabeledContent("Seats", value: "\(seats)") }
                     if let reference = lic.reference, !reference.isEmpty { LabeledContent("Reference", value: reference) }
                 }
-                LabeledContent(grant.expiryLabel, value: grant.expiresAt?.formatted(date: .abbreviated, time: .omitted) ?? "Never")
+                LabeledContent(grant.expiryLabel, value: grant.expiresAt?.formatted(date: .abbreviated, time: .omitted) ?? String(localized: "Never"))
                 if let warning = grant.warning {
                     Label(FieldAssistPaywallCopy.expiring(warning), systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
@@ -1336,7 +1333,7 @@ struct FieldAssistSettingsView: View {
         switch appState.orgEnrolment.openLicence(code) {
         case .enrolling(let licensee):
             licenseMessageIsError = false
-            licenseMessage = "This licence is for \(licensee) — setting up this phone."
+            licenseMessage = String(localized: "This licence is for \(licensee) — setting up this phone.")
             licenseCode = ""
             return
         case .refused(let message):
@@ -1349,7 +1346,7 @@ struct FieldAssistSettingsView: View {
         do {
             let payload = try license.activate(code: code)
             licenseMessageIsError = false
-            licenseMessage = "Activated — licensed to \(payload.licensee)."
+            licenseMessage = String(localized: "Activated — licensed to \(payload.licensee).")
             licenseCode = ""
         } catch {
             licenseMessageIsError = true

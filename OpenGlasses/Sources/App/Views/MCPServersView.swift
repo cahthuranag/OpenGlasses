@@ -264,7 +264,7 @@ struct MCPServerEditorView: View {
                     TextField("Header name (e.g. Authorization)", text: $authHeader)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                    SecretInputField(placeholder: "Header value (e.g. Bearer xxx)", text: $authValue)
+                    SecretInputField(placeholder: String(localized: "Header value (e.g. Bearer xxx)"), text: $authValue)
                 } header: {
                     Text("Authentication (Optional)")
                 } footer: {

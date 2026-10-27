@@ -67,7 +67,7 @@ struct TranscriptOverlay: View {
             }
 
             if !userText.isEmpty {
-                transcriptCard(label: "You", text: userText, accent: .primary, style: .user)
+                transcriptCard(label: String(localized: "You"), text: userText, accent: .primary, style: .user)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 

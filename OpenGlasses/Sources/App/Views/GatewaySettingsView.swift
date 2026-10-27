@@ -316,10 +316,10 @@ struct AddGatewaySheet: View {
 
     private func providerDescription(_ provider: GatewayProvider) -> String {
         switch provider {
-        case .openclaw: return "Full-featured multi-user gateway with 56+ skills"
-        case .nanoclaw: return "Lightweight single-user agent with container isolation"
-        case .nemoclaw: return "NVIDIA NeMo-powered agent gateway"
-        case .custom: return "Any OpenClaw-compatible WebSocket endpoint"
+        case .openclaw: return String(localized: "Full-featured multi-user gateway with 56+ skills")
+        case .nanoclaw: return String(localized: "Lightweight single-user agent with container isolation")
+        case .nemoclaw: return String(localized: "NVIDIA NeMo-powered agent gateway")
+        case .custom: return String(localized: "Any OpenClaw-compatible WebSocket endpoint")
         }
     }
 }
@@ -333,6 +333,8 @@ struct EditGatewaySheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appAccent) private var accent
     @State private var testStatus: String = ""
+    /// Whether the last connection test reached the gateway — kept apart from the (localized) words.
+    @State private var testSucceeded = false
     @State private var setupCodeInput: String = ""
     @State private var pairingMessage: String = ""
     /// A setup code whose address differs from the saved one, held until the wearer decides.
@@ -362,7 +364,7 @@ struct EditGatewaySheet: View {
                 }
 
                 Section {
-                    SecretInputField(placeholder: "Token", text: $gateway.token)
+                    SecretInputField(placeholder: String(localized: "Token"), text: $gateway.token)
                 } header: {
                     Text("Authentication")
                 } footer: {
@@ -410,8 +412,8 @@ struct EditGatewaySheet: View {
                     }
                     if !testStatus.isEmpty {
                         HStack(spacing: 6) {
-                            Image(systemName: testStatus.contains("Connected") ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(testStatus.contains("Connected") ? OGTheme.okLabel : OGTheme.errorLabel)
+                            Image(systemName: testSucceeded ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(testSucceeded ? OGTheme.okLabel : OGTheme.errorLabel)
                             Text(testStatus)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -611,7 +613,8 @@ struct EditGatewaySheet: View {
     }
 
     private func testConnection() {
-        testStatus = "Testing..."
+        testStatus = String(localized: "Testing...")
+        testSucceeded = false
         let host: String
         switch gateway.connectionModeEnum {
         case .lan: host = gateway.lanURL
@@ -624,7 +627,7 @@ struct EditGatewaySheet: View {
             return
         }
         guard let url = try? EndpointPolicy.require("\(normalized)/health", for: .gatewayConnectionTest) else {
-            testStatus = "Invalid URL"
+            testStatus = String(localized: "Invalid URL")
             return
         }
         var request = URLRequest(url: url)
@@ -635,13 +638,14 @@ struct EditGatewaySheet: View {
         URLSession.shared.dataTask(with: request) { _, response, error in
             DispatchQueue.main.async {
                 if let error {
-                    testStatus = "Failed: \(error.localizedDescription)"
+                    testStatus = String(localized: "Failed: \(error.localizedDescription)")
                 } else if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                    testStatus = "Connected (\(http.statusCode))"
+                    testStatus = String(localized: "Connected (\(http.statusCode))")
+                    testSucceeded = true
                 } else if let http = response as? HTTPURLResponse {
                     testStatus = "HTTP \(http.statusCode)"
                 } else {
-                    testStatus = "No response"
+                    testStatus = String(localized: "No response")
                 }
             }
         }.resume()

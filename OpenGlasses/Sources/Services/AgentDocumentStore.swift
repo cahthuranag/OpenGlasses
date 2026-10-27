@@ -297,9 +297,9 @@ class AgentDocumentStore: ObservableObject {
 
         var displayName: String {
             switch self {
-            case .soul: return "Soul"
-            case .skills: return "Skills"
-            case .memory: return "Memory"
+            case .soul: return String(localized: "Soul")
+            case .skills: return String(localized: "Skills")
+            case .memory: return String(localized: "Memory")
             }
         }
 
@@ -313,9 +313,9 @@ class AgentDocumentStore: ObservableObject {
 
         var description: String {
             switch self {
-            case .soul: return "Who the agent is — personality, values, goals"
-            case .skills: return "What the agent can do — capabilities and patterns"
-            case .memory: return "What the agent knows — facts learned over time"
+            case .soul: return String(localized: "Who the agent is — personality, values, goals")
+            case .skills: return String(localized: "What the agent can do — capabilities and patterns")
+            case .memory: return String(localized: "What the agent knows — facts learned over time")
             }
         }
 

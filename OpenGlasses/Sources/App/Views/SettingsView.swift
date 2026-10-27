@@ -57,10 +57,11 @@ struct SettingsView: View {
             switch heroDevice {
             case .phone:
                 OGHeroDeviceCard(
-                    title: "This iPhone",
-                    status: heroDevice.phoneStatus ?? "In use",
+                    title: String(localized: "This iPhone"),
+                    status: heroDevice.phoneStatus ?? String(localized: "In use"),
                     dot: OGTheme.ok,
-                    chips: [("Voice", true), ("Chat", true), ("Camera", true)],
+                    chips: [(String(localized: "Voice"), true), (String(localized: "Chat"), true),
+                            (String(localized: "Camera"), true)],
                     symbol: "iphone"
                 )
             case .glasses:
@@ -71,9 +72,10 @@ struct SettingsView: View {
                         : (appState.glassesPhase.isConnecting ? OGTheme.warn : Color.secondary),
                     batteryPercent: appState.glassesService.batteryLevel,
                     chips: [
-                        ("Camera", appState.isConnected),
-                        ("Display", appState.glassesDisplay.hasDisplayCapability),
-                        ("HUD \(glassesDisplayEnabled ? "on" : "off")", glassesDisplayEnabled),
+                        (String(localized: "Camera"), appState.isConnected),
+                        (String(localized: "Display"), appState.glassesDisplay.hasDisplayCapability),
+                        (glassesDisplayEnabled ? String(localized: "HUD on") : String(localized: "HUD off"),
+                         glassesDisplayEnabled),
                     ]
                 )
             }
@@ -226,7 +228,7 @@ struct SettingsView: View {
                 icon: category.icon,
                 mutedIcon: category.mutedIcon,
                 subtitle: category.id == .devices && !GlassesSupportPolicy.isSupported
-                    ? "Hardware, privacy, and medical compliance" : category.subtitle,
+                    ? String(localized: "Hardware, privacy, and medical compliance") : category.subtitle,
                 value: summary(for: category.id),
                 alwaysStacksValue: true
             )
@@ -248,11 +250,11 @@ struct SettingsView: View {
 
     /// The hero card's glasses status, from the link's phase.
     private var glassesStatus: String {
-        if appState.glassesPaused { return "Connected · paused" }
+        if appState.glassesPaused { return String(localized: "Connected · paused") }
         switch appState.glassesPhase {
-        case .connected: return "Connected"
-        case .connecting: return "Connecting…"
-        case .noGlassesAdded, .addedDisconnected: return "Not connected"
+        case .connected: return String(localized: "Connected")
+        case .connecting: return String(localized: "Connecting…")
+        case .noGlassesAdded, .addedDisconnected: return String(localized: "Not connected")
         }
     }
 
@@ -262,18 +264,18 @@ struct SettingsView: View {
         case .voice: return "“\(displayedWakePhrase)”"
         case .intelligence: return displayedActiveModelName
         case .devices:
-            if appState.glassesPaused { return "Paused" }
+            if appState.glassesPaused { return String(localized: "Paused") }
             switch appState.glassesPhase {
-            case .connected: return "Connected"
-            case .connecting: return "Connecting…"
+            case .connected: return String(localized: "Connected")
+            case .connecting: return String(localized: "Connecting…")
             case .noGlassesAdded, .addedDisconnected: return nil
             }
-        case .fieldAssist: return fieldAssistEnabled ? "On" : nil
-        case .myManuals: return FieldAssistEntitlement.shared.has(.personalManuals) ? "Available" : nil
-        case .lookAndFeel: return appearance.capitalized
-        case .accessibility: return Config.accessibilityModeEnabled ? "On" : nil
-        case .display: return glassesDisplayEnabled ? "On" : nil
-        case .advanced: return "Test panel"
+        case .fieldAssist: return fieldAssistEnabled ? String(localized: "On") : nil
+        case .myManuals: return FieldAssistEntitlement.shared.has(.personalManuals) ? String(localized: "Available") : nil
+        case .lookAndFeel: return appearanceName
+        case .accessibility: return Config.accessibilityModeEnabled ? String(localized: "On") : nil
+        case .display: return glassesDisplayEnabled ? String(localized: "On") : nil
+        case .advanced: return String(localized: "Test panel")
         case .tools, .connections, .capture, .diagnostics: return nil
         }
     }
@@ -309,6 +311,16 @@ struct SettingsView: View {
             AdvancedSettingsScreen(appState: appState)
         case .diagnostics:
             DiagnosticsSupportView(appState: appState)
+        }
+    }
+
+    /// The Look & Feel row's value: the stored appearance (`system`/`light`/`dark`) in words.
+    private var appearanceName: String {
+        switch appearance {
+        case "light": return String(localized: "Light")
+        case "dark": return String(localized: "Dark")
+        case "system": return String(localized: "System")
+        default: return appearance.capitalized
         }
     }
 
@@ -360,7 +372,7 @@ struct SettingsView: View {
 
     private func authenticateSettingsEntry() {
         guard entryGate.begin() else { return }
-        OwnerGateAuth.authenticate(reason: "Unlock Avenkin Settings") { granted in
+        OwnerGateAuth.authenticate(reason: String(localized: "Unlock Avenkin Settings")) { granted in
             entryGate.finish(success: granted)
             if entryGate.consume() {
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { settingsLocked = false }
@@ -377,7 +389,7 @@ struct SettingsView: View {
             return
         }
         guard exitGate.begin() else { return }
-        OwnerGateAuth.authenticate(reason: "Verify it's you to leave Simple Mode") { granted in
+        OwnerGateAuth.authenticate(reason: String(localized: "Verify it's you to leave Simple Mode")) { granted in
             exitGate.finish(success: granted)
             if exitGate.consume() {
                 simpleModeEnabled = false
@@ -423,8 +435,8 @@ struct TierModelPicker: View {
     }
 
     private var selectedModelName: String {
-        if selectedModelId.isEmpty { return "Auto" }
-        guard let model = models.first(where: { $0.id == selectedModelId }) else { return "Auto" }
+        if selectedModelId.isEmpty { return String(localized: "Auto") }
+        guard let model = models.first(where: { $0.id == selectedModelId }) else { return String(localized: "Auto") }
         return model.model.isEmpty ? model.name : model.model
     }
 
@@ -492,7 +504,7 @@ struct TierModelDetailPicker: View {
     var body: some View {
         List {
             Section {
-                selectionRow(label: "Auto-detect", isSelected: selectedModelId.isEmpty) {
+                selectionRow(label: String(localized: "Auto-detect"), isSelected: selectedModelId.isEmpty) {
                     selectedModelId = ""
                 }
             } footer: {
@@ -1027,22 +1039,22 @@ struct GlassesSettingsView: View {
     private func openGlassesAppUpdate() async {
         glassesUpdateError = nil
         guard WearablesBootstrap.ensureConfigured() else {
-            glassesUpdateError = "Meta SDK unavailable — connect the glasses first."
+            glassesUpdateError = String(localized: "Meta SDK unavailable — connect the glasses first.")
             return
         }
         do { try await Wearables.shared.openDATGlassesAppUpdate() }
-        catch { glassesUpdateError = "Couldn't open the update screen: \(error.localizedDescription)" }
+        catch { glassesUpdateError = String(localized: "Couldn't open the update screen: \(error.localizedDescription)") }
     }
 
     @MainActor
     private func openGlassesFirmwareUpdate() async {
         glassesUpdateError = nil
         guard WearablesBootstrap.ensureConfigured() else {
-            glassesUpdateError = "Meta SDK unavailable — connect the glasses first."
+            glassesUpdateError = String(localized: "Meta SDK unavailable — connect the glasses first.")
             return
         }
         do { try await Wearables.shared.openFirmwareUpdate() }
-        catch { glassesUpdateError = "Couldn't open the firmware screen: \(error.localizedDescription)" }
+        catch { glassesUpdateError = String(localized: "Couldn't open the firmware screen: \(error.localizedDescription)") }
     }
 
     /// What shows above the settings while the glasses are not connected: the row to press, if
@@ -1079,11 +1091,11 @@ struct GlassesSettingsView: View {
     private var replyAudioFootnote: String {
         switch replyAudioMode {
         case .callQuality:
-            return "Replies play over the glasses' call link, so you can always interrupt by speaking or saying stop."
+            return String(localized: "Replies play over the glasses' call link, so you can always interrupt by speaking or saying stop.")
         case .fullQuality:
-            return "Replies play in full quality. To interrupt one, speak towards your iPhone — the glasses' mic is off while it plays. Each follow-up waits a moment longer while the glasses switch back."
+            return String(localized: "Replies play in full quality. To interrupt one, speak towards your iPhone — the glasses' mic is off while it plays. Each follow-up waits a moment longer while the glasses switch back.")
         case .automatic:
-            return "Full quality when your glasses switch fast enough, measured on these glasses; otherwise call quality. Until the switch has been measured, replies use call quality."
+            return String(localized: "Full quality when your glasses switch fast enough, measured on these glasses; otherwise call quality. Until the switch has been measured, replies use call quality.")
         }
     }
 
@@ -1311,17 +1323,35 @@ struct InfoStatusRow: View {
 // MARK: - Info Toggle
 
 /// A toggle with an info button that shows an explanation popover.
+///
+/// Title and info written at a call site are `LocalizedStringKey`s, so they reach the string
+/// catalog; a runtime `String` (a trigger's display name, say) takes the disfavored generic form
+/// and is shown as given.
 struct InfoToggle: View {
-    let title: String
+    private let title: Text
     @Binding var isOn: Bool
-    let info: String
+    private let info: Text
 
     @State private var showInfo = false
+
+    init(title: LocalizedStringKey, isOn: Binding<Bool>, info: LocalizedStringKey) {
+        self.title = Text(title)
+        self._isOn = isOn
+        self.info = Text(info)
+    }
+
+    /// Disfavored so a string literal still picks the `LocalizedStringKey` form.
+    @_disfavoredOverload
+    init<Title: StringProtocol, Info: StringProtocol>(title: Title, isOn: Binding<Bool>, info: Info) {
+        self.title = Text(title)
+        self._isOn = isOn
+        self.info = Text(info)
+    }
 
     var body: some View {
         Toggle(isOn: $isOn) {
             HStack(spacing: 6) {
-                Text(title)
+                title
                 Button {
                     showInfo = true
                 } label: {
@@ -1330,13 +1360,13 @@ struct InfoToggle: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("About \(title)")
+                .accessibilityLabel(Text("About \(title)"))
             }
         }
         .alert(title, isPresented: $showInfo) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(info)
+            info
         }
     }
 }

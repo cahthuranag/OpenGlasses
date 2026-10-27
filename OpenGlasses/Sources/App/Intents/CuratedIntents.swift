@@ -138,7 +138,7 @@ struct ToggleBroadcastIntent: AppIntent {
         let isOn = appState.broadcastService.isBroadcasting
         return .result(
             value: isOn,
-            dialog: IntentDialog(stringLiteral: isOn ? "Broadcasting started." : "Broadcasting stopped.")
+            dialog: isOn ? IntentDialog("Broadcasting started.") : IntentDialog("Broadcasting stopped.")
         )
     }
 }

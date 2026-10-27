@@ -337,10 +337,10 @@ struct PersonaDetailView: View {
     @State private var editingPromptPreset: PromptPreset? = nil
 
     private var modelName: String {
-        Config.savedModels.first { $0.id == persona.modelId }?.name ?? "Default"
+        Config.savedModels.first { $0.id == persona.modelId }?.name ?? String(localized: "Default")
     }
     private var presetName: String {
-        Config.savedPresets.first { $0.id == persona.presetId }?.name ?? "Default"
+        Config.savedPresets.first { $0.id == persona.presetId }?.name ?? String(localized: "Default")
     }
     private var preset: PromptPreset? {
         Config.savedPresets.first { $0.id == persona.presetId }
@@ -540,8 +540,8 @@ struct PersonaRow: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 4) {
-                    let modelName = Config.savedModels.first { $0.id == persona.modelId }?.name ?? "Default model"
-                    let presetName = Config.savedPresets.first { $0.id == persona.presetId }?.name ?? "Default"
+                    let modelName = Config.savedModels.first { $0.id == persona.modelId }?.name ?? String(localized: "Default model")
+                    let presetName = Config.savedPresets.first { $0.id == persona.presetId }?.name ?? String(localized: "Default")
                     Text(modelName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -578,16 +578,16 @@ struct ModeTemplatePreview: View {
 
     private var modelName: String {
         if template.modelId.isEmpty {
-            return Config.savedModels.first.map(\.name) ?? "Default"
+            return Config.savedModels.first.map(\.name) ?? String(localized: "Default")
         }
-        return Config.savedModels.first { $0.id == template.modelId }?.name ?? "Current Model"
+        return Config.savedModels.first { $0.id == template.modelId }?.name ?? String(localized: "Current Model")
     }
 
     private var presetName: String {
         if template.presetId.isEmpty {
-            return "Default"
+            return String(localized: "Default")
         }
-        return Config.savedPresets.first { $0.id == template.presetId }?.name ?? "Default"
+        return Config.savedPresets.first { $0.id == template.presetId }?.name ?? String(localized: "Default")
     }
 
     var body: some View {

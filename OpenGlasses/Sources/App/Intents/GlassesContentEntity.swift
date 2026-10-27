@@ -27,7 +27,7 @@ struct GlassesContentEntity: AppEntity, IndexedEntity, Identifiable, Transferabl
     }
 
     var typeLabel: String {
-        SiriContentType(rawValue: contentTypeRaw)?.displayLabel ?? "Content"
+        SiriContentType(rawValue: contentTypeRaw)?.displayLabel ?? String(localized: "Content")
     }
 
     var displayRepresentation: DisplayRepresentation {

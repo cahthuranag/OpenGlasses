@@ -704,25 +704,29 @@ struct JobTabModel {
         /// The sentence above the list.
         var summary: String {
             switch (attachedCount, overBudgetCount) {
-            case (0, 0): return "No clips go with this report."
+            case (0, 0): return String(localized: "No clips go with this report.")
             case (let sent, 0):
                 return sent == 1
-                    ? "One clip goes with the report by \(channelName)."
-                    : "\(sent) clips go with the report by \(channelName)."
+                    ? String(localized: "One clip goes with the report by \(channelName).")
+                    : String(localized: "\(sent) clips go with the report by \(channelName).")
             case (0, let over):
                 return over == 1
-                    ? "The clip is too large for \(channelLabel) — share it separately."
-                    : "\(over) clips are too large for \(channelLabel) — share them separately."
+                    ? String(localized: "The clip is too large for \(channelLabel) — share it separately.")
+                    : String(localized: "\(over) clips are too large for \(channelLabel) — share them separately.")
+            case (1, 1):
+                return String(localized: "1 clip goes with the report; 1 is too large for \(channelLabel) and must be shared separately.")
+            case (1, let over):
+                return String(localized: "1 clip goes with the report; \(over) are too large for \(channelLabel) and must be shared separately.")
+            case (let sent, 1):
+                return String(localized: "\(sent) clips go with the report; 1 is too large for \(channelLabel) and must be shared separately.")
             case (let sent, let over):
-                return "\(sent) clip\(sent == 1 ? "" : "s") go\(sent == 1 ? "es" : "") with the "
-                    + "report; \(over) \(over == 1 ? "is" : "are") too large for "
-                    + "\(channelLabel) and must be shared separately."
+                return String(localized: "\(sent) clips go with the report; \(over) are too large for \(channelLabel) and must be shared separately.")
             }
         }
 
         /// What one clip's row says about how it travels.
         func line(for clip: JobMediaItem) -> String {
-            var parts: [String] = [clip.caption?.isEmpty == false ? clip.caption! : "No caption"]
+            var parts: [String] = [clip.caption?.isEmpty == false ? clip.caption! : String(localized: "No caption")]
             if let length = clip.durationLabel { parts.append(length) }
             if let size = clip.sizeLabel { parts.append(size) }
             return parts.joined(separator: " · ")

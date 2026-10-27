@@ -62,9 +62,9 @@ enum ModesTabPresentation: Equatable {
 
         var subtitle: String {
             switch self {
-            case .turnOn: return "Turn on for jobs, scenarios and manuals"
-            case .unlock: return "Unlock for grounded field-engineer guidance"
-            case .lapsed: return "Your Field Assist access has ended"
+            case .turnOn: return String(localized: "Turn on for jobs, scenarios and manuals")
+            case .unlock: return String(localized: "Unlock for grounded field-engineer guidance")
+            case .lapsed: return String(localized: "Your Field Assist access has ended")
             }
         }
 
@@ -74,9 +74,9 @@ enum ModesTabPresentation: Equatable {
         var footer: String {
             switch self {
             case .turnOn:
-                return "Turned on, this tab becomes Field Assist: your vault's scenarios, your manuals and your jobs, with these modes tucked underneath."
+                return String(localized: "Turned on, this tab becomes Field Assist: your vault's scenarios, your manuals and your jobs, with these modes tucked underneath.")
             case .unlock, .lapsed:
-                return "Hands-free, domain-grounded guidance for field engineers — load a knowledge vault and run grounded, audited jobs."
+                return String(localized: "Hands-free, domain-grounded guidance for field engineers — load a knowledge vault and run grounded, audited jobs.")
             }
         }
 
@@ -153,14 +153,12 @@ enum FieldAssistScenarioStart: Equatable {
                        openJob: OpenJob?) -> FieldAssistScenarioStart {
         if let openJob {
             guard openJob.vaultId == vaultId else {
-                return .blocked(reason: "\(openJob.label) is open on \(openJob.vaultName). "
-                                + "Close it before running a scenario from \(vaultName).")
+                return .blocked(reason: String(localized: "\(openJob.label) is open on \(openJob.vaultName). Close it before running a scenario from \(vaultName)."))
             }
             return .runInOpenJob(label: openJob.label)
         }
         guard vaultUnlocked else {
-            return .blocked(reason: "\(vaultName) is locked. Unlock it under Settings → Field Assist "
-                            + "before starting a job.")
+            return .blocked(reason: String(localized: "\(vaultName) is locked. Unlock it under Settings → Field Assist before starting a job."))
         }
         return .startJob
     }
@@ -168,8 +166,8 @@ enum FieldAssistScenarioStart: Equatable {
     /// The confirmation's button, for a scenario titled `scenario`.
     func confirmButton(_ scenario: String) -> String? {
         switch self {
-        case .startJob: return "Start a job and run \(scenario)"
-        case .runInOpenJob(let label): return "Run in \(label)"
+        case .startJob: return String(localized: "Start a job and run \(scenario)")
+        case .runInOpenJob(let label): return String(localized: "Run in \(label)")
         case .blocked: return nil
         }
     }
@@ -178,9 +176,9 @@ enum FieldAssistScenarioStart: Equatable {
     func message(_ scenario: String, vaultName: String) -> String {
         switch self {
         case .startJob:
-            return "Starts a Field Assist job on \(vaultName) and runs \u{201C}\(scenario)\u{201D}."
+            return String(localized: "Starts a Field Assist job on \(vaultName) and runs \u{201C}\(scenario)\u{201D}.")
         case .runInOpenJob(let label):
-            return "Runs \u{201C}\(scenario)\u{201D} as part of \(label)."
+            return String(localized: "Runs \u{201C}\(scenario)\u{201D} as part of \(label).")
         case .blocked(let reason):
             return reason
         }

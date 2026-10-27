@@ -451,7 +451,7 @@ struct OGChip: View {
     /// Availability is carried by colour alone on screen; VoiceOver gets it in
     /// words. Pure, so the wording is covered by the suite.
     static func spokenLabel(text: String, available: Bool) -> String {
-        available ? text : "\(text), unavailable"
+        available ? text : String(localized: "\(text), unavailable")
     }
 
     var body: some View {
@@ -665,15 +665,17 @@ struct OGHeroDeviceCard: View {
     ) -> String {
         var parts = [title, status]
         if let batteryPercent {
-            parts.append("Battery \(batteryPercent) percent")
+            parts.append(String(localized: "Battery \(batteryPercent) percent"))
         }
         let available = chips.filter { $0.available }.map { $0.label }
         let unavailable = chips.filter { !$0.available }.map { $0.label }
         if !available.isEmpty {
-            parts.append("Available: " + available.joined(separator: ", "))
+            let names = available.joined(separator: ", ")
+            parts.append(String(localized: "Available: \(names)"))
         }
         if !unavailable.isEmpty {
-            parts.append("Unavailable: " + unavailable.joined(separator: ", "))
+            let names = unavailable.joined(separator: ", ")
+            parts.append(String(localized: "Unavailable: \(names)"))
         }
         return parts.joined(separator: ". ")
     }

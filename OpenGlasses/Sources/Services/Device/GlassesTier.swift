@@ -19,9 +19,9 @@ enum GlassesTier: String, Sendable, Equatable, CaseIterable {
 
     var label: String {
         switch self {
-        case .audioOnly: return "Audio only"
-        case .displayOnly: return "Display"
-        case .camera: return "Camera"
+        case .audioOnly: return String(localized: "Audio only")
+        case .displayOnly: return String(localized: "Display")
+        case .camera: return String(localized: "Camera")
         }
     }
 
@@ -29,11 +29,11 @@ enum GlassesTier: String, Sendable, Equatable, CaseIterable {
     var summary: String {
         switch self {
         case .audioOnly:
-            return "Voice, wake word and spoken replies. Camera features use the iPhone camera."
+            return String(localized: "Voice, wake word and spoken replies. Camera features use the iPhone camera.")
         case .displayOnly:
-            return "Voice, wake word, spoken replies and the in-lens HUD. No camera."
+            return String(localized: "Voice, wake word, spoken replies and the in-lens HUD. No camera.")
         case .camera:
-            return "Voice, wake word, spoken replies and the glasses camera."
+            return String(localized: "Voice, wake word, spoken replies and the glasses camera.")
         }
     }
 }

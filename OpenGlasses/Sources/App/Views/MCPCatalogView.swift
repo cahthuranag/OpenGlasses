@@ -127,7 +127,7 @@ struct MCPCatalogInstallView: View {
 
             if entry.auth.kind != .none {
                 Section {
-                    SecretInputField(placeholder: entry.auth.kind == .header ? "API key" : "Token", text: $token)
+                    SecretInputField(placeholder: entry.auth.kind == .header ? String(localized: "API key") : String(localized: "Token"), text: $token)
                 } header: {
                     switch entry.auth.kind {
                     case .oauth:  Text("Access token (paste)")

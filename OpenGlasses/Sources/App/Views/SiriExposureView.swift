@@ -279,9 +279,11 @@ struct SiriExposureView: View {
 
     private func bindingSummary(_ binding: SiriActionBinding) -> String {
         switch binding {
-        case .builtin(let id): return "Built-in: \(id)"
-        case .prompt(let text): return "Ask: \(text.prefix(60))"
-        case .tool(let name, _): return "Tool: \(name)"
+        case .builtin(let id): return String(localized: "Built-in: \(id)")
+        case .prompt(let text):
+            let snippet = String(text.prefix(60))
+            return String(localized: "Ask: \(snippet)")
+        case .tool(let name, _): return String(localized: "Tool: \(name)")
         case .capability(let kind, let id): return "\(kind.displayLabel): \(id)"
         }
     }
@@ -300,6 +302,14 @@ struct SiriActionEditorView: View {
         case tool = "Run a Tool"
         case customTool = "Run a Custom Tool"
         var id: String { rawValue }
+        /// The picker's words; the raw value stays the stable identifier.
+        var title: LocalizedStringKey {
+            switch self {
+            case .prompt: return "Ask the Assistant"
+            case .tool: return "Run a Tool"
+            case .customTool: return "Run a Custom Tool"
+            }
+        }
     }
 
     let existing: SiriActionDefinition?
@@ -338,7 +348,7 @@ struct SiriActionEditorView: View {
                 Section("What it does") {
                     Picker("Type", selection: $bindingKind) {
                         ForEach(availableKinds) { kind in
-                            Text(kind.rawValue).tag(kind)
+                            Text(kind.title).tag(kind)
                         }
                     }
 
@@ -454,21 +464,21 @@ struct SiriActionEditorView: View {
     private static func message(for issue: SiriActionCatalog.ValidationIssue) -> String {
         switch issue {
         case .emptyName:
-            return "Give the action a name — it's what you'll say to Siri."
+            return String(localized: "Give the action a name — it's what you'll say to Siri.")
         case .duplicateName(let name):
-            return "An action named \"\(name)\" already exists."
+            return String(localized: "An action named \"\(name)\" already exists.")
         case .emptyPrompt:
-            return "Enter the instruction to send to the assistant."
+            return String(localized: "Enter the instruction to send to the assistant.")
         case .unknownTool(let tool):
-            return "No tool named \"\(tool)\" exists."
+            return String(localized: "No tool named \"\(tool)\" exists.")
         case .invalidArgsJSON:
-            return "Arguments must be a valid JSON object, like {\"action\": \"start\"}."
+            return String(localized: "Arguments must be a valid JSON object, like {\"action\": \"start\"}.")
         case .toolBlockedByCompliance(let tool):
-            return "\"\(tool)\" is unavailable while Medical Compliance Mode is on."
+            return String(localized: "\"\(tool)\" is unavailable while Medical Compliance Mode is on.")
         case .toolNeedsDirectConfirmation(let tool):
-            return "\"\(tool)\" takes an action you have to confirm yourself, so it can't run from a saved voice action. Ask the assistant for it instead."
+            return String(localized: "\"\(tool)\" takes an action you have to confirm yourself, so it can't run from a saved voice action. Ask the assistant for it instead.")
         case .agentModeRequired:
-            return "Custom tools need Agentic Features enabled (Settings → AI & Personality → Agentic Features)."
+            return String(localized: "Custom tools need Agentic Features enabled (Settings → AI & Personality → Agentic Features).")
         }
     }
 }

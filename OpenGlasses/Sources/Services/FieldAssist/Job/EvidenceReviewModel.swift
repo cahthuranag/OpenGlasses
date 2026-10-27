@@ -121,7 +121,7 @@ struct EvidenceReviewModel: Equatable {
 
     /// "Photos and clips", or "Photos" when that is all there is. A heading that promises video to
     /// a job that took none is as wrong as one that omits it from a job that did.
-    var sectionTitle: String { hasClips ? "Photos and clips" : "Photos" }
+    var sectionTitle: String { hasClips ? String(localized: "Photos and clips") : String(localized: "Photos") }
 
     // MARK: - Words
 
@@ -133,11 +133,11 @@ struct EvidenceReviewModel: Equatable {
     var faceBlurLine: String {
         switch faceBlur {
         case .live(let on):
-            return on ? "Face blur: On" : "Face blur: Off"
+            return on ? String(localized: "Face blur: On") : String(localized: "Face blur: Off")
         case .asRecorded(let blurred, let total):
-            if total == 0 || blurred == 0 { return "Face blur: Off when these were taken" }
-            if blurred == total { return "Face blur: On when these were taken" }
-            return "Face blur: On for \(blurred) of \(total)"
+            if total == 0 || blurred == 0 { return String(localized: "Face blur: Off when these were taken") }
+            if blurred == total { return String(localized: "Face blur: On when these were taken") }
+            return String(localized: "Face blur: On for \(blurred) of \(total)")
         }
     }
 
@@ -149,48 +149,64 @@ struct EvidenceReviewModel: Equatable {
     /// pictures — the blur applies to both, and calling a video a picture in the one sentence that
     /// tells a technician what a customer will see would be the copy quietly being wrong.
     var faceBlurDetail: String {
-        let noun = hasClips ? "items" : "pictures"
+        let items = hasClips
         switch faceBlur {
         case .live(true):
-            return "Faces of anyone else in these \(noun) are blurred before they are saved, so "
-                + "the blur cannot be undone here. Change it under Settings → Devices & Privacy → "
-                + "Hardware & Privacy."
+            return items
+                ? String(localized: "Faces of anyone else in these items are blurred before they are saved, so the blur cannot be undone here. Change it under Settings → Devices & Privacy → Hardware & Privacy.")
+                : String(localized: "Faces of anyone else in these pictures are blurred before they are saved, so the blur cannot be undone here. Change it under Settings → Devices & Privacy → Hardware & Privacy.")
         case .live(false):
-            return "Faces in these \(noun) are not blurred. Turn it on under Settings → Devices & "
-                + "Privacy → Hardware & Privacy — it applies to anything captured from then on."
+            return items
+                ? String(localized: "Faces in these items are not blurred. Turn it on under Settings → Devices & Privacy → Hardware & Privacy — it applies to anything captured from then on.")
+                : String(localized: "Faces in these pictures are not blurred. Turn it on under Settings → Devices & Privacy → Hardware & Privacy — it applies to anything captured from then on.")
         case .asRecorded(let blurred, let total):
             if total == 0 || blurred == 0 {
-                return "Faces in these \(noun) were not blurred when they were captured, and that "
-                    + "cannot be changed now — what was stored is what a recipient sees."
+                return items
+                    ? String(localized: "Faces in these items were not blurred when they were captured, and that cannot be changed now — what was stored is what a recipient sees.")
+                    : String(localized: "Faces in these pictures were not blurred when they were captured, and that cannot be changed now — what was stored is what a recipient sees.")
             }
             if blurred == total {
-                return "Faces of anyone else were blurred before these \(noun) were saved, and "
-                    + "that cannot be undone — the blurred copy is the only one kept."
+                return items
+                    ? String(localized: "Faces of anyone else were blurred before these items were saved, and that cannot be undone — the blurred copy is the only one kept.")
+                    : String(localized: "Faces of anyone else were blurred before these pictures were saved, and that cannot be undone — the blurred copy is the only one kept.")
             }
-            return "\(blurred) of these \(total) \(noun) had faces blurred before they were "
-                + "saved and the rest did not. Neither can be changed now."
+            return items
+                ? String(localized: "\(blurred) of these \(total) items had faces blurred before they were saved and the rest did not. Neither can be changed now.")
+                : String(localized: "\(blurred) of these \(total) pictures had faces blurred before they were saved and the rest did not. Neither can be changed now.")
         }
     }
 
     /// The label on an item captured while the blur was on.
-    static let blurredItemLabel = "Captured with face blur"
+    static let blurredItemLabel = String(localized: "Captured with face blur")
 
     /// The line under a clip in the review, saying how it will actually travel (Plan FO P2b). A
     /// work order cannot contain a video, and a technician choosing to send one is entitled to
     /// know that before they tap rather than after.
     static let clipTravelLabel =
-        "Sent as a file of its own — the report names it rather than containing it."
+        String(localized: "Sent as a file of its own — the report names it rather than containing it.")
 
     /// "3 of 7 photos will go with the report" — or "went with", once the job is closed and the
     /// report has already been made from them. The same tense rule as the face-blur line: a
     /// finished job describes what happened, not what is about to.
     func summary(for selection: EvidenceSelection) -> String {
         let chosen = selection.entries.filter(\.included).count
-        let verb = isFinished ? "went with" : "will go with"
-        let noun = hasClips ? "item" : "photo"
-        guard count > 0 else { return "Nothing was recorded on this job." }
-        guard chosen > 0 else { return "No \(noun)s \(verb) the report." }
-        return "\(chosen) of \(count) \(noun)\(count == 1 ? "" : "s") \(verb) the report."
+        let total = count
+        guard total > 0 else { return String(localized: "Nothing was recorded on this job.") }
+        // Whole sentences per tense, noun and number, so each reads naturally once translated.
+        switch (isFinished, hasClips, chosen > 0, total == 1) {
+        case (true, true, false, _): return String(localized: "No items went with the report.")
+        case (true, false, false, _): return String(localized: "No photos went with the report.")
+        case (false, true, false, _): return String(localized: "No items will go with the report.")
+        case (false, false, false, _): return String(localized: "No photos will go with the report.")
+        case (true, true, true, true): return String(localized: "\(chosen) of \(total) item went with the report.")
+        case (true, true, true, false): return String(localized: "\(chosen) of \(total) items went with the report.")
+        case (true, false, true, true): return String(localized: "\(chosen) of \(total) photo went with the report.")
+        case (true, false, true, false): return String(localized: "\(chosen) of \(total) photos went with the report.")
+        case (false, true, true, true): return String(localized: "\(chosen) of \(total) item will go with the report.")
+        case (false, true, true, false): return String(localized: "\(chosen) of \(total) items will go with the report.")
+        case (false, false, true, true): return String(localized: "\(chosen) of \(total) photo will go with the report.")
+        case (false, false, true, false): return String(localized: "\(chosen) of \(total) photos will go with the report.")
+        }
     }
 
     /// Whether this is a record of a closed job rather than one still being worked on. Read off

@@ -46,12 +46,12 @@ enum LocalModelPresentation {
         case .mlx:
             return LocalModelBadge(id: "runtime.mlx",
                                    text: "MLX",
-                                   spokenLabel: "Runs on the MLX runtime",
+                                   spokenLabel: String(localized: "Runs on the MLX runtime"),
                                    systemImage: "cpu")
         case .llamaCpp:
             return LocalModelBadge(id: "runtime.gguf",
                                    text: "GGUF",
-                                   spokenLabel: "Runs on the GGUF runtime",
+                                   spokenLabel: String(localized: "Runs on the GGUF runtime"),
                                    systemImage: "cpu")
         }
     }
@@ -62,9 +62,10 @@ enum LocalModelPresentation {
     static func quantizationBadge(_ quantization: String?) -> LocalModelBadge? {
         guard let quantization,
               !quantization.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let spelled = spellOut(quantization)
         return LocalModelBadge(id: "quantization",
                                text: quantization,
-                               spokenLabel: "Labelled \(spellOut(quantization)) quantization",
+                               spokenLabel: String(localized: "Labelled \(spelled) quantization"),
                                systemImage: "square.stack.3d.down.right")
     }
 
@@ -80,15 +81,15 @@ enum LocalModelPresentation {
         var badges: [LocalModelBadge] = []
         if capabilities.contains(.vision) {
             badges.append(LocalModelBadge(id: "capability.vision",
-                                          text: "Vision",
-                                          spokenLabel: "Can look at photos",
+                                          text: String(localized: "Vision"),
+                                          spokenLabel: String(localized: "Can look at photos"),
                                           systemImage: "eye",
                                           emphasis: .positive))
         }
         if capabilities.contains(.toolFriendly) {
             badges.append(LocalModelBadge(id: "capability.tools",
-                                          text: "Tools",
-                                          spokenLabel: "Can call the app's tools",
+                                          text: String(localized: "Tools"),
+                                          spokenLabel: String(localized: "Can call the app's tools"),
                                           systemImage: "wrench.and.screwdriver",
                                           emphasis: .positive))
         }
@@ -135,7 +136,7 @@ enum LocalModelPresentation {
 
         var title: String {
             switch self {
-            case .all: return "All runtimes"
+            case .all: return String(localized: "All runtimes")
             case .mlx: return "MLX"
             case .gguf: return "GGUF"
             }
@@ -145,9 +146,9 @@ enum LocalModelPresentation {
         /// does not say it is a filter.
         var spokenLabel: String {
             switch self {
-            case .all: return "Show models for every runtime"
-            case .mlx: return "Show only MLX models"
-            case .gguf: return "Show only GGUF models"
+            case .all: return String(localized: "Show models for every runtime")
+            case .mlx: return String(localized: "Show only MLX models")
+            case .gguf: return String(localized: "Show only GGUF models")
             }
         }
 
@@ -165,17 +166,17 @@ enum LocalModelPresentation {
 
         var title: String {
             switch self {
-            case .all: return "All models"
-            case .text: return "Text only"
-            case .vision: return "Vision"
+            case .all: return String(localized: "All models")
+            case .text: return String(localized: "Text only")
+            case .vision: return String(localized: "Vision")
             }
         }
 
         var spokenLabel: String {
             switch self {
-            case .all: return "Show text and vision models"
-            case .text: return "Show only text models"
-            case .vision: return "Show only models that can look at photos"
+            case .all: return String(localized: "Show text and vision models")
+            case .text: return String(localized: "Show only text models")
+            case .vision: return String(localized: "Show only models that can look at photos")
             }
         }
 

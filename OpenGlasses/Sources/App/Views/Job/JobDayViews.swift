@@ -107,8 +107,8 @@ struct JobDayHomeCard: View {
     private var openContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             if day.isEmptyDay {
-                cardLine(symbol: "calendar", title: "No jobs today",
-                         detail: day.next.map { "Next: \($0.whenText) · \($0.title)" })
+                cardLine(symbol: "calendar", title: String(localized: "No jobs today"),
+                         detail: day.next.map { String(localized: "Next: \($0.whenText) · \($0.title)") })
             } else {
                 ForEach(day.jobs.prefix(Self.cardJobs)) { job in
                     cardLine(symbol: JobDayRowStyle.symbol(job.status), title: job.title,
@@ -158,7 +158,7 @@ struct JobDayHomeCard: View {
         .onTapGesture { onOpenDay() }
     }
 
-    private func groupLabel(_ text: String) -> some View {
+    private func groupLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)

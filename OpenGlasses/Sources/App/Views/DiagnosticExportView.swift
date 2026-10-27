@@ -106,7 +106,7 @@ struct DiagnosticExportView: View {
             }
             failure = nil
         } catch {
-            failure = "Couldn't prepare the diagnostics file. Try again once the device is unlocked."
+            failure = String(localized: "Couldn't prepare the diagnostics file. Try again once the device is unlocked.")
         }
     }
 

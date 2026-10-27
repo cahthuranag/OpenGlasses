@@ -303,7 +303,7 @@ private struct JobTabContent: View {
                           focusesEvidence: focusesEvidence,
                           sendCard: sendCard,
                           onSendToday: { appState.openSupportReport(.day(Date())) })
-                .navigationTitle(job.jobNumber.map { "Job \($0)" } ?? "Open job")
+                .navigationTitle(job.jobNumber.map { String(localized: "Job \($0)") } ?? String(localized: "Open job"))
                 .navigationBarTitleDisplayMode(.inline)
                 // "Finish Job 1005…" from the open-job question: the job's own close, once its
                 // page is up — the same confirmation, review and sign-off as its Close job button.
@@ -397,7 +397,7 @@ private struct JobTabContent: View {
     private func stopClip() {
         Task {
             let finished = await appState.stopJobClip()
-            if finished == nil { problem = "The clip stopped, but nothing could be saved." }
+            if finished == nil { problem = String(localized: "The clip stopped, but nothing could be saved.") }
         }
     }
 
@@ -451,7 +451,7 @@ private struct JobTabContent: View {
     private func openConversation() {
         switch model.openConversation() {
         case .none:
-            problem = "Nothing has been said on this job yet, so it has no conversation to open."
+            problem = String(localized: "Nothing has been said on this job yet, so it has no conversation to open.")
         case .asks(let question):
             leaveThread = question
         case .open(let threadId):

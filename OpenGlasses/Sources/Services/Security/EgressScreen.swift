@@ -11,17 +11,17 @@ enum EgressPolicy: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .block:  return "Block"
-        case .redact: return "Redact"
-        case .allow:  return "Allow"
+        case .block:  return String(localized: "Block")
+        case .redact: return String(localized: "Redact")
+        case .allow:  return String(localized: "Allow")
         }
     }
 
     var detail: String {
         switch self {
-        case .block:  return "Withhold the call if arguments contain secrets or PII"
-        case .redact: return "Mask secrets/PII, then send"
-        case .allow:  return "Send unmodified (logged)"
+        case .block:  return String(localized: "Withhold the call if arguments contain secrets or PII")
+        case .redact: return String(localized: "Mask secrets/PII, then send")
+        case .allow:  return String(localized: "Send unmodified (logged)")
         }
     }
 }

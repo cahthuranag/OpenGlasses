@@ -224,15 +224,15 @@ struct AdvancedQuickActionsView: View {
     }
 
     private func actionSummary(_ action: QuickAction) -> String {
-        if action.id == QuickAction.myManuals.id { return "Choose manuals for the current chat" }
+        if action.id == QuickAction.myManuals.id { return String(localized: "Choose manuals for the current chat") }
         switch action.type {
-        case .prompt: return action.promptText ?? "Text prompt"
-        case .photo: return "Capture and describe"
-        case .photoThenPrompt: return action.promptText?.prefix(60).description ?? "Photo + prompt"
+        case .prompt: return action.promptText ?? String(localized: "Text prompt")
+        case .photo: return String(localized: "Capture and describe")
+        case .photoThenPrompt: return action.promptText?.prefix(60).description ?? String(localized: "Photo + prompt")
         case .homeAssistant: return [action.haService, action.haEntityId].compactMap { $0 }.joined(separator: " → ")
-        case .siriShortcut: return action.shortcutName ?? "Shortcut"
-        case .openApp: return action.urlScheme ?? "URL"
-        case .toggleRecording: return "Start/stop meeting recording"
+        case .siriShortcut: return action.shortcutName ?? String(localized: "Shortcut")
+        case .openApp: return action.urlScheme ?? String(localized: "URL")
+        case .toggleRecording: return String(localized: "Start/stop meeting recording")
         }
     }
 }
@@ -330,57 +330,57 @@ struct QuickActionEditorView: View {
     /// Common HA services grouped by domain
     private static let commonServices: [(domain: String, services: [(id: String, label: String)])] = [
         ("light", [
-            ("light.turn_on", "Turn On"),
-            ("light.turn_off", "Turn Off"),
-            ("light.toggle", "Toggle"),
+            ("light.turn_on", String(localized: "Turn On")),
+            ("light.turn_off", String(localized: "Turn Off")),
+            ("light.toggle", String(localized: "Toggle")),
         ]),
         ("switch", [
-            ("switch.turn_on", "Turn On"),
-            ("switch.turn_off", "Turn Off"),
-            ("switch.toggle", "Toggle"),
+            ("switch.turn_on", String(localized: "Turn On")),
+            ("switch.turn_off", String(localized: "Turn Off")),
+            ("switch.toggle", String(localized: "Toggle")),
         ]),
         ("cover", [
-            ("cover.open_cover", "Open"),
-            ("cover.close_cover", "Close"),
-            ("cover.toggle", "Toggle"),
+            ("cover.open_cover", String(localized: "Open")),
+            ("cover.close_cover", String(localized: "Close")),
+            ("cover.toggle", String(localized: "Toggle")),
         ]),
         ("lock", [
-            ("lock.lock", "Lock"),
-            ("lock.unlock", "Unlock"),
+            ("lock.lock", String(localized: "Lock")),
+            ("lock.unlock", String(localized: "Unlock")),
         ]),
         ("climate", [
-            ("climate.set_temperature", "Set Temperature"),
-            ("climate.turn_on", "Turn On"),
-            ("climate.turn_off", "Turn Off"),
+            ("climate.set_temperature", String(localized: "Set Temperature")),
+            ("climate.turn_on", String(localized: "Turn On")),
+            ("climate.turn_off", String(localized: "Turn Off")),
         ]),
         ("fan", [
-            ("fan.turn_on", "Turn On"),
-            ("fan.turn_off", "Turn Off"),
-            ("fan.toggle", "Toggle"),
+            ("fan.turn_on", String(localized: "Turn On")),
+            ("fan.turn_off", String(localized: "Turn Off")),
+            ("fan.toggle", String(localized: "Toggle")),
         ]),
         ("media_player", [
-            ("media_player.media_play", "Play"),
-            ("media_player.media_pause", "Pause"),
-            ("media_player.media_play_pause", "Play/Pause"),
-            ("media_player.volume_up", "Volume Up"),
-            ("media_player.volume_down", "Volume Down"),
-            ("media_player.volume_mute", "Mute"),
+            ("media_player.media_play", String(localized: "Play")),
+            ("media_player.media_pause", String(localized: "Pause")),
+            ("media_player.media_play_pause", String(localized: "Play/Pause")),
+            ("media_player.volume_up", String(localized: "Volume Up")),
+            ("media_player.volume_down", String(localized: "Volume Down")),
+            ("media_player.volume_mute", String(localized: "Mute")),
         ]),
         ("scene", [
-            ("scene.turn_on", "Activate Scene"),
+            ("scene.turn_on", String(localized: "Activate Scene")),
         ]),
         ("automation", [
-            ("automation.trigger", "Trigger"),
-            ("automation.turn_on", "Enable"),
-            ("automation.turn_off", "Disable"),
+            ("automation.trigger", String(localized: "Trigger")),
+            ("automation.turn_on", String(localized: "Enable")),
+            ("automation.turn_off", String(localized: "Disable")),
         ]),
         ("script", [
-            ("script.turn_on", "Run Script"),
+            ("script.turn_on", String(localized: "Run Script")),
         ]),
         ("vacuum", [
-            ("vacuum.start", "Start"),
-            ("vacuum.stop", "Stop"),
-            ("vacuum.return_to_base", "Return to Base"),
+            ("vacuum.start", String(localized: "Start")),
+            ("vacuum.stop", String(localized: "Stop")),
+            ("vacuum.return_to_base", String(localized: "Return to Base")),
         ]),
     ]
 

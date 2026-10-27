@@ -21,7 +21,7 @@ struct PromptInspectorView: View {
         List {
             // MARK: Overview
             Section {
-                LabeledContent("Active Model", value: Config.activeModel?.name ?? "None")
+                LabeledContent("Active Model", value: Config.activeModel?.name ?? String(localized: "None"))
                 LabeledContent("Provider", value: Config.activeModel?.llmProvider.displayName ?? "—")
                 LabeledContent("Estimated Tokens", value: "~\(tokenEstimate)")
             } header: {

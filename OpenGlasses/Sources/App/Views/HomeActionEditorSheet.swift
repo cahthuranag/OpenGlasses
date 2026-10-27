@@ -124,10 +124,10 @@ struct HomeActionEditorSheet: View {
     }
 
     private var deleteMessage: String {
-        let name = existing?.label ?? "This action"
-        var lines = ["\"\(name)\" is removed from the grid, the widget, the watch and the in-lens launcher."]
-        if isExposedToVoice { lines.append("Running it by voice is turned off at the same time.") }
-        lines.append("Your conversations and memories are untouched.")
+        let name = existing?.label ?? String(localized: "This action")
+        var lines = [String(localized: "\"\(name)\" is removed from the grid, the widget, the watch and the in-lens launcher.")]
+        if isExposedToVoice { lines.append(String(localized: "Running it by voice is turned off at the same time.")) }
+        lines.append(String(localized: "Your conversations and memories are untouched."))
         return lines.joined(separator: " ")
     }
 
@@ -183,13 +183,13 @@ struct HomeActionEditorSheet: View {
     private static func message(for issue: SpeedDialEditor.Issue) -> String {
         switch issue {
         case .emptyName:
-            return "Give the action a name — it's what the tile says."
+            return String(localized: "Give the action a name — it's what the tile says.")
         case .duplicateName(let name):
-            return "An action named \"\(name)\" already exists."
+            return String(localized: "An action named \"\(name)\" already exists.")
         case .emptyPrompt:
-            return "Enter the prompt to send."
+            return String(localized: "Enter the prompt to send.")
         case .notEditable:
-            return "This is a built-in action, so it can't be changed."
+            return String(localized: "This is a built-in action, so it can't be changed.")
         }
     }
 }

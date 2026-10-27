@@ -19,6 +19,19 @@ catalogs. Two PRs: P1+P2 (code, reviewable), then P3 (mechanical per-language ca
 
 ## Progress (2026-10-11)
 
+- **Native-speaker review by spreadsheet (2026-10-27).** `Scripts/translation-review.py export`
+  writes an .xlsx for one language. Each row holds the English, the current translation, a blank
+  suggestion column and notes, one row per string and plural form. Rows are tagged with the screen
+  the string appears on, found by matching the source's string literals, and split into tabs with
+  the most-seen screens first. Brand names, URLs and sample values are left out. `import` writes
+  the suggestions back. It refuses any suggestion whose format specifiers fail the parity check
+  `LocalizationCatalogGuardTests` applies, and writes nothing while a row fails unless
+  `--skip-invalid` is given. It rewrites the catalog byte for byte in Xcode's format. Rows are
+  joined by a hashed ID, so a spreadsheet app reformatting a cell cannot misplace a suggestion.
+  `--self-test` covers the specifier cases, the catalog and sheet round trips and an import. First
+  use: a `zh-Hans` sheet for a tester in mainland China who offered to review; their suggestions
+  come back as a catalog-only PR. The first export shows the kind of fix it is for: "%3$lld turns"
+  (conversation turns) rendered as 转弯, a driving turn.
 - **Realtime provider localization (2026-10-11).** Synced the compiler output after the
   shared realtime provider work and added the provider picker’s dynamic keys: **85 new keys**,
   bringing the catalog to **3,110 keys**. Every new key has translations in all 12 complete
@@ -160,7 +173,8 @@ catalogs. Two PRs: P1+P2 (code, reviewable), then P3 (mechanical per-language ca
 - P1 items 3 and 4: runtime-composed sentences, and plural variants (the catalog has none).
 - The rest of P2: a coverage floor for partial languages and the `knownRegions` prune. Of the
   planned P3 languages, `es`, `de`, `fr`, `uk` and `pl` still have partial catalogs. The ten
-  complete catalogs above also need native-speaker review of the flagged subset.
+  complete catalogs above also need native-speaker review of the flagged subset;
+  `Scripts/translation-review.py` is the route for it (first sheet: `zh-Hans`).
 
 ---
 

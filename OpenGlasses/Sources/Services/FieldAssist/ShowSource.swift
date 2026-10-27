@@ -31,6 +31,25 @@ struct AnswerSourceMemory: Equatable {
         let page: Int?
         let section: String?
         let text: String
+        /// The table or figure that names the passage (Plan JW P1a), so a table's citation marks
+        /// that table's rows and nothing else on its page.
+        var figure: String? = nil
+        /// A row passage the app wrote from a table (`DocumentChunker.Kind.tableRow`).
+        var isTableRow = false
+    }
+
+    /// Why the passages behind a citation were chosen (Plan JW P1a), so `show_source` says what it
+    /// marked as plainly as it marked it.
+    enum MarkBasis: Equatable {
+        /// The rows a `table_lookup` read for this citation.
+        case lookupRows
+        /// A table's rows the turn retrieved that the answer's own words name (row and value).
+        case answerRows
+        /// Every row of the cited table the turn retrieved on the page: the answer read none
+        /// through `table_lookup`, and its words do not single one out.
+        case retrievedTableRows
+        /// The passages the turn retrieved on a cited page that names no table.
+        case page
     }
 
     private(set) var sessionId: String?
@@ -44,6 +63,9 @@ struct AnswerSourceMemory: Equatable {
     /// The regions a table read from a picture was recognised from (Plan JN P2), by the citation a
     /// lookup answered with: a picture has no text to mark, so the page outlines where it was read.
     private(set) var tableAreas: [String: [ManualTable.PictureArea]] = [:]
+    /// The last Direct-mode answer that cited a manual, as said (Plan JW P1a): which of a table's
+    /// retrieved rows it read from, when no lookup noted the row.
+    private(set) var answerText: String?
 
     /// How many retrieved passages are kept. A few turns' worth: enough to mark what was cited a
     /// question or two ago, not a record of the job.
@@ -71,11 +93,14 @@ struct AnswerSourceMemory: Equatable {
 
     /// A Direct-mode answer finished. One that cites manuals becomes the answer "show me" refers
     /// to; one that cites nothing leaves the previous answer's sources where they were.
-    mutating func noteAnswer(_ citations: [Citation], sessionId: String?) {
+    mutating func noteAnswer(_ citations: [Citation], text: String? = nil, sessionId: String?) {
         adopt(sessionId)
         let manual = Self.unique(citations.filter { $0.kind == .manual && $0.page != nil })
         provisional = nil
-        if !manual.isEmpty { confirmed = manual }
+        if !manual.isEmpty {
+            confirmed = manual
+            answerText = text
+        }
     }
 
     /// `table_lookup` answered (Plan JJ P1): its citations stand for the answer until one that
@@ -107,14 +132,58 @@ struct AnswerSourceMemory: Equatable {
     /// The passages behind a citation: same manual, on a page the citation names. A table's
     /// citation that a lookup answered with marks the rows the lookup read.
     func retrieved(for citation: Citation) -> [Retrieved] {
-        if citation.figure != nil, let rows = tableRows[Self.tableKey(citation)] { return rows }
-        guard let page = citation.page else { return [] }
+        marking(citation).passages
+    }
+
+    /// The passages to mark for a citation, and why those (Plan JW P1a).
+    ///
+    /// A table's citation that no lookup answered — the partner's table question was answered from
+    /// the row passages in the turn's retrieved context — used to mark every passage retrieved on
+    /// the page: rows of the table, prose beside it, and rows whose printed line is not on the page
+    /// once ("2 of the passages couldn't be marked"). Now it marks that table's own passages only:
+    /// the rows the answer's words name (a row heading and a value from it), else every row of the
+    /// table the turn retrieved on that page, else the passages named for the table. Never a passage
+    /// of something else on the page.
+    func marking(_ citation: Citation) -> (passages: [Retrieved], basis: MarkBasis) {
+        if citation.figure != nil, let rows = tableRows[Self.tableKey(citation)] { return (rows, .lookupRows) }
+        guard let page = citation.page else { return ([], .page) }
         let last = citation.throughPage ?? page
         let title = citation.title.lowercased()
-        return retrieved.filter {
+        let onPages = retrieved.filter {
             $0.documentName.lowercased() == title && ($0.page.map { (page...last).contains($0) } ?? false)
         }
         .sorted { ($0.page ?? 0, $0.chunkIndex) < ($1.page ?? 0, $1.chunkIndex) }
+        guard let label = citation.figure, label.lowercased().hasPrefix("table") else { return (onPages, .page) }
+        let named = onPages.filter { ($0.figure ?? "").caseInsensitiveCompare(label) == .orderedSame }
+        let rows = named.filter(\.isTableRow)
+        guard !rows.isEmpty else { return (named, .page) }
+        if let said = answerText {
+            let read = rows.filter { Self.answer(said, readsRow: $0.text) }
+            if !read.isEmpty, read.count < rows.count { return (read, .answerRows) }
+        }
+        return (rows, .retrievedTableRows)
+    }
+
+    /// Whether an answer reads a row passage: every word of the row's heading is in the answer, and
+    /// so is one of the row's values, as a whole word. Pure; a guess only in the sense that an answer
+    /// naming two rows' headings and values reads both.
+    static func answer(_ answer: String, readsRow sentence: String) -> Bool {
+        guard let name = TableRowPassage.rowName(ofSentence: sentence) else { return false }
+        func words(_ text: String) -> Set<String> {
+            Set(text.lowercased().split(whereSeparator: { !($0.isLetter || $0.isNumber) }).map(String.init))
+        }
+        func tokens(_ text: String) -> Set<String> {
+            Set(text.lowercased().split(whereSeparator: \.isWhitespace).map { raw -> String in
+                var token = raw.trimmingCharacters(in: CharacterSet(charactersIn: ",;:()[]\"'\u{201C}\u{201D}"))
+                while token.hasSuffix(".") { token.removeLast() }
+                return token
+            })
+        }
+        let answerWords = words(answer)
+        let nameWords = words(name)
+        guard !nameWords.isEmpty, nameWords.isSubset(of: answerWords) else { return false }
+        let answerTokens = tokens(answer)
+        return TableRowPassage.values(ofSentence: sentence).contains { answerTokens.contains($0.lowercased()) }
     }
 
     static func citations(from passages: [Retrieved]) -> [Citation] {
@@ -307,7 +376,7 @@ final class ShowSourceCenter: ObservableObject {
     }
 
     func noteAnswer(_ text: String, sessionId: String?) {
-        memory.noteAnswer(CitationLineParser.parse(text), sessionId: sessionId)
+        memory.noteAnswer(CitationLineParser.parse(text), text: text, sessionId: sessionId)
     }
 
     /// The regions to outline for a table citation a lookup read from a picture (Plan JN P2).
@@ -323,7 +392,7 @@ final class ShowSourceCenter: ObservableObject {
         let position = number ?? (memory.citations.firstIndex {
             $0.title.lowercased() == citation.title.lowercased() && $0.page == citation.page
         }.map { $0 + 1 } ?? 1)
-        return memory.retrieved(for: citation)
+        return memory.marking(citation).passages
             .filter { $0.documentId == documentId }
             .compactMap { store.anchor(documentId: $0.documentId, chunkIndex: $0.chunkIndex) }
             .map { CitedPassage(number: position, anchor: $0) }
@@ -360,7 +429,7 @@ final class ShowSourceCenter: ObservableObject {
         guard passage.source == .manual || passage.source == .capturedManual else { return nil }
         return .init(documentId: passage.documentId, documentName: passage.documentName,
                      chunkIndex: passage.chunkIndex, page: passage.page, section: passage.section,
-                     text: passage.text)
+                     text: passage.text, figure: passage.figure, isTableRow: passage.kind == .tableRow)
     }
 
     /// "AS/NZS 3000, page 112, §3.9.4.2 — tap to open". The citation is the vault's own label; no

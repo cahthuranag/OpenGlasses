@@ -14,6 +14,18 @@ import Foundation
 /// pages to show, a turn that asks to show one is not a camera turn: no capture, no live frame, and
 /// not the cooldown's follow-up either, so routing (`expectsCameraImage`) and the grab agree.
 ///
+/// # "Read the row on this page" (Plan JW P1a)
+///
+/// The same holds for reading one: after an answer put a manual page on the phone, the partner said
+/// "read the W3 row in the Rating B column on this page", and the model reached for `look_closely`
+/// and `vision_assess` — the camera — for a page that was on the phone, not in front of the lens.
+/// A turn that reads, looks up or asks the value of a page, table, row, column or cell, while the
+/// last answer cited pages or a manual page is open on the phone, is the manual's turn
+/// (`table_lookup`, `manual_lookup`): no frame goes with it, and the two camera tools decline it
+/// before any capture (`cameraToolReply`). The thing being read decides: "read this nameplate" and
+/// "read the label" name no page and stay camera turns, and words that name something physical in
+/// front of the wearer ("the nameplate", "the gauge") keep one even beside "row" or "table".
+///
 /// # A link that is down
 ///
 /// Connected means `linkState == .connected` (`CameraService.isGlassesLinkUp`). A glasses capture
@@ -26,6 +38,11 @@ enum SmartCameraPolicy {
     struct Context: Equatable {
         /// The session's last answer cited manual pages that `show_source` can open.
         var citedManualPagesOpen = false
+        /// A manual page sheet is open on the phone (Plan JW P1a) — "this page" is that page.
+        var manualPageOnScreen = false
+
+        /// Whether a manual page is what "the page" or "the table" can mean in this turn.
+        var hasManualPages: Bool { citedManualPagesOpen || manualPageOnScreen }
     }
 
     /// Whether the turn needs the camera.
@@ -33,10 +50,30 @@ enum SmartCameraPolicy {
         isAboutCitedPages(query, context: context) ? .textOnly : VisionIntentDetector.classify(query)
     }
 
-    /// Whether the turn asks to see the cited pages, so no frame of any kind goes with it.
+    /// Whether the turn asks to see, or to read, the cited or open manual pages, so no frame of any
+    /// kind goes with it.
     static func isAboutCitedPages(_ query: String, context: Context) -> Bool {
-        context.citedManualPagesOpen && asksToShowSource(query)
+        context.hasManualPages && (asksToShowSource(query) || asksToReadManualPage(query))
     }
+
+    /// What `look_closely` and `vision_assess` return instead of taking a picture when the turn is
+    /// about a manual page (Plan JW P1a), or nil when they go ahead. The wearer's own words decide
+    /// when the turn has them (`TurnUtteranceScope`); a live session gives the tool none, so the
+    /// reason the model passed stands in for them there. Without either, the tool goes ahead.
+    static func cameraToolReply(utterance: String?, toolReason: String?, context: Context) -> String? {
+        guard context.hasManualPages else { return nil }
+        let said = utterance?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = (said?.isEmpty == false ? said : toolReason) ?? ""
+        guard !words.isEmpty, isAboutCitedPages(words, context: context) else { return nil }
+        return manualPageReply
+    }
+
+    /// The camera tools' reply for a manual page. No picture was taken; the model is pointed at the
+    /// tools that read the page's own text.
+    static let manualPageReply = "No photo was taken: the page the technician means is a manual page the app "
+        + "has open on the phone, not something in front of the camera. Read it from the manual: table_lookup "
+        + "with the table, the row and the column for a value in a table, or manual_lookup for the text; "
+        + "show_source puts the cited page back on screen."
 
     /// Whether the glasses camera may be started for an automatic capture: only with the link up.
     static func mayStartGlassesCapture(linkUp: Bool) -> Bool { linkUp }
@@ -63,6 +100,36 @@ enum SmartCameraPolicy {
         }
         return false
     }
+
+    /// "Read the row in the Rating B column on this page", "what does the table say", "look up the value in
+    /// row 7": a word that reads or asks for a value, and a word for a page, table, row, column or
+    /// cell. Words that name the camera, or something physical in front of the wearer, keep it a
+    /// camera turn ("read the table on this nameplate", "what does the gauge read").
+    static func asksToReadManualPage(_ query: String) -> Bool {
+        let words = query.lowercased()
+            .split(whereSeparator: { !($0.isLetter || $0.isNumber || $0 == "'") })
+            .map(String.init)
+        guard !words.isEmpty else { return false }
+        let padded = " " + words.joined(separator: " ") + " "
+        if cameraWords.contains(where: { padded.contains(" \($0) ") }) { return false }
+        if words.contains(where: physicalThings.contains) { return false }
+        guard words.contains(where: pageNouns.contains) else { return false }
+        return readWords.contains { padded.contains(" \($0) ") }
+    }
+
+    private static let pageNouns: Set<String> = [
+        "page", "pages", "table", "tables", "row", "rows", "column", "columns", "cell", "cells",
+    ]
+
+    private static let readWords = ["read", "reads", "say", "says", "said", "look up", "lookup", "value", "values",
+                                    "what", "what's", "which", "find", "tell me", "give me", "check", "number"]
+
+    /// Things in front of the wearer that are read with the camera even when a row or table is
+    /// mentioned beside them.
+    private static let physicalThings: Set<String> = [
+        "nameplate", "nameplates", "label", "labels", "sticker", "gauge", "gauges", "meter", "screen",
+        "dial", "thermostat", "tag", "plate", "sign", "receipt", "display",
+    ]
 
     private static let showVerbs = ["show", "open", "bring up", "bring back", "pull up", "put up", "display",
                                     "highlight", "go to", "go back to", "let me see"]

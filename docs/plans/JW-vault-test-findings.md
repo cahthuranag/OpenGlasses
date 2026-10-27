@@ -1,6 +1,9 @@
 # Plan JW — Vault Test Findings (revised tables, printed pages, "show me", chains that stop)
 
-**Status:** 🚧 P0 built 2026-10-27 (PR 861) (all seven items, headless); P1 = partner re-run. Drafted 2026-10-27 from the partner's three
+**Status:** 🚧 P0 built 2026-10-27 (PR 861) (all seven items, headless); P1a built 2026-10-28 (the
+three open items: page reads are not camera turns, table values through `table_lookup` and "show
+me" marking only the cited table's rows; a rename on launch measured and left out); P1 = partner
+re-run; finding a table from plain words is open. Drafted 2026-10-27 from the partner's three
 structured vault test sessions on build 564 (2026-10-26). No later build changes any of it:
 nothing merged between 564 and 570 touches table reading, page labels, `show_source`, the smart
 camera or `rule_chain`.
@@ -310,6 +313,70 @@ A build with P0 goes to the partner with the same three sessions. Then:
 - both chains that stopped run to a result;
 - finding 7, if P0 did not explain it;
 - an automatic re-read of a vault's tables on a reader change, if P0 deferred it.
+
+### P1a — The open items (headless)
+
+Three things the P0 round left open, each found in the partner's sessions or in the P0 write-up.
+Invented fixtures only (`Table 99`, `Table 98`, made-up rows and wording).
+
+1. **"Read … on this page" is not a camera turn, enforced.** After an answer opened a manual page,
+   "read the row in the Rating B column on this page" sent the model to `look_closely` and then
+   `vision_assess` — P0 only changed their descriptions.
+   **✅ Built.** `SmartCameraPolicy.asksToReadManualPage`: a word that reads or asks for a value
+   ("read", "what does … say", "look up", "value", "which", "find") with a page, table, row, column
+   or cell is the manual's turn while the last answer cited pages or, new, while a manual page sheet
+   is open on the phone (`Context.manualPageOnScreen`, read from `AppState.manualFigureRequest`).
+   Camera words keep a camera turn, and so do words naming something physical in front of the
+   wearer ("nameplate", "label", "gauge", "sticker", "screen"…), so "read this nameplate" and "read
+   the table on this nameplate" still look. Smart camera takes no frame for such a turn (routing and
+   grab, as for "show me"). The tools enforce it: `look_closely` and `vision_assess` ask
+   `SmartCameraPolicy.cameraToolReply` before anything else, with the wearer's own words
+   (`TurnUtteranceScope`, Direct mode) or, without them (a live session), the reason/note the model
+   passed, and the same context (`AppState.smartCameraContext`, now shared); a manual-page turn
+   returns a short reply pointing at `table_lookup` (table, row, column), `manual_lookup` and
+   `show_source`, with no capture. 3 tests in `SmartCameraPolicyTests`, 2 in `LookCloselyToolTests`
+   (no capture or injection for an open page; a nameplate is still captured), 2 in
+   `VisionAssessToolTests`.
+2. **Table values go through `table_lookup`; "show me" marks only the answer's rows.** A table
+   question answered from the row passages in the turn's retrieved context made no lookup, so
+   `show_source` fell back to every passage retrieved on the page — finding 7's "2 of the passages
+   couldn't be marked".
+   **✅ Built.** The passages block (per turn, and `manual_lookup`'s result) adds one sentence
+   whenever it carries a `(table row …)` passage: a value from a table is read with `table_lookup`
+   before it is said, never quoted from those (`VaultRetriever.tableRowRule`, about 200 characters,
+   only on turns that retrieved a row). `AnswerSourceMemory` keeps each retrieved passage's figure
+   and whether it is a row, and the Direct-mode answer's text; `marking(_:)` answers a table's
+   citation that no lookup answered with that table's own passages only: the rows the answer names
+   (every word of the row heading and one of the row's values, `TableRowPassage.values`), else every
+   row of that table retrieved on the page, else the passages named for the table — never prose or
+   another table's rows from the same page. `show_source` stages only the passages found on the
+   page when some are (`ShowSourceTool.check`), so the sheet no longer counts unmarkable ones; the
+   reply still names rows not marked, counts other passages not marked, and, for rows retrieved
+   rather than looked up, says so and how to mark one row. A page-only citation is unchanged
+   (finding 7's remaining question for the partner re-run). 5 tests in `ShowSourceTests`.
+3. **Passages renamed on launch, without re-import.** P0's migration re-read tables and printed
+   pages, not the passages' own names.
+   **Measured, not shipped.** A rename on launch (a version-8 migration that re-reads each PDF
+   manual's text with the current `ManualStructure` rules and rewrites only the chunks' section and
+   figure names, no re-chunking, no re-embedding) was built and tested, then left out of the PR:
+   on the partner's books it renames nothing (below), and it would have every phone re-read every
+   PDF manual's text once on first launch. It is worth bringing back only for a vault whose captions
+   are set in bold and carry a margin mark. Kept from that work: `VaultRetriever.sharingMostWords`
+   typed step by step (it took seconds to type-check).
+
+**Measured privately (counts only).** Both editions' text was extracted with the Mac extractor
+before P0's caption rule and after it: identical in both books — neither prints a caption the
+type rules read (no bold caption and no type-marked heading anywhere; under 80 pages in each read as
+drawings). So the rename would rename **0 passages in each book** (none of the stored passages; none
+named for a table before or after, and a fresh import would name 0 too). The re-import note in P0
+item 7 does not apply to these books: their passages are found by the table route and the row
+passages, not by a caption name.  A private set of three plain-words questions on one rating table (no
+table number said), run through the retrieval eval over the newer edition with its tables read:
+the table's passages are in the top four for 1 of 3 (one more in the top 30 but outranked, one not
+in the top 30 — the one worded the way the partner asked). The rename would not change that: a passage's figure only ranks for a question that names its
+table. Finding
+a table from plain words alone stays open for P1; item 2 sends any value the model does find to
+`table_lookup`.
 
 ## Owner decisions taken (reversible)
 

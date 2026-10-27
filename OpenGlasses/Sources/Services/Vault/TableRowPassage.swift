@@ -44,6 +44,21 @@ enum TableRowPassage {
         return name.isEmpty ? nil : name
     }
 
+    /// The cell values a row passage's sentence gives ("30", "35"), read back out of what
+    /// `sentence(for:in:)` wrote — each before its " in <column>" (Plan JW P1a: which retrieved
+    /// row an answer read). Empty for a passage that is not a row's. Pure.
+    static func values(ofSentence text: String) -> [String] {
+        let from = text.range(of: ", row ")?.upperBound ?? text.startIndex
+        guard let start = text.range(of: ": ", range: from..<text.endIndex) else { return [] }
+        var body = text[start.upperBound...]
+        if let end = body.range(of: " \u{2014} page ", options: .backwards) { body = body[..<end.lowerBound] }
+        return body.components(separatedBy: ", ").compactMap { part in
+            guard let cut = part.range(of: " in ") else { return nil }
+            let value = part[..<cut.lowerBound].trimmingCharacters(in: .whitespaces)
+            return value.isEmpty ? nil : value
+        }
+    }
+
     /// What the row looks like on its printed line, for marking it on the page (Plan JJ P1): its
     /// header path's trailing parts then its filled cells, longest first. A row header printed once
     /// over several rows, or a group heading on a line of its own, is not on the row's line, so the

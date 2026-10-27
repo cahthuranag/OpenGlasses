@@ -140,7 +140,8 @@ final class TableLookupTool: NativeTool {
                 .filter { $0.kind == .tableRow && wanted.contains($0.text) }
                 .map {
                     AnswerSourceMemory.Retrieved(documentId: $0.documentId, documentName: $0.documentName,
-                                                 chunkIndex: $0.chunkIndex, page: $0.page, section: $0.section, text: $0.text)
+                                                 chunkIndex: $0.chunkIndex, page: $0.page, section: $0.section, text: $0.text,
+                                                 figure: $0.figure, isTableRow: true)
                 }
         }
         return out

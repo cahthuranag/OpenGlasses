@@ -32,9 +32,9 @@ struct AgentHarnessSettingsView: View {
             }
 
             Section {
-                SecretInputField(placeholder: "OpenAI Codex API token", text: $codexToken)
+                SecretInputField(placeholder: String(localized: "OpenAI Codex API token"), text: $codexToken)
                 urlField("Base URL (optional override)", text: $codexBaseURL)
-                SecretInputField(placeholder: "Claude Code API token", text: $claudeToken)
+                SecretInputField(placeholder: String(localized: "Claude Code API token"), text: $claudeToken)
                 urlField("Base URL (optional override)", text: $claudeBaseURL)
                 Button {
                     saveRemotePresets()
@@ -67,7 +67,7 @@ struct AgentHarnessSettingsView: View {
                 TextField("Header name", text: $config.authHeader)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
-                SecretInputField(placeholder: "Header value (e.g. Bearer …)", text: $config.authValue)
+                SecretInputField(placeholder: String(localized: "Header value (e.g. Bearer …)"), text: $config.authValue)
             }
 
             Section {
@@ -184,7 +184,7 @@ struct AgentHarnessSettingsView: View {
     }
 
     @ViewBuilder
-    private func urlField(_ title: String, text: Binding<String>) -> some View {
+    private func urlField(_ title: LocalizedStringKey, text: Binding<String>) -> some View {
         TextField(title, text: text)
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
@@ -192,7 +192,7 @@ struct AgentHarnessSettingsView: View {
     }
 
     @ViewBuilder
-    private func fieldRow(_ title: String, text: Binding<String>) -> some View {
+    private func fieldRow(_ title: LocalizedStringKey, text: Binding<String>) -> some View {
         TextField(title, text: text)
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)

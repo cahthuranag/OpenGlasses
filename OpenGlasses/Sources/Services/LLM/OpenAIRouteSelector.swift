@@ -72,25 +72,25 @@ enum OpenAIRouteSelector {
         var explanation: String {
             switch self {
             case .reasoningWithTools:
-                return "This level needs the Responses API when tools are attached."
+                return String(localized: "This level needs the Responses API when tools are attached.")
             case .chatToolsUnavailable:
-                return "This model can't use tools on Chat Completions, so tool turns use the Responses API."
+                return String(localized: "This model can't use tools on Chat Completions, so tool turns use the Responses API.")
             case .automaticStaysCheap:
-                return "Automatic keeps tool turns on Chat Completions without reasoning, to stay quick and cheap."
+                return String(localized: "Automatic keeps tool turns on Chat Completions without reasoning, to stay quick and cheap.")
             case .noToolsAttached:
-                return "Without tools, Chat Completions carries this setting itself."
+                return String(localized: "Without tools, Chat Completions carries this setting itself.")
             case .explicitNone:
-                return "As set for this model."
+                return String(localized: "As set for this model.")
             case .notReasoningModel:
-                return "This model has no reasoning setting."
+                return String(localized: "This model has no reasoning setting.")
             case .otherProvider:
-                return "This provider keeps its own request format."
+                return String(localized: "This provider keeps its own request format.")
             case .customHostChat:
-                return "Custom hosts stay on Chat Completions unless the base URL names a Responses endpoint."
+                return String(localized: "Custom hosts stay on Chat Completions unless the base URL names a Responses endpoint.")
             case .customHostResponsesURL:
-                return "The base URL names a Responses endpoint."
+                return String(localized: "The base URL names a Responses endpoint.")
             case .responsesRefusedEarlier:
-                return "The Responses API refused this model earlier, so tool turns use Chat Completions without reasoning until the app restarts."
+                return String(localized: "The Responses API refused this model earlier, so tool turns use Chat Completions without reasoning until the app restarts.")
             }
         }
     }

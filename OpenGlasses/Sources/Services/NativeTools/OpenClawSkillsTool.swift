@@ -69,7 +69,7 @@ struct OpenClawSkillsTool: NativeTool {
         }
 
         let endpoint = await bridge.resolveEndpoint()
-        let connectionMode = Config.openClawConnectionMode.displayName
+        let connectionMode = Config.openClawConnectionMode.toolName
 
         let normalized = endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint
         guard let url = URL(string: "\(normalized)/health") else {

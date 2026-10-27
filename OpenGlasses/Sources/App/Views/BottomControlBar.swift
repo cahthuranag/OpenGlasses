@@ -386,7 +386,9 @@ struct BottomControlBar: View {
     private func spokenPosition(gridPage: Int?, paging: HomeGridPaging) -> String {
         guard let gridPage else { return DockPage.conversation.spokenName }
         guard paging.pageCount > 1 else { return DockPage.actions.spokenName }
-        return "\(DockPage.actions.spokenName), page \(gridPage + 1) of \(paging.pageCount)"
+        let name = DockPage.actions.spokenName
+        let page = gridPage + 1
+        return String(localized: "\(name), page \(page) of \(paging.pageCount)")
     }
 
     /// The cog on the dots row.
@@ -394,7 +396,7 @@ struct BottomControlBar: View {
     /// 44 pt square for the fingertip, though the dots row is only 40 tall: the overlay sits
     /// outside the pages' frame, so the spare points reach down into the panel's own inset rather
     /// than up over the last row of keys.
-    private func cornerButton(icon: String, label: String, hint: String,
+    private func cornerButton(icon: String, label: String, hint: LocalizedStringKey,
                               action: @escaping () -> Void) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -612,8 +614,8 @@ struct BottomControlBar: View {
                 }
             }
             .accessibilityHint(
-                blocked ? "The on-device model cannot see images. Choose a vision model."
-                : runningActionId == entry.id ? "Running." : entry.spokenHint)
+                blocked ? String(localized: "The on-device model cannot see images. Choose a vision model.")
+                : runningActionId == entry.id ? String(localized: "Running.") : entry.spokenHint)
         }
     }
 
@@ -634,7 +636,7 @@ struct BottomControlBar: View {
                 : appState.llmService.activeModelName
             BarButton(
                 icon: DockLayout.modelTileGlyph(for: provider),
-                label: "Model",
+                label: String(localized: "Model"),
                 assetIcon: ProviderMark.bundledAsset(for: provider)
             ) {
                 showModelPicker = true
@@ -647,14 +649,14 @@ struct BottomControlBar: View {
         case .preview:
             BarButton(
                 icon: "eye",
-                label: "Preview",
+                label: String(localized: "Preview"),
                 isActive: appState.videoRecorder.isRecording
             ) {
                 showPreview = true
             }
 
         case .type:
-            BarButton(icon: "keyboard", label: "Type") {
+            BarButton(icon: "keyboard", label: String(localized: "Type")) {
                 showChatInput?.wrappedValue = true
             }
 
@@ -665,7 +667,7 @@ struct BottomControlBar: View {
             // couldn't tell this button was where to change it.
             BarButton(
                 icon: pushToTalk ? "waveform" : "hand.tap.fill",
-                label: pushToTalk ? "Wake Word" : "Push-Talk",
+                label: pushToTalk ? String(localized: "Wake Word") : String(localized: "Push-Talk"),
                 isActive: false
             ) {
                 appState.setPushToTalk(!pushToTalk)
@@ -675,7 +677,7 @@ struct BottomControlBar: View {
         case .assistive:
             BarButton(
                 icon: assistive.isActive ? "eye.fill" : "eye",
-                label: assistive.isActive ? "Assistive On" : "Assistive",
+                label: assistive.isActive ? String(localized: "Assistive On") : String(localized: "Assistive"),
                 isActive: assistive.isActive
             ) {
                 appState.toggleAssistiveMode()
@@ -684,7 +686,7 @@ struct BottomControlBar: View {
         case .disconnect:
             // "Sleep" undersold what this does — it disconnects the glasses
             // session outright (stops speech, wake word, camera, live sessions).
-            BarButton(icon: "moon.fill", label: "Disconnect") {
+            BarButton(icon: "moon.fill", label: String(localized: "Disconnect")) {
                 appState.disconnectGlasses()
             }
         }
@@ -697,7 +699,7 @@ struct BottomControlBar: View {
         if isGemini {
             ActionCapsule(
                 icon: session.isActive ? "stop.fill" : "play.fill",
-                label: session.isActive ? "Stop Session" : "Start Gemini Live",
+                label: session.isActive ? String(localized: "Stop Session") : String(localized: "Start Gemini Live"),
                 isActive: session.isActive,
                 color: session.isActive ? .red : accent
             ) {
@@ -726,8 +728,8 @@ struct BottomControlBar: View {
         } else if appState.isProcessing || appState.speechService.isSpeaking {
             ActionCapsule(
                 icon: "stop.fill",
-                label: appState.speechService.isSpeaking ? "Tap to stop" : "Cancel",
-                spokenLabel: appState.speechService.isSpeaking ? "Stop speaking" : "Cancel",
+                label: appState.speechService.isSpeaking ? String(localized: "Tap to stop") : String(localized: "Cancel"),
+                spokenLabel: appState.speechService.isSpeaking ? String(localized: "Stop speaking") : String(localized: "Cancel"),
                 isActive: true,
                 color: OGTheme.warn
             ) {
@@ -738,8 +740,8 @@ struct BottomControlBar: View {
             // connection so Push-to-Talk / phone-only sessions can always be stopped.
             ActionCapsule(
                 icon: "stop.circle.fill",
-                label: "Tap to stop",
-                spokenLabel: "End voice session",
+                label: String(localized: "Tap to stop"),
+                spokenLabel: String(localized: "End voice session"),
                 isActive: true,
                 color: OGTheme.warn,
                 showMuteBadge: appState.micMuted
@@ -756,8 +758,8 @@ struct BottomControlBar: View {
             ActionCapsule(
                 icon: "mic.fill",
                 label: entry.label,
-                spokenLabel: entry.action == .resumeGlassesThenTalk ? "Resume glasses and start talking"
-                                                                    : "Start talking",
+                spokenLabel: entry.action == .resumeGlassesThenTalk ? String(localized: "Resume glasses and start talking")
+                                                                    : String(localized: "Start talking"),
                 color: accent,
                 showMuteBadge: appState.micMuted
             ) {
@@ -801,8 +803,8 @@ struct BottomControlBar: View {
                         catch {
                             PrivacyLog.camera(.glasses, .sessionAttemptFailed,
                                               error: SafeErrorSummary(error))
-                            appState.errorMessage = "Camera: \(error.localizedDescription)"
-                            NoticeCenter.shared.post("Camera: \(error.localizedDescription)",
+                            appState.errorMessage = String(localized: "Camera: \(error.localizedDescription)")
+                            NoticeCenter.shared.post(String(localized: "Camera: \(error.localizedDescription)"),
                                                      severity: .error, source: .camera)
                         }
                     }
@@ -815,12 +817,12 @@ struct BottomControlBar: View {
             // the phase supplies this line too.
             .accessibilityHint(
                 !realtimeSessionActive && !appState.cameraService.isStartingStream
-                    ? "Start the live session first."
+                    ? String(localized: "Start the live session first.")
                     : (cameraReadiness.controlHint ?? ""))
         } else {
             BarButton(
                 icon: "camera.fill",
-                label: "Photo",
+                label: String(localized: "Photo"),
                 isActive: appState.cameraService.isCaptureInProgress,
                 isDisabled: appState.cameraService.isCaptureInProgress || photoDisabledForLocalModel
             ) {
@@ -1116,7 +1118,7 @@ private struct LocalModelTile: View {
             // finishing reads as "Stopping" rather than as a load that will not end (Plan FC P2).
             label: service.isLoadingModel
                 ? service.preparation.displayLabel
-                : (isLoaded ? "Unload" : "Load \(modelConfig.name)"),
+                : (isLoaded ? String(localized: "Unload") : String(localized: "Load \(modelConfig.name)")),
             isActive: !service.isLoadingModel,   // tinted whenever idle: accent invites Load, green marks Loaded
             isBusy: service.isLoadingModel,
             tint: isLoaded ? OGTheme.ok : accent,

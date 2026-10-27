@@ -102,7 +102,7 @@ struct PhotographedManualsView: View {
         .confirmationDialog("Forget this photographed manual and every retained revision?",isPresented:Binding(get:{deleting != nil},set:{if !$0 {deleting = nil}})) {
             Button("Forget manual",role:.destructive) {
                 guard let id = deleting else {return}
-                do {try captures.discard(id)} catch {self.error = "Some protected files could not be removed. Unlock the phone and retry."}
+                do {try captures.discard(id)} catch {self.error = String(localized: "Some protected files could not be removed. Unlock the phone and retry.")}
                 deleting = nil;reload()
             }
         }
@@ -128,7 +128,7 @@ struct PhotographedManualsView: View {
                 }.value
                 tablePDFs = urls
             }
-        } catch {self.error = "Manual storage is unavailable while the phone is locked."}
+        } catch {self.error = String(localized: "Manual storage is unavailable while the phone is locked.")}
     }
 }
 
@@ -152,7 +152,7 @@ private struct CapturedManualPageView:View {
         .task {
             guard CapturedManualCatalog.mayUse,
                   manifest.scope == CapturedManualCatalog.scope(vaultID:manifest.vaultID),let store = CapturedManualStore.shared else {
-                error = "These photographed pages are unavailable under the current policy.";return
+                error = String(localized: "These photographed pages are unavailable under the current policy.");return
             }
             do {
                 let files = try await Task.detached(priority:.utility) {
@@ -161,7 +161,7 @@ private struct CapturedManualPageView:View {
                 guard CapturedManualCatalog.mayUse,manifest.scope == CapturedManualCatalog.scope(vaultID:manifest.vaultID) else {return}
                 url = files.0;textURL = files.1
             }
-            catch {self.error = "These photographed pages are unavailable or have changed."}
+            catch {self.error = String(localized: "These photographed pages are unavailable or have changed.")}
         }
     }
 }

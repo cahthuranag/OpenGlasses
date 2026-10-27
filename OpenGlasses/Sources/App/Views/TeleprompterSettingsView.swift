@@ -49,7 +49,7 @@ struct TeleprompterSettingsView: View {
             .disabled(isScanning)
 
             if service.hasScannedPages {
-                Text("\(service.scanPages) page\(service.scanPages == 1 ? "" : "s") captured")
+                Text(service.scanPages == 1 ? "1 page captured" : "\(service.scanPages) pages captured")
                     .font(.caption).foregroundStyle(.secondary)
                 Button {
                     service.startScannedScript()
@@ -96,7 +96,7 @@ struct TeleprompterSettingsView: View {
         }
     }
 
-    private func controlButton(_ title: String, systemImage: String,
+    private func controlButton(_ title: LocalizedStringKey, systemImage: String,
                                role: ButtonRole? = nil, action: @escaping () -> Void) -> some View {
         Button(role: role, action: action) {
             Label(title, systemImage: systemImage)
@@ -143,9 +143,9 @@ struct TeleprompterSettingsView: View {
 
     private var pacingFooter: String {
         switch mode {
-        case .audioPaced: return "Auto-advances by listening to what you read. Say \"faster\"/\"slower\", \"pause\", \"next\"/\"back\"."
-        case .voice: return "No auto-advance — drive it with \"next\"/\"back\" by voice or the Neural Band."
-        case .autoScroll: return "Scrolls at a fixed words-per-minute."
+        case .audioPaced: return String(localized: "Auto-advances by listening to what you read. Say \"faster\"/\"slower\", \"pause\", \"next\"/\"back\".")
+        case .voice: return String(localized: "No auto-advance — drive it with \"next\"/\"back\" by voice or the Neural Band.")
+        case .autoScroll: return String(localized: "Scrolls at a fixed words-per-minute.")
         }
     }
 

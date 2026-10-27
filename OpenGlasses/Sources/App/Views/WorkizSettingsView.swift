@@ -42,7 +42,7 @@ struct WorkizSettingsView: View {
                             controller.keyChanged()
                             key = ""; problem = nil
                             Task { await appState.syncEngine.flush() }
-                        } catch { key = ""; problem = "The Workiz key could not be saved. Check administrator access and unlock this phone." }
+                        } catch { key = ""; problem = String(localized: "The Workiz key could not be saved. Check administrator access and unlock this phone.") }
                     }.disabled(key.isEmpty || !canEditKey).accessibilityIdentifier("workiz.save")
                     if !canEditKey {
                         if let policy = gate.policy, gate.offersUnlock {
@@ -64,7 +64,7 @@ struct WorkizSettingsView: View {
                             Button {
                                 Task {
                                     do { try await controller.choose(user) }
-                                    catch { problem = "The technician choice could not be saved." }
+                                    catch { problem = String(localized: "The technician choice could not be saved.") }
                                 }
                             } label: {
                                 HStack {

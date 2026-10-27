@@ -20,6 +20,20 @@ struct QuickAction: Codable, Identifiable, Equatable {
 
         var displayName: String {
             switch self {
+            case .prompt: return String(localized: "Text Prompt")
+            case .photo: return String(localized: "Take Photo")
+            case .photoThenPrompt: return String(localized: "Photo + Prompt")
+            case .homeAssistant: return "Home Assistant"
+            case .siriShortcut: return String(localized: "Siri Shortcut")
+            case .openApp: return String(localized: "Open App")
+            case .toggleRecording: return String(localized: "Record Meeting")
+            }
+        }
+
+        /// English name for the model-facing quick-action tool output; `displayName` is the
+        /// localized on-screen label.
+        var toolLabel: String {
+            switch self {
             case .prompt: return "Text Prompt"
             case .photo: return "Take Photo"
             case .photoThenPrompt: return "Photo + Prompt"
@@ -32,13 +46,13 @@ struct QuickAction: Codable, Identifiable, Equatable {
 
         var description: String {
             switch self {
-            case .prompt: return "Send a text prompt to the AI"
-            case .photo: return "Capture and describe a photo"
-            case .photoThenPrompt: return "Capture a photo with a custom prompt"
-            case .homeAssistant: return "Call a Home Assistant service"
-            case .siriShortcut: return "Run a Siri Shortcut by name"
-            case .openApp: return "Open an app via URL scheme"
-            case .toggleRecording: return "Start or stop a preserved meeting recording"
+            case .prompt: return String(localized: "Send a text prompt to the AI")
+            case .photo: return String(localized: "Capture and describe a photo")
+            case .photoThenPrompt: return String(localized: "Capture a photo with a custom prompt")
+            case .homeAssistant: return String(localized: "Call a Home Assistant service")
+            case .siriShortcut: return String(localized: "Run a Siri Shortcut by name")
+            case .openApp: return String(localized: "Open an app via URL scheme")
+            case .toggleRecording: return String(localized: "Start or stop a preserved meeting recording")
             }
         }
     }

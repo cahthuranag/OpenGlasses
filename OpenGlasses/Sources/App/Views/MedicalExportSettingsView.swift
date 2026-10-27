@@ -269,7 +269,7 @@ struct MedicalExportSettingsView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
-                SecretInputField(placeholder: "Pre-obtained OAuth token", text: $tokenDraft)
+                SecretInputField(placeholder: String(localized: "Pre-obtained OAuth token"), text: $tokenDraft)
             }
         }
     }
@@ -298,13 +298,13 @@ struct MedicalExportSettingsView: View {
     private var platformNote: String {
         switch selectedPlatform {
         case .myHealthRecord:
-            return "My Health Record integration requires registration with the Australian Digital Health Agency and a conformant FHIR gateway. Contact your ADHA representative."
+            return String(localized: "My Health Record integration requires registration with the Australian Digital Health Agency and a conformant FHIR gateway. Contact your ADHA representative.")
         case .nzHealthConnect:
-            return "NZ Health Connect integration requires a Health Information Platform (HIP) connector. Contact your PHO or DHB IT team."
+            return String(localized: "NZ Health Connect integration requires a Health Information Platform (HIP) connector. Contact your PHO or DHB IT team.")
         case .nhsSpine:
-            return "NHS Spine integration requires an NHS Digital connection agreement and MESH mailbox. Contact your trust's IT department."
+            return String(localized: "NHS Spine integration requires an NHS Digital connection agreement and MESH mailbox. Contact your trust's IT department.")
         default:
-            return ""
+            return String(localized: "")
         }
     }
 

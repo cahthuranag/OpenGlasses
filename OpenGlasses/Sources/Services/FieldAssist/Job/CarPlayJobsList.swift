@@ -40,8 +40,8 @@ enum CarPlayJobsList {
 
         var title: String {
             switch self {
-            case .brief: return "Brief me"
-            case .directions: return "Directions"
+            case .brief: return String(localized: "Brief me")
+            case .directions: return String(localized: "Directions")
             }
         }
 
@@ -109,16 +109,16 @@ enum CarPlayJobsList {
         var rows: [Row] = []
         if stagedSends > 0 {
             rows.append(Row(id: "send-queue",
-                            title: stagedSends == 1 ? "1 report ready to send"
-                                                    : "\(stagedSends) reports ready to send",
-                            detail: "Needs the phone",
+                            title: stagedSends == 1 ? String(localized: "1 report ready to send")
+                                                    : String(localized: "\(stagedSends) reports ready to send"),
+                            detail: String(localized: "Needs the phone"),
                             isActiveJob: false,
                             selection: .readSendQueue))
         }
         if let active, active.endedAt == nil, active.outcome != .cancelled {
             rows.append(Row(id: active.id,
                             title: title(for: active),
-                            detail: active.pausedAt == nil ? "In progress" : "Paused",
+                            detail: active.pausedAt == nil ? String(localized: "In progress") : String(localized: "Paused"),
                             isActiveJob: true,
                             selection: .resumeActiveJob(threadId: boundThreadId)))
         }
@@ -128,7 +128,7 @@ enum CarPlayJobsList {
             let when = job.scheduledFor.map { $0.formatted(date: .abbreviated, time: .shortened) }
             rows.append(Row(id: "upcoming-" + job.id,
                             title: job.title,
-                            detail: ["Upcoming", when].compactMap { $0 }.joined(separator: " · "),
+                            detail: [String(localized: "Upcoming"), when].compactMap { $0 }.joined(separator: " · "),
                             isActiveJob: false,
                             selection: .openUpcomingJob(id: job.id)))
         }
@@ -153,8 +153,8 @@ enum CarPlayJobsList {
     /// broken; this says which of the two reasons it is.
     static func emptyMessage(fieldAssistActive: Bool) -> String {
         fieldAssistActive
-            ? "No jobs yet. Start one on the phone or by voice."
-            : "Field Assist is off."
+            ? String(localized: "No jobs yet. Start one on the phone or by voice.")
+            : String(localized: "Field Assist is off.")
     }
 
     private static func title(for session: FieldSession) -> String {

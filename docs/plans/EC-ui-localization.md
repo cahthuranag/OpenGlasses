@@ -20,8 +20,10 @@ catalogs. Two PRs: P1+P2 (code, reviewable), then P3 (mechanical per-language ca
 ## Progress (2026-10-11)
 
 - **Urdu (2026-10-27, owner request).** `ur` is the thirteenth complete catalog and the second
-  right-to-left one. Every translatable key carries an Urdu value, with `one`/`other` plural
-  variants for the 30 counted strings. It is listed in `bundledLanguages` (Urdu, اردو), joins
+  right-to-left one. Every translatable key carries an Urdu value (4,829 entries, including the
+  1,161 that the `String`-held UI text sweep added), with `one`/`other` plural variants for the 30
+  counted strings, and the 21 privacy usage descriptions in `InfoPlist.xcstrings` have Urdu too.
+  It is listed in `bundledLanguages` (Urdu, اردو), joins
   `completeLanguages` in the catalog guard and is declared in `knownRegions`. Like the others it
   is a machine-translated first pass, made against the English with the shipped Arabic as a guide
   to which terms stay in Latin script. Brand, product and model names stay in Latin, as do units,
@@ -31,11 +33,13 @@ catalogs. Two PRs: P1+P2 (code, reviewable), then P3 (mechanical per-language ca
   catalog was written with the review script's Xcode-exact writer, so only the `ur`
   localizations are added. iOS 27 ships Urdu as a system language (`ur.lproj` throughout UIKit,
   Foundation and Settings), so an Urdu phone picks the catalog up the same way an Arabic one does. On the simulator, launched
-  with `-AppleLanguages (ur)`, the splash, welcome page and screen titles render in Urdu, right to
-  left. The main screen's tiles, status card and tab bar, and the Settings hub's rows, stay in
-  English. Arabic shows the same: those views take plain `String`s, the verbatim gap P1 still owes.
-  So do the onboarding "Get Started" button and the system permission prompts (no
-  `InfoPlist.strings`).
+  with `-AppleLanguages (ur)` on top of the `String`-held UI text sweep, the splash, welcome page,
+  "Get Started", status card, tab bar and most main-screen tiles render in Urdu, right to left.
+  The tiles "Photo → Task", "Photo → Event" and "Timer" and the "Tap & Talk" bar stay English in
+  every language: their labels are plain `String`s in `HomeGridCatalog` and `TalkEntryPolicy` that
+  do not reach the catalog. The bundle carries
+  `ur.lproj/InfoPlist.strings`. The simulator's permission prompts follow the device language, not
+  `-AppleLanguages`, so they show English there.
   Native review is owed: `Scripts/translation-review.py export --language ur`. The draft's
   "bridge" (برج, which can also read as "tower") is worth a reviewer's look.
 - **Native-speaker review by spreadsheet (2026-10-27).** `Scripts/translation-review.py export`

@@ -38,17 +38,18 @@ enum MainTab: String, Hashable, CaseIterable, Identifiable {
     }
 
     /// The tab's spoken name. Also its accessibility label, because a tab bar button's label is
-    /// the word the wearer hears.
+    /// the word the wearer hears — so it is localized: VoiceOver reads it in the UI's language. The
+    /// UI tests run in English and address tabs by these English names.
     var title: String {
         switch self {
         // The home of the app carries its name, not the name of one way into it: since Avenkin
         // stopped being glasses-first, this tab is the dock and grid as much as the voice session.
         case .voice: return "Avenkin"
-        case .modes: return "Modes"
+        case .modes: return String(localized: "Modes")
         // Past conversations, not a second way to talk: the home tab is where a conversation starts.
-        case .chat: return "History"
-        case .job: return "Jobs"
-        case .settings: return "Settings"
+        case .chat: return String(localized: "History")
+        case .job: return String(localized: "Jobs")
+        case .settings: return String(localized: "Settings")
         }
     }
 

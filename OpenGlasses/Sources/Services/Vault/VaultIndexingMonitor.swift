@@ -40,7 +40,7 @@ final class VaultIndexingMonitor: ObservableObject {
 
         /// "SLP99UHVK Service Manual — 1 of 2". The count is said only when there is more than one.
         var headline: String {
-            manualCount > 1 ? "\(title) — \(manualNumber) of \(manualCount)" : title
+            manualCount > 1 ? String(localized: "\(title) — \(manualNumber) of \(manualCount)") : title
         }
     }
 

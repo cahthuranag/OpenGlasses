@@ -364,7 +364,7 @@ struct LivePreviewView: View {
                 isStartingStream = false
             } catch {
                 isStartingStream = false
-                streamError = "Couldn't start the camera. Make sure your glasses are connected and try again."
+                streamError = String(localized: "Couldn't start the camera. Make sure your glasses are connected and try again.")
             }
         }
     }

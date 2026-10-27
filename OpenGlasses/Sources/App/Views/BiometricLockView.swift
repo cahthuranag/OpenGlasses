@@ -66,7 +66,7 @@ struct BiometricLockView: View {
             ? .deviceOwnerAuthenticationWithBiometrics
             : .deviceOwnerAuthentication
 
-        context.evaluatePolicy(policy, localizedReason: "Unlock Avenkin to access protected health data") { success, _ in
+        context.evaluatePolicy(policy, localizedReason: String(localized: "Unlock Avenkin to access protected health data")) { success, _ in
             DispatchQueue.main.async {
                 isAuthenticating = false
                 if success {

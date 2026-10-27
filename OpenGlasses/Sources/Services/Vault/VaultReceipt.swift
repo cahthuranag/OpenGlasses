@@ -79,8 +79,8 @@ enum VaultSourceBadge: Equatable {
     /// The short label a row shows.
     var label: String {
         switch self {
-        case .unverifiedSource: return "Unverified source"
-        case .revokedPublisher: return "Publisher revoked"
+        case .unverifiedSource: return String(localized: "Unverified source")
+        case .revokedPublisher: return String(localized: "Publisher revoked")
         }
     }
 
@@ -98,9 +98,9 @@ enum VaultSourceBadge: Equatable {
     var explanation: String {
         switch self {
         case .unverifiedSource:
-            return "This vault was installed from a link that wasn't signed by a listed publisher. Its reference files guide the assistant's answers."
+            return String(localized: "This vault was installed from a link that wasn't signed by a listed publisher. Its reference files guide the assistant's answers.")
         case .revokedPublisher(let publisher):
-            return "\(publisher) is no longer a listed publisher. This vault is left installed and still works; treat its content as unverified."
+            return String(localized: "\(publisher) is no longer a listed publisher. This vault is left installed and still works; treat its content as unverified.")
         }
     }
 

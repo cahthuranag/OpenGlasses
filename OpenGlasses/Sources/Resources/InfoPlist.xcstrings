@@ -1,0 +1,1896 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSAlarmKitUsageDescription" : {
+      "comment" : "Info.plist NSAlarmKitUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يرنّ Avenkin المنبّهات التي تضبطها بصوتك، حتى عندما يكون الهاتف في الوضع الصامت."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin rings the alarms you set by voice, even when the phone is on silent."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin hace sonar las alarmas que configuras por voz, incluso cuando el celular está en silencio."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin fait sonner les alarmes que vous réglez par la voix, même lorsque le téléphone est en mode silencieux."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin akkor is megszólaltatja a hanggal beállított ébresztéseket, ha a telefon néma módban van."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin fa suonare le sveglie che imposti con la voce, anche quando il telefono è in modalità silenziosa."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、音声で設定したアラームを、スマートフォンが消音モードのときでも鳴らします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 휴대폰이 무음 모드일 때도 음성으로 설정한 알람을 울립니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin laat de wekkers afgaan die u met uw stem instelt, ook als de telefoon op stil staat."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin toca os alarmes que você define por voz, mesmo quando o celular está no modo silencioso."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin включает будильники, которые вы установили голосом, даже когда на телефоне включен беззвучный режим."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آپ کے آواز سے سیٹ کیے ہوئے الارم بجاتا ہے، چاہے فون سائلنٹ پر ہو۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 会按时响起你用语音设定的闹钟，即使手机处于静音模式也不例外。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即使手機處於靜音模式，Avenkin 也會響起你用語音設定的鬧鐘。"
+          }
+        }
+      }
+    },
+    "NSAppleMusicUsageDescription" : {
+      "comment" : "Info.plist NSAppleMusicUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يشغّل Avenkin الموسيقى من مكتبتك أو من كتالوج Apple Music، ويضيف الموسيقى إلى مكتبتك عندما تطلب ذلك، ويتحكم في التشغيل بصوتك دون استخدام اليدين."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin plays music from your library or the Apple Music catalogue, adds music to your library when you ask, and controls playback hands-free, by voice."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin reproduce música de tu biblioteca o del catálogo de Apple Music, agrega música a tu biblioteca cuando se lo pides y controla la reproducción por voz, con manos libres."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin fait jouer de la musique de votre bibliothèque ou du catalogue Apple Music, ajoute de la musique à votre bibliothèque à votre demande et contrôle la lecture mains libres, par la voix."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin zenét játszik le a könyvtárából vagy az Apple Music katalógusából, kérésre zenét ad hozzá a könyvtárához, és hanggal, kéz használata nélkül vezérli a lejátszást."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin riproduce musica dalla tua libreria o dal catalogo di Apple Music, aggiunge musica alla tua libreria quando lo chiedi e controlla la riproduzione con la voce, a mani libere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、ライブラリやApple Musicのカタログから音楽を再生し、リクエストに応じてライブラリに音楽を追加し、音声によるハンズフリー操作で再生をコントロールします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 보관함 또는 Apple Music 카탈로그의 음악을 재생하고, 요청하면 보관함에 음악을 추가하며, 음성으로 재생을 핸즈프리로 제어합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin speelt muziek af uit uw bibliotheek of de Apple Music-catalogus, voegt op uw verzoek muziek toe aan uw bibliotheek en bedient het afspelen handsfree, met uw stem."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin reproduz músicas da sua biblioteca ou do catálogo do Apple Music, adiciona músicas à sua biblioteca quando você pede e controla a reprodução por voz, com as mãos livres."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin воспроизводит музыку из вашей медиатеки или каталога Apple Music, по вашей просьбе добавляет музыку в медиатеку и управляет воспроизведением голосом, без помощи рук."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آپ کی لائبریری یا Apple Music کیٹلاگ سے موسیقی چلاتا ہے، آپ کے کہنے پر موسیقی آپ کی لائبریری میں شامل کرتا ہے، اور آواز کے ذریعے ہاتھوں کے بغیر پلے بیک کنٹرول کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 可播放你资料库或 Apple Music 曲库中的音乐，在你要求时将音乐添加到资料库，并通过语音免提控制播放。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 可播放你資料庫或 Apple Music 目錄中的音樂，在你要求時將音樂加入資料庫，並透過語音免持控制播放。"
+          }
+        }
+      }
+    },
+    "NSBluetoothAlwaysUsageDescription" : {
+      "comment" : "Info.plist NSBluetoothAlwaysUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم Avenkin تقنية Bluetooth للاتصال بنظاراتك الذكية (Ray-Ban Meta أو EVEN Realities G2)."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin uses Bluetooth to connect to your smart glasses (Ray-Ban Meta or EVEN Realities G2)."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa Bluetooth para conectarse a tus lentes inteligentes (Ray-Ban Meta o EVEN Realities G2)."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin utilise le Bluetooth pour se connecter à vos lunettes intelligentes (Ray-Ban Meta ou EVEN Realities G2)."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin a Bluetooth segítségével csatlakozik az okos szemüvegéhez (Ray-Ban Meta vagy EVEN Realities G2)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa il Bluetooth per connettersi ai tuoi occhiali intelligenti (Ray-Ban Meta o EVEN Realities G2)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、スマートグラス（Ray-Ban MetaまたはEVEN Realities G2）に接続するためにBluetoothを使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 Bluetooth를 사용하여 스마트 안경(Ray-Ban Meta 또는 EVEN Realities G2)에 연결합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin gebruikt Bluetooth om verbinding te maken met uw slimme bril (Ray-Ban Meta of EVEN Realities G2)."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin usa o Bluetooth para se conectar aos seus óculos inteligentes (Ray-Ban Meta ou EVEN Realities G2)."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin использует Bluetooth для подключения к вашим умным очкам (Ray-Ban Meta или EVEN Realities G2)."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آپ کی اسمارٹ عینک (Ray-Ban Meta یا EVEN Realities G2) سے منسلک ہونے کے لیے Bluetooth استعمال کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用 Bluetooth 连接你的智能眼镜（Ray-Ban Meta 或 EVEN Realities G2）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用 Bluetooth 連接你的智慧眼鏡（Ray-Ban Meta 或 EVEN Realities G2）。"
+          }
+        }
+      }
+    },
+    "NSBluetoothPeripheralUsageDescription" : {
+      "comment" : "Info.plist NSBluetoothPeripheralUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم Avenkin تقنية Bluetooth للاتصال بنظاراتك الذكية (Ray-Ban Meta أو EVEN Realities G2)."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin uses Bluetooth to connect to your smart glasses (Ray-Ban Meta or EVEN Realities G2)."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa Bluetooth para conectarse a tus lentes inteligentes (Ray-Ban Meta o EVEN Realities G2)."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin utilise le Bluetooth pour se connecter à vos lunettes intelligentes (Ray-Ban Meta ou EVEN Realities G2)."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin a Bluetooth segítségével csatlakozik az okos szemüvegéhez (Ray-Ban Meta vagy EVEN Realities G2)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa il Bluetooth per connettersi ai tuoi occhiali intelligenti (Ray-Ban Meta o EVEN Realities G2)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、スマートグラス（Ray-Ban MetaまたはEVEN Realities G2）に接続するためにBluetoothを使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 Bluetooth를 사용하여 스마트 안경(Ray-Ban Meta 또는 EVEN Realities G2)에 연결합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin gebruikt Bluetooth om verbinding te maken met uw slimme bril (Ray-Ban Meta of EVEN Realities G2)."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin usa o Bluetooth para se conectar aos seus óculos inteligentes (Ray-Ban Meta ou EVEN Realities G2)."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin использует Bluetooth для подключения к вашим умным очкам (Ray-Ban Meta или EVEN Realities G2)."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آپ کی اسمارٹ عینک (Ray-Ban Meta یا EVEN Realities G2) سے منسلک ہونے کے لیے Bluetooth استعمال کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用 Bluetooth 连接你的智能眼镜（Ray-Ban Meta 或 EVEN Realities G2）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用 Bluetooth 連接你的智慧眼鏡（Ray-Ban Meta 或 EVEN Realities G2）。"
+          }
+        }
+      }
+    },
+    "NSCalendarsFullAccessUsageDescription" : {
+      "comment" : "Info.plist NSCalendarsFullAccessUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يصل Avenkin إلى التقويم ليخبرك بالأحداث القادمة وينشئ أحداثًا جديدة دون استخدام اليدين."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin accesses your calendar to tell you about upcoming events and create new ones hands-free."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin accede a tu calendario para avisarte de los próximos eventos y crear nuevos con manos libres."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin accède à votre calendrier pour vous informer des événements à venir et en créer de nouveaux mains libres."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin hozzáfér a naptárához, hogy tájékoztassa a közelgő eseményekről, és kéz használata nélkül újakat hozzon létre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin accede al tuo calendario per informarti sugli eventi imminenti e crearne di nuovi a mani libere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、今後の予定をお知らせしたり、ハンズフリーで新しい予定を作成したりするためにカレンダーにアクセスします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 다가오는 일정을 알려 주고 핸즈프리로 새 일정을 만들기 위해 캘린더에 접근합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin gebruikt uw kalender om u te informeren over komende activiteiten en handsfree nieuwe aan te maken."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin acessa seu calendário para informar você sobre os próximos eventos e criar novos com as mãos livres."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin обращается к вашему календарю, чтобы сообщать о предстоящих событиях и создавать новые без помощи рук."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آپ کے کیلنڈر تک رسائی حاصل کرتا ہے تاکہ آپ کو آنے والے ایونٹس بتائے اور ہاتھوں کے بغیر نئے ایونٹس بنائے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 访问你的日历，以便告诉你即将到来的日程，并免提创建新日程。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 會取用你的行事曆，以告訴你即將到來的活動，並免持建立新活動。"
+          }
+        }
+      }
+    },
+    "NSCalendarsUsageDescription" : {
+      "comment" : "Info.plist NSCalendarsUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يصل Avenkin إلى التقويم ليخبرك بالأحداث القادمة وينشئ أحداثًا جديدة دون استخدام اليدين."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin accesses your calendar to tell you about upcoming events and create new ones hands-free."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin accede a tu calendario para avisarte de los próximos eventos y crear nuevos con manos libres."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin accède à votre calendrier pour vous informer des événements à venir et en créer de nouveaux mains libres."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin hozzáfér a naptárához, hogy tájékoztassa a közelgő eseményekről, és kéz használata nélkül újakat hozzon létre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin accede al tuo calendario per informarti sugli eventi imminenti e crearne di nuovi a mani libere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、今後の予定をお知らせしたり、ハンズフリーで新しい予定を作成したりするためにカレンダーにアクセスします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 다가오는 일정을 알려 주고 핸즈프리로 새 일정을 만들기 위해 캘린더에 접근합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin gebruikt uw kalender om u te informeren over komende activiteiten en handsfree nieuwe aan te maken."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin acessa seu calendário para informar você sobre os próximos eventos e criar novos com as mãos livres."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin обращается к вашему календарю, чтобы сообщать о предстоящих событиях и создавать новые без помощи рук."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آپ کے کیلنڈر تک رسائی حاصل کرتا ہے تاکہ آپ کو آنے والے ایونٹس بتائے اور ہاتھوں کے بغیر نئے ایونٹس بنائے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 访问你的日历，以便告诉你即将到来的日程，并免提创建新日程。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 會取用你的行事曆，以告訴你即將到來的活動，並免持建立新活動。"
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription" : {
+      "comment" : "Info.plist NSCameraUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم Avenkin الكاميرا لمسح رموز الإعداد والتقاط الصور ومقاطع الفيديو ليحللها الذكاء الاصطناعي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin uses the camera to scan setup codes and to capture photos and video for the AI to analyze."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa la cámara para escanear códigos de configuración y tomar fotos y videos para que la IA los analice."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin utilise l'appareil photo pour numériser les codes de configuration et prendre des photos et des vidéos que l'IA analysera."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin a kamerát beállítási kódok beolvasására, valamint fotók és videók készítésére használja, amelyeket az AI elemez."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa la fotocamera per scansionare i codici di configurazione e per scattare foto e registrare video da far analizzare all'AI."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、セットアップコードのスキャンや、AIが分析する写真・ビデオの撮影にカメラを使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 설정 코드를 스캔하고 AI가 분석할 사진과 동영상을 촬영하기 위해 카메라를 사용합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin gebruikt de camera om configuratiecodes te scannen en foto's en video's te maken die de AI analyseert."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin usa a câmera para ler códigos de configuração e capturar fotos e vídeos para a IA analisar."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin использует камеру, чтобы сканировать коды настройки, а также снимать фото и видео для анализа ИИ."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin سیٹ اپ کوڈ اسکین کرنے اور AI کے تجزیے کے لیے تصاویر اور ویڈیو کیپچر کرنے کے لیے کیمرا استعمال کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用相机扫描设置码，并拍摄照片和视频供 AI 分析。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用相機掃描設定碼，並拍攝照片和影片供 AI 分析。"
+          }
+        }
+      }
+    },
+    "NSContactsUsageDescription" : {
+      "comment" : "Info.plist NSContactsUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبحث Avenkin في جهات الاتصال لتتمكن من إجراء المكالمات وإرسال الرسائل وتوجيه رسائل البريد الإلكتروني بالاسم، دون استخدام اليدين."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin looks up contacts so you can make calls, send messages and address email by name, hands-free."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin busca tus contactos para que puedas hacer llamadas, enviar mensajes y escribir correos a las personas por su nombre, con manos libres."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin consulte vos contacts pour que vous puissiez appeler, envoyer des messages et adresser des courriels par le nom de la personne, mains libres."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin a névjegyek között keres, hogy név alapján, kéz használata nélkül indíthasson hívást, küldhessen üzenetet és címezhessen e-mailt."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin cerca i contatti per permetterti di fare chiamate, inviare messaggi e indirizzare email per nome, a mani libere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、名前を指定するだけでハンズフリーで電話をかけたり、メッセージを送ったり、メールの宛先を指定したりできるように連絡先を検索します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 이름만으로 핸즈프리로 전화를 걸고, 메시지를 보내고, 이메일 수신자를 지정할 수 있도록 연락처를 조회합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin zoekt contacten op, zodat u handsfree op naam kunt bellen, berichten kunt sturen en e-mails kunt adresseren."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin consulta seus contatos para que você possa fazer ligações, enviar mensagens e endereçar e-mails pelo nome, com as mãos livres."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin ищет контакты, чтобы вы могли без помощи рук звонить, отправлять сообщения и адресовать письма по имени."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin رابطے تلاش کرتا ہے تاکہ آپ نام لے کر ہاتھوں کے بغیر کال کر سکیں، پیغام بھیج سکیں اور ای میل کا پتہ لکھ سکیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 查找联系人，让你可以免提按姓名拨打电话、发送信息和填写电子邮件收件人。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 會查詢聯絡人，讓你可以免持依姓名撥打電話、傳送訊息及填寫電子郵件收件人。"
+          }
+        }
+      }
+    },
+    "NSHealthShareUsageDescription" : {
+      "comment" : "Info.plist NSHealthShareUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يقرأ Avenkin معدل ضربات قلبك ومعدل ضربات القلب أثناء الراحة والنوم والخطوات والتمارين من Apple Health للإجابة عن أسئلة مثل «كيف كان نومي؟» ولإطلاعك على نشاطك البدني. لا تُرسَل هذه الأرقام إلى مزوّد الذكاء الاصطناعي الذي اخترته إلا إذا فعّلت «مشاركة بيانات الصحة مع الذكاء الاصطناعي» في الإعدادات؛ وإلا فإن Avenkin ينطقها لك بنفسه وتبقى على هاتفك."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin reads your heart rate, resting heart rate, sleep, steps and workouts from Apple Health to answer questions like \"how did I sleep?\" and to tell you about your fitness activity. Only if you turn on \"Share Health Data with AI\" in Settings are these numbers sent to your chosen AI provider; otherwise Avenkin speaks them to you itself and they stay on your phone."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin lee tu frecuencia cardiaca, frecuencia cardiaca en reposo, sueño, pasos y entrenamientos de Apple Health para responder preguntas como “¿cómo dormí?” y para informarte sobre tu actividad física. Estas cifras se envían a tu proveedor de IA elegido solo si activas “Compartir datos de salud con la IA” en Configuración; de lo contrario, Avenkin te las dice en voz alta y se quedan en tu celular."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin lit votre fréquence cardiaque, votre fréquence cardiaque au repos, votre sommeil, vos pas et vos entraînements dans Apple Health pour répondre à des questions comme « Comment ai-je dormi? » et vous renseigner sur votre activité physique. Ces chiffres ne sont envoyés au fournisseur d'IA de votre choix que si vous activez « Partager les données de santé avec l'IA » dans Réglages; sinon, Avenkin vous les énonce lui-même et ils restent sur votre téléphone."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin beolvassa a pulzusszámát, a nyugalmi pulzusszámát, valamint az alvási, lépés- és edzésadatait az Apple Healthből, hogy válaszoljon az olyan kérdésekre, mint a „Hogyan aludtam?”, és tájékoztassa a fizikai aktivitásáról. Ezek a számok csak akkor kerülnek el a választott AI-szolgáltatóhoz, ha a Beállításokban bekapcsolja az „Ossza meg az egészségügyi adatokat az AI-val” lehetőséget; ellenkező esetben az Avenkin maga mondja el őket, és a telefonján maradnak."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin legge da Apple Health la frequenza cardiaca, la frequenza cardiaca a riposo, il sonno, i passi e gli allenamenti per rispondere a domande come «Come ho dormito?» e per informarti sulla tua attività fisica. Questi dati vengono inviati al fornitore di AI che hai scelto solo se attivi «Condividi i dati sanitari con l'intelligenza artificiale» in Impostazioni; altrimenti è Avenkin stesso a comunicarteli a voce e restano sul tuo telefono."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、「昨夜の睡眠はどうだった？」のような質問に答えたり、フィットネスの活動状況をお知らせしたりするために、Apple Healthから心拍数、安静時心拍数、睡眠、歩数、ワークアウトを読み取ります。これらの数値が選択したAIプロバイダに送信されるのは、設定で「健康データをAIと共有」をオンにした場合のみです。オフの場合はAvenkin自身が読み上げ、データはスマートフォン内にとどまります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 “잠은 잘 잤어?” 같은 질문에 답하고 피트니스 활동을 알려 주기 위해 Apple Health에서 심박수, 휴식 시 심박수, 수면, 걸음 수, 운동 기록을 읽습니다. 설정에서 ‘AI와 건강 데이터 공유’를 켠 경우에만 이 수치가 선택한 AI 제공업체로 전송되며, 그렇지 않으면 Avenkin이 직접 읽어 주고 데이터는 휴대폰에만 남습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin leest uw hartslag, rusthartslag, slaap, stappen en trainingen uit Apple Health om vragen als ‘Hoe heb ik geslapen?’ te beantwoorden en u te informeren over uw fitnessactiviteit. Alleen als u ‘Gezondheidsgegevens delen met AI’ inschakelt in Instellingen, worden deze cijfers naar uw gekozen AI-aanbieder gestuurd; anders spreekt Avenkin ze zelf voor u uit en blijven ze op uw telefoon."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin lê sua frequência cardíaca, frequência cardíaca em repouso, sono, passos e treinos no Apple Health para responder a perguntas como “como eu dormi?” e informar você sobre sua atividade física. Esses números só são enviados ao provedor de IA escolhido se você ativar “Compartilhe dados de saúde com IA” em Configurações; caso contrário, o próprio Avenkin os informa em voz alta e eles ficam no seu celular."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin считывает из Apple Health ваш пульс, пульс в покое, данные о сне, шагах и тренировках, чтобы отвечать на вопросы вроде «Как мне спалось?» и рассказывать о вашей физической активности. Эти показатели отправляются выбранному вами провайдеру ИИ, только если вы включите «Делиться данными о здоровье с ИИ» в настройках; в противном случае Avenkin сам озвучивает их вам и они остаются на телефоне."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin Apple Health سے آپ کی دل کی دھڑکن، آرام کے وقت کی دل کی دھڑکن، نیند، قدم اور ورزشیں پڑھتا ہے تاکہ “میں کیسا سویا؟” جیسے سوالوں کا جواب دے سکے اور آپ کو آپ کی فٹنس سرگرمی بتا سکے۔ صرف اس صورت میں کہ آپ ترتیبات میں “صحت کا ڈیٹا AI کے ساتھ شیئر کریں” آن کریں، یہ اعداد آپ کے منتخب کردہ AI فراہم کنندہ کو بھیجے جاتے ہیں؛ ورنہ Avenkin انہیں خود آپ کو سناتا ہے اور وہ آپ کے فون پر ہی رہتے ہیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 从 Apple Health 读取你的心率、静息心率、睡眠、步数和锻炼数据，以回答“我睡得怎么样？”之类的问题，并告诉你健身活动情况。只有在你于设置中开启“与 AI 共享健康数据”后，这些数字才会发送给你选择的 AI 提供商；否则，Avenkin 会自己为你播报，数据也会保留在你的手机上。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 從 Apple Health 讀取你的心率、靜止心率、睡眠、步數和鍛鍊資料，以回答「我睡得怎麼樣？」之類的問題，並告訴你健身活動狀況。只有在你於「設定」中開啟「與 AI 共享健康資料」後，這些數字才會傳送給你選擇的 AI 供應商；否則 Avenkin 會自己唸給你聽，資料也會留在你的手機上。"
+          }
+        }
+      }
+    },
+    "NSHealthUpdateUsageDescription" : {
+      "comment" : "Info.plist NSHealthUpdateUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحفظ Avenkin بيانات التمارين من جلسات التدريب البدني في Apple Health."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin saves workout data from fitness coaching sessions to Apple Health."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin guarda en Apple Health los datos de entrenamiento de las sesiones con el entrenador de fitness."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin enregistre dans Apple Health les données d'entraînement de vos séances de coaching en mise en forme."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin a fitneszedzői foglalkozások edzésadatait az Apple Healthbe menti."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin salva in Apple Health i dati degli allenamenti delle sessioni di coaching fitness."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、フィットネスコーチングセッションのワークアウトデータをApple Healthに保存します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 피트니스 코칭 세션의 운동 데이터를 Apple Health에 저장합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin bewaart trainingsgegevens van fitnesscoachingsessies in Apple Health."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin salva no Apple Health os dados de treino das sessões com o preparador físico."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin сохраняет в Apple Health данные о тренировках, проведенных с фитнес-тренером."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin فٹنس کوچنگ سیشنز کا ورزش کا ڈیٹا Apple Health میں محفوظ کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 会将健身指导课程中的锻炼数据存储到 Apple Health。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 會將健身指導課程的鍛鍊資料儲存到 Apple Health。"
+          }
+        }
+      }
+    },
+    "NSHomeKitUsageDescription" : {
+      "comment" : "Info.plist NSHomeKitUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتحكم Avenkin في أجهزة منزلك الذكي بصوتك دون استخدام اليدين."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin controls your smart home devices hands-free, by voice."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin controla los dispositivos de tu casa inteligente por voz, con manos libres."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin contrôle les appareils de votre maison intelligente mains libres, par la voix."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin hanggal, kéz használata nélkül vezérli az okosotthon-eszközeit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin controlla i dispositivi della tua casa smart con la voce, a mani libere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、音声によるハンズフリー操作でスマートホームデバイスをコントロールします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 음성으로 스마트 홈 기기를 핸즈프리로 제어합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin bedient uw slimme apparaten in huis handsfree, met uw stem."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin controla os dispositivos da sua casa inteligente por voz, com as mãos livres."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin управляет устройствами умного дома голосом, без помощи рук."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آواز کے ذریعے ہاتھوں کے بغیر آپ کے اسمارٹ ہوم ڈیوائسز کو کنٹرول کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 通过语音免提控制你的智能家居设备。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 透過語音免持控制你的智慧家庭裝置。"
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "Info.plist NSLocalNetworkUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم Avenkin شبكتك المحلية للعثور على خوادم الذكاء الاصطناعي المستضافة ذاتيًا (Ollama، LM Studio، vLLM، LocalAI) دون الحاجة إلى كتابة عنوان، ولبث الفيديو إلى خادم على شبكتك الخاصة."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin uses your local network to find self-hosted AI servers (Ollama, LM Studio, vLLM, LocalAI) without typing an address, and to stream video to a server on your own network."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa tu red local para encontrar servidores de IA autoalojados (Ollama, LM Studio, vLLM, LocalAI) sin que tengas que escribir una dirección, y para transmitir video a un servidor en tu propia red."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin utilise votre réseau local pour trouver des serveurs d'IA auto-hébergés (Ollama, LM Studio, vLLM, LocalAI) sans que vous ayez à saisir d'adresse, et pour diffuser de la vidéo vers un serveur de votre propre réseau."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin a helyi hálózatot használja, hogy cím beírása nélkül megtalálja a saját üzemeltetésű AI-szervereket (Ollama, LM Studio, vLLM, LocalAI), és hogy videót streameljen a saját hálózatán lévő szerverre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa la rete locale per trovare server AI self-hosted (Ollama, LM Studio, vLLM, LocalAI) senza dover digitare un indirizzo e per trasmettere video in streaming a un server sulla tua rete."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、アドレスを入力せずにセルフホスト型AIサーバ（Ollama、LM Studio、vLLM、LocalAI）を見つけたり、ご自身のネットワーク上のサーバにビデオをストリーミングしたりするために、ローカルネットワークを使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 주소를 입력하지 않고도 자체 호스팅 AI 서버(Ollama, LM Studio, vLLM, LocalAI)를 찾고, 사용자 네트워크의 서버로 동영상을 스트리밍하기 위해 로컬 네트워크를 사용합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin gebruikt uw lokale netwerk om zelfgehoste AI-servers (Ollama, LM Studio, vLLM, LocalAI) te vinden zonder dat u een adres hoeft in te typen, en om video te streamen naar een server op uw eigen netwerk."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin usa sua rede local para encontrar servidores de IA auto-hospedados (Ollama, LM Studio, vLLM, LocalAI) sem que você precise digitar um endereço e para transmitir vídeo para um servidor na sua própria rede."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin использует локальную сеть, чтобы находить ваши собственные серверы ИИ (Ollama, LM Studio, vLLM, LocalAI) без ввода адреса и транслировать видео на сервер в вашей сети."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آپ کا مقامی نیٹ ورک استعمال کرتا ہے تاکہ ایڈریس لکھے بغیر سیلف ہوسٹڈ AI سرورز (Ollama، LM Studio، vLLM، LocalAI) تلاش کرے، اور آپ کے اپنے نیٹ ورک کے کسی سرور پر ویڈیو اسٹریم کرے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用你的本地网络查找自托管的 AI 服务器（Ollama、LM Studio、vLLM、LocalAI），无需输入地址，还可将视频流式传输到你自己网络上的服务器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用你的區域網路尋找自行架設的 AI 伺服器（Ollama、LM Studio、vLLM、LocalAI），不必輸入位址，還能將影片串流到你自己網路上的伺服器。"
+          }
+        }
+      }
+    },
+    "NSLocationAlwaysAndWhenInUseUsageDescription" : {
+      "comment" : "Info.plist NSLocationAlwaysAndWhenInUseUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم Avenkin موقعك في الخلفية لتنبيهك عند وصولك إلى مكان ضبطت له تذكيرًا بالموقع أو مغادرتك له."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin uses your location in the background to alert you when you arrive at or leave a place you set a location reminder for."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa tu ubicación en segundo plano para avisarte cuando llegues a un lugar para el que configuraste un recordatorio por ubicación, o cuando salgas de él."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin utilise votre position en arrière-plan pour vous avertir lorsque vous arrivez à un lieu pour lequel vous avez créé un rappel de lieu, ou lorsque vous le quittez."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin a háttérben is használja a tartózkodási helyét, hogy értesítse, amikor megérkezik egy olyan helyre, amelyhez helyalapú emlékeztetőt állított be, vagy elhagyja azt."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa la tua posizione in background per avvisarti quando arrivi in un luogo per cui hai impostato un promemoria di posizione o quando lo lasci."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、位置情報リマインダーを設定した場所に到着したときや、その場所を離れたときにお知らせするため、バックグラウンドで位置情報を使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 위치 기반 알림을 설정한 장소에 도착하거나 그 장소를 떠날 때 알려 주기 위해 백그라운드에서 위치를 사용합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin gebruikt uw locatie op de achtergrond om u te waarschuwen wanneer u aankomt op of vertrekt van een plek waarvoor u een locatieherinnering hebt ingesteld."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin usa sua localização em segundo plano para avisar quando você chega ou sai de um lugar para o qual definiu um lembrete por localização."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin использует вашу геопозицию в фоновом режиме, чтобы уведомлять вас, когда вы прибываете в место, для которого задано напоминание по местоположению, или покидаете его."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin پس منظر میں آپ کا مقام استعمال کرتا ہے تاکہ جس جگہ کے لیے آپ نے مقام کی یاد دہانی سیٹ کی ہو وہاں پہنچنے یا وہاں سے نکلنے پر آپ کو خبردار کرے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 在后台使用你的位置，以便在你到达或离开设有位置提醒的地点时提醒你。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 會在背景使用你的位置，在你抵達或離開設有位置提醒的地點時通知你。"
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription" : {
+      "comment" : "Info.plist NSLocationWhenInUseUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم Avenkin موقعك لتقديم إجابات مناسبة للسياق بناءً على مكان وجودك."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin uses your location to provide contextually relevant answers based on where you are."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa tu ubicación para darte respuestas relevantes según el lugar donde te encuentres."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin utilise votre position pour fournir des réponses pertinentes selon l'endroit où vous vous trouvez."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin a tartózkodási helyét arra használja, hogy az Ön helyzetéhez illő, releváns válaszokat adjon."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa la tua posizione per fornire risposte pertinenti in base a dove ti trovi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、現在地に応じた適切な回答を提供するために位置情報を使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 현재 위치에 따라 상황에 맞는 답변을 제공하기 위해 위치를 사용합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin gebruikt uw locatie om antwoorden te geven die passen bij de plek waar u bent."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin usa sua localização para fornecer respostas relevantes de acordo com o lugar onde você está."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin использует вашу геопозицию, чтобы давать ответы с учетом того, где вы находитесь."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آپ کا مقام استعمال کرتا ہے تاکہ آپ جہاں ہیں اس کے مطابق متعلقہ جوابات دے سکے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用你的位置，根据你所在的地方提供与情境相关的回答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用你的位置，依你所在的地方提供符合情境的回答。"
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription" : {
+      "comment" : "Info.plist NSMicrophoneUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحتاج Avenkin إلى الوصول إلى الميكروفون للاستماع إلى كلمات التنبيه وتحويل أوامرك الصوتية إلى نص."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin needs microphone access to listen for wake words and transcribe your voice commands."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin necesita acceso al micrófono para escuchar las palabras de activación y transcribir tus comandos de voz."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin a besoin d'accéder au microphone pour détecter les mots d'activation et transcrire vos commandes vocales."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkinnek hozzá kell férnie a mikrofonhoz, hogy figyelje az ébresztő szavakat, és leírja a hangutasításait."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin ha bisogno di accedere al microfono per ascoltare le parole di attivazione e trascrivere i tuoi comandi vocali."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、ウェイクワードを聞き取り、音声コマンドを書き起こすためにマイクへのアクセスを必要とします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 웨이크 워드를 듣고 음성 명령을 텍스트로 변환하기 위해 마이크 접근 권한이 필요합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin heeft toegang tot de microfoon nodig om naar activeringswoorden te luisteren en uw spraakopdrachten uit te schrijven."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin precisa de acesso ao microfone para ouvir as palavras de ativação e transcrever seus comandos de voz."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin нужен доступ к микрофону, чтобы отслеживать слова активации и расшифровывать ваши голосовые команды."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin کو ویک ورڈز سننے اور آپ کی صوتی کمانڈز ٹرانسکرائب کرنے کے لیے مائیکروفون تک رسائی چاہیے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 需要访问麦克风，以监听唤醒词并转写你的语音指令。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 需要取用麥克風，以聆聽喚醒詞並將你的語音指令轉寫成文字。"
+          }
+        }
+      }
+    },
+    "NSMotionUsageDescription" : {
+      "comment" : "Info.plist NSMotionUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يقرأ Avenkin عدد خطواتك ومسافة المشي ليطلعك على نشاطك اليومي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin reads your step count and walking distance to report daily activity."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin lee tu conteo de pasos y la distancia que caminas para informarte sobre tu actividad diaria."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin lit votre nombre de pas et la distance parcourue à pied pour faire le bilan de votre activité quotidienne."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin beolvassa a lépésszámát és a gyalogosan megtett távolságot, hogy beszámoljon a napi aktivitásáról."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin legge il numero di passi e la distanza percorsa a piedi per riferirti la tua attività giornaliera."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、毎日のアクティビティを報告するために歩数と歩行距離を読み取ります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 일일 활동을 알려 드리기 위해 걸음 수와 걷기 거리를 읽습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin leest uw aantal stappen en loopafstand om over uw dagelijkse activiteit te rapporteren."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin lê sua contagem de passos e a distância percorrida a pé para informar sua atividade diária."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin считывает количество шагов и пройденное расстояние, чтобы сообщать о вашей ежедневной активности."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin روزانہ کی سرگرمی بتانے کے لیے آپ کے قدموں کی گنتی اور پیدل فاصلہ پڑھتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 读取你的步数和步行距离，以报告每日活动情况。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 讀取你的步數和步行距離，以回報每日活動。"
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryAddUsageDescription" : {
+      "comment" : "Info.plist NSPhotoLibraryAddUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحفظ Avenkin الصور ومقاطع الفيديو التي تلتقطها في مكتبة الصور."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin saves the photos and videos you capture to your photo library."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin guarda en tu fototeca las fotos y los videos que capturas."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin enregistre les photos et les vidéos que vous prenez dans votre bibliothèque de photos."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin a fotótárába menti az Ön által készített fotókat és videókat."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin salva nella libreria di foto le foto e i video che acquisisci."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、撮影した写真やビデオを写真ライブラリに保存します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 촬영한 사진과 동영상을 사진 라이브러리에 저장합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin bewaart de foto's en video's die u maakt in uw fotobibliotheek."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin salva na sua biblioteca de fotos as fotos e os vídeos que você captura."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin сохраняет снятые вами фото и видео в библиотеку фото."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آپ کی کیپچر کی ہوئی تصاویر اور ویڈیوز آپ کی فوٹو لائبریری میں محفوظ کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 会将你拍摄的照片和视频存储到照片库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 會將你拍攝的照片和影片儲存到相片庫。"
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryUsageDescription" : {
+      "comment" : "Info.plist NSPhotoLibraryUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يصل Avenkin إلى مكتبة الصور لتنظيم الصور التي تلتقطها في ألبوم مخصص."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin accesses your photo library to organize the photos you capture into a dedicated album."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin accede a tu fototeca para organizar las fotos que capturas en un álbum dedicado."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin accède à votre bibliothèque de photos pour classer les photos que vous prenez dans un album dédié."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin hozzáfér a fotótárához, hogy az Ön által készített fotókat egy külön albumba rendezze."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin accede alla libreria di foto per organizzare le foto che acquisisci in un album dedicato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、撮影した写真を専用のアルバムに整理するために写真ライブラリにアクセスします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 촬영한 사진을 전용 앨범으로 정리하기 위해 사진 라이브러리에 접근합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin heeft toegang tot uw fotobibliotheek nodig om de foto's die u maakt in een apart album te ordenen."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin acessa sua biblioteca de fotos para organizar as fotos que você captura em um álbum dedicado."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin обращается к библиотеке фото, чтобы упорядочивать снятые вами фото в отдельном альбоме."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin آپ کی فوٹو لائبریری تک رسائی حاصل کرتا ہے تاکہ آپ کی کیپچر کی ہوئی تصاویر کو ایک مخصوص البم میں ترتیب دے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 访问你的照片库，以便将你拍摄的照片整理到专属相簿中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 會取用你的相片庫，將你拍攝的照片整理到專屬相簿中。"
+          }
+        }
+      }
+    },
+    "NSRemindersFullAccessUsageDescription" : {
+      "comment" : "Info.plist NSRemindersFullAccessUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ينشئ Avenkin التذكيرات ويديرها لتتمكن من ضبطها دون استخدام اليدين."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin creates and manages reminders so you can set them hands-free."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin crea y administra recordatorios para que puedas configurarlos con manos libres."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin crée et gère des rappels pour que vous puissiez les régler mains libres."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin emlékeztetőket hoz létre és kezel, így kéz használata nélkül is beállíthatja őket."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin crea e gestisce promemoria per permetterti di impostarli a mani libere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、ハンズフリーでリマインダーを設定できるように、リマインダーを作成・管理します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 핸즈프리로 미리 알림을 설정할 수 있도록 미리 알림을 생성하고 관리합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin maakt en beheert herinneringen, zodat u ze handsfree kunt instellen."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin cria e gerencia lembretes para que você possa defini-los com as mãos livres."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin создает напоминания и управляет ими, чтобы вы могли задавать их без помощи рук."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin یاد دہانیاں بناتا اور ان کا انتظام کرتا ہے تاکہ آپ انہیں ہاتھوں کے بغیر سیٹ کر سکیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 创建和管理提醒事项，让你可以免提设置提醒。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 會建立和管理提醒事項，讓你可以免持設定提醒。"
+          }
+        }
+      }
+    },
+    "NSRemindersUsageDescription" : {
+      "comment" : "Info.plist NSRemindersUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ينشئ Avenkin التذكيرات ويديرها لتتمكن من ضبطها دون استخدام اليدين."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin creates and manages reminders so you can set them hands-free."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin crea y administra recordatorios para que puedas configurarlos con manos libres."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin crée et gère des rappels pour que vous puissiez les régler mains libres."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin emlékeztetőket hoz létre és kezel, így kéz használata nélkül is beállíthatja őket."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin crea e gestisce promemoria per permetterti di impostarli a mani libere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、ハンズフリーでリマインダーを設定できるように、リマインダーを作成・管理します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 핸즈프리로 미리 알림을 설정할 수 있도록 미리 알림을 생성하고 관리합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin maakt en beheert herinneringen, zodat u ze handsfree kunt instellen."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin cria e gerencia lembretes para que você possa defini-los com as mãos livres."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin создает напоминания и управляет ими, чтобы вы могли задавать их без помощи рук."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin یاد دہانیاں بناتا اور ان کا انتظام کرتا ہے تاکہ آپ انہیں ہاتھوں کے بغیر سیٹ کر سکیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 创建和管理提醒事项，让你可以免提设置提醒。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 會建立和管理提醒事項，讓你可以免持設定提醒。"
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription" : {
+      "comment" : "Info.plist NSSpeechRecognitionUsageDescription: the reason iOS shows when it asks for this permission.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم Avenkin التعرّف على الكلام لاكتشاف كلمة التنبيه وتحويل أسئلتك الصوتية إلى نص لمساعد الذكاء الاصطناعي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Avenkin uses speech recognition to detect the wake word and transcribe your voice questions for the AI assistant."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa el reconocimiento de voz para detectar la palabra de activación y transcribir tus preguntas habladas para el asistente de IA."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin utilise la reconnaissance vocale pour détecter le mot d'activation et transcrire vos questions vocales pour l'assistant IA."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az Avenkin beszédfelismeréssel észleli az ébresztő szót, és leírja a szóban feltett kérdéseit az AI-asszisztens számára."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin usa il riconoscimento vocale per rilevare la parola di attivazione e trascrivere le domande che fai a voce all'assistente AI."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkinは、ウェイクワードを検出し、AIアシスタントへの音声での質問を書き起こすために音声認識を使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin은 웨이크 워드를 감지하고 AI 어시스턴트에게 하는 음성 질문을 텍스트로 변환하기 위해 음성 인식을 사용합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin gebruikt spraakherkenning om het activeringswoord te herkennen en uw gesproken vragen voor de AI-assistent uit te schrijven."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Avenkin usa o reconhecimento de fala para detectar a palavra de ativação e transcrever suas perguntas faladas para o assistente de IA."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin использует распознавание речи, чтобы обнаруживать слово активации и расшифровывать ваши голосовые вопросы для ИИ-ассистента."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin ویک ورڈ کا پتہ لگانے اور AI اسسٹنٹ کے لیے آپ کے صوتی سوالات ٹرانسکرائب کرنے کے لیے اسپیچ ریکگنیشن استعمال کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用语音识别来检测唤醒词，并为 AI 助手转写你的语音提问。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avenkin 使用語音辨識來偵測喚醒詞，並為 AI 助理轉寫你的語音提問。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.1"
+}

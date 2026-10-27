@@ -54,7 +54,7 @@ struct PersonasView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(persona.name)\(!persona.enabled ? ", disabled" : ""). Wake phrase: \(persona.wakePhrase). \(modelName(for: persona.modelId))")
+                    .accessibilityLabel(spokenLabel(for: persona))
                     .accessibilityHint("Double-tap to edit")
                     .swipeActions(edge: .trailing) {
                         if personas.count > 1 {
@@ -141,19 +141,33 @@ struct PersonasView: View {
             Task {
                 let imported = await ProjectExporter.importBundle(bundle, into: appState.documentStore)
                 personas = Config.savedPersonas
-                importMessage = "Imported \"\(imported.name)\" with \(bundle.documents.count) document\(bundle.documents.count == 1 ? "" : "s")."
+                let name = imported.name
+                let documents = bundle.documents.count
+                importMessage = documents == 1
+                    ? String(localized: "Imported \"\(name)\" with 1 document.")
+                    : String(localized: "Imported \"\(name)\" with \(documents) documents.")
             }
         } catch {
             importMessage = error.localizedDescription
         }
     }
 
+    /// The row as VoiceOver reads it: name (and whether it is off), wake phrase, model.
+    private func spokenLabel(for persona: Persona) -> String {
+        let name = persona.name
+        let phrase = persona.wakePhrase
+        let model = modelName(for: persona.modelId)
+        return persona.enabled
+            ? String(localized: "\(name). Wake phrase: \(phrase). \(model)")
+            : String(localized: "\(name), disabled. Wake phrase: \(phrase). \(model)")
+    }
+
     private func modelName(for modelId: String) -> String {
-        Config.savedModels.first { $0.id == modelId }?.name ?? "No model"
+        Config.savedModels.first { $0.id == modelId }?.name ?? String(localized: "No model")
     }
 
     private func presetName(for presetId: String) -> String {
-        Config.savedPresets.first { $0.id == presetId }?.name ?? "Default"
+        Config.savedPresets.first { $0.id == presetId }?.name ?? String(localized: "Default")
     }
 }
 

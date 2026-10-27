@@ -291,37 +291,37 @@ enum JobFileValidator {
         var message: String {
             switch self {
             case .tooLarge:
-                return "This file is too large to be a job. Job files are a few kilobytes."
+                return String(localized: "This file is too large to be a job. Job files are a few kilobytes.")
             case .notAJobFile:
-                return "This isn't an Avenkin job file."
+                return String(localized: "This isn't an Avenkin job file.")
             case .unsupportedVersion(let version):
-                return "This job file uses format version \(version), which this version of the app can't read. Update the app, or ask the office to send it in an earlier format."
+                return String(localized: "This job file uses format version \(version), which this version of the app can't read. Update the app, or ask the office to send it in an earlier format.")
             case .unexpectedField(let name):
-                return "This job file carries a field the app doesn't recognise (\u{201C}\(name)\u{201D}), so it wasn't opened."
+                return String(localized: "This job file carries a field the app doesn't recognise (\u{201C}\(name)\u{201D}), so it wasn't opened.")
             case .wrongType(let name), .notPlainText(let name):
-                return "The job file's \u{201C}\(name)\u{201D} isn't plain text, so it wasn't opened."
+                return String(localized: "The job file's \u{201C}\(name)\u{201D} isn't plain text, so it wasn't opened.")
             case .tooLong(let name):
-                return "The job file's \u{201C}\(name)\u{201D} is too long for a job, so it wasn't opened."
+                return String(localized: "The job file's \u{201C}\(name)\u{201D} is too long for a job, so it wasn't opened.")
             case .containsMarkup(let name):
-                return "The job file's \u{201C}\(name)\u{201D} contains markup. Job files are plain text only, so it wasn't opened."
+                return String(localized: "The job file's \u{201C}\(name)\u{201D} contains markup. Job files are plain text only, so it wasn't opened.")
             case .tooMany(let name):
-                return "The job file lists too many \(name) for one job, so it wasn't opened."
+                return String(localized: "The job file lists too many \(name) for one job, so it wasn't opened.")
             case .embeddedAttachment:
-                return "The job file tries to carry an attachment inside it. Attachments are named, never embedded, so it wasn't opened."
+                return String(localized: "The job file tries to carry an attachment inside it. Attachments are named, never embedded, so it wasn't opened.")
             case .badDate:
-                return "The job file's booking time can't be read, so it wasn't opened."
+                return String(localized: "The job file's booking time can't be read, so it wasn't opened.")
             case .malformedSignature:
-                return "The job file's signature is malformed, so it wasn't opened."
+                return String(localized: "The job file's signature is malformed, so it wasn't opened.")
             case .empty:
-                return "The job file has no job number, site or fault report — there's nothing to add."
+                return String(localized: "The job file has no job number, site or fault report — there's nothing to add.")
             case .noIdentity:
-                return "This job file doesn't say which of the office's jobs it is, or which revision, so it wasn't opened."
+                return String(localized: "This job file doesn't say which of the office's jobs it is, or which revision, so it wasn't opened.")
             case .invalidValue(let name):
-                return "The job file's \u{201C}\(name)\u{201D} isn't something this version of the app accepts, so it wasn't opened."
+                return String(localized: "The job file's \u{201C}\(name)\u{201D} isn't something this version of the app accepts, so it wasn't opened.")
             case .containsLink(let name):
-                return "The job file's \u{201C}\(name)\u{201D} contains a web address. Job files never carry links, so it wasn't opened."
+                return String(localized: "The job file's \u{201C}\(name)\u{201D} contains a web address. Job files never carry links, so it wasn't opened.")
             case .unreadableDate(let name):
-                return "The job file's \u{201C}\(name)\u{201D} isn't a date the app can read, so it wasn't opened."
+                return String(localized: "The job file's \u{201C}\(name)\u{201D} isn't a date the app can read, so it wasn't opened.")
             }
         }
     }

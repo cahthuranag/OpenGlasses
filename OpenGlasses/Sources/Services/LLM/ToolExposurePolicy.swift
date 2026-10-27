@@ -34,9 +34,9 @@ enum ToolDefinitionsMode: String, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .automatic: return "Automatic (Recommended)"
-        case .always: return "Always"
-        case .never: return "Never"
+        case .automatic: return String(localized: "Automatic (Recommended)")
+        case .always: return String(localized: "Always")
+        case .never: return String(localized: "Never")
         }
     }
 }

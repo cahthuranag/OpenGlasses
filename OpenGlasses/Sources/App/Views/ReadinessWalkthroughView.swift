@@ -126,9 +126,9 @@ struct ReadinessWalkthroughView: View {
 
     private func statusWord(_ verdict: ReadinessWalkthrough.Verdict) -> String {
         switch verdict {
-        case .passed(let note): return note == nil ? "Passed" : "Passed with a note"
-        case .failed: return "Needs attention"
-        case .skipped: return "Skipped"
+        case .passed(let note): return note == nil ? String(localized: "Passed") : String(localized: "Passed with a note")
+        case .failed: return String(localized: "Needs attention")
+        case .skipped: return String(localized: "Skipped")
         }
     }
 

@@ -18,26 +18,26 @@ enum LLMImagePreset: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .full:     return "Full Quality"
-        case .balanced: return "Balanced"
-        case .compact:  return "Compact"
-        case .custom:   return "Custom"
-        case .original: return "Original"
+        case .full:     return String(localized: "Full Quality")
+        case .balanced: return String(localized: "Balanced")
+        case .compact:  return String(localized: "Compact")
+        case .custom:   return String(localized: "Custom")
+        case .original: return String(localized: "Original")
         }
     }
 
     var explanation: String {
         switch self {
         case .full:
-            return "Best detail for reading labels and instruments. Uses more image tokens."
+            return String(localized: "Best detail for reading labels and instruments. Uses more image tokens.")
         case .balanced:
-            return "Good detail with smaller payloads — a practical default for most vision questions."
+            return String(localized: "Good detail with smaller payloads — a practical default for most vision questions.")
         case .compact:
-            return "Smaller images for quick scene descriptions when fine print is less important."
+            return String(localized: "Smaller images for quick scene descriptions when fine print is less important.")
         case .custom:
-            return "Tune the resize and compression limits yourself."
+            return String(localized: "Tune the resize and compression limits yourself.")
         case .original:
-            return "Send camera photos as captured. Still capped at the provider's hard limit, which very large iPhone captures would otherwise exceed."
+            return String(localized: "Send camera photos as captured. Still capped at the provider's hard limit, which very large iPhone captures would otherwise exceed.")
         }
     }
 }

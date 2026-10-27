@@ -192,52 +192,42 @@ enum OfflineModelOffer {
     // cannot keep.
 
     static func title(appleIntelligenceAvailable: Bool) -> String {
-        appleIntelligenceAvailable ? "Add an offline model" : "Download the offline model"
+        appleIntelligenceAvailable ? String(localized: "Add an offline model") : String(localized: "Download the offline model")
     }
 
     static func detail(appleIntelligenceAvailable: Bool, sizeBytes: Int64) -> String {
         let size = formattedSize(sizeBytes)
         if appleIntelligenceAvailable {
-            return "The assistant already works on this iPhone. A \(size) download adds a model "
-                + "that keeps working with no network at all. It appears alongside your other "
-                + "models in Settings once it's ready."
+            return String(localized: "The assistant already works on this iPhone. A \(size) download adds a model that keeps working with no network at all. It appears alongside your other models in Settings once it's ready.")
         }
-        return "A \(size) download is what makes this path work on your iPhone — no account, no "
-            + "key. The assistant starts answering on-device as soon as it's finished."
+        return String(localized: "A \(size) download is what makes this path work on your iPhone — no account, no key. The assistant starts answering on-device as soon as it's finished.")
     }
 
     /// Said while a download is running, so leaving the flow is not a leap of faith.
     static let inProgressDetail =
-        "You can carry on setting up. The download keeps going in the background and picks up "
-        + "where it left off if it's interrupted."
+        String(localized: "You can carry on setting up. The download keeps going in the background and picks up where it left off if it's interrupted.")
 
     static let alreadyDownloadedDetail =
-        "An offline model is already on this iPhone, so the assistant works with no network."
+        String(localized: "An offline model is already on this iPhone, so the assistant works with no network.")
 
     /// The smaller model's title. Distinct from the primary's, because the one thing this row
     /// must not do is let a user believe they are getting the full-size model.
-    static let smallerTitle = "Download a smaller offline model"
+    static let smallerTitle = String(localized: "Download a smaller offline model")
 
     /// The honest version of what used to be a flat refusal: name the memory the full-size model
     /// wants, say this iPhone gets a smaller one instead, and state what that one costs to fetch.
     static func offerSmallerDetail(primaryRequiredRAMGB: Double, sizeBytes: Int64) -> String {
-        "The full-size model needs \(Int(primaryRequiredRAMGB)) GB of memory, which is more than "
-        + "this iPhone has. A smaller model runs here instead — a \(formattedSize(sizeBytes)) "
-        + "download, and the assistant still answers on-device with no network and no account."
+        String(localized: "The full-size model needs \(Int(primaryRequiredRAMGB)) GB of memory, which is more than this iPhone has. A smaller model runs here instead — a \(formattedSize(sizeBytes)) download, and the assistant still answers on-device with no network and no account.")
     }
 
     /// The refusal. It names the device's limit and where to go instead, because a dead end with
     /// no route out is how a first run gets abandoned.
     static func deviceTooSmallDetail(requiredRAMGB: Double) -> String {
-        "This iPhone doesn't have enough memory for any of the on-device models — the smallest "
-        + "one still needs more than it has, and the full-size model needs \(Int(requiredRAMGB)) GB. "
-        + "Choose one of the providers instead — those run in the cloud and work on any iPhone."
+        String(localized: "This iPhone doesn't have enough memory for any of the on-device models — the smallest one still needs more than it has, and the full-size model needs \(Int(requiredRAMGB)) GB. Choose one of the providers instead — those run in the cloud and work on any iPhone.")
     }
 
     static func notEnoughStorageDetail(neededBytes: Int64, freeBytes: Int64) -> String {
-        "The offline model needs about \(formattedSize(neededBytes)) free and there's "
-        + "\(formattedSize(freeBytes)) left. Free up some space and it can be downloaded later "
-        + "from Settings."
+        String(localized: "The offline model needs about \(formattedSize(neededBytes)) free and there's \(formattedSize(freeBytes)) left. Free up some space and it can be downloaded later from Settings.")
     }
 
     /// One size format for every string above — and the same one the model picker uses, so the

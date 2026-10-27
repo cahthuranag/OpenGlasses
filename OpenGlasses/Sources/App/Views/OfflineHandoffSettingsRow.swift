@@ -11,8 +11,8 @@ struct OfflineHandoffSettingsRow: View {
     @State private var enabled = Config.offlineHandoffEnabled
     @State private var hasOnDeviceModel = false
 
-    static let title = "Keep Talking Without Signal"
-    static let info = "When the connection drops, Avenkin carries on with the on-device model — with fewer tools and a shorter memory of the conversation — and tells you once. When a steady connection is back it returns to your cloud model by itself and lets it know which answers came from the phone. If the phone is locked, a question that needs thinking is held and answered when you're back online. To check the connection is back, Avenkin sends an empty request to your AI provider's own address; nothing you said goes with it."
+    static let title = String(localized: "Keep Talking Without Signal")
+    static let info = String(localized: "When the connection drops, Avenkin carries on with the on-device model — with fewer tools and a shorter memory of the conversation — and tells you once. When a steady connection is back it returns to your cloud model by itself and lets it know which answers came from the phone. If the phone is locked, a question that needs thinking is held and answered when you're back online. To check the connection is back, Avenkin sends an empty request to your AI provider's own address; nothing you said goes with it.")
 
     var body: some View {
         Group {

@@ -32,19 +32,20 @@ enum VaultLinkPolicy {
         var message: String {
             switch self {
             case .notAVaultLink:
-                return "That isn't a vault link."
+                return String(localized: "That isn't a vault link.")
             case .missingSource:
-                return "That vault code doesn't carry a link to a vault."
+                return String(localized: "That vault code doesn't carry a link to a vault.")
             case .insecureScheme(let scheme):
                 return scheme.isEmpty
-                    ? "A vault link has to be an https:// address."
-                    : "A vault link has to be an https:// address; this one is \(scheme)."
+                    ? String(localized: "A vault link has to be an https:// address.")
+                    : String(localized: "A vault link has to be an https:// address; this one is \(scheme).")
             case .credentialsInURL:
-                return "That link carries a user name and password in the address. Ask the publisher for a plain https:// link."
+                return String(localized: "That link carries a user name and password in the address. Ask the publisher for a plain https:// link.")
             case .noHost:
-                return "That link has no site in it."
+                return String(localized: "That link has no site in it.")
             case .unexpectedParameters(let names):
-                return "That vault code carries extra parameters (\(names.joined(separator: ", "))). Only the vault's address is allowed."
+                let joined = names.joined(separator: ", ")
+                return String(localized: "That vault code carries extra parameters (\(joined)). Only the vault's address is allowed.")
             }
         }
     }

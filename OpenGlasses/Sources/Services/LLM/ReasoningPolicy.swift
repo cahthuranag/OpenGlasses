@@ -26,12 +26,12 @@ enum ReasoningEffort: String, CaseIterable, Codable, Comparable {
     /// The editor's label for this level.
     var label: String {
         switch self {
-        case .none: return "None"
-        case .minimal: return "Minimal"
-        case .low: return "Low"
-        case .medium: return "Medium"
-        case .high: return "High"
-        case .xhigh: return "Extra high"
+        case .none: return String(localized: "None")
+        case .minimal: return String(localized: "Minimal")
+        case .low: return String(localized: "Low")
+        case .medium: return String(localized: "Medium")
+        case .high: return String(localized: "High")
+        case .xhigh: return String(localized: "Extra high")
         }
     }
 }
@@ -235,19 +235,19 @@ enum ReasoningPolicy {
             /// One plain line for the model editor.
             var explanation: String {
                 switch self {
-                case .asSet: return "As set for this model."
-                case .adjustedToAccepted: return "The nearest setting this model accepts."
-                case .chatToolsClamp: return "Chat Completions doesn't allow reasoning with tools for this model."
-                case .automaticToolTurn: return "Automatic uses this model's lowest setting when tools are attached, to keep answers quick."
-                case .automaticProviderDefault: return "Automatic sends nothing, so the provider's default applies."
-                case .automaticGeminiToolBudget: return "Automatic gives tool turns a small amount of thinking."
-                case .learnedRejection: return "The provider refused reasoning with tools for this model earlier."
-                case .notReasoningModel: return "This model has no reasoning setting."
-                case .automaticThinkingModel: return "Automatic keeps a model that thinks before every answer at its lowest effort, to keep answers quick."
-                case .noEffortSetting: return "This model doesn't take an effort setting, so nothing is sent."
-                case .unrecognisedModel: return "The app doesn't know this model yet, so it sends no effort setting and the provider's default applies."
-                case .liveSessionOff: return "Live voice sessions don't use reasoning."
-                case .onDevice: return "On-device models don't have this setting."
+                case .asSet: return String(localized: "As set for this model.")
+                case .adjustedToAccepted: return String(localized: "The nearest setting this model accepts.")
+                case .chatToolsClamp: return String(localized: "Chat Completions doesn't allow reasoning with tools for this model.")
+                case .automaticToolTurn: return String(localized: "Automatic uses this model's lowest setting when tools are attached, to keep answers quick.")
+                case .automaticProviderDefault: return String(localized: "Automatic sends nothing, so the provider's default applies.")
+                case .automaticGeminiToolBudget: return String(localized: "Automatic gives tool turns a small amount of thinking.")
+                case .learnedRejection: return String(localized: "The provider refused reasoning with tools for this model earlier.")
+                case .notReasoningModel: return String(localized: "This model has no reasoning setting.")
+                case .automaticThinkingModel: return String(localized: "Automatic keeps a model that thinks before every answer at its lowest effort, to keep answers quick.")
+                case .noEffortSetting: return String(localized: "This model doesn't take an effort setting, so nothing is sent.")
+                case .unrecognisedModel: return String(localized: "The app doesn't know this model yet, so it sends no effort setting and the provider's default applies.")
+                case .liveSessionOff: return String(localized: "Live voice sessions don't use reasoning.")
+                case .onDevice: return String(localized: "On-device models don't have this setting.")
                 }
             }
         }
@@ -281,9 +281,9 @@ enum ReasoningPolicy {
         var displayValue: String {
             switch effective {
             case .level(let level): return level.label
-            case .providerDefault(let level?): return "\(level.label) (provider default)"
-            case .providerDefault(nil): return "Provider default"
-            case .notApplicable: return "Not applicable"
+            case .providerDefault(let level?): return String(localized: "\(level.label) (provider default)")
+            case .providerDefault(nil): return String(localized: "Provider default")
+            case .notApplicable: return String(localized: "Not applicable")
             }
         }
 

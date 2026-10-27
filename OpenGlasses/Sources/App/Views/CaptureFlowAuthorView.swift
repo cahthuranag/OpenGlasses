@@ -73,7 +73,7 @@ struct CaptureFlowAuthorView: View {
         case .failure(let e):
             error = e.errorDescription
         case .success(let flow):
-            guard let data = try? CaptureFlowBuilder.encode(flow) else { error = "Couldn't encode the flow."; return }
+            guard let data = try? CaptureFlowBuilder.encode(flow) else { error = String(localized: "Couldn't encode the flow."); return }
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(flow.id).json")
             do {
                 try data.write(to: url)

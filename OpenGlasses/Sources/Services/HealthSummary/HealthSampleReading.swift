@@ -83,10 +83,10 @@ enum HealthSummaryReadType: String, CaseIterable, Sendable {
     /// How the settings screen and the usage string name it.
     var displayName: String {
         switch self {
-        case .heartRate: return "Heart rate"
-        case .restingHeartRate: return "Resting heart rate"
-        case .sleepAnalysis: return "Sleep"
-        case .stepCount: return "Steps"
+        case .heartRate: return String(localized: "Heart rate")
+        case .restingHeartRate: return String(localized: "Resting heart rate")
+        case .sleepAnalysis: return String(localized: "Sleep")
+        case .stepCount: return String(localized: "Steps")
         }
     }
 }

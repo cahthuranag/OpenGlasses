@@ -32,11 +32,11 @@ struct ClawHubBrowserView: View {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .trending: return "Trending"
-            case .newest: return "Newest"
-            case .mostDownloaded: return "Most Downloaded"
-            case .starred: return "Starred"
-            case .recentlyUpdated: return "Recently Updated"
+            case .trending: return String(localized: "Trending")
+            case .newest: return String(localized: "Newest")
+            case .mostDownloaded: return String(localized: "Most Downloaded")
+            case .starred: return String(localized: "Starred")
+            case .recentlyUpdated: return String(localized: "Recently Updated")
             }
         }
         var icon: String {
@@ -178,7 +178,7 @@ struct ClawHubBrowserView: View {
                         .buttonStyle(.plain)
                     }
                 } header: {
-                    Text(searchText.isEmpty ? selectedSort.label : "Search Results")
+                    Text(searchText.isEmpty ? selectedSort.label : String(localized: "Search Results"))
                 } footer: {
                     if !skills.isEmpty {
                         Text("\(skills.count) skills from ClawHub.ai")
@@ -267,7 +267,9 @@ struct ClawHubBrowserView: View {
             Button("Cancel", role: .cancel) { pendingImportData = nil }
             Button("Import") { commitImport() }
         } message: {
-            Text("\(pendingImportCount) skill\(pendingImportCount == 1 ? "" : "s") will be added **disabled**. Each injects its prompt into the AI's context, so review and enable them individually before use.")
+            Text(pendingImportCount == 1
+                 ? "1 skill will be added **disabled**. It injects its prompt into the AI's context, so review it and enable it before use."
+                 : "\(pendingImportCount) skills will be added **disabled**. Each injects its prompt into the AI's context, so review and enable them individually before use.")
         }
         .alert("Skill Library", isPresented: Binding(
             get: { libraryMessage != nil },
@@ -287,14 +289,14 @@ struct ClawHubBrowserView: View {
             let url = try SkillsLibraryIO.writeTempFile(data, named: "clawhub-skills.json")
             shareItem = ShareItem(items: [url])
         } catch {
-            libraryMessage = "Export failed: \(error.localizedDescription)"
+            libraryMessage = String(localized: "Export failed: \(error.localizedDescription)")
         }
     }
 
     private func stageImport(_ result: Swift.Result<URL, Error>) {
         switch result {
         case .failure(let error):
-            libraryMessage = "Import failed: \(error.localizedDescription)"
+            libraryMessage = String(localized: "Import failed: \(error.localizedDescription)")
         case .success(let url):
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -302,13 +304,13 @@ struct ClawHubBrowserView: View {
                 let data = try Data(contentsOf: url)
                 let preview = try skillStore.previewImport(data)
                 guard !preview.isEmpty else {
-                    libraryMessage = "That file contains no skills."
+                    libraryMessage = String(localized: "That file contains no skills.")
                     return
                 }
                 pendingImportCount = preview.count
                 pendingImportData = data   // triggers the confirm alert
             } catch {
-                libraryMessage = "Couldn't read that file: \(error.localizedDescription)"
+                libraryMessage = String(localized: "Couldn't read that file: \(error.localizedDescription)")
             }
         }
     }
@@ -318,9 +320,11 @@ struct ClawHubBrowserView: View {
         pendingImportData = nil
         do {
             let count = try skillStore.importLibrary(data)
-            libraryMessage = "Imported \(count) skill\(count == 1 ? "" : "s"), disabled. Enable the ones you want from “Installed Skills”."
+            libraryMessage = count == 1
+                ? String(localized: "Imported 1 skill, disabled. Enable it from “Installed Skills”.")
+                : String(localized: "Imported \(count) skills, disabled. Enable the ones you want from “Installed Skills”.")
         } catch {
-            libraryMessage = "Import failed: \(error.localizedDescription)"
+            libraryMessage = String(localized: "Import failed: \(error.localizedDescription)")
         }
     }
 

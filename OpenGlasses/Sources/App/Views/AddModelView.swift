@@ -145,7 +145,7 @@ struct AddModelView: View {
         )
         isFetchingModels = false
         if models.isEmpty {
-            fetchError = "Couldn't find any models. Double-check your API key and try again."
+            fetchError = String(localized: "Couldn't find any models. Double-check your API key and try again.")
             keyValidated = false
         } else {
             availableModels = models

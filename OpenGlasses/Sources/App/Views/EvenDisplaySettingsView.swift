@@ -75,7 +75,7 @@ struct EvenDisplaySettingsView: View {
     }
 
     @ViewBuilder
-    private func pairedRow(title: String, id: String?) -> some View {
+    private func pairedRow(title: LocalizedStringKey, id: String?) -> some View {
         HStack {
             Text(title)
             Spacer()

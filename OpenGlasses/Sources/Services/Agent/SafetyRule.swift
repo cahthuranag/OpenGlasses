@@ -14,19 +14,19 @@ enum SafetyRuleKind: String, CaseIterable, Identifiable, Codable {
 
     var title: String {
         switch self {
-        case .needsVoiceApproval: return "Voice approval for risky actions"
-        case .irreversibleGuard:  return "Always confirm irreversible actions"
-        case .timeOfDay:          return "Quiet-hours messaging guard"
-        case .geofence:           return "Block actuation away from home"
+        case .needsVoiceApproval: return String(localized: "Voice approval for risky actions")
+        case .irreversibleGuard:  return String(localized: "Always confirm irreversible actions")
+        case .timeOfDay:          return String(localized: "Quiet-hours messaging guard")
+        case .geofence:           return String(localized: "Block actuation away from home")
         }
     }
 
     var detail: String {
         switch self {
-        case .needsVoiceApproval: return "Sending messages, calling, smart-home, shortcuts and exports ask for a spoken “confirm” first."
-        case .irreversibleGuard:  return "Exports and phone calls always require approval, even if other rules are off."
-        case .timeOfDay:          return "During quiet hours, confirm before sending any message."
-        case .geofence:           return "Smart-home and Home Assistant actuation is blocked when you're away from your home region."
+        case .needsVoiceApproval: return String(localized: "Sending messages, calling, smart-home, shortcuts and exports ask for a spoken “confirm” first.")
+        case .irreversibleGuard:  return String(localized: "Exports and phone calls always require approval, even if other rules are off.")
+        case .timeOfDay:          return String(localized: "During quiet hours, confirm before sending any message.")
+        case .geofence:           return String(localized: "Smart-home and Home Assistant actuation is blocked when you're away from your home region.")
         }
     }
 

@@ -42,7 +42,7 @@ struct PastJobView: View {
                 }
             }
         }
-        .navigationTitle(job?.jobNumber ?? "Job")
+        .navigationTitle(job?.jobNumber ?? String(localized: "Job"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: Binding(get: { readBack != nil }, set: { if !$0 { readBack = nil } })) {
             ReadBackSheet(lines: readBack ?? []) { readBack = nil }
@@ -343,7 +343,7 @@ struct PastJobView: View {
         Task {
             let started = await appState.guidedJobFlow.startDebrief(jobId: sessionId)
             if started { showingDebrief = true }
-            else { problem = "That job's record could not be read back off the device." }
+            else { problem = String(localized: "That job's record could not be read back off the device.") }
         }
     }
 
@@ -355,7 +355,7 @@ struct PastJobView: View {
         let channel = sessions.lastDeliveryChannel(sessionId: job.sessionId)
             ?? policy.defaultChannel
         guard let channel else {
-            problem = "No channel is allowed for job reports. Set one up under Settings → Field Assist → Job Reports."
+            problem = String(localized: "No channel is allowed for job reports. Set one up under Settings → Field Assist → Job Reports.")
             return
         }
         switch policy.decide(channel: channel) {
@@ -363,7 +363,7 @@ struct PastJobView: View {
             problem = reason
         case .allowed(let recipients):
             guard let attachment = sessions.addendumAttachment(sessionId: job.sessionId) else {
-                problem = "There's nothing to add to that report yet."
+                problem = String(localized: "There's nothing to add to that report yet.")
                 return
             }
             appState.presentDelivery(DeliveryRequest.make(
@@ -379,7 +379,7 @@ struct PastJobView: View {
     private func sendReport(_ job: JobTabModel.PastJob) {
         let policy = DeliveryPolicy(settings: Config.deliverySettings)
         guard let channel = policy.defaultChannel else {
-            problem = "No channel is allowed for job reports. Set one up under Settings → Field Assist → Job Reports."
+            problem = String(localized: "No channel is allowed for job reports. Set one up under Settings → Field Assist → Job Reports.")
             return
         }
         switch policy.decide(channel: channel) {

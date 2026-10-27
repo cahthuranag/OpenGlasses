@@ -90,7 +90,7 @@ struct StatusIndicator: View {
         .glassEffect(in: .rect(cornerRadius: 16))
         .padding(.horizontal, 20)
         .accessibilityLabel(spokenStatus)
-        .accessibilityValue(wakeOff ? "Wake phrase off" : (liveEndNotice ?? ""))
+        .accessibilityValue(wakeOff ? String(localized: "Wake phrase off") : (liveEndNotice ?? ""))
         .accessibilityHint("Opens session details and connection controls.")
         .accessibilityAddTraits(.updatesFrequently)
         .accessibilityIdentifier("compact-session-status")
@@ -426,10 +426,10 @@ struct StatusIndicator: View {
         // carries the state, so the colour is reinforcement rather than signal.
         let (color, label): (Color, String) = {
             switch openClawBridge.connectionState {
-            case .connected: return (OGTheme.ok, "Connected")
-            case .checking: return (OGTheme.warn, "Checking")
-            case .unreachable: return (OGTheme.error, "Unreachable")
-            case .notConfigured: return (OGTheme.secondaryLabel, "Not Set Up")
+            case .connected: return (OGTheme.ok, String(localized: "Connected"))
+            case .checking: return (OGTheme.warn, String(localized: "Checking"))
+            case .unreachable: return (OGTheme.error, String(localized: "Unreachable"))
+            case .notConfigured: return (OGTheme.secondaryLabel, String(localized: "Not Set Up"))
             }
         }()
 
@@ -644,33 +644,33 @@ struct StatusIndicator: View {
         if let glassesHeadline { return glassesHeadline }
 
         if appState.glassesIdle {
-            return "Glasses Idle"
+            return String(localized: "Glasses Idle")
         }
 
         if isGemini {
-            if !session.isActive { return "Ready" }
+            if !session.isActive { return String(localized: "Ready") }
             switch session.connectionState {
-            case .ready where session.isModelSpeaking: return "Speaking..."
-            case .ready: return "Listening..."
-            case .connecting: return "Connecting..."
-            case .settingUp: return "Setting Up..."
+            case .ready where session.isModelSpeaking: return String(localized: "Speaking...")
+            case .ready: return String(localized: "Listening...")
+            case .connecting: return String(localized: "Connecting...")
+            case .settingUp: return String(localized: "Setting Up...")
             case .error(let msg): return msg
-            case .disconnected: return session.reconnecting ? "Reconnecting..." : "Disconnected"
+            case .disconnected: return session.reconnecting ? String(localized: "Reconnecting...") : String(localized: "Disconnected")
             }
         } else if isOpenAI {
-            if !openAISession.isActive { return "Ready" }
+            if !openAISession.isActive { return String(localized: "Ready") }
             switch openAISession.connectionState {
-            case .ready where openAISession.isModelSpeaking: return "Speaking..."
-            case .ready: return "Listening..."
-            case .connecting: return "Connecting..."
-            case .settingUp: return "Setting Up..."
+            case .ready where openAISession.isModelSpeaking: return String(localized: "Speaking...")
+            case .ready: return String(localized: "Listening...")
+            case .connecting: return String(localized: "Connecting...")
+            case .settingUp: return String(localized: "Setting Up...")
             case .error(let msg): return msg
-            case .disconnected: return openAISession.reconnecting ? "Reconnecting..." : "Disconnected"
+            case .disconnected: return openAISession.reconnecting ? String(localized: "Reconnecting...") : String(localized: "Disconnected")
             }
         } else {
-            if appState.isListening { return "Listening..." }
-            if appState.speechService.isSpeaking { return "Speaking..." }
-            return "Ready"
+            if appState.isListening { return String(localized: "Listening...") }
+            if appState.speechService.isSpeaking { return String(localized: "Speaking...") }
+            return String(localized: "Ready")
         }
     }
 
@@ -693,7 +693,8 @@ struct StatusIndicator: View {
         } else if isOpenAI {
             return openAISession.sessionModel?.name ?? Config.realtimeModel(for: appState.currentMode)?.name ?? appState.currentMode.displayName
         } else {
-            return "Voice \u{00B7} \(appState.llmService.activeModelName)"
+            let model = appState.llmService.activeModelName
+            return String(localized: "Voice \u{00B7} \(model)")
         }
     }
 

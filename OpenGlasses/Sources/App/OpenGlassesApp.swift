@@ -5367,7 +5367,7 @@ class AppState: ObservableObject, AppStateProtocol {
     func emailPartsOrder(sessionId: String) -> String? {
         let sessions = FieldSessionService.shared
         guard let order = sessions.partsOrder(sessionId: sessionId) else {
-            return "Nothing on that job is waiting to be ordered."
+            return String(localized: "Nothing on that job is waiting to be ordered.")
         }
         switch PartsOrder.route(policy: DeliveryPolicy(settings: Config.deliverySettings)) {
         case .refused(let reason):
@@ -5780,7 +5780,7 @@ class AppState: ObservableObject, AppStateProtocol {
             TurnRecorder.noteFailure(error)
             isProcessing = false
             speechService.stopThinkingSound()
-            errorMessage = "Photo analysis failed: \(error.localizedDescription)"
+            errorMessage = String(localized: "Photo analysis failed: \(error.localizedDescription)")
         }
         TurnRecorder.endTurn()
     }
@@ -5852,8 +5852,8 @@ class AppState: ObservableObject, AppStateProtocol {
             isProcessing = false
             speechService.stopThinkingSound()
             errorMessage = photoCaptured
-                ? "Photo analysis failed: \(error.localizedDescription)"
-                : "Photo failed: \(error.localizedDescription)"
+                ? String(localized: "Photo analysis failed: \(error.localizedDescription)")
+                : String(localized: "Photo failed: \(error.localizedDescription)")
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.error)
             // A tap or a quick action has no screen in view on the glasses: say it, as the voice
@@ -6179,8 +6179,8 @@ class AppState: ObservableObject, AppStateProtocol {
             isProcessing = false
             speechService.stopThinkingSound()
             errorMessage = photoCaptured
-                ? "Photo analysis failed: \(error.localizedDescription)"
-                : "Photo failed: \(error.localizedDescription)"
+                ? String(localized: "Photo analysis failed: \(error.localizedDescription)")
+                : String(localized: "Photo failed: \(error.localizedDescription)")
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.error)
             // A tap or a quick action has no screen in view on the glasses: say it, as the voice
@@ -6198,7 +6198,7 @@ class AppState: ObservableObject, AppStateProtocol {
 
     func captureAndSharePhoto() async {
         guard isConnected else {
-            errorMessage = "Connect glasses first"
+            errorMessage = String(localized: "Connect glasses first")
             errorMessageIsGlassesConnection = true
             return
         }
@@ -6218,7 +6218,7 @@ class AppState: ObservableObject, AppStateProtocol {
             if currentMode == .direct {
                 cameraService.restoreAudioForWakeWord()
             }
-            errorMessage = "Photo failed: \(error.localizedDescription)"
+            errorMessage = String(localized: "Photo failed: \(error.localizedDescription)")
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.error)
         }
@@ -6276,7 +6276,7 @@ class AppState: ObservableObject, AppStateProtocol {
     /// - Parameter glassesOnly: a temple tap (Plan GJ) — never the phone-camera fallback.
     func capturePhotoFromGlasses(glassesOnly: Bool = false) async {
         guard isConnected else {
-            errorMessage = "Connect glasses first"
+            errorMessage = String(localized: "Connect glasses first")
             errorMessageIsGlassesConnection = true
             return
         }
@@ -6298,7 +6298,7 @@ class AppState: ObservableObject, AppStateProtocol {
             if currentMode == .direct {
                 cameraService.restoreAudioForWakeWord()
             }
-            errorMessage = "Photo failed: \(error.localizedDescription)"
+            errorMessage = String(localized: "Photo failed: \(error.localizedDescription)")
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.error)
         }
@@ -6328,7 +6328,7 @@ class AppState: ObservableObject, AppStateProtocol {
                     outputSize: frameSize
                 )
             } catch {
-                errorMessage = "Recording failed: \(error.localizedDescription)"
+                errorMessage = String(localized: "Recording failed: \(error.localizedDescription)")
             }
         }
     }
@@ -7895,7 +7895,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 },
                 onError: { [self] error in
                     _ = nativeToolRouter.takeTurnToolNames()
-                    errorMessage = "Failed to get response: \(error.localizedDescription)"
+                    errorMessage = String(localized: "Failed to get response: \(error.localizedDescription)")
                     // BK P2c: when the cascade is exhausted, speak the real reason instead of the
                     // generic line (e.g. "the last one was rate-limited"), so the app stays honest
                     // about what happened. Off ⇒ the generic line.
@@ -8125,7 +8125,7 @@ class AppState: ObservableObject, AppStateProtocol {
                 onError: { [self] error in
                     _ = nativeToolRouter.takeTurnToolNames()
                     streamingTurn = nil
-                    errorMessage = "Failed to get response: \(error.localizedDescription)"
+                    errorMessage = String(localized: "Failed to get response: \(error.localizedDescription)")
                     if speakResponse {
                         // BK P2c: speak the real exhaustion reason, not the generic line.
                         let spoken = Config.narrateModelSwitchesEnabled
@@ -8959,7 +8959,7 @@ class AppState: ObservableObject, AppStateProtocol {
             try await wakeWordService.startListening()
         } catch {
             PrivacyLog.wakeWord(.listenAttemptFailed, error: SafeErrorSummary(error))
-            errorMessage = "Tap Test Microphone to restart"
+            errorMessage = String(localized: "Tap Test Microphone to restart")
         }
     }
 

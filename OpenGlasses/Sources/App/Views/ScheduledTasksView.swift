@@ -15,6 +15,14 @@ struct ScheduledTasksView: View {
         case builtIn = "Built-in"
         case shortcuts = "Shortcut Templates"
         case custom = "Custom"
+
+        var title: LocalizedStringKey {
+            switch self {
+            case .builtIn: return "Built-in"
+            case .shortcuts: return "Shortcut Templates"
+            case .custom: return "Custom"
+            }
+        }
     }
 
     private var filteredTasks: [AgentScheduler.ScheduledTask] {
@@ -59,7 +67,7 @@ struct ScheduledTasksView: View {
                         }
                     } header: {
                         HStack {
-                            Text(group.rawValue)
+                            Text(group.title)
                             Spacer()
                             Text("\(groupTasks.filter(\.enabled).count)/\(groupTasks.count) active")
                                 .font(.caption2)
@@ -200,13 +208,13 @@ struct ScheduledTasksView: View {
     }
 
     private func scheduleLabel(_ task: AgentScheduler.ScheduledTask) -> String {
-        if task.intervalMinutes == 0 { return "Once daily" }
+        if task.intervalMinutes == 0 { return String(localized: "Once daily") }
         if task.intervalMinutes >= 60 {
             let hours = task.intervalMinutes / 60
             let mins = task.intervalMinutes % 60
-            return mins > 0 ? "Every \(hours)h \(mins)m" : "Every \(hours)h"
+            return mins > 0 ? String(localized: "Every \(hours)h \(mins)m") : String(localized: "Every \(hours)h")
         }
-        return "Every \(task.intervalMinutes)m"
+        return String(localized: "Every \(task.intervalMinutes)m")
     }
 
     /// The prompt tasks as edited here, with the check-in tasks as they are stored now — this
@@ -250,7 +258,7 @@ struct ScheduledTaskDetailView: View {
         Form {
             // Info
             Section {
-                LabeledContent("Status", value: task.enabled ? "Active" : "Paused")
+                LabeledContent("Status", value: task.enabled ? String(localized: "Active") : String(localized: "Paused"))
                 if let lastRun = task.lastRun {
                     LabeledContent("Last Run") {
                         Text(lastRun, style: .relative)

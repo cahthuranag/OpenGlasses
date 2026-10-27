@@ -173,7 +173,7 @@ struct ClipPlayerSheet: View {
             VStack(spacing: 12) {
                 VideoPlayer(player: AVPlayer(url: url))
                     .frame(maxWidth: .infinity, minHeight: 240)
-                    .accessibilityLabel(caption ?? "Job clip")
+                    .accessibilityLabel(caption ?? String(localized: "Job clip"))
                 if let caption, !caption.isEmpty {
                     Text(caption)
                         .font(.callout)

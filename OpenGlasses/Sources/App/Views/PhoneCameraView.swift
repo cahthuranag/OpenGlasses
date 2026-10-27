@@ -197,9 +197,9 @@ final class PhoneCameraController: NSObject, ObservableObject, @unchecked Sendab
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .notDetermined:
             let granted = await AVCaptureDevice.requestAccess(for: .video)
-            if !granted { await setError("Camera access is needed to take a photo."); return }
+            if !granted { await setError(String(localized: "Camera access is needed to take a photo.")); return }
         case .denied, .restricted:
-            await setError("Camera access is off. Enable it in iPhone Settings → Apps → Avenkin → Camera.")
+            await setError(String(localized: "Camera access is off. Enable it in iPhone Settings → Apps → Avenkin → Camera."))
             return
         default:
             break
@@ -217,7 +217,7 @@ final class PhoneCameraController: NSObject, ObservableObject, @unchecked Sendab
                   let input = try? AVCaptureDeviceInput(device: device),
                   session.canAddInput(input) else {
                 session.commitConfiguration()
-                DispatchQueue.main.async { self.error = "No camera is available on this device." }
+                DispatchQueue.main.async { self.error = String(localized: "No camera is available on this device.") }
                 return
             }
             session.addInput(input)

@@ -129,7 +129,7 @@ struct OfficePairingSheet: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             switch result {
             case .failure:
-                status = "Couldn't open the binding file. Choose it again."
+                status = String(localized: "Couldn't open the binding file. Choose it again.")
             case .success(let url):
                 Task {
                     do {
@@ -141,7 +141,7 @@ struct OfficePairingSheet: View {
                             return try handle.read(upToCount: OfficePeerBinding.maximumEnvelopeBytes + 1) ?? Data()
                         }.value
                         guard bytes.count <= OfficePeerBinding.maximumEnvelopeBytes else {
-                            status = "The binding file is too large."
+                            status = String(localized: "The binding file is too large.")
                             signedBinding = nil
                             return
                         }
@@ -150,7 +150,7 @@ struct OfficePairingSheet: View {
                         status = nil
                     } catch {
                         signedBinding = nil
-                        status = "Couldn't read the binding file. Choose it again."
+                        status = String(localized: "Couldn't read the binding file. Choose it again.")
                     }
                 }
             }
@@ -165,14 +165,14 @@ struct OfficePairingSheet: View {
             phoneTransportID = try await OfficeTransportIdentity.shared.deviceID()
             phoneApplicationKey = try await OfficePhoneIdentity.shared.publicKey().base64EncodedString()
         } catch {
-            status = "Phone transport identity is unavailable in this build. Use an Avenkin transport-enabled build."
+            status = String(localized: "Phone transport identity is unavailable in this build. Use an Avenkin transport-enabled build.")
         }
     }
 
     private func approve() async {
         guard let signedBinding,
               let applicationKey = Data(base64Encoded: officeApplicationKey), applicationKey.count == 32 else {
-            status = "Enter the office's complete public key and choose its signed binding."
+            status = String(localized: "Enter the office's complete public key and choose its signed binding.")
             return
         }
         approving = true
@@ -184,7 +184,7 @@ struct OfficePairingSheet: View {
                 applicationPublicKey: applicationKey)
             let result = try await OfficePairingService().approve(signedBinding, reviewedOffice: reviewed)
             approvedGeneration = result.binding.payload.generation
-            status = "The signed office identity matches this phone. Delivery is not enabled yet."
+            status = String(localized: "The signed office identity matches this phone. Delivery is not enabled yet.")
         } catch {
             approvedGeneration = nil
             status = explanation(for: error)
@@ -193,7 +193,7 @@ struct OfficePairingSheet: View {
 
     private func startConnection() async {
         guard let hint = OfficeApprovedPeerStore.lanHint(lanAddress.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            connectionStatus = "Enter the office's address on its own network, like tcp://192.168.1.2:22000."
+            connectionStatus = String(localized: "Enter the office's address on its own network, like tcp://192.168.1.2:22000.")
             return
         }
         connecting = true
@@ -204,12 +204,12 @@ struct OfficePairingSheet: View {
             try await OfficePairingService().connectToApprovedOffice(lanHint: hint)
             testedLanHint = hint
             await refreshConnection()
-            if !connectionRunning { connectionStatus = "The office connection did not start. Check the LAN address." }
+            if !connectionRunning { connectionStatus = String(localized: "The office connection did not start. Check the LAN address.") }
         } catch {
             if error is OfficePairingService.Refusal || error is OfficePeerBinding.Refusal {
                 connectionStatus = explanation(for: error)
             } else {
-                connectionStatus = "Local connection refused: \(error.localizedDescription)"
+                connectionStatus = String(localized: "Local connection refused: \(error.localizedDescription)")
             }
         }
     }
@@ -218,7 +218,7 @@ struct OfficePairingSheet: View {
         await OfficeTransportIdentity.shared.stop()
         testedLanHint = nil
         connectionRunning = false
-        connectionStatus = "Office connection stopped."
+        connectionStatus = String(localized: "Office connection stopped.")
     }
 
     private func monitorConnection() async {
@@ -252,39 +252,39 @@ struct OfficePairingSheet: View {
                 testedLanHint = nil
                 try? await OfficePairingService().rememberLanHint(hint)
             }
-            let route = fields["observedConnectionType"] as? String ?? "private LAN"
-            connectionStatus = "Connected to approved office via \(route). No folders are shared."
+            let route = fields["observedConnectionType"] as? String ?? String(localized: "private LAN")
+            connectionStatus = String(localized: "Connected to approved office via \(route). No folders are shared.")
         } else {
-            connectionStatus = "Waiting for the approved office on the local network. No folders are shared."
+            connectionStatus = String(localized: "Waiting for the approved office on the local network. No folders are shared.")
         }
     }
 
     private func explanation(for error: Error) -> String {
         if let refusal = error as? OfficePairingService.Refusal {
             switch refusal {
-            case .noDesktopEnrolment: return "Import your organisation's signed Avenkin Office setup file first."
-            case .inactiveLease: return "This organisation's management period is not active. Ask for a renewed setup file."
-            case .missingLicence: return "This phone has no matching active organisation licence."
-            case .noApprovedOffice: return "Approve a signed office binding on this phone first."
-            case .approvalSuperseded: return "This office approval was replaced. Import its newest signed binding."
-            case .changedDuringApproval: return "The organisation setup changed while you were approving. Review it again."
-            case .noOfficeAddress: return "Enter the office's address on its own network, like tcp://192.168.1.2:22000."
+            case .noDesktopEnrolment: return String(localized: "Import your organisation's signed Avenkin Office setup file first.")
+            case .inactiveLease: return String(localized: "This organisation's management period is not active. Ask for a renewed setup file.")
+            case .missingLicence: return String(localized: "This phone has no matching active organisation licence.")
+            case .noApprovedOffice: return String(localized: "Approve a signed office binding on this phone first.")
+            case .approvalSuperseded: return String(localized: "This office approval was replaced. Import its newest signed binding.")
+            case .changedDuringApproval: return String(localized: "The organisation setup changed while you were approving. Review it again.")
+            case .noOfficeAddress: return String(localized: "Enter the office's address on its own network, like tcp://192.168.1.2:22000.")
             }
         }
         if let refusal = error as? OfficePeerBinding.Refusal {
             switch refusal {
             case .wrongPeer, .wrongOrganizationOrProfile:
-                return "The signed binding names a different office or phone. Compare the public IDs and request a new binding."
+                return String(localized: "The signed binding names a different office or phone. Compare the public IDs and request a new binding.")
             case .badSignature, .untrustedProfile:
-                return "The office binding does not have the administrator signature required by this organisation."
+                return String(localized: "The office binding does not have the administrator signature required by this organisation.")
             case .profileExpired, .notCurrentlyValid:
-                return "The office binding or organisation profile has expired. Ask for a renewed one."
+                return String(localized: "The office binding or organisation profile has expired. Ask for a renewed one.")
             case .rollback:
-                return "This binding is older than the office generation already approved on this phone."
+                return String(localized: "This binding is older than the office generation already approved on this phone.")
             case .malformed, .invalidFields:
-                return "The office binding file is invalid. Ask for a new one."
+                return String(localized: "The office binding file is invalid. Ask for a new one.")
             }
         }
-        return "The office binding could not be verified. Check the office details and try again."
+        return String(localized: "The office binding could not be verified. Check the office details and try again.")
     }
 }

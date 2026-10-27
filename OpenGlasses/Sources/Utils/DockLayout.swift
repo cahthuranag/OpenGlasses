@@ -21,13 +21,13 @@ enum DockItem: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .model: return "Model Picker"
-        case .camera: return "Camera"
-        case .preview: return "Preview"
-        case .type: return "Type"
-        case .micMode: return "Wake Word / Push-Talk"
-        case .assistive: return "Assistive Mode"
-        case .disconnect: return "Disconnect"
+        case .model: return String(localized: "Model Picker")
+        case .camera: return String(localized: "Camera")
+        case .preview: return String(localized: "Preview")
+        case .type: return String(localized: "Type")
+        case .micMode: return String(localized: "Wake Word / Push-Talk")
+        case .assistive: return String(localized: "Assistive Mode")
+        case .disconnect: return String(localized: "Disconnect")
         }
     }
 

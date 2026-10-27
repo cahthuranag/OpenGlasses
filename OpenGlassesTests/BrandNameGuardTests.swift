@@ -258,7 +258,7 @@ final class BrandNameGuardTests: XCTestCase {
                     snippet: "or hands-free with glasses.\\n\\nAvenkin ©",
                     reason: "The owner's device line (P2.1), verbatim, in the About footer."),
             Allowed(path: "OpenGlasses/Sources/Services/SettingsHub/SettingsCatalog.swift",
-                    snippet: "subtitle: \"Glasses, hardware, privacy, and medical compliance\"",
+                    snippet: "subtitle: String(localized: \"Glasses, hardware, privacy, and medical compliance\")",
                     reason: "Devices & Privacy is where the glasses' own settings live (Plan HA), so "
                         + "its row names them first among the devices it holds."),
             Allowed(path: "OpenGlasses/Sources/Services/SettingsHub/SettingsHeroDevice.swift",

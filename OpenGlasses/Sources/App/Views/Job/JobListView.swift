@@ -266,12 +266,12 @@ struct JobListView: View {
 
     static func hint(_ route: JobRoute) -> String {
         switch route {
-        case .currentJob: return "Opens the job: its number, time, unit, work and Close job."
-        case .pastJob: return "Opens the work record, its conversation, and Send report."
-        case .upcomingJob: return "Opens the job's brief, directions and Start."
-        case .transcript: return "Opens the conversation."
-        case .vanStock: return "Opens the list of what is on the van."
-        case .vanStockItem: return "Opens this line: its count, details and history."
+        case .currentJob: return String(localized: "Opens the job: its number, time, unit, work and Close job.")
+        case .pastJob: return String(localized: "Opens the work record, its conversation, and Send report.")
+        case .upcomingJob: return String(localized: "Opens the job's brief, directions and Start.")
+        case .transcript: return String(localized: "Opens the conversation.")
+        case .vanStock: return String(localized: "Opens the list of what is on the van.")
+        case .vanStockItem: return String(localized: "Opens this line: its count, details and history.")
         }
     }
 }

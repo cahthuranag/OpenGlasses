@@ -61,21 +61,21 @@ enum ASREnginePreference: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .auto: return "Auto"
-        case .onDevice: return "On-Device (SenseVoice)"
+        case .auto: return String(localized: "Auto")
+        case .onDevice: return String(localized: "On-Device (SenseVoice)")
         case .appleSpeech: return "Apple Speech"
-        case .deepgram: return "Cloud (Deepgram)"
-        case .openAI: return "Cloud (OpenAI)"
+        case .deepgram: return String(localized: "Cloud (Deepgram)")
+        case .openAI: return String(localized: "Cloud (OpenAI)")
         }
     }
 
     var detail: String {
         switch self {
-        case .auto: return "Use Apple Speech, switching to the offline on-device recognizer once its model is downloaded."
-        case .onDevice: return "Prefer the offline, private on-device recognizer. Falls back to Apple Speech when its model isn't installed."
-        case .appleSpeech: return "Always use Apple's speech recognizer."
-        case .deepgram: return "The audio of each question you ask streams to Deepgram while you speak, charged to your own Deepgram key. Not available in HIPAA mode. Without a connection, recognition falls back to Auto for that question."
-        case .openAI: return "The audio of each question you ask is uploaded to OpenAI when you stop speaking, charged to your own OpenAI API key, so the answer starts after the upload. It uses the OpenAI API key, not a ChatGPT sign-in, which can't transcribe. Not available in HIPAA mode. Without a connection, recognition falls back to Auto for that question."
+        case .auto: return String(localized: "Use Apple Speech, switching to the offline on-device recognizer once its model is downloaded.")
+        case .onDevice: return String(localized: "Prefer the offline, private on-device recognizer. Falls back to Apple Speech when its model isn't installed.")
+        case .appleSpeech: return String(localized: "Always use Apple's speech recognizer.")
+        case .deepgram: return String(localized: "The audio of each question you ask streams to Deepgram while you speak, charged to your own Deepgram key. Not available in HIPAA mode. Without a connection, recognition falls back to Auto for that question.")
+        case .openAI: return String(localized: "The audio of each question you ask is uploaded to OpenAI when you stop speaking, charged to your own OpenAI API key, so the answer starts after the upload. It uses the OpenAI API key, not a ChatGPT sign-in, which can't transcribe. Not available in HIPAA mode. Without a connection, recognition falls back to Auto for that question.")
         }
     }
 

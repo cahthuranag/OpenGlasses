@@ -112,7 +112,7 @@ struct DockLayoutEditPage: View {
 
     // MARK: - Cards
 
-    private func sectionHeader(_ title: String) -> some View {
+    private func sectionHeader(_ title: LocalizedStringKey) -> some View {
         Text(title)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
@@ -220,8 +220,8 @@ struct DockLayoutEditPage: View {
 
             Spacer(minLength: 4)
 
-            nudge(slot, by: -1, symbol: "chevron.up", name: "Move up", enabled: index > 0)
-            nudge(slot, by: 1, symbol: "chevron.down", name: "Move down",
+            nudge(slot, by: -1, symbol: "chevron.up", name: String(localized: "Move up"), enabled: index > 0)
+            nudge(slot, by: 1, symbol: "chevron.down", name: String(localized: "Move down"),
                   enabled: index < count - 1)
 
             Button {

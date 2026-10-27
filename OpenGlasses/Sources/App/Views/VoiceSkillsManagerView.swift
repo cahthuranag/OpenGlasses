@@ -89,14 +89,14 @@ struct VoiceSkillsManagerView: View {
             let url = try SkillsLibraryIO.writeTempFile(data, named: "voice-skills.json")
             shareItem = ShareItem(items: [url])
         } catch {
-            message = "Export failed: \(error.localizedDescription)"
+            message = String(localized: "Export failed: \(error.localizedDescription)")
         }
     }
 
     private func handleImport(_ result: Swift.Result<URL, Error>) {
         switch result {
         case .failure(let error):
-            message = "Import failed: \(error.localizedDescription)"
+            message = String(localized: "Import failed: \(error.localizedDescription)")
         case .success(let url):
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -104,9 +104,13 @@ struct VoiceSkillsManagerView: View {
                 let data = try Data(contentsOf: url)
                 let count = try VoiceSkillStore.shared.importLibrary(data)
                 skills = VoiceSkillStore.shared.all()
-                message = count == 0 ? "That file contains no skills." : "Imported \(count) skill\(count == 1 ? "" : "s")."
+                if count == 0 {
+                    message = String(localized: "That file contains no skills.")
+                } else {
+                    message = count == 1 ? String(localized: "Imported 1 skill.") : String(localized: "Imported \(count) skills.")
+                }
             } catch {
-                message = "Couldn't read that file: \(error.localizedDescription)"
+                message = String(localized: "Couldn't read that file: \(error.localizedDescription)")
             }
         }
     }

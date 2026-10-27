@@ -154,7 +154,7 @@ enum MyDayLeaveByAlertPolicy {
         }
         let minutes = max(1, Int((estimate.travelDuration / 60).rounded()))
         let occurrence = Int(estimate.eventStart.timeIntervalSince1970)
-        let mode = estimate.mode.displayName.lowercased()
+        let mode = estimate.mode.spokenName.lowercased()
         return .init(
             id: "leave-by:\(estimate.eventID):\(occurrence)",
             eventID: estimate.eventID,

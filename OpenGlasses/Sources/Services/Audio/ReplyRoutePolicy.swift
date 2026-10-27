@@ -14,17 +14,17 @@ enum ReplyAudioMode: String, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .callQuality: return "Call quality, always interruptible"
-        case .fullQuality: return "Full quality"
-        case .automatic: return "Automatic"
+        case .callQuality: return String(localized: "Call quality, always interruptible")
+        case .fullQuality: return String(localized: "Full quality")
+        case .automatic: return String(localized: "Automatic")
         }
     }
 
     var shortLabel: String {
         switch self {
-        case .callQuality: return "Call quality"
-        case .fullQuality: return "Full quality"
-        case .automatic: return "Automatic"
+        case .callQuality: return String(localized: "Call quality")
+        case .fullQuality: return String(localized: "Full quality")
+        case .automatic: return String(localized: "Automatic")
         }
     }
 }

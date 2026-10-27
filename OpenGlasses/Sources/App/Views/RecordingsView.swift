@@ -290,11 +290,11 @@ private struct TranscriptionStateBadge: View {
 private extension TranscriptionState {
     var displayName: String {
         switch self {
-        case .pending: return "Pending"
-        case .transcribing: return "Transcribing"
-        case .done: return "Done"
-        case .failed: return "Failed"
-        case .unavailable: return "Unavailable"
+        case .pending: return String(localized: "Pending")
+        case .transcribing: return String(localized: "Transcribing")
+        case .done: return String(localized: "Done")
+        case .failed: return String(localized: "Failed")
+        case .unavailable: return String(localized: "Unavailable")
         }
     }
 
@@ -357,7 +357,7 @@ private final class RecordingPlaybackController: NSObject, ObservableObject, AVA
             player.delegate = self
             player.prepareToPlay()
         } catch {
-            failureReason = "The audio file could not be opened: \(error.localizedDescription)"
+            failureReason = String(localized: "The audio file could not be opened: \(error.localizedDescription)")
         }
     }
 
@@ -382,7 +382,7 @@ private final class RecordingPlaybackController: NSObject, ObservableObject, AVA
             player.currentTime = 0
         }
         guard player.play() else {
-            failureReason = "The audio file could not be played."
+            failureReason = String(localized: "The audio file could not be played.")
             return
         }
         isPlaying = true
@@ -418,12 +418,12 @@ private final class RecordingPlaybackController: NSObject, ObservableObject, AVA
     }
 
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        let reason = error?.localizedDescription ?? "Unknown playback error"
+        let reason = error?.localizedDescription ?? String(localized: "Unknown playback error")
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.isPlaying = false
             self.stopProgressTimer()
-            self.failureReason = "The audio file could not be played: \(reason)"
+            self.failureReason = String(localized: "The audio file could not be played: \(reason)")
         }
     }
 }

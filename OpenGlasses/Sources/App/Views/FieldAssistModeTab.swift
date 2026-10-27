@@ -37,6 +37,12 @@ struct FieldAssistModeTab: View {
         return session
     }
 
+    /// "On <vault>" under "Start a job" when nothing is open.
+    private var onVaultLine: String {
+        let name = current?.name ?? faVaultId
+        return String(localized: "On \(name)")
+    }
+
     private func label(for session: FieldSession) -> String {
         session.jobReference.flatMap { $0.isEmpty ? nil : "Job \($0)" } ?? "the open job"
     }
@@ -101,11 +107,11 @@ struct FieldAssistModeTab: View {
                     title: openSession.map {
                         OpenJobWording.goToTitle(jobLabel: $0.jobReference.flatMap { $0.isEmpty ? nil : "Job \($0)" },
                                                  isPaused: $0.pausedAt != nil)
-                    } ?? "Start a job",
+                    } ?? String(localized: "Start a job"),
                     subtitle: openSession.map {
                         "\(VaultRegistry.shared.manifest(id: $0.vaultId)?.name ?? $0.vaultId) · "
-                            + ($0.pausedAt == nil ? "In progress" : "Paused")
-                    } ?? "On \(current?.name ?? faVaultId)")
+                            + ($0.pausedAt == nil ? String(localized: "In progress") : String(localized: "Paused"))
+                    } ?? onVaultLine)
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens the Jobs tab.")
@@ -121,8 +127,8 @@ struct FieldAssistModeTab: View {
         let unlockedVaults = VaultRegistry.shared.allManifests.filter { VaultRegistry.shared.isUnlocked($0) }
         Section {
             if vaultLocked {
-                FieldAssistTabRow(symbol: "books.vertical.fill", title: current?.name ?? "No vault",
-                                  subtitle: "Set by \(ManagedLockReason.organization)")
+                FieldAssistTabRow(symbol: "books.vertical.fill", title: current?.name ?? String(localized: "No vault"),
+                                  subtitle: String(localized: "Set by \(ManagedLockReason.organization)"))
             } else {
                 Menu {
                     ForEach(unlockedVaults, id: \.id) { manifest in
@@ -138,8 +144,8 @@ struct FieldAssistModeTab: View {
                     }
                 } label: {
                     HStack(spacing: 12) {
-                        FieldAssistTabRow(symbol: "books.vertical.fill", title: current?.name ?? "Choose a vault",
-                                          subtitle: "Vault for new jobs")
+                        FieldAssistTabRow(symbol: "books.vertical.fill", title: current?.name ?? String(localized: "Choose a vault"),
+                                          subtitle: String(localized: "Vault for new jobs"))
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -364,8 +370,8 @@ struct FieldAssistModeTab: View {
             Button {
                 appState.openSettings(.fieldAssist)
             } label: {
-                FieldAssistTabRow(symbol: "gearshape.fill", title: "Field Assist settings",
-                                  subtitle: "Vaults, reports, licence and job options")
+                FieldAssistTabRow(symbol: "gearshape.fill", title: String(localized: "Field Assist settings"),
+                                  subtitle: String(localized: "Vaults, reports, licence and job options"))
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens Field Assist in Settings.")
@@ -381,9 +387,9 @@ struct FieldAssistModeTab: View {
                 withAnimation(.easeInOut(duration: 0.2)) { otherModesExpanded.toggle() }
             } label: {
                 HStack(spacing: 12) {
-                    FieldAssistTabRow(symbol: MainTab.modes.systemImage, title: "Other modes",
-                                      subtitle: appState.activePersona.map { "Using \($0.name)" }
-                                        ?? "Personas and their voices")
+                    FieldAssistTabRow(symbol: MainTab.modes.systemImage, title: String(localized: "Other modes"),
+                                      subtitle: appState.activePersona.map { String(localized: "Using \($0.name)") }
+                                        ?? String(localized: "Personas and their voices"))
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)

@@ -336,13 +336,14 @@ struct LocalModelManagerView: View {
     private func fileProgressCaption(_ staging: LocalModelStagingSummary,
                                      phase: LocalModelPreparationPhase) -> String {
         let fileClause: String? = staging.fileCount > 1 && staging.fileNumber != nil
-            ? "File \(staging.fileNumber!) of \(staging.fileCount)"
+            ? String(localized: "File \(staging.fileNumber!) of \(staging.fileCount)")
             : nil
         guard phase.determinateFraction != nil else {
             return [fileClause, phase.displayLabel].compactMap { $0 }.joined(separator: " · ")
         }
-        let sizes = "\(LocalModelPresentation.formatBytes(staging.completedBytes))"
-            + " of \(LocalModelPresentation.formatBytes(staging.totalBytes))"
+        let done = LocalModelPresentation.formatBytes(staging.completedBytes)
+        let total = LocalModelPresentation.formatBytes(staging.totalBytes)
+        let sizes = String(localized: "\(done) of \(total)")
         guard let fileClause else { return sizes }
         return "\(fileClause) · \(sizes)"
     }
@@ -701,7 +702,7 @@ struct LocalModelManagerView: View {
                 legacyDownloadedIds = localService?.downloadedModelIds() ?? []
                 await acquisition.refresh()
                 downloadingModelId = nil
-                LocalModelAcquisition.post("\(modelId) downloaded.")
+                LocalModelAcquisition.post(String(localized: "\(modelId) downloaded."))
             } catch is CancellationError {
                 downloadingModelId = nil   // user cancelled — not an error to surface
             } catch {
@@ -814,7 +815,7 @@ struct LocalModelManagerView: View {
                     try await localService?.loadModel(id.rawValue)
                 }
                 incompatibilities[id] = nil
-                LocalModelAcquisition.post("\(installation.descriptor.displayName) loaded.")
+                LocalModelAcquisition.post(String(localized: "\(installation.descriptor.displayName) loaded."))
             } catch {
                 // A typed refusal about the *model* is recorded as an incompatibility, which
                 // changes the row and unlocks the reason action. Anything else stays a retryable
@@ -840,7 +841,7 @@ struct LocalModelManagerView: View {
             }
             localService?.unloadModel()
             await refreshResident()
-            LocalModelAcquisition.post("Model unloaded.")
+            LocalModelAcquisition.post(String(localized: "Model unloaded."))
         }
     }
 

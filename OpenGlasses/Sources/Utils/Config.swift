@@ -484,17 +484,17 @@ struct Config {
 
         var displayName: String {
             switch self {
-            case .fast: return "Fast"
-            case .balanced: return "Balanced"
-            case .best: return "Best"
+            case .fast: return String(localized: "Fast")
+            case .balanced: return String(localized: "Balanced")
+            case .best: return String(localized: "Best")
             }
         }
 
         var subtitle: String {
             switch self {
-            case .fast: return "Simple queries, quick facts, direct tool calls"
-            case .balanced: return "Most conversations, moderate reasoning"
-            case .best: return "Complex analysis, multi-step tasks, vision"
+            case .fast: return String(localized: "Simple queries, quick facts, direct tool calls")
+            case .balanced: return String(localized: "Most conversations, moderate reasoning")
+            case .best: return String(localized: "Complex analysis, multi-step tasks, vision")
             }
         }
 
@@ -4828,17 +4828,17 @@ struct Config {
 
         var displayName: String {
             switch self {
-            case .quiet: return "Quiet"
-            case .normal: return "Normal"
-            case .chatty: return "Chatty"
+            case .quiet: return String(localized: "Quiet")
+            case .normal: return String(localized: "Normal")
+            case .chatty: return String(localized: "Chatty")
             }
         }
 
         var description: String {
             switch self {
-            case .quiet: return "Only responds when asked. Scheduled tasks run silently."
-            case .normal: return "Speaks scheduled results and important notifications."
-            case .chatty: return "Proactive observations, suggestions, and commentary."
+            case .quiet: return String(localized: "Only responds when asked. Scheduled tasks run silently.")
+            case .normal: return String(localized: "Speaks scheduled results and important notifications.")
+            case .chatty: return String(localized: "Proactive observations, suggestions, and commentary.")
             }
         }
 

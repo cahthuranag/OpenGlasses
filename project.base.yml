@@ -135,6 +135,11 @@ targets:
       - path: Contracts/fixtures/workiz-v2
         type: folder
         buildPhase: resources
+      # Carries both string catalogs as resources: Resources/Localizable.xcstrings (the UI) and
+      # Resources/InfoPlist.xcstrings, which Xcode compiles into each language's InfoPlist.strings
+      # so the Info.plist privacy usage descriptions are shown in the phone's language. The
+      # catalog's keys are the Info.plist keys; its English must match OpenGlasses/Info.plist
+      # (LocalizationCatalogGuardTests holds the two together).
       - path: OpenGlasses/Sources
         excludes:
           - "Resources/Vaults/**"
@@ -180,7 +185,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openglasses.app
         MARKETING_VERSION: "2026.10"
-        CURRENT_PROJECT_VERSION: "577"
+        CURRENT_PROJECT_VERSION: "578"
         # The commit the project was generated at, for support reports (AppBuildIdentity).
         # Scripts/generate-xcodeproj.sh exports it; the Info.plist reads it as $(...). Stamped at
         # generation, not by a build phase: script sandboxing keeps a phase out of .git.
@@ -291,7 +296,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openglasses.app.GlassesActivityWidget
         MARKETING_VERSION: "2026.10"
-        CURRENT_PROJECT_VERSION: "577"
+        CURRENT_PROJECT_VERSION: "578"
         SWIFT_VERSION: "5.9"
         SKIP_INSTALL: "YES"
         CODE_SIGN_STYLE: Automatic
@@ -329,7 +334,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openglasses.app.ShareExtension
         MARKETING_VERSION: "2026.10"
-        CURRENT_PROJECT_VERSION: "577"
+        CURRENT_PROJECT_VERSION: "578"
         SWIFT_VERSION: "5.9"
         SKIP_INSTALL: "YES"
         CODE_SIGN_STYLE: Automatic

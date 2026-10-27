@@ -10,15 +10,15 @@ enum ModelRowSummary {
     /// The supporting line under the model's display name.
     static func subtitle(provider: String, modelId: String, visionEnabled: Bool) -> String {
         let base = "\(provider) · \(modelId)"
-        return visionEnabled ? "\(base) · Vision" : base
+        return visionEnabled ? String(localized: "\(base) · Vision") : base
     }
 
     /// The row's VoiceOver label — identity, then capability, then whether this
     /// is the model the session is currently using.
     static func spoken(name: String, provider: String, visionEnabled: Bool, isActive: Bool) -> String {
         var parts = [name, provider]
-        if visionEnabled { parts.append("vision enabled") }
-        if isActive { parts.append("active") }
+        if visionEnabled { parts.append(String(localized: "vision enabled")) }
+        if isActive { parts.append(String(localized: "active")) }
         return parts.joined(separator: ", ")
     }
 }

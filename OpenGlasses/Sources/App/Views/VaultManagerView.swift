@@ -545,7 +545,7 @@ struct VaultManagerView: View {
                 VaultRegistry.shared.reloadUserManifests()
                 warnings = report.warnings
                 reloadLedgers()
-                successMessage = "Installed \(report.manifest.name)."
+                successMessage = String(localized: "Installed \(report.manifest.name).")
                 // Team learnings already approved for this vault come back into its namespace, and
                 // any the folder carries are staged — never applied — for acceptance (Plan FP P3).
                 LearningReviewService.shared.republish()
@@ -571,7 +571,11 @@ struct VaultManagerView: View {
             let ledger = try await indexing.sync(manifest, into: appState.documentStore)
             ledgers[manifest.id] = ledger
             let sections = ledger.entries.reduce(0) { $0 + $1.chunkCount }
-            successMessage = "Indexed \(ledger.entries.count) manual\(ledger.entries.count == 1 ? "" : "s") for \(manifest.name) (\(sections) sections)."
+            let manuals = ledger.entries.count
+            let vaultName = manifest.name
+            successMessage = manuals == 1
+                ? String(localized: "Indexed 1 manual for \(vaultName) (\(sections) sections).")
+                : String(localized: "Indexed \(manuals) manuals for \(vaultName) (\(sections) sections).")
         } catch {
             ledgers[manifest.id] = VaultImporter.documentLedger(for: manifest.id)
             errorMessage = error.localizedDescription

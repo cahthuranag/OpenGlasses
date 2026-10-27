@@ -12,6 +12,18 @@ enum StepType: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
+        case .prompt:      return String(localized: "Ask AI")
+        case .photo:       return String(localized: "Take Photo")
+        case .quickAction: return String(localized: "Quick Action")
+        case .http:        return String(localized: "HTTP Request")
+        case .condition:   return String(localized: "Condition")
+        case .wait:        return String(localized: "Wait")
+        }
+    }
+
+    /// English name for the system-prompt context; `displayName` is the localized editor label.
+    var promptName: String {
+        switch self {
         case .prompt:      return "Ask AI"
         case .photo:       return "Take Photo"
         case .quickAction: return "Quick Action"
@@ -45,6 +57,19 @@ enum ConditionOperator: String, Codable, CaseIterable {
     case isNotEmpty
 
     var displayName: String {
+        switch self {
+        case .contains:    return String(localized: "contains")
+        case .notContains: return String(localized: "doesn't contain")
+        case .equals:      return String(localized: "equals")
+        case .notEquals:   return String(localized: "doesn't equal")
+        case .startsWith:  return String(localized: "starts with")
+        case .isEmpty:     return String(localized: "is empty")
+        case .isNotEmpty:  return String(localized: "is not empty")
+        }
+    }
+
+    /// English phrase for the system-prompt context; `displayName` is the localized editor label.
+    var promptPhrase: String {
         switch self {
         case .contains:    return "contains"
         case .notContains: return "doesn't contain"
@@ -576,7 +601,7 @@ class PlaybookStore: ObservableObject {
         let vars = session.variables
 
         var context = "ACTIVE PLAYBOOK: \(pb.name)\n"
-        context += "Step \(idx + 1) of \(pb.steps.count): \(step.title) [\(step.type.displayName)]"
+        context += "Step \(idx + 1) of \(pb.steps.count): \(step.title) [\(step.type.promptName)]"
 
         if !step.detail.isEmpty {
             context += "\nDetail: \(Self.interpolate(step.detail, variables: vars))"
@@ -594,7 +619,7 @@ class PlaybookStore: ObservableObject {
             context += "\nQuick Action ID: \(step.quickActionId)"
         case .condition:
             let lhs = vars[step.conditionVariable] ?? "(no value)"
-            context += "\nCondition: {{\(step.conditionVariable)}} (\"\(lhs)\") \(step.conditionOperator.displayName)"
+            context += "\nCondition: {{\(step.conditionVariable)}} (\"\(lhs)\") \(step.conditionOperator.promptPhrase)"
             if step.conditionOperator.needsValue { context += " \"\(step.conditionValue)\"" }
         case .wait:
             context += "\nWait: \(step.waitSeconds) seconds"
@@ -617,7 +642,7 @@ class PlaybookStore: ObservableObject {
             case .skipped:   icon = "⊘"
             case .pending:   icon = offset == idx ? "→" : "○"
             }
-            var line = "  \(icon) Step \(offset + 1): \(s.title) [\(s.type.displayName)]"
+            var line = "  \(icon) Step \(offset + 1): \(s.title) [\(s.type.promptName)]"
             if let result = s.stepResult, !result.isEmpty { line += " — \(result)" }
             return line
         }.joined(separator: "\n")

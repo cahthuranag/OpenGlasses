@@ -303,20 +303,30 @@ struct SupportReportSheet: View {
     private func summary(_ document: JobTranscriptExport.Document) -> String {
         var parts: [String] = []
         // One conversation is not a job, and "0 jobs" would read as something missing.
-        parts.append(isConversation ? "1 conversation"
-                     : document.jobCount == 1 ? "1 job" : "\(document.jobCount) jobs")
-        parts.append(document.lineCount == 1 ? "1 line of conversation" : "\(document.lineCount) lines of conversation")
-        var turns = document.turnCount == 1 ? "1 AI turn" : "\(document.turnCount) AI turns"
-        if document.failedTurnCount > 0 { turns += " (\(document.failedTurnCount) failed)" }
+        let jobs = document.jobCount
+        if isConversation {
+            parts.append(String(localized: "1 conversation"))
+        } else {
+            parts.append(jobs == 1 ? String(localized: "1 job") : String(localized: "\(jobs) jobs"))
+        }
+        let lines = document.lineCount
+        parts.append(lines == 1
+                     ? String(localized: "1 line of conversation")
+                     : String(localized: "\(lines) lines of conversation"))
+        let turnCount = document.turnCount
+        var turns = turnCount == 1 ? String(localized: "1 AI turn") : String(localized: "\(turnCount) AI turns")
+        let failed = document.failedTurnCount
+        if failed > 0 { turns += " " + String(localized: "(\(failed) failed)") }
         parts.append(turns)
         return parts.joined(separator: " · ")
-            + "\nPlus this phone, any connected glasses, and the app's own event log."
+            + "\n" + String(localized: "Plus this phone, any connected glasses, and the app's own event log.")
     }
 
     private func maskingSummary(_ document: JobTranscriptExport.Document) -> String {
-        document.redactionHits.isEmpty
-            ? "Nothing in this report looked like a key or token."
-            : "Masked before you saw it: \(document.redactionHits.joined(separator: ", "))."
+        let hits = document.redactionHits.joined(separator: ", ")
+        return document.redactionHits.isEmpty
+            ? String(localized: "Nothing in this report looked like a key or token.")
+            : String(localized: "Masked before you saw it: \(hits).")
     }
 
     private func preview(_ document: JobTranscriptExport.Document) -> String {

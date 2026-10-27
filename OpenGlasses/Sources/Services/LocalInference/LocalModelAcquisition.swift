@@ -161,7 +161,7 @@ final class LocalModelAcquisition: ObservableObject {
         } catch let error as LocalModelDownloadManager.ManagerError {
             errorMessage = Self.message(for: error)
         } catch {
-            errorMessage = "The download couldn't be started."
+            errorMessage = String(localized: "The download couldn't be started.")
         }
     }
 
@@ -219,7 +219,7 @@ final class LocalModelAcquisition: ObservableObject {
         } catch let error as LocalModelDownloadManager.ManagerError {
             errorMessage = Self.message(for: error)
         } catch {
-            errorMessage = "That model couldn't be removed."
+            errorMessage = String(localized: "That model couldn't be removed.")
         }
         await refresh()
     }
@@ -294,21 +294,21 @@ final class LocalModelAcquisition: ObservableObject {
     static func message(for error: LocalModelDownloadManager.ManagerError) -> String {
         switch error {
         case .anotherPlanActive:
-            return "Another model is downloading. Wait for it to finish, or cancel it first."
+            return String(localized: "Another model is downloading. Wait for it to finish, or cancel it first.")
         case .planNotFound:
-            return "That download is no longer available."
+            return String(localized: "That download is no longer available.")
         case .descriptorNotInstallable:
-            return "This model isn't described precisely enough to install safely."
+            return String(localized: "This model isn't described precisely enough to install safely.")
         case .fitRefused(let blockers):
-            return blockers.first?.localizedMessage ?? "This model can't be downloaded."
+            return blockers.first?.localizedMessage ?? String(localized: "This model can't be downloaded.")
         case .consentRequired:
-            return "Accept this model's licence to continue."
+            return String(localized: "Accept this model's licence to continue.")
         case .installationNotFound:
-            return "That model isn't installed."
+            return String(localized: "That model isn't installed.")
         case .containmentRefused:
-            return "That model's files couldn't be removed safely, so nothing was deleted."
+            return String(localized: "That model's files couldn't be removed safely, so nothing was deleted.")
         case .storageUnavailable:
-            return "There wasn't room to write to storage."
+            return String(localized: "There wasn't room to write to storage.")
         }
     }
 }

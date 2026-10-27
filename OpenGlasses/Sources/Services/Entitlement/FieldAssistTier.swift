@@ -37,10 +37,10 @@ enum FieldAssistTier: String, Codable, Comparable, Sendable, CaseIterable {
     /// One line for the paywall: what this tier unlocks.
     var capabilitySummary: String {
         switch self {
-        case .personal: return "Your manuals, asked by voice with the page cited."
-        case .solo: return "Bundled vaults, guided procedures, domain calculators, session log, and expert escalation — and, with a subscription, vaults of your own with your manuals."
-        case .team: return "Everything in Solo, plus your own vaults and manuals on every seat, audited PDF export, and organisation-issued configuration."
-        case .enterprise: return "Everything in Team, under contract terms: white-label, SLA, retention, and a self-hosted expert relay."
+        case .personal: return String(localized: "Your manuals, asked by voice with the page cited.")
+        case .solo: return String(localized: "Bundled vaults, guided procedures, domain calculators, session log, and expert escalation — and, with a subscription, vaults of your own with your manuals.")
+        case .team: return String(localized: "Everything in Solo, plus your own vaults and manuals on every seat, audited PDF export, and organisation-issued configuration.")
+        case .enterprise: return String(localized: "Everything in Team, under contract terms: white-label, SLA, retention, and a self-hosted expert relay.")
         }
     }
 }

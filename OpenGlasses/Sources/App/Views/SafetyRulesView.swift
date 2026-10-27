@@ -87,7 +87,7 @@ struct SafetyRulesView: View {
         }
         guard let loc = appState.locationService.currentLocation else {
             hasHome = false
-            homeError = "No location available yet. Allow location access and try again."
+            homeError = String(localized: "No location available yet. Allow location access and try again.")
             return
         }
         SafetySettings.setHomeRegion(HomeRegion(latitude: loc.coordinate.latitude,

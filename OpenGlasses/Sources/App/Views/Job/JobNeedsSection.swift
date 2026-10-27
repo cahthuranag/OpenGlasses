@@ -19,7 +19,7 @@ struct JobNeedsSection: View {
                 } else {
                     ForEach(needs.attachments) { attachment in
                         JobNeedRow(status: .init(title: attachment.name,
-                                                 detail: "Not on this phone.", systemImage: "doc"))
+                                                 detail: String(localized: "Not on this phone."), systemImage: "doc"))
                     }
                 }
                 if let manuals = appState.officeManuals {

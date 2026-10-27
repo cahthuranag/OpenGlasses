@@ -180,7 +180,7 @@ struct ServicesSettingsView: View {
 
             // MARK: Text-to-Speech
             Section {
-                SecretInputField(placeholder: "API Key", text: $elevenLabsKeyInput)
+                SecretInputField(placeholder: String(localized: "API Key"), text: $elevenLabsKeyInput)
                     .onChange(of: elevenLabsKeyInput) { _, newValue in
                         Config.setElevenLabsAPIKey(newValue)
                         // Reset quota cache in case the user added credits or changed key.
@@ -563,7 +563,7 @@ struct ServicesSettingsView: View {
 
             // MARK: Web Search
             Section {
-                SecretInputField(placeholder: "Perplexity API Key", text: $perplexityKeyInput)
+                SecretInputField(placeholder: String(localized: "Perplexity API Key"), text: $perplexityKeyInput)
                     .onChange(of: perplexityKeyInput) { _, newValue in
                         Config.setPerplexityAPIKey(newValue)
                     }
@@ -580,7 +580,7 @@ struct ServicesSettingsView: View {
                     }
                 }
 
-                SecretInputField(placeholder: "Tavily API Key", text: $tavilyKeyInput)
+                SecretInputField(placeholder: String(localized: "Tavily API Key"), text: $tavilyKeyInput)
                     .onChange(of: tavilyKeyInput) { _, newValue in
                         Config.setTavilyAPIKey(newValue)
                     }
@@ -597,7 +597,7 @@ struct ServicesSettingsView: View {
                     }
                 }
 
-                SecretInputField(placeholder: "Brave Search API Key", text: $braveKeyInput)
+                SecretInputField(placeholder: String(localized: "Brave Search API Key"), text: $braveKeyInput)
                     .onChange(of: braveKeyInput) { _, newValue in
                         Config.setBraveAPIKey(newValue)
                     }
@@ -759,7 +759,7 @@ struct ServicesSettingsView: View {
                         Config.setBroadcastRTMPURL(newValue)
                     }
 
-                SecretInputField(placeholder: "Stream Key", text: $broadcastStreamKey)
+                SecretInputField(placeholder: String(localized: "Stream Key"), text: $broadcastStreamKey)
                     .onChange(of: broadcastStreamKey) { _, newValue in
                         Config.setBroadcastStreamKey(newValue)
                     }
@@ -901,7 +901,7 @@ struct ServicesSettingsView: View {
                     // Show the address as it will be used, scheme included.
                     .onSubmit { haURL = Config.homeAssistantURL }
 
-                SecretInputField(placeholder: "Long-Lived Access Token", text: $haToken)
+                SecretInputField(placeholder: String(localized: "Long-Lived Access Token"), text: $haToken)
                     .onChange(of: haToken) { _, newValue in
                         Config.setHomeAssistantToken(newValue)
                     }
@@ -919,10 +919,10 @@ struct ServicesSettingsView: View {
     /// picker with the default destination shown alongside. Shared by the recording-copy and
     /// transcript rows, which differ only in their words.
     @ViewBuilder
-    private func folderRow(title: String,
-                           defaultLabel: String,
+    private func folderRow(title: LocalizedStringKey,
+                           defaultLabel: LocalizedStringKey,
                            folderName: String?,
-                           resetTitle: String,
+                           resetTitle: LocalizedStringKey,
                            onChoose: @escaping () -> Void,
                            onReset: @escaping () -> Void) -> some View {
         if let folderName {
@@ -961,7 +961,9 @@ struct ServicesSettingsView: View {
         )
         // Width is the short edge (the tiers are portrait), so it names the tier the same way
         // the Resolution picker above does: 360p / 504p / 720p.
-        return "Automatic (~\(VideoBitratePolicy.megabitLabel(bps)) at \(size.width)p)"
+        let rate = VideoBitratePolicy.megabitLabel(bps)
+        let width = size.width
+        return String(localized: "Automatic (~\(rate) at \(width)p)")
     }
 
     /// CY: the same preview for the broadcast, on the `.rtmp` profile and the broadcast's own
@@ -975,7 +977,8 @@ struct ServicesSettingsView: View {
             frameRate: Double(broadcastFrameRate),
             profile: .rtmp
         )
-        return "Automatic (~\(VideoBitratePolicy.megabitLabel(bps)))"
+        let rate = VideoBitratePolicy.megabitLabel(bps)
+        return String(localized: "Automatic (~\(rate))")
     }
 
     /// What to download and where, in the wearer's words for the language ("Korean"), never a
@@ -992,9 +995,9 @@ struct ServicesSettingsView: View {
 
     private func qualityLabel(_ quality: AVSpeechSynthesisVoiceQuality) -> String {
         switch quality {
-        case .premium:  return "Premium"
-        case .enhanced: return "Enhanced"
-        default:        return "Default"
+        case .premium:  return String(localized: "Premium")
+        case .enhanced: return String(localized: "Enhanced")
+        default:        return String(localized: "Default")
         }
     }
 
@@ -1009,7 +1012,7 @@ struct ServicesSettingsView: View {
                 await MainActor.run {
                     elevenLabsVoices = voices
                     elevenLabsVoicesLoading = false
-                    elevenLabsVoicesError = voices.isEmpty ? "No voices returned for this API key." : nil
+                    elevenLabsVoicesError = voices.isEmpty ? String(localized: "No voices returned for this API key.") : nil
                     // If the saved voice isn't in the account list, default to the first.
                     if !voices.isEmpty, !voices.contains(where: { $0.voiceId == selectedVoice }),
                        let first = voices.first {
@@ -1021,7 +1024,7 @@ struct ServicesSettingsView: View {
             } catch {
                 await MainActor.run {
                     elevenLabsVoicesLoading = false
-                    elevenLabsVoicesError = "Could not load voices: \(error.localizedDescription)"
+                    elevenLabsVoicesError = String(localized: "Could not load voices: \(error.localizedDescription)")
                 }
             }
         }
@@ -1046,14 +1049,14 @@ struct ServicesSettingsView: View {
                 savedModels: Config.savedModels, account: .shared)
             guard !credential.isEmpty else {
                 xaiVoicesLoading = false
-                xaiVoicesError = "No xAI key or sign-in is available."
+                xaiVoicesError = String(localized: "No xAI key or sign-in is available.")
                 return
             }
             do {
                 let voices = try await TextToSpeechService.fetchXAIVoices(credential: credential)
                 xaiVoices = voices
                 xaiVoicesLoading = false
-                xaiVoicesError = voices.isEmpty ? "No voices returned for this xAI account." : nil
+                xaiVoicesError = voices.isEmpty ? String(localized: "No voices returned for this xAI account.") : nil
                 // If the saved voice isn't in the list, default to the first.
                 if !voices.isEmpty, !voices.contains(where: { $0.voiceId == xaiVoice }),
                    let first = voices.first {
@@ -1063,7 +1066,7 @@ struct ServicesSettingsView: View {
                 }
             } catch {
                 xaiVoicesLoading = false
-                xaiVoicesError = "Could not load voices: \(error.localizedDescription)"
+                xaiVoicesError = String(localized: "Could not load voices: \(error.localizedDescription)")
             }
         }
     }

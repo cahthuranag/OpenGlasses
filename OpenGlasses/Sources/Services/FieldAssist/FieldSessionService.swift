@@ -1868,9 +1868,9 @@ final class FieldSessionService: ObservableObject {
             break
         }
         let editionRequest = EditionRequest.parse(searchTurn, editions: documentEditions(of: store))
+        let retriever = manualRetriever(store: store, editionRequest: editionRequest)
         let outcome = retrieveManualPassages(.init(turn: searchTurn, procedureStep: runner?.currentStep?.title),
-                                             with: manualRetriever(store: store, editionRequest: editionRequest),
-                                             store: store)
+                                             with: retriever, store: store)
         // Support trace: which pages went to the model, by citation — or that the gate refused.
         TurnRecorder.noteManualPassages(outcome.passages.map(\.citation), refused: !outcome.answers)
         let disclosure = noteRetrieval(outcome)
@@ -1903,6 +1903,13 @@ final class FieldSessionService: ObservableObject {
         logFigurePresentation(staged ?? candidate.flatMap { makeStagedFigure(for: $0, vaultId: store.manifest.id) },
                               decision: decision, turnKind: kind)
         var block = VaultRetriever.promptBlock(outcome, leadIn: disclosure?.leadIn)
+        // A value a table would hold, asked in plain words with no table named (Plan JW P1b): the
+        // passages rarely carry the table's rows, so name the one or two tables whose titles and
+        // headings fit, for table_lookup to read. Nothing when no table clears the threshold.
+        if TableDirectory.asksForValue(searchTurn),
+           let hint = TableDirectory.hint(for: searchTurn, in: retriever.tableCatalogue?() ?? []) {
+            block += "\n\n" + hint
+        }
         if let note = editionNote(for: editionRequest, store: store) { block += "\n\n" + note }
         return scopeNote.map { block + "\n\n" + $0 } ?? block
     }
@@ -2139,7 +2146,7 @@ final class FieldSessionService: ObservableObject {
         }, tableCatalogue: {
             searched.filter { $0.source == .manual || $0.source == .capturedManual }.flatMap { space in
                 (documentStore?.storedTables(namespace: space.namespace, documentIds: ids(for: space)) ?? [])
-                    .map { TableReference.Entry(label: $0.table.label, title: $0.table.title) }
+                    .map { TableReference.Entry(table: $0.table, documentName: $0.documentName) }
             }
         }, termStatistics: {
             documentStore?.termStatistics(namespaces: searched.map(\.namespace))

@@ -550,6 +550,23 @@ final class TableLookupSessionTests: XCTestCase {
         XCTAssertEqual(spoken.passages.count, 6, "a table row first: six passages, as for a clause")
     }
 
+    /// Plan JW P1b: a value asked for in plain words, no table named, gets a line naming the table
+    /// whose title fits, for `table_lookup` to read; a turn naming the table, or asking no value,
+    /// gets none.
+    func testAPlainWordsValueQuestionNamesTheTableInTheManualBlock() async throws {
+        let (service, _) = try await startSession()
+        let vault = try XCTUnwrap(service.activeVault)
+        let plain = try XCTUnwrap(service.manualPassagesContext(turn: "which correction factor applies in band B for 10-12",
+                                                                store: vault))
+        XCTAssertTrue(plain.contains("Tables that may answer this: Table 98 — Correction factors (\(Self.bookA))"), plain)
+        XCTAssertTrue(plain.contains("Read the value with table_lookup (table, row, column)"), plain)
+
+        let named = try XCTUnwrap(service.manualPassagesContext(turn: "in table 98, band B at 10-12, what factor", store: vault))
+        XCTAssertFalse(named.contains("Tables that may answer this"), named)
+        let notValue = try XCTUnwrap(service.manualPassagesContext(turn: "how do I clean the unit", store: vault))
+        XCTAssertFalse(notValue.contains("Tables that may answer this"), notValue)
+    }
+
     func testAQuestionNamingARowHeaderReachesTheRowPassage() async throws {
         let (service, store) = try await startSession()
         let vault = try XCTUnwrap(service.activeVault)

@@ -17,9 +17,9 @@ enum MicRoute: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .phone: return "iPhone Mic"
-        case .glasses: return "Glasses Mic"
-        case .headset: return "Headset Mic (AirPods etc.)"
+        case .phone: return String(localized: "iPhone Mic")
+        case .glasses: return String(localized: "Glasses Mic")
+        case .headset: return String(localized: "Headset Mic (AirPods etc.)")
         }
     }
 

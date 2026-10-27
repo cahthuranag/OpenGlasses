@@ -116,7 +116,7 @@ enum SiriActionDispatcher {
     /// hardware button can do is therefore exactly what the tile could do, by construction.
     private static func runGridAction(_ id: String, appState: AppState) async -> String {
         guard let entry = HomeGridCatalog.entry(id: id, quickActions: Config.quickActions) else {
-            return "That action is no longer on your grid."
+            return String(localized: "That action is no longer on your grid.")
         }
         await HomeGridDispatcher.run(entry, on: appState)
         // Speed-dial actions that aren't prompts (a light, a shortcut) leave no reply to read —
@@ -124,7 +124,7 @@ enum SiriActionDispatcher {
         let answer = appState.lastResponse.trimmingCharacters(in: .whitespacesAndNewlines)
         if case .quickAction(let action) = entry,
            action.type != .prompt, action.type != .photoThenPrompt {
-            return "\(action.label) done."
+            return String(localized: "\(action.label) done.")
         }
         return answer.isEmpty ? "\(entry.label) done." : answer
     }
@@ -148,17 +148,17 @@ enum BuiltinActionRunner {
         switch id {
         case "take_photo":
             await appState.captureAndAnalyzePhoto()
-            return nonEmpty(appState.lastResponse, fallback: "Photo captured.")
+            return nonEmpty(appState.lastResponse, fallback: String(localized: "Photo captured."))
 
         case "capture_photo":
-            guard appState.isConnected else { return "Connect your glasses first." }
+            guard appState.isConnected else { return String(localized: "Connect your glasses first.") }
             await appState.capturePhotoSilently()
-            return "Photo saved."
+            return String(localized: "Photo saved.")
 
         case "record_video":
-            guard appState.isConnected else { return "Connect your glasses first." }
+            guard appState.isConnected else { return String(localized: "Connect your glasses first.") }
             await appState.toggleRecording()
-            return appState.videoRecorder.isRecording ? "Recording started." : "Recording stopped."
+            return appState.videoRecorder.isRecording ? String(localized: "Recording started.") : String(localized: "Recording stopped.")
 
         case "describe_scene": return await vision(.describe, appState)
         case "read_text": return await vision(.read, appState)
@@ -169,41 +169,41 @@ enum BuiltinActionRunner {
 
         case "connect_glasses":
             await appState.connectAndListen()
-            return appState.isConnected ? "Connected and listening."
-                                        : "Listening on your phone — glasses aren't connected."
+            return appState.isConnected ? String(localized: "Connected and listening.")
+                                        : String(localized: "Listening on your phone — glasses aren't connected.")
 
         case "disconnect_glasses":
-            guard appState.isConnected else { return "Glasses are already disconnected." }
+            guard appState.isConnected else { return String(localized: "Glasses are already disconnected.") }
             appState.disconnectGlasses()
-            return "Glasses disconnected."
+            return String(localized: "Glasses disconnected.")
 
         case "toggle_glasses":
             if appState.isConnected {
                 appState.disconnectGlasses()
-                return "Glasses disconnected."
+                return String(localized: "Glasses disconnected.")
             }
             await appState.connectAndListen()
-            return appState.isConnected ? "Connected and listening."
-                                        : "Listening on your phone — glasses aren't connected."
+            return appState.isConnected ? String(localized: "Connected and listening.")
+                                        : String(localized: "Listening on your phone — glasses aren't connected.")
 
         case "listening_on":
             UserDefaults.standard.set(true, forKey: "listeningEnabled")
             appState.setListeningEnabled(true)
-            return "Listening enabled."
+            return String(localized: "Listening enabled.")
 
         case "listening_off":
             UserDefaults.standard.set(false, forKey: "listeningEnabled")
             appState.setListeningEnabled(false)
-            return "Listening disabled."
+            return String(localized: "Listening disabled.")
 
         case "gemini_live_toggle":
             // Plan FF P1/PR3 — through the one activation owner, like every other entry point.
             if appState.geminiLiveSession.isActive {
                 appState.stopLiveSession(.geminiLive, source: .siriShortcut)
-                return "Live session stopped."
+                return String(localized: "Live session stopped.")
             }
             await appState.requestLiveSession(.geminiLive, source: .siriShortcut)
-            return "Live session started."
+            return String(localized: "Live session started.")
 
         case let modeId where modeId.hasPrefix("live_mode_"):
             return try await startLiveMode(String(modeId.dropFirst("live_mode_".count)), appState)
@@ -223,7 +223,7 @@ enum BuiltinActionRunner {
 
         case "broadcast_toggle":
             await appState.toggleBroadcast()
-            return appState.broadcastService.isBroadcasting ? "Broadcasting started." : "Broadcasting stopped."
+            return appState.broadcastService.isBroadcasting ? String(localized: "Broadcasting started.") : String(localized: "Broadcasting stopped.")
 
         default:
             throw SiriActionError.notFound
@@ -232,13 +232,13 @@ enum BuiltinActionRunner {
 
     private static func vision(_ mode: QuickVisionMode, _ appState: AppState) async -> String {
         await appState.capturePhotoAndSend(prompt: mode.prompt)
-        return nonEmpty(appState.lastResponse, fallback: "Done.")
+        return nonEmpty(appState.lastResponse, fallback: String(localized: "Done."))
     }
 
     private static func startLiveMode(_ mode: String, _ appState: AppState) async throws -> String {
         Config.setActiveLiveAIModeId(mode)
         await appState.requestLiveSession(.geminiLive, source: .siriShortcut, restartIfActive: true)
-        return "Live session started."
+        return String(localized: "Live session started.")
     }
 
     private static func nonEmpty(_ value: String, fallback: String) -> String {

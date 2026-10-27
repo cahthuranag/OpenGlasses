@@ -57,9 +57,8 @@ struct CitationChipsView: View {
     /// Pure, so the wording is covered by the suite. VoiceOver hears what the chip does, not only
     /// what it says.
     static func spokenLabel(_ citation: Citation) -> String {
-        citation.kind == .coreFile
-            ? "Open \(citation.title)"
-            : "Open \(citation.label)"
+        let name = citation.kind == .coreFile ? citation.title : citation.label
+        return String(localized: "Open \(name)")
     }
 }
 

@@ -14,6 +14,16 @@ enum PacingMode: String, CaseIterable, Codable, Equatable {
 
     var displayName: String {
         switch self {
+        case .audioPaced: return String(localized: "Audio-paced")
+        case .voice: return String(localized: "Voice (manual)")
+        case .autoScroll: return String(localized: "Auto-scroll")
+        }
+    }
+
+    /// English name for the teleprompter tool's model-facing result; `displayName` is the
+    /// localized settings label.
+    var toolName: String {
+        switch self {
         case .audioPaced: return "Audio-paced"
         case .voice: return "Voice (manual)"
         case .autoScroll: return "Auto-scroll"

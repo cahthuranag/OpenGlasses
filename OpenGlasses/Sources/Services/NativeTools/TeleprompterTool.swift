@@ -73,11 +73,11 @@ struct TeleprompterTool: NativeTool {
             if let text, !text.isEmpty {
                 let parsed = TeleprompterScript.parse(title: title ?? SavedScript.deriveTitle(from: text), text: text)
                 service.start(parsed, mode: mode)
-                return "Teleprompter started: \(parsed.title) (\(parsed.wordCount) words, \(service.mode.displayName))."
+                return "Teleprompter started: \(parsed.title) (\(parsed.wordCount) words, \(service.mode.toolName))."
             }
             if let scriptName, let saved = service.store.script(named: scriptName) {
                 service.start(savedID: saved.id, mode: mode)
-                return "Teleprompter started: \(saved.title) (\(service.mode.displayName))."
+                return "Teleprompter started: \(saved.title) (\(service.mode.toolName))."
             }
             if scriptName != nil {
                 return "I couldn't find a saved script named \"\(scriptName!)\". Say \"list\" to see saved scripts."
@@ -92,12 +92,12 @@ struct TeleprompterTool: NativeTool {
                                                       text: DocumentReconstructor.scriptLines(raw))
                 guard parsed.wordCount > 0 else { return "\"\(doc.name)\" had no readable text to prompt." }
                 service.start(parsed, mode: mode)
-                return "Teleprompter started from document: \(doc.name) (\(parsed.wordCount) words, \(service.mode.displayName))."
+                return "Teleprompter started from document: \(doc.name) (\(parsed.wordCount) words, \(service.mode.toolName))."
             }
             if service.hasScannedPages {
                 let pages = service.scanPages
                 service.startScannedScript(title: title, mode: mode)
-                return "Teleprompter started from \(pages) scanned page\(pages == 1 ? "" : "s") (\(service.mode.displayName))."
+                return "Teleprompter started from \(pages) scanned page\(pages == 1 ? "" : "s") (\(service.mode.toolName))."
             }
             return "Provide the script text, a saved script name, a document name, or scan a page first."
 

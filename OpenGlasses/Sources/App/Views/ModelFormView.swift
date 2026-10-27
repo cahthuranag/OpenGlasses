@@ -133,7 +133,7 @@ struct ModelFormView: View {
                     OAuthSignInRows(
                         service: claudeOAuth,
                         signInLabel: "Sign in with Claude",
-                        connectedLabel: "Claude account connected",
+                        connectedLabel: String(localized: "Claude account connected"),
                         connectedCaption: "Requests use your Claude subscription unless an API key is set below.",
                         pasteInstructions: "Sign in in the browser, copy the code shown on the callback page, then paste it here.",
                         onChange: resetModelList
@@ -143,7 +143,7 @@ struct ModelFormView: View {
                     OAuthSignInRows(
                         service: chatgptOAuth,
                         signInLabel: "Sign in with ChatGPT",
-                        connectedLabel: "ChatGPT account connected",
+                        connectedLabel: String(localized: "ChatGPT account connected"),
                         connectedCaption: "Conversation uses your ChatGPT plan. Live voice mode is a separate OpenAI product and still needs an OpenAI API key model — a sign-in can't reach it.",
                         pasteInstructions: "Sign in in the browser. When it ends on a localhost page that can't connect, copy the full URL from the address bar and paste it here.",
                         onChange: resetModelList
@@ -160,7 +160,7 @@ struct ModelFormView: View {
                     OAuthSignInRows(
                         service: xaiOAuth,
                         signInLabel: "Sign in with xAI",
-                        connectedLabel: xaiOAuth.accountLabel.map { "Signed in as \($0)" } ?? "Signed in",
+                        connectedLabel: xaiOAuth.accountLabel.map { String(localized: "Signed in as \($0)") } ?? String(localized: "Signed in"),
                         connectedCaption: "Requests use your xAI subscription (SuperGrok) unless an API key is set below.",
                         pasteInstructions: "Sign in in the browser. When it ends on a 127.0.0.1 page that can't connect, copy the full URL from the address bar and paste it here.",
                         onChange: resetModelList
@@ -324,7 +324,7 @@ struct ModelFormView: View {
         .disabled(!credentialsReady || isFetchingModels)
         .accessibilityLabel(
             keyValidated
-                ? "\(availableModels.count) models available. Check again"
+                ? String(localized: "\(availableModels.count) models available. Check again")
                 : validateButtonTitle
         )
     }
@@ -460,13 +460,14 @@ struct ModelFormView: View {
         connectionOK = result.isSuccess
         switch result {
         case .ok(let latencyMs, let count):
-            connectionStatus = "Reachable — \(latencyMs) ms, \(count) model\(count == 1 ? "" : "s")"
+            let models = count == 1 ? String(localized: "1 model") : String(localized: "\(count) models")
+            connectionStatus = String(localized: "Reachable — \(latencyMs) ms, \(models)")
         case .httpError(let code):
-            connectionStatus = "Server returned HTTP \(code)"
+            connectionStatus = String(localized: "Server returned HTTP \(code)")
         case .insecure:
-            connectionStatus = "Blocked by App Transport Security — use https, or allow this host in Info.plist"
+            connectionStatus = String(localized: "Blocked by App Transport Security — use https, or allow this host in Info.plist")
         case .unreachable(let why):
-            connectionStatus = "Unreachable — \(why)"
+            connectionStatus = String(localized: "Unreachable — \(why)")
         }
     }
 
@@ -481,8 +482,10 @@ struct ModelFormView: View {
         let servers = await LocalServerScanner().scan()
         discoveredServers = servers
         scanMessage = servers.isEmpty
-            ? "No servers found. Many local servers don't advertise on the network — enter the Base URL manually or pick a preset above."
-            : "Found \(servers.count) server\(servers.count == 1 ? "" : "s"). Tap one to use it."
+            ? String(localized: "No servers found. Many local servers don't advertise on the network — enter the Base URL manually or pick a preset above.")
+            : (servers.count == 1
+                ? String(localized: "Found 1 server. Tap it to use it.")
+                : String(localized: "Found \(servers.count) servers. Tap one to use it."))
     }
 
     private func fetchModels() async {
@@ -498,19 +501,19 @@ struct ModelFormView: View {
             case .tokenUnavailable(let signedIn):
                 models = []
                 fetchError = signedIn
-                    ? "Signed in, but the session couldn't be refreshed. Sign out and sign in again."
-                    : "No ChatGPT account is connected. Sign in first."
+                    ? String(localized: "Signed in, but the session couldn't be refreshed. Sign out and sign in again.")
+                    : String(localized: "No ChatGPT account is connected. Sign in first.")
             case .httpError(let code):
                 models = []
                 fetchError = code == 401 || code == 403
-                    ? "ChatGPT rejected the sign-in (HTTP \(code)). Sign out and sign in again — if it persists, the backend contract may have changed."
-                    : "ChatGPT's model service returned HTTP \(code). Try again shortly."
+                    ? String(localized: "ChatGPT rejected the sign-in (HTTP \(code)). Sign out and sign in again — if it persists, the backend contract may have changed.")
+                    : String(localized: "ChatGPT's model service returned HTTP \(code). Try again shortly.")
             case .networkError(let why):
                 models = []
-                fetchError = "Couldn't reach ChatGPT — \(why)"
+                fetchError = String(localized: "Couldn't reach ChatGPT — \(why)")
             case .emptyCatalog:
                 models = []
-                fetchError = "ChatGPT answered, but reported no models enabled for this account."
+                fetchError = String(localized: "ChatGPT answered, but reported no models enabled for this account.")
             }
         } else {
             models = await ModelFetcher.fetchModels(
@@ -523,8 +526,8 @@ struct ModelFormView: View {
         if models.isEmpty {
             if fetchError == nil {
                 fetchError = listsModelsWithXAIAccount
-                    ? "Couldn't load the models for your xAI account. Sign out and sign in again, or type a model ID below."
-                    : "Couldn't find any models. Double-check your API key and try again."
+                    ? String(localized: "Couldn't load the models for your xAI account. Sign out and sign in again, or type a model ID below.")
+                    : String(localized: "Couldn't find any models. Double-check your API key and try again.")
             }
             keyValidated = false
         } else {
@@ -545,7 +548,9 @@ struct ModelFormView: View {
     static func localContextCaption(modelId: String) -> String {
         let window = LocalModelBudget.contextWindow(for: modelId)
         let prompt = LocalModelBudget.promptBudget(for: modelId)
-        return "Always uses a compact prompt; ~\(window / 1024)k-token context (~\(prompt / 1024)k for the prompt)."
+        let windowK = window / 1024
+        let promptK = prompt / 1024
+        return String(localized: "Always uses a compact prompt; ~\(windowK)k-token context (~\(promptK)k for the prompt).")
     }
 
     /// An xAI model with no key lists the signed-in account's models instead of validating a key.
@@ -555,29 +560,29 @@ struct ModelFormView: View {
     }
 
     private var validateButtonTitle: String {
-        if selectedProvider == .chatgpt || listsModelsWithXAIAccount { return "Fetch available models" }
-        if selectedProvider == .custom { return "Fetch models" }
-        return "Validate key & fetch models"
+        if selectedProvider == .chatgpt || listsModelsWithXAIAccount { return String(localized: "Fetch available models") }
+        if selectedProvider == .custom { return String(localized: "Fetch models") }
+        return String(localized: "Validate key & fetch models")
     }
 
     private var providerHelpText: String {
         switch selectedProvider {
-        case .anthropic: return "Get your API key at console.anthropic.com"
-        case .openai: return "Get your API key at platform.openai.com"
-        case .chatgpt: return "Sign in with your ChatGPT account — uses your subscription, no API key. The model list comes from the models enabled for your account."
-        case .gemini: return "Get your API key at aistudio.google.com"
-        case .geminiVertex: return "Sign in with your Google account — Gemini on your own GCP project via Vertex AI, no API key. Needs a GCP iOS OAuth client ID and project ID (console.cloud.google.com). Gemini Live mode still uses the AI Studio key provider."
-        case .groq: return "Get your API key at console.groq.com"
-        case .deepseek: return "Get your API key at platform.deepseek.com — default model deepseek-flash (V4.1 Flash, multimodal vision)"
-        case .mistral: return "Get your API key at admin.mistral.ai — default model mistral-medium-latest (Mistral Medium, multimodal vision)"
-        case .zai: return "Z.ai subscription — OpenAI-compatible API"
-        case .qwen: return "Coding Plan subscription — coding-intl.dashscope.aliyuncs.com"
-        case .minimax: return "MiniMax subscription — platform.minimaxi.com"
-        case .xai: return "Sign in with your xAI account (SuperGrok) — no API key needed — or get an API key at console.x.ai. A key set here is used instead of the sign-in."
-        case .openrouter: return "500+ models with one API key — openrouter.ai/keys"
-        case .custom: return "Any OpenAI-compatible endpoint — a cloud API or a self-hosted Ollama / llama.cpp / LM Studio / vLLM / LocalAI server. For a local server, set the Base URL to e.g. http://your-mac.local:11434/v1 and leave the API Key blank. Use the host's .local name or a Tailscale address — a raw 192.168.x.x IP over http may be blocked by App Transport Security."
-        case .local: return "On-device inference — no internet needed"
-        case .appleOnDevice: return "Apple Intelligence — built-in, no download, no API key"
+        case .anthropic: return String(localized: "Get your API key at console.anthropic.com")
+        case .openai: return String(localized: "Get your API key at platform.openai.com")
+        case .chatgpt: return String(localized: "Sign in with your ChatGPT account — uses your subscription, no API key. The model list comes from the models enabled for your account.")
+        case .gemini: return String(localized: "Get your API key at aistudio.google.com")
+        case .geminiVertex: return String(localized: "Sign in with your Google account — Gemini on your own GCP project via Vertex AI, no API key. Needs a GCP iOS OAuth client ID and project ID (console.cloud.google.com). Gemini Live mode still uses the AI Studio key provider.")
+        case .groq: return String(localized: "Get your API key at console.groq.com")
+        case .deepseek: return String(localized: "Get your API key at platform.deepseek.com — default model deepseek-flash (V4.1 Flash, multimodal vision)")
+        case .mistral: return String(localized: "Get your API key at admin.mistral.ai — default model mistral-medium-latest (Mistral Medium, multimodal vision)")
+        case .zai: return String(localized: "Z.ai subscription — OpenAI-compatible API")
+        case .qwen: return String(localized: "Coding Plan subscription — coding-intl.dashscope.aliyuncs.com")
+        case .minimax: return String(localized: "MiniMax subscription — platform.minimaxi.com")
+        case .xai: return String(localized: "Sign in with your xAI account (SuperGrok) — no API key needed — or get an API key at console.x.ai. A key set here is used instead of the sign-in.")
+        case .openrouter: return String(localized: "500+ models with one API key — openrouter.ai/keys")
+        case .custom: return String(localized: "Any OpenAI-compatible endpoint — a cloud API or a self-hosted Ollama / llama.cpp / LM Studio / vLLM / LocalAI server. For a local server, set the Base URL to e.g. http://your-mac.local:11434/v1 and leave the API Key blank. Use the host's .local name or a Tailscale address — a raw 192.168.x.x IP over http may be blocked by App Transport Security.")
+        case .local: return String(localized: "On-device inference — no internet needed")
+        case .appleOnDevice: return String(localized: "Apple Intelligence — built-in, no download, no API key")
         }
     }
 
@@ -595,10 +600,10 @@ struct ModelFormView: View {
 
     private var anthropicKeyPlaceholder: String {
         switch selectedProvider {
-        case .custom: return "API Key (optional for local servers)"
-        case .anthropic: return claudeOAuth.isConnected ? "API Key (optional — account connected)" : "API Key"
-        case .xai: return xaiOAuth.isConnected ? "API Key (optional — account connected)" : "API Key"
-        default: return "API Key"
+        case .custom: return String(localized: "API Key (optional for local servers)")
+        case .anthropic: return claudeOAuth.isConnected ? String(localized: "API Key (optional — account connected)") : String(localized: "API Key")
+        case .xai: return xaiOAuth.isConnected ? String(localized: "API Key (optional — account connected)") : String(localized: "API Key")
+        default: return String(localized: "API Key")
         }
     }
 

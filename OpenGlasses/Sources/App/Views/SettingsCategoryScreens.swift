@@ -26,22 +26,22 @@ struct AppleIntegrationsSettingsScreen: View {
     }
 
     private static let integrations: [Integration] = [
-        Integration(id: "smart_home", title: "Home", icon: "house",
-                    detail: "Lights, locks, and scenes through HomeKit."),
-        Integration(id: "calendar", title: "Calendar", icon: "calendar",
-                    detail: "Check what's on, and add events by voice."),
-        Integration(id: "reminder", title: "Reminders", icon: "checklist",
-                    detail: "Add to your lists and hear what's due."),
-        Integration(id: "lookup_contact", title: "Contacts", icon: "person.crop.circle",
-                    detail: "Look someone up to call or message them."),
-        Integration(id: "music_control", title: "Music", icon: "music.note",
-                    detail: "Play, pause, skip, and ask what's playing."),
-        Integration(id: "play_podcast", title: "Podcasts", icon: "antenna.radiowaves.left.and.right",
-                    detail: "Open a show or its latest episode in Apple Podcasts."),
-        Integration(id: "get_directions", title: "Maps Directions", icon: "map",
-                    detail: "Get directions to a place, opened in Maps."),
-        Integration(id: "set_alarm", title: "Alarms", icon: "alarm",
-                    detail: "Set an alarm for a time you say out loud."),
+        Integration(id: "smart_home", title: String(localized: "Home"), icon: "house",
+                    detail: String(localized: "Lights, locks, and scenes through HomeKit.")),
+        Integration(id: "calendar", title: String(localized: "Calendar"), icon: "calendar",
+                    detail: String(localized: "Check what's on, and add events by voice.")),
+        Integration(id: "reminder", title: String(localized: "Reminders"), icon: "checklist",
+                    detail: String(localized: "Add to your lists and hear what's due.")),
+        Integration(id: "lookup_contact", title: String(localized: "Contacts"), icon: "person.crop.circle",
+                    detail: String(localized: "Look someone up to call or message them.")),
+        Integration(id: "music_control", title: String(localized: "Music"), icon: "music.note",
+                    detail: String(localized: "Play, pause, skip, and ask what's playing.")),
+        Integration(id: "play_podcast", title: String(localized: "Podcasts"), icon: "antenna.radiowaves.left.and.right",
+                    detail: String(localized: "Open a show or its latest episode in Apple Podcasts.")),
+        Integration(id: "get_directions", title: String(localized: "Maps Directions"), icon: "map",
+                    detail: String(localized: "Get directions to a place, opened in Maps.")),
+        Integration(id: "set_alarm", title: String(localized: "Alarms"), icon: "alarm",
+                    detail: String(localized: "Set an alarm for a time you say out loud.")),
     ]
 
     @State private var disabledTools: Set<String> = Config.disabledTools

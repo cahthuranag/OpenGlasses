@@ -204,12 +204,12 @@ enum CameraFeatureGate {
 
     /// A one-line summary for the Settings device row.
     static func summary(given capabilities: CameraCapabilities) -> String {
-        if capabilities.liveFrames { return "Live video and photo capture" }
+        if capabilities.liveFrames { return String(localized: "Live video and photo capture") }
         if capabilities.stillCapture {
             return capabilities.stillLatency == .seconds
-                ? "Photo capture only (several seconds per photo)"
-                : "Photo capture only"
+                ? String(localized: "Photo capture only (several seconds per photo)")
+                : String(localized: "Photo capture only")
         }
-        return "No camera — voice and text features only"
+        return String(localized: "No camera — voice and text features only")
     }
 }

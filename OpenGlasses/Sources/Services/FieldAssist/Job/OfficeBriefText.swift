@@ -310,7 +310,7 @@ struct OfficeFlagMark: Equatable, Hashable {
 
     /// What it says, on screen and to VoiceOver.
     var label: String {
-        warnings == 1 ? "1 warning flag from the office" : "\(warnings) warning flags from the office"
+        warnings == 1 ? String(localized: "1 warning flag from the office") : String(localized: "\(warnings) warning flags from the office")
     }
 }
 

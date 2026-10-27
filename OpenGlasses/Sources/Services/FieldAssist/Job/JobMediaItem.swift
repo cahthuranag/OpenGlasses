@@ -51,11 +51,11 @@ struct JobMediaItem: Codable, Equatable, Identifiable {
         /// Where it came from, in the words the review grid uses.
         var shortLabel: String {
             switch self {
-            case .photoLog: return "Logged on the job"
-            case .capture: return "Taken by the assistant"
-            case .phoneCamera: return "Phone camera"
-            case .photoLibrary: return "From the photo library"
-            case .clipRecord: return "Recorded on the job"
+            case .photoLog: return String(localized: "Logged on the job")
+            case .capture: return String(localized: "Taken by the assistant")
+            case .phoneCamera: return String(localized: "Phone camera")
+            case .photoLibrary: return String(localized: "From the photo library")
+            case .clipRecord: return String(localized: "Recorded on the job")
             }
         }
     }

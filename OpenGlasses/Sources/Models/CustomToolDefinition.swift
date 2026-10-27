@@ -16,8 +16,8 @@ struct CustomToolDefinition: Codable, Identifiable, Equatable {
 
         var displayName: String {
             switch self {
-            case .shortcut: return "Siri Shortcut"
-            case .urlScheme: return "URL Scheme"
+            case .shortcut: return String(localized: "Siri Shortcut")
+            case .urlScheme: return String(localized: "URL Scheme")
             }
         }
     }

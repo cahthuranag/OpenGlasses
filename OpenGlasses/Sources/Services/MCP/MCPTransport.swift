@@ -37,10 +37,10 @@ enum MCPAuthKind: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .none:   return "None"
-        case .bearer: return "Bearer token"
+        case .none:   return String(localized: "None")
+        case .bearer: return String(localized: "Bearer token")
         case .oauth:  return "OAuth"
-        case .header: return "API-key header"
+        case .header: return String(localized: "API-key header")
         }
     }
 

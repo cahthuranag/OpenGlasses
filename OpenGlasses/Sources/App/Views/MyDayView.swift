@@ -211,7 +211,7 @@ struct MyDayView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(state.source.displayName)
                     .font(.body)
-                Text(state.message ?? "This source is unavailable.")
+                Text(state.message ?? String(localized: "This source is unavailable."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -233,7 +233,7 @@ struct MyDayView: View {
             let title = try await service.complete(item)
             if title == nil { actionMessage = MyDayView.goneMessage(for: item) }
         } catch {
-            actionMessage = "The reminder could not be completed."
+            actionMessage = String(localized: "The reminder could not be completed.")
         }
     }
 
@@ -246,8 +246,10 @@ struct MyDayView: View {
     private func refreshLabel(_ snapshot: MyDaySnapshot) -> String {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
-        let prefix = isStale(snapshot) ? "Stale — pull to refresh" : "Updated"
-        return "\(prefix) \(formatter.string(from: snapshot.generatedAt))"
+        let time = formatter.string(from: snapshot.generatedAt)
+        return isStale(snapshot)
+            ? String(localized: "Stale — pull to refresh \(time)")
+            : String(localized: "Updated \(time)")
     }
 }
 
@@ -338,7 +340,7 @@ struct MyDayHomeView: View {
             let title = try await service.complete(item)
             if title == nil { actionMessage = MyDayView.goneMessage(for: item) }
         } catch {
-            actionMessage = "The reminder could not be completed."
+            actionMessage = String(localized: "The reminder could not be completed.")
         }
     }
 
@@ -660,7 +662,7 @@ struct MyDayHomeView: View {
         }
     }
 
-    private func progressRow(_ label: String) -> some View {
+    private func progressRow(_ label: LocalizedStringKey) -> some View {
         HStack(spacing: 10) {
             ProgressView()
             Text(label)

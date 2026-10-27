@@ -66,7 +66,7 @@ struct PlaybooksSettingsView: View {
                                         .foregroundStyle(Color(.secondaryLabel))
                                     let varCount = playbook.steps.filter { !$0.outputVar.isEmpty }.count
                                     if varCount > 0 {
-                                        Text("\(varCount) variable\(varCount == 1 ? "" : "s")")
+                                        Text(varCount == 1 ? "1 variable" : "\(varCount) variables")
                                             .font(.caption2)
                                             .foregroundStyle(Color(.secondaryLabel))
                                             .padding(.horizontal, 6)
@@ -562,7 +562,7 @@ struct StepEditorSheet: View {
     }
 
     @ViewBuilder
-    private func stepJumpRow(label: String, selection: Binding<Int>) -> some View {
+    private func stepJumpRow(label: LocalizedStringKey, selection: Binding<Int>) -> some View {
         HStack {
             Text(label)
                 .foregroundStyle(.secondary)

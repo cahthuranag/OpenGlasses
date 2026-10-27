@@ -23,7 +23,7 @@ struct EvidenceSelection: Codable, Equatable {
         case fault
         case fix
 
-        var label: String { self == .fault ? "Fault" : "Fix" }
+        var label: String { self == .fault ? String(localized: "Fault") : String(localized: "Fix") }
 
         /// The heading the work order prints above the group.
         var heading: String { self == .fault ? "The fault" : "The fix" }

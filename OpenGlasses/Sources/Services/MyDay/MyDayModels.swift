@@ -168,6 +168,16 @@ enum MyDayTransportMode: String, CaseIterable, Codable, Equatable, Sendable {
 
     var displayName: String {
         switch self {
+        case .walking: String(localized: "Walking")
+        case .driving: String(localized: "Driving")
+        case .transit: String(localized: "Transit")
+        }
+    }
+
+    /// English name for the composed, spoken My Day lines; `displayName` is the localized
+    /// settings label.
+    var spokenName: String {
+        switch self {
         case .walking: "Walking"
         case .driving: "Driving"
         case .transit: "Transit"
@@ -182,9 +192,9 @@ enum MyDayTravelOrigin: String, CaseIterable, Codable, Equatable, Sendable {
 
     var displayName: String {
         switch self {
-        case .currentLocation: "Current Location"
-        case .home: "Home"
-        case .work: "Work"
+        case .currentLocation: String(localized: "Current Location")
+        case .home: String(localized: "Home")
+        case .work: String(localized: "Work")
         }
     }
 }

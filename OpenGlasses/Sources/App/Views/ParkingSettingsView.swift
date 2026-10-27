@@ -199,7 +199,7 @@ struct ParkingSettingsView: View {
         defer { pickerItem = nil }
         guard let data = try? await item.loadTransferable(type: Data.self),
               let image = UIImage(data: data) else {
-            photoMessage = "That picture couldn't be read."
+            photoMessage = String(localized: "That picture couldn't be read.")
             return
         }
         let outcome = await appState.parkingPhotoFlow.acceptPhonePhoto(image)

@@ -8,9 +8,9 @@ enum DigestDelivery: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .visual: return "Glance"
-        case .spoken: return "Spoken"
-        case .both: return "Both"
+        case .visual: return String(localized: "Glance")
+        case .spoken: return String(localized: "Spoken")
+        case .both: return String(localized: "Both")
         }
     }
 }

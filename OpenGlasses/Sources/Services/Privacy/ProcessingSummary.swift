@@ -46,15 +46,15 @@ enum ProcessingDestination: Equatable {
     var phrase: String {
         switch self {
         case .onDevice:
-            return "stays on this device"
+            return String(localized: "stays on this device")
         case .cloud(let provider):
-            return "goes to \(provider)"
+            return String(localized: "goes to \(provider)")
         case .customEndpoint(let host):
-            return "goes to the server you set up, \(host)"
+            return String(localized: "goes to the server you set up, \(host)")
         case .disabled:
-            return "is switched off"
+            return String(localized: "is switched off")
         case .unavailable(let asset):
-            return "is set to run on this device, but \(asset) hasn't been downloaded yet"
+            return String(localized: "is set to run on this device, but \(asset) hasn't been downloaded yet")
         }
     }
 }
@@ -71,11 +71,11 @@ enum ProcessingRowKind: String, CaseIterable, Identifiable, Equatable {
 
     var title: String {
         switch self {
-        case .image: return "What the camera sees"
-        case .transcription: return "What you say"
-        case .aiResponse: return "The answer"
-        case .spokenVoice: return "The voice you hear"
-        case .remoteTools: return "Tools on other machines"
+        case .image: return String(localized: "What the camera sees")
+        case .transcription: return String(localized: "What you say")
+        case .aiResponse: return String(localized: "The answer")
+        case .spokenVoice: return String(localized: "The voice you hear")
+        case .remoteTools: return String(localized: "Tools on other machines")
         }
     }
 }
@@ -146,9 +146,7 @@ enum ProcessingSummary {
 
     /// The sentence both surfaces carry, verbatim, about what this is and is not.
     static let evidenceCaveat =
-        "This describes how your settings are configured to route each request. It isn't a record "
-        + "of what was actually sent. Network Activity shows requests the app observed, and even "
-        + "that is not a complete audit of every packet."
+        String(localized: "This describes how your settings are configured to route each request. It isn't a record of what was actually sent. Network Activity shows requests the app observed, and even that is not a complete audit of every packet.")
 
     // MARK: - Composition
 
@@ -263,11 +261,11 @@ enum ProcessingSummary {
 
     private static func shortValue(_ destination: ProcessingDestination) -> String {
         switch destination {
-        case .onDevice: return "On this device"
+        case .onDevice: return String(localized: "On this device")
         case .cloud(let provider): return provider
         case .customEndpoint(let host): return host
-        case .disabled: return "Off"
-        case .unavailable: return "Not downloaded"
+        case .disabled: return String(localized: "Off")
+        case .unavailable: return String(localized: "Not downloaded")
         }
     }
 
@@ -296,7 +294,7 @@ enum ProcessingSummary {
         }
         let unique = missing.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
         guard !unique.isEmpty else { return nil }
-        return "Before you can use this offline, download \(list(unique))."
+        return String(localized: "Before you can use this offline, download \(list(unique)).")
     }
 
     /// The verdict, in a sentence.
@@ -312,11 +310,11 @@ enum ProcessingSummary {
             // row that would leave the device, and "everything is handled on this device" would be
             // a strange thing to say about a setup that is handling nothing.
             guard rows.contains(where: { $0.destination == .onDevice }) else {
-                return "Nothing that would leave this device is switched on."
+                return String(localized: "Nothing that would leave this device is switched on.")
             }
-            return "Everything that's switched on is handled on this device."
+            return String(localized: "Everything that's switched on is handled on this device.")
         case .cloud:
-            return "Everything that's switched on is handled in the cloud."
+            return String(localized: "Everything that's switched on is handled in the cloud.")
         case .mixed:
             let leaving = rows.filter { $0.destination.leavesDevice }.map(\.kind.title)
             let pending = rows.compactMap { row -> String? in
@@ -325,17 +323,25 @@ enum ProcessingSummary {
             }
             // Named as mixed, in the first four words, because this is the verdict a wearer is
             // most likely to be told wrongly.
-            var sentence = "This is a mixed setup."
+            var sentence = String(localized: "This is a mixed setup.")
             if !leaving.isEmpty {
-                sentence += " \(list(leaving)) \(leaving.count == 1 ? "leaves" : "leave") this device."
+                let names = list(leaving)
+                sentence += " " + (leaving.count == 1
+                    ? String(localized: "\(names) leaves this device.")
+                    : String(localized: "\(names) leave this device."))
             }
             if !pending.isEmpty {
-                sentence += " \(list(pending)) \(pending.count == 1 ? "is" : "are") set to run here, "
-                    + "but the files needed for that aren't downloaded."
+                let names = list(pending)
+                sentence += " " + (pending.count == 1
+                    ? String(localized: "\(names) is set to run here, but the files needed for that aren't downloaded.")
+                    : String(localized: "\(names) are set to run here, but the files needed for that aren't downloaded."))
             }
             let onDevice = rows.filter { $0.destination == .onDevice }.map(\.kind.title)
             if !onDevice.isEmpty {
-                sentence += " \(list(onDevice)) \(onDevice.count == 1 ? "stays" : "stay") on this device."
+                let names = list(onDevice)
+                sentence += " " + (onDevice.count == 1
+                    ? String(localized: "\(names) stays on this device.")
+                    : String(localized: "\(names) stay on this device."))
             }
             return sentence
         }
@@ -344,7 +350,9 @@ enum ProcessingSummary {
     private static func list(_ names: [String]) -> String {
         guard !names.isEmpty else { return "" }
         if names.count == 1 { return names[0] }
-        return names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
+        let head = names.dropLast().joined(separator: ", ")
+        let last = names.last ?? ""
+        return String(localized: "\(head) and \(last)")
     }
 
     private static func spokenSummary(rows: [ProcessingRow],

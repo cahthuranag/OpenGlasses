@@ -46,7 +46,7 @@ struct MCPServerSettingsView: View {
 
             if server.isRunning {
                 Section("Connection") {
-                    LabeledContent("Status", value: "Running")
+                    LabeledContent("Status", value: String(localized: "Running"))
                     if let ip = MCPGlassesServer.lanIPAddress() {
                         LabeledContent("LAN URL", value: "http://\(ip):\(server.port)")
                     }

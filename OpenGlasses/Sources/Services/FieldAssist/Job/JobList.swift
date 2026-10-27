@@ -156,19 +156,19 @@ struct JobList: Equatable {
 
         static func label(_ kind: Kind, parts: Int = 1) -> String {
             switch kind {
-            case .overdue: return "Overdue"
+            case .overdue: return String(localized: "Overdue")
             case .officeFlag: return OfficeFlagMark(warnings: parts).label
-            case .debrief: return "Debrief not saved"
-            case .reportFailed: return "Report didn't send"
-            case .reportStaged: return "Report ready to send"
-            case .reportNotSent: return "Report not sent"
-            case .signOff: return "Sign-off owed"
-            case .parts: return parts > 1 ? "\(parts) parts requests waiting" : "Parts request waiting"
+            case .debrief: return String(localized: "Debrief not saved")
+            case .reportFailed: return String(localized: "Report didn't send")
+            case .reportStaged: return String(localized: "Report ready to send")
+            case .reportNotSent: return String(localized: "Report not sent")
+            case .signOff: return String(localized: "Sign-off owed")
+            case .parts: return parts > 1 ? String(localized: "\(parts) parts requests waiting") : String(localized: "Parts request waiting")
             // A recording's badge says where that recording stands, with the reason
             // (`JobDayRecording.sentence`); these are what it says when it has only the kind.
             case .recordingAttention: return JobDayRecording.attentionTitle
             case .recording: return JobDayRecording.waitingTitle
-            case .officeUpdate: return parts > 1 ? "\(parts) new updates from the office" : "New update from the office"
+            case .officeUpdate: return parts > 1 ? String(localized: "\(parts) new updates from the office") : String(localized: "New update from the office")
             }
         }
     }
@@ -186,11 +186,11 @@ struct JobList: Equatable {
 
             var label: String {
                 switch self {
-                case .inProgress: return "In progress"
-                case .paused: return "Paused"
-                case .scheduled: return "Scheduled"
-                case .overdue: return "Overdue"
-                case .unscheduled: return "Not scheduled"
+                case .inProgress: return String(localized: "In progress")
+                case .paused: return String(localized: "Paused")
+                case .scheduled: return String(localized: "Scheduled")
+                case .overdue: return String(localized: "Overdue")
+                case .unscheduled: return String(localized: "Not scheduled")
                 case .finished(let outcome): return outcome
                 }
             }
@@ -233,29 +233,32 @@ struct JobList: Equatable {
     var recentAttention: Int { recent.filter(\.needsAttention).count }
     var olderAttention: Int { older.filter(\.needsAttention).count }
 
-    static let emptyTitle = "No jobs yet"
-    static let emptyMessage = "Add a job to start one now or schedule one for later. You can also just say \u{201C}start a job\u{201D}."
+    static let emptyTitle = String(localized: "No jobs yet")
+    static let emptyMessage = String(localized: "Add a job to start one now or schedule one for later. You can also just say \u{201C}start a job\u{201D}.")
 
     /// "Finished in the last 7 days. 2 still have something to do."
     var recentFooter: String {
-        let window = "Finished in the last \(JobListComposer.recentDays) days."
-        switch recentAttention {
-        case 0: return window
-        case 1: return window + " 1 still has something to do."
-        default: return window + " \(recentAttention) still have something to do."
+        let days = JobListComposer.recentDays
+        let attention = recentAttention
+        switch attention {
+        case 0: return String(localized: "Finished in the last \(days) days.")
+        case 1: return String(localized: "Finished in the last \(days) days. 1 still has something to do.")
+        default: return String(localized: "Finished in the last \(days) days. \(attention) still have something to do.")
         }
     }
 
     /// "Older jobs (42)", with how many of them still have something to do.
     var olderTitle: String {
-        var title = "Older jobs (\(older.count))"
-        if olderAttention > 0 { title += " · \(olderAttention) to do" }
-        return title
+        let count = older.count
+        let attention = olderAttention
+        guard attention > 0 else { return String(localized: "Older jobs (\(count))") }
+        return String(localized: "Older jobs (\(count)) · \(attention) to do")
     }
 
     /// The search found nothing — said about the search, not about the jobs.
     static func noResults(_ query: String) -> String {
-        "No job matches \u{201C}\(query.trimmingCharacters(in: .whitespacesAndNewlines))\u{201D}."
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(localized: "No job matches \u{201C}\(trimmed)\u{201D}.")
     }
 }
 
@@ -357,7 +360,8 @@ enum JobListComposer {
     private static func openItem(_ session: JobListSession, badges: [JobList.Badge],
                                  inputs: JobListInputs) -> JobList.Item {
         let facts = session.facts
-        let detail = ["Started \(inputs.timeText(facts.startedAt))", facts.customer,
+        let started = inputs.timeText(facts.startedAt)
+        let detail = [String(localized: "Started \(started)"), facts.customer,
                       session.equipment ?? session.vaultName]
             .compactMap { $0 }.joined(separator: " · ")
         return JobList.Item(id: itemId(session), route: .currentJob, title: facts.label,
@@ -372,17 +376,19 @@ enum JobListComposer {
         if let date = job.scheduledFor {
             if date < startOfToday {
                 status = .overdue
-                when = "Was due \(inputs.dateText(date))"
+                let due = inputs.dateText(date)
+                when = String(localized: "Was due \(due)")
             } else if date < startOfTomorrow {
                 status = .scheduled
-                when = "Today \(inputs.timeText(date))"
+                let time = inputs.timeText(date)
+                when = String(localized: "Today \(time)")
             } else {
                 status = .scheduled
                 when = inputs.dateText(date)
             }
         } else {
             status = .unscheduled
-            when = "No date set"
+            when = String(localized: "No date set")
         }
         // The title is the site when there is no number; saying it twice would be noise.
         let site = job.jobReference != nil ? job.site.headline : nil
@@ -441,10 +447,10 @@ enum OpenJobWording {
     /// the open job" or "Open the current job" ("Open the open job" says nothing).
     static func goToTitle(jobLabel: String?, isPaused: Bool) -> String {
         switch (jobLabel, isPaused) {
-        case (let label?, true): return "Resume \(label)"
-        case (let label?, false): return "Open \(label)"
-        case (nil, true): return "Resume the open job"
-        case (nil, false): return "Open the current job"
+        case (let label?, true): return String(localized: "Resume \(label)")
+        case (let label?, false): return String(localized: "Open \(label)")
+        case (nil, true): return String(localized: "Resume the open job")
+        case (nil, false): return String(localized: "Open the current job")
         }
     }
 }
@@ -481,15 +487,15 @@ struct OpenJobPrompt: Equatable, Identifiable {
 
     private var hasNumber: Bool { jobLabel != JobTabModel.noJobNumber }
 
-    var title: String { hasNumber ? "\(jobLabel) is still open" : "A job is still open" }
+    var title: String { hasNumber ? String(localized: "\(jobLabel) is still open") : String(localized: "A job is still open") }
     var message: String {
-        "One job is open at a time. Finish it before starting another, or schedule the new job for later. Nothing is closed for you."
+        String(localized: "One job is open at a time. Finish it before starting another, or schedule the new job for later. Nothing is closed for you.")
     }
     var resumeTitle: String {
         OpenJobWording.goToTitle(jobLabel: hasNumber ? jobLabel : nil, isPaused: isPaused)
     }
-    var finishTitle: String { hasNumber ? "Finish \(jobLabel)…" : "Finish the open job…" }
-    static let scheduleTitle = "Schedule a job for later"
+    var finishTitle: String { hasNumber ? String(localized: "Finish \(jobLabel)…") : String(localized: "Finish the open job…") }
+    static let scheduleTitle = String(localized: "Schedule a job for later")
 
     enum Answer: Equatable, CaseIterable {
         case resume
@@ -579,9 +585,9 @@ enum JobListRouting {
         var prompt: OpenJobPrompt?
     }
 
-    static let noOpenJob = "No job is open right now."
-    static let jobGone = "That job is no longer on this phone."
-    static let upcomingGone = "That job is no longer scheduled. It may have been started or removed."
+    static let noOpenJob = String(localized: "No job is open right now.")
+    static let jobGone = String(localized: "That job is no longer on this phone.")
+    static let upcomingGone = String(localized: "That job is no longer scheduled. It may have been started or removed.")
 
     static func resolve(_ request: JobListRequest, _ facts: Facts) -> Outcome {
         switch request {

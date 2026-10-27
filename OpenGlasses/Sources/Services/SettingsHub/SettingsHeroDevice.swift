@@ -29,6 +29,6 @@ enum SettingsHeroDevice: Equatable, Sendable {
     /// The iPhone card's status line.
     var phoneStatus: String? {
         guard case .phone(let away) = self else { return nil }
-        return away ? "In use · Glasses not connected" : "In use"
+        return away ? String(localized: "In use · Glasses not connected") : String(localized: "In use")
     }
 }

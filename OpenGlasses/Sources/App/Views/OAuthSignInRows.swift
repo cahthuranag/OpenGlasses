@@ -62,10 +62,10 @@ extension XAIOAuthService: OAuthSignInService {
 /// paste field and the open-in-browser route stay as fallbacks for every other case.
 struct OnboardingAccountSignInSection<Service: OAuthSignInService>: View {
     @ObservedObject var service: Service
-    let signInLabel: String
-    let caption: String
-    let connectedCaption: String
-    let pasteInstructions: String
+    let signInLabel: LocalizedStringKey
+    let caption: LocalizedStringKey
+    let connectedCaption: LocalizedStringKey
+    let pasteInstructions: LocalizedStringKey
     var onConnected: () -> Void = {}
     var onSignedOut: () -> Void = {}
 
@@ -214,10 +214,12 @@ struct OnboardingAccountSignInSection<Service: OAuthSignInService>: View {
 /// the model editor; shares the sheet + loopback capture with the onboarding section (Plan DD).
 struct OAuthSignInRows<Service: OAuthSignInService>: View {
     @ObservedObject var service: Service
-    let signInLabel: String
+    let signInLabel: LocalizedStringKey
+    /// A runtime account name can arrive here ("Signed in as …"), so this one stays a `String`:
+    /// callers localize their own wording.
     let connectedLabel: String
-    let connectedCaption: String
-    let pasteInstructions: String
+    let connectedCaption: LocalizedStringKey
+    let pasteInstructions: LocalizedStringKey
     /// Called when the connection state changes (sign-in completed / signed out), so the host
     /// can invalidate anything derived from the credential (e.g. a fetched model list).
     var onChange: () -> Void = {}

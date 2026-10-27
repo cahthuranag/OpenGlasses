@@ -17,7 +17,7 @@ struct HealthSettingsView: View {
         Form {
             Section {
                 ForEach(HealthSummaryReadType.allCases, id: \.self) { type in
-                    Label(LocalizedStringKey(type.displayName), systemImage: icon(for: type))
+                    Label(type.displayName, systemImage: icon(for: type))
                 }
                 accessRow
             } header: {

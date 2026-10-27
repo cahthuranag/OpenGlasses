@@ -36,7 +36,9 @@ enum SettingsCategoryID: String, CaseIterable, Codable, Sendable {
     case diagnostics
 }
 
-/// One row of the settings hub.
+/// One row of the settings hub. `title` and `subtitle` are localized where they are written
+/// (`describe(_:)`): the hub hands them to its rows as runtime `String`s, which SwiftUI shows
+/// verbatim, so a bare literal here would never reach the string catalog.
 struct SettingsCategory: Identifiable, Equatable, Hashable, Sendable {
     let id: SettingsCategoryID
     let title: String
@@ -97,58 +99,58 @@ enum SettingsCatalog {
     private static func describe(_ id: SettingsCategoryID) -> SettingsCategory {
         switch id {
         case .intelligence:
-            return .category(id, title: "AI & Personality", icon: "brain.head.profile",
-                             subtitle: "Models, personas, prompt, and behaviour",
+            return .category(id, title: String(localized: "AI & Personality"), icon: "brain.head.profile",
+                             subtitle: String(localized: "Models, personas, prompt, and behaviour"),
                              shownInSimpleMode: false)
         case .voice:
-            return .category(id, title: "Voice & Triggers", icon: "waveform",
-                             subtitle: "Wake phrase, push-to-talk, hands-free triggers",
+            return .category(id, title: String(localized: "Voice & Triggers"), icon: "waveform",
+                             subtitle: String(localized: "Wake phrase, push-to-talk, hands-free triggers"),
                              shownInSimpleMode: true)
         case .devices:
             // Glasses settings live here, under Glasses — never in a general category.
-            return .category(id, title: "Devices & Privacy", icon: "lock.shield",
-                             subtitle: "Glasses, hardware, privacy, and medical compliance",
+            return .category(id, title: String(localized: "Devices & Privacy"), icon: "lock.shield",
+                             subtitle: String(localized: "Glasses, hardware, privacy, and medical compliance"),
                              shownInSimpleMode: true)
         case .accessibility:
-            return .pinnedAssistive(id, title: "Accessibility", icon: "accessibility",
-                                    subtitle: "Assistive narration, guidance, and reading help")
+            return .pinnedAssistive(id, title: String(localized: "Accessibility"), icon: "accessibility",
+                                    subtitle: String(localized: "Assistive narration, guidance, and reading help"))
         case .fieldAssist:
-            return .category(id, title: "Field Assist", icon: "wrench.adjustable",
-                             subtitle: "Jobs, vaults, reports, and expert help",
+            return .category(id, title: String(localized: "Field Assist"), icon: "wrench.adjustable",
+                             subtitle: String(localized: "Jobs, vaults, reports, and expert help"),
                              shownInSimpleMode: false)
         case .myManuals:
-            return .category(id, title: "My Manuals", icon: "books.vertical",
-                             subtitle: "Your manuals, asked by voice with the page cited",
+            return .category(id, title: String(localized: "My Manuals"), icon: "books.vertical",
+                             subtitle: String(localized: "Your manuals, asked by voice with the page cited"),
                              shownInSimpleMode: true)
         case .lookAndFeel:
-            return .category(id, title: "Look & Feel", icon: "paintbrush",
-                             subtitle: "Theme, accent colour, and languages",
+            return .category(id, title: String(localized: "Look & Feel"), icon: "paintbrush",
+                             subtitle: String(localized: "Theme, accent colour, and languages"),
                              shownInSimpleMode: true)
         case .tools:
-            return .category(id, title: "Tools & Actions", icon: "wrench.and.screwdriver",
-                             subtitle: "Quick actions, tools, skills, and playbooks",
+            return .category(id, title: String(localized: "Tools & Actions"), icon: "wrench.and.screwdriver",
+                             subtitle: String(localized: "Quick actions, tools, skills, and playbooks"),
                              shownInSimpleMode: false)
         case .connections:
-            return .category(id, title: "Connections", icon: "point.3.connected.trianglepath.dotted",
-                             subtitle: "Your iPhone's apps, services, gateways, and MCP servers",
+            return .category(id, title: String(localized: "Connections"), icon: "point.3.connected.trianglepath.dotted",
+                             subtitle: String(localized: "Your iPhone's apps, services, gateways, and MCP servers"),
                              shownInSimpleMode: false)
         case .capture:
-            return .category(id, title: "Capture & Streaming", icon: "video",
-                             subtitle: "Recordings, meetings, and going live",
+            return .category(id, title: String(localized: "Capture & Streaming"), icon: "video",
+                             subtitle: String(localized: "Recordings, meetings, and going live"),
                              shownInSimpleMode: false)
         case .display:
-            return .category(id, title: "Display & HUD", icon: "eyeglasses",
-                             subtitle: "The in-lens display and everything that draws on it",
+            return .category(id, title: String(localized: "Display & HUD"), icon: "eyeglasses",
+                             subtitle: String(localized: "The in-lens display and everything that draws on it"),
                              shownInSimpleMode: false)
         case .advanced:
-            return .category(id, title: "Advanced", icon: "gearshape.2", mutedIcon: true,
-                             subtitle: "Developer and power-user tools",
+            return .category(id, title: String(localized: "Advanced"), icon: "gearshape.2", mutedIcon: true,
+                             subtitle: String(localized: "Developer and power-user tools"),
                              shownInSimpleMode: false)
         case .diagnostics:
             // Visible in Simple Mode on purpose: the wearers who most need a self-test and a way
             // to report a problem are the ones who never see Advanced.
-            return .category(id, title: "Diagnostics & Support", icon: "stethoscope",
-                             subtitle: "Test your devices and AI — or report a problem",
+            return .category(id, title: String(localized: "Diagnostics & Support"), icon: "stethoscope",
+                             subtitle: String(localized: "Test your devices and AI — or report a problem"),
                              shownInSimpleMode: true)
         }
     }

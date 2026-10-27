@@ -22,7 +22,7 @@ struct ProjectDetailView: View {
         store.threads(forPersona: project.id).sorted { $0.updatedAt > $1.updatedAt }
     }
     private var presetName: String {
-        Config.savedPresets.first { $0.id == project.presetId }?.name ?? "Default"
+        Config.savedPresets.first { $0.id == project.presetId }?.name ?? String(localized: "Default")
     }
 
     var body: some View {
@@ -49,7 +49,9 @@ struct ProjectDetailView: View {
                     ForEach(documents) { doc in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(doc.name).font(.subheadline)
-                            Text("\(doc.sourceType) · \(doc.chunkCount) section\(doc.chunkCount == 1 ? "" : "s")")
+                            Text(doc.chunkCount == 1
+                                 ? "\(doc.sourceType) · 1 section"
+                                 : "\(doc.sourceType) · \(doc.chunkCount) sections")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }

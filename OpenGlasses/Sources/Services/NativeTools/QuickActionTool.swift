@@ -62,7 +62,7 @@ struct QuickActionTool: NativeTool {
         } else {
             var lines = ["## Quick Actions (\(actions.count))"]
             for qa in actions {
-                var detail = "[\(qa.type.displayName)]"
+                var detail = "[\(qa.type.toolLabel)]"
                 switch qa.type {
                 case .prompt:
                     if let p = qa.promptText { detail += " \(p.prefix(80))" }
@@ -144,7 +144,7 @@ struct QuickActionTool: NativeTool {
         }
 
         await appState.executeQuickAction(action)
-        return "Executed quick action '\(action.label)' [\(action.type.displayName)]."
+        return "Executed quick action '\(action.label)' [\(action.type.toolLabel)]."
     }
 
     private func runShortcut(named name: String) async -> String {

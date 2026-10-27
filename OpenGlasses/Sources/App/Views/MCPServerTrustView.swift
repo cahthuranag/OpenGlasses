@@ -140,7 +140,7 @@ struct MCPServerTrustView: View {
         }
     }
 
-    private func badge(_ text: String, systemImage: String, color: Color) -> some View {
+    private func badge(_ text: LocalizedStringKey, systemImage: String, color: Color) -> some View {
         Label(text, systemImage: systemImage)
             .font(.caption.weight(.medium))
             .foregroundStyle(color)

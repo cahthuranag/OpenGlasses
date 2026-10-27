@@ -64,8 +64,8 @@ struct GoogleSignInRows: View {
                     // The browser session closes itself and this row swaps for a "connected"
                     // one — a silent change on a screen the user is no longer looking at.
                     SessionAnnouncer.say(
-                        connected ? "Google account connected"
-                                  : (google.lastError ?? "Google sign-in failed"),
+                        connected ? String(localized: "Google account connected")
+                                  : (google.lastError ?? String(localized: "Google sign-in failed")),
                         interrupts: !connected)
                 }
             } label: {

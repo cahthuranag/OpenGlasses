@@ -8,7 +8,7 @@ struct ChatComposer: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.appAccent) private var accent
 
-    var placeholder: String = "Type a message..."
+    var placeholder: String = String(localized: "Type a message...")
     /// Focus the text field as soon as the composer appears.
     var autoFocus: Bool = false
     /// When set, a mic button is shown leading; tapping it runs this (e.g. switch back to voice).

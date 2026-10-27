@@ -38,7 +38,7 @@ struct ModelReasoningSection: View {
         }
     }
 
-    private func readout(title: String, lines: ModelReasoningReadout.Lines) -> some View {
+    private func readout(title: LocalizedStringKey, lines: ModelReasoningReadout.Lines) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(title)

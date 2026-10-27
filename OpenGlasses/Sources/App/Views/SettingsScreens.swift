@@ -427,7 +427,7 @@ struct AIPersonalitySettingsScreen: View {
                     HStack {
                         Label("System Prompt", systemImage: "text.quote")
                         Spacer()
-                        Text(Config.savedPresets.first { $0.id == activePresetId }?.name ?? "Default")
+                        Text(Config.savedPresets.first { $0.id == activePresetId }?.name ?? String(localized: "Default"))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -633,33 +633,33 @@ struct AIPersonalitySettingsScreen: View {
                                googleConnected: Bool, xaiConnected: Bool = false) -> ModelAuthBadge {
         switch provider {
         case .local, .appleOnDevice:
-            return ModelAuthBadge(label: "On-device", isReady: true)
+            return ModelAuthBadge(label: String(localized: "On-device"), isReady: true)
         case .chatgpt:
             return chatgptConnected
-                ? ModelAuthBadge(label: "ChatGPT account connected", isReady: true)
-                : ModelAuthBadge(label: "Not signed in", isReady: false)
+                ? ModelAuthBadge(label: String(localized: "ChatGPT account connected"), isReady: true)
+                : ModelAuthBadge(label: String(localized: "Not signed in"), isReady: false)
         case .geminiVertex:
             return googleConnected
-                ? ModelAuthBadge(label: "Google account connected", isReady: true)
-                : ModelAuthBadge(label: "Not signed in", isReady: false)
+                ? ModelAuthBadge(label: String(localized: "Google account connected"), isReady: true)
+                : ModelAuthBadge(label: String(localized: "Not signed in"), isReady: false)
         case .anthropic:
-            if hasKey { return ModelAuthBadge(label: "Key set", isReady: true) }
+            if hasKey { return ModelAuthBadge(label: String(localized: "Key set"), isReady: true) }
             return claudeConnected
-                ? ModelAuthBadge(label: "Claude account connected", isReady: true)
-                : ModelAuthBadge(label: "No account or key", isReady: false)
+                ? ModelAuthBadge(label: String(localized: "Claude account connected"), isReady: true)
+                : ModelAuthBadge(label: String(localized: "No account or key"), isReady: false)
         case .xai:
-            if hasKey { return ModelAuthBadge(label: "Key set", isReady: true) }
+            if hasKey { return ModelAuthBadge(label: String(localized: "Key set"), isReady: true) }
             return xaiConnected
-                ? ModelAuthBadge(label: "xAI account connected", isReady: true)
-                : ModelAuthBadge(label: "No account or key", isReady: false)
+                ? ModelAuthBadge(label: String(localized: "xAI account connected"), isReady: true)
+                : ModelAuthBadge(label: String(localized: "No account or key"), isReady: false)
         case .custom:
             return hasKey
-                ? ModelAuthBadge(label: "Key set", isReady: true)
-                : ModelAuthBadge(label: "Key optional", isReady: true)
+                ? ModelAuthBadge(label: String(localized: "Key set"), isReady: true)
+                : ModelAuthBadge(label: String(localized: "Key optional"), isReady: true)
         default:
             return hasKey
-                ? ModelAuthBadge(label: "Key set", isReady: true)
-                : ModelAuthBadge(label: "No API key", isReady: false)
+                ? ModelAuthBadge(label: String(localized: "Key set"), isReady: true)
+                : ModelAuthBadge(label: String(localized: "No API key"), isReady: false)
         }
     }
 
@@ -667,8 +667,9 @@ struct AIPersonalitySettingsScreen: View {
     static func spokenModelRow(name: String, provider: String, badge: ModelAuthBadge,
                                vision: Bool) -> String {
         var parts = [name, provider]
-        if vision { parts.append("vision enabled") }
-        parts.append(badge.isReady ? badge.label : "needs setup: \(badge.label)")
+        if vision { parts.append(String(localized: "vision enabled")) }
+        let badgeLabel = badge.label
+        parts.append(badge.isReady ? badgeLabel : String(localized: "needs setup: \(badgeLabel)"))
         return parts.joined(separator: ", ")
     }
 
@@ -726,7 +727,7 @@ struct ToolsActionsSettingsScreen: View {
                 }
 
                 NavigationLink {
-                    VaultFilesEditorView(vaultId: "notes", title: "Personal Notes")
+                    VaultFilesEditorView(vaultId: "notes", title: String(localized: "Personal Notes"))
                 } label: {
                     Label("Personal Notes", systemImage: "note.text")
                 }
@@ -943,12 +944,12 @@ struct GlassesPrivacySettingsScreen: View {
     private var requestRouting: SettingPresentation { adminGate.presentation(.area(.requestRouting)) }
 
     private var glassesStatus: String {
-        if appState.glassesPaused { return "Paused" }
+        if appState.glassesPaused { return String(localized: "Paused") }
         switch appState.glassesPhase {
-        case .connected: return "Connected"
-        case .connecting: return "Connecting…"
-        case .addedDisconnected: return "Not connected"
-        case .noGlassesAdded: return "Not added"
+        case .connected: return String(localized: "Connected")
+        case .connecting: return String(localized: "Connecting…")
+        case .addedDisconnected: return String(localized: "Not connected")
+        case .noGlassesAdded: return String(localized: "Not added")
         }
     }
 

@@ -52,7 +52,7 @@ struct SyncStatusView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             if row.attempts > 0 {
-                                Text("\(row.attempts) attempt\(row.attempts == 1 ? "" : "s") so far")
+                                Text(row.attempts == 1 ? "1 attempt so far" : "\(row.attempts) attempts so far")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
@@ -119,7 +119,7 @@ struct SyncStatusView: View {
         }
     }
 
-    private func label(for kind: OpKind) -> String {
+    private func label(for kind: OpKind) -> LocalizedStringKey {
         switch kind {
         case .logEntry:      return "Log entry"
         case .photoUpload:   return "Photo upload"
@@ -147,7 +147,7 @@ struct SyncStatusView: View {
         }
     }
 
-    private func badge(_ text: String, _ systemImage: String, _ color: Color) -> some View {
+    private func badge(_ text: LocalizedStringKey, _ systemImage: String, _ color: Color) -> some View {
         Label(text, systemImage: systemImage)
             .font(.caption.weight(.medium))
             .foregroundStyle(color)

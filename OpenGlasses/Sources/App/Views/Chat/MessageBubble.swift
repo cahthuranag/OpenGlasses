@@ -13,6 +13,17 @@ struct MessageBubble: View {
     @Environment(\.appAccent) private var accent
 
     private var isUser: Bool { message.role == "user" }
+
+    /// Who said it, what was said, and whether a photo went with it — one VoiceOver line.
+    private var spokenLabel: String {
+        let content = message.content
+        switch (isUser, message.imageAttached) {
+        case (true, false): return String(localized: "You: \(content)")
+        case (true, true): return String(localized: "You: \(content). Photo attached")
+        case (false, false): return String(localized: "AI: \(content)")
+        case (false, true): return String(localized: "AI: \(content). Photo attached")
+        }
+    }
     /// The sources this answer named. Machine-attached by the retriever and repeated by the model,
     /// so they point at real pages — which is what makes them safe to make tappable (Plan EK P3).
     private var citations: [Citation] {
@@ -49,7 +60,7 @@ struct MessageBubble: View {
             if !isUser { Spacer(minLength: 48) }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(isUser ? "You" : "AI"): \(message.content)\(message.imageAttached ? ". Photo attached" : "")")
+        .accessibilityLabel(spokenLabel)
     }
 
     @ViewBuilder

@@ -56,7 +56,7 @@ struct ChatThreadView: View {
                 send(text, image)
             }
         }
-        .navigationTitle(thread?.title ?? "Chat")
+        .navigationTitle(thread?.title ?? String(localized: "Chat"))
         .navigationBarTitleDisplayMode(.inline)
         // Plan BQ P3: let Siri resolve "this" to the open thread (titles/summary only —
         // same shape the Spotlight index donates; hipaaMode disables inside the modifier).
@@ -279,12 +279,15 @@ struct ChatThreadView: View {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
         guard let (name, text) = Self.extractText(from: url), !text.isEmpty else {
-            showNotice("Couldn't read that file.")
+            showNotice(String(localized: "Couldn't read that file."))
             return
         }
-        attachNotice = "Indexing \(name)…"
+        attachNotice = String(localized: "Indexing \(name)…")
         let ref = await appState.documentStore.ingest(name: name, text: text)
-        showNotice(ref != nil ? "📎 \(name) added — ask me about it." : "Couldn't index \(name).")
+        let notice = ref != nil
+            ? String(localized: "📎 \(name) added — ask me about it.")
+            : String(localized: "Couldn't index \(name).")
+        showNotice(notice)
     }
 
     private func showNotice(_ text: String) {

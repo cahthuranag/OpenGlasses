@@ -47,7 +47,7 @@ struct OrgAdministratorSection: View {
         }
     }
 
-    private var organization: String { manager.profile?.organizationName ?? "your organisation" }
+    private var organization: String { manager.profile?.organizationName ?? String(localized: "your organisation") }
 
     private var restrictedFooter: LocalizedStringKey {
         if gate.keptCardIsStale {
@@ -98,12 +98,12 @@ struct OrgAdministratorSection: View {
     /// administrator phone must not hand it to whoever picks it up, so this fails closed.
     private func showCard() {
         cardError = nil
-        OwnerGateAuth.authorize(reason: "Show the admin card") { authorization in
+        OwnerGateAuth.authorize(reason: String(localized: "Show the admin card")) { authorization in
             Task { @MainActor in
                 if authorization.isGranted {
                     showingCard = true
                 } else {
-                    cardError = "Couldn't verify it's you — the card stays hidden."
+                    cardError = String(localized: "Couldn't verify it's you — the card stays hidden.")
                 }
             }
         }
@@ -238,7 +238,7 @@ struct AdminUnlockSheet: View {
                     scannedCode = nil
                     let attempt = gate.tryCard(code, remember: rememberCard)
                     if attempt == .notApplicable {
-                        report("That isn't an admin card.")
+                        report(String(localized: "That isn't an admin card."))
                     } else {
                         settle(attempt)
                     }
@@ -262,14 +262,14 @@ struct AdminUnlockSheet: View {
             dismiss()
         case .refused(let waitUntil):
             if let waitUntil {
-                report("That's not right. Too many attempts — try again \(Self.when(waitUntil)).")
+                report(String(localized: "That's not right. Too many attempts — try again \(Self.when(waitUntil))."))
             } else {
-                report("That's not right.")
+                report(String(localized: "That's not right."))
             }
         case .waiting(let until):
-            report("Too many attempts. Try again \(Self.when(until)).")
+            report(String(localized: "Too many attempts. Try again \(Self.when(until))."))
         case .notApplicable:
-            report("This phone doesn't take that.")
+            report(String(localized: "This phone doesn't take that."))
         }
     }
 

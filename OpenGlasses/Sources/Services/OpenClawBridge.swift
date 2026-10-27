@@ -9,6 +9,16 @@ enum OpenClawConnectionMode: String, CaseIterable {
 
     var displayName: String {
         switch self {
+        case .lan: return String(localized: "LAN (Local Network)")
+        case .tunnel: return String(localized: "Tunnel (Remote)")
+        case .auto: return String(localized: "Auto (try LAN first)")
+        }
+    }
+
+    /// English name for the gateway tool's model-facing status; `displayName` is the localized
+    /// settings label.
+    var toolName: String {
+        switch self {
         case .lan: return "LAN (Local Network)"
         case .tunnel: return "Tunnel (Remote)"
         case .auto: return "Auto (try LAN first)"

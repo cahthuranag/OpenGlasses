@@ -356,9 +356,9 @@ enum NavigationUnits: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .auto: return "Automatic"
-        case .metric: return "Metric"
-        case .imperial: return "Imperial"
+        case .auto: return String(localized: "Automatic")
+        case .metric: return String(localized: "Metric")
+        case .imperial: return String(localized: "Imperial")
         }
     }
 }

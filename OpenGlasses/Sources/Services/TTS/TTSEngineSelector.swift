@@ -62,24 +62,24 @@ enum TTSEnginePreference: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .auto: return "Auto"
-        case .elevenLabs: return "Cloud (ElevenLabs)"
-        case .openAI: return "Cloud (OpenAI)"
-        case .xai: return "Cloud (xAI)"
-        case .kokoro: return "On-Device (Kokoro)"
-        case .system: return "System (iOS)"
+        case .auto: return String(localized: "Auto")
+        case .elevenLabs: return String(localized: "Cloud (ElevenLabs)")
+        case .openAI: return String(localized: "Cloud (OpenAI)")
+        case .xai: return String(localized: "Cloud (xAI)")
+        case .kokoro: return String(localized: "On-Device (Kokoro)")
+        case .system: return String(localized: "System (iOS)")
         }
     }
 
     /// One-line description for the Settings picker footer.
     var detail: String {
         switch self {
-        case .auto: return "Use the best voice available: a cloud voice if one is set up (ElevenLabs, then OpenAI, then xAI), then on-device Kokoro, then the iOS voice."
-        case .elevenLabs: return "Prefer ElevenLabs cloud voices. Falls back to on-device or the iOS voice when unavailable."
-        case .openAI: return "Prefer the OpenAI cloud voice, paid from your OpenAI API credit. Falls back to on-device or the iOS voice when unavailable — never another paid cloud."
-        case .xai: return "Prefer the xAI cloud voice, using your xAI key or sign-in. Falls back to on-device or the iOS voice when unavailable — never another paid cloud."
-        case .kokoro: return "Prefer the offline, free on-device neural voice. Falls back to the iOS voice — never the paid cloud."
-        case .system: return "Always use the built-in iOS voice."
+        case .auto: return String(localized: "Use the best voice available: a cloud voice if one is set up (ElevenLabs, then OpenAI, then xAI), then on-device Kokoro, then the iOS voice.")
+        case .elevenLabs: return String(localized: "Prefer ElevenLabs cloud voices. Falls back to on-device or the iOS voice when unavailable.")
+        case .openAI: return String(localized: "Prefer the OpenAI cloud voice, paid from your OpenAI API credit. Falls back to on-device or the iOS voice when unavailable — never another paid cloud.")
+        case .xai: return String(localized: "Prefer the xAI cloud voice, using your xAI key or sign-in. Falls back to on-device or the iOS voice when unavailable — never another paid cloud.")
+        case .kokoro: return String(localized: "Prefer the offline, free on-device neural voice. Falls back to the iOS voice — never the paid cloud.")
+        case .system: return String(localized: "Always use the built-in iOS voice.")
         }
     }
 

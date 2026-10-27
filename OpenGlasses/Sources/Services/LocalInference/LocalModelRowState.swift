@@ -197,11 +197,11 @@ enum LocalModelIncompatibility: Equatable, Sendable {
     /// One line for the badge. Short enough for a row, and never colour alone — the badge is text.
     var badgeText: String {
         switch self {
-        case .runtimeDisabled: return "Turned off"
-        case .runtimeUnavailable: return "Unsupported"
-        case .missingArchitectureMetadata, .unsupportedChatTemplate: return "Can't run"
-        case .contextTooSmall: return "Too large"
-        case .weightsMissing, .installationIncomplete: return "Files missing"
+        case .runtimeDisabled: return String(localized: "Turned off")
+        case .runtimeUnavailable: return String(localized: "Unsupported")
+        case .missingArchitectureMetadata, .unsupportedChatTemplate: return String(localized: "Can't run")
+        case .contextTooSmall: return String(localized: "Too large")
+        case .weightsMissing, .installationIncomplete: return String(localized: "Files missing")
         }
     }
 
@@ -210,37 +210,27 @@ enum LocalModelIncompatibility: Equatable, Sendable {
     var explanation: String {
         switch self {
         case .runtimeDisabled:
-            return "GGUF models are switched off on this iPhone, so this model can't be loaded. "
-                + "Turn them on in Settings to use it. Its files stay where they are either way."
+            return String(localized: "GGUF models are switched off on this iPhone, so this model can't be loaded. Turn them on in Settings to use it. Its files stay where they are either way.")
         case .runtimeUnavailable(let runtime):
-            return "This build has no on-device runtime for \(Self.runtimeName(runtime)) models, "
-                + "so it can't load this one."
+            let name = Self.runtimeName(runtime)
+            return String(localized: "This build has no on-device runtime for \(name) models, so it can't load this one.")
         case .missingArchitectureMetadata:
-            return "This model file doesn't record which architecture it is, so nothing can be "
-                + "configured from it. On-device models are read from the file's own metadata — "
-                + "the architecture is the one field there is no safe default for. Its files stay "
-                + "installed; it can't be selected for conversation."
+            return String(localized: "This model file doesn't record which architecture it is, so nothing can be configured from it. On-device models are read from the file's own metadata — the architecture is the one field there is no safe default for. Its files stay installed; it can't be selected for conversation.")
         case .unsupportedChatTemplate(let fault):
-            return "This model doesn't carry a usable chat template, so there's no way to hand it "
-                + "a conversation. " + Self.templateDetail(fault)
-                + " Its files stay installed; it can't be selected for conversation."
+            let detail = Self.templateDetail(fault)
+            return String(localized: "This model doesn't carry a usable chat template, so there's no way to hand it a conversation. \(detail) Its files stay installed; it can't be selected for conversation.")
         case .contextTooSmall(let tokens):
-            return "There isn't enough memory on this iPhone to give this model a usable "
-                + "conversation window — it came out at \(tokens) tokens, below the minimum for a "
-                + "system prompt and one exchange. A smaller model, or a smaller quantization of "
-                + "this one, will fit."
+            return String(localized: "There isn't enough memory on this iPhone to give this model a usable conversation window — it came out at \(tokens) tokens, below the minimum for a system prompt and one exchange. A smaller model, or a smaller quantization of this one, will fit.")
         case .weightsMissing:
-            return "The model file this installation names isn't on disk any more. Remove it and "
-                + "download it again."
+            return String(localized: "The model file this installation names isn't on disk any more. Remove it and download it again.")
         case .installationIncomplete:
-            return "This installation's record no longer matches the files on disk, so it can't be "
-                + "trusted to load. Remove it and download it again."
+            return String(localized: "This installation's record no longer matches the files on disk, so it can't be trusted to load. Remove it and download it again.")
         }
     }
 
     /// Spoken form. Same words — the explanation is already a sentence rather than a colour or a
     /// glyph — prefixed so a VoiceOver user hears what the sentence is *about* first.
-    var spokenLabel: String { "Can't be loaded. \(explanation)" }
+    var spokenLabel: String { String(localized: "Can't be loaded. \(explanation)") }
 
     private static func runtimeName(_ runtime: LocalModelRuntime) -> String {
         switch runtime {
@@ -253,13 +243,13 @@ enum LocalModelIncompatibility: Equatable, Sendable {
     /// caught it.
     private static func templateDetail(_ fault: LlamaChatTemplateFault) -> String {
         switch fault {
-        case .absent: return "The file carries no chat template at all."
-        case .renderFailed: return "Its template couldn't render a basic exchange."
-        case .emptyRender: return "Its template rendered an exchange to nothing."
-        case .dropsUserContent: return "Its template drops what the user said."
-        case .dropsAssistantContent: return "Its template drops the model's own replies."
+        case .absent: return String(localized: "The file carries no chat template at all.")
+        case .renderFailed: return String(localized: "Its template couldn't render a basic exchange.")
+        case .emptyRender: return String(localized: "Its template rendered an exchange to nothing.")
+        case .dropsUserContent: return String(localized: "Its template drops what the user said.")
+        case .dropsAssistantContent: return String(localized: "Its template drops the model's own replies.")
         case .noAssistantHeader:
-            return "Its template has no way to signal that it's the model's turn to speak."
+            return String(localized: "Its template has no way to signal that it's the model's turn to speak.")
         }
     }
 }
@@ -346,12 +336,12 @@ extension LocalModelRowState {
     /// The short state caption drawn on the row.
     var badgeText: String {
         switch self {
-        case .notInstalled: return "Not installed"
+        case .notInstalled: return String(localized: "Not installed")
         case .staged(let staging): return LocalModelRowState.stagingBadge(staging)
         case .incompatible(let reason): return reason.badgeText
-        case .loaded: return "Loaded"
-        case .updateAvailable: return "Update available"
-        case .installed: return "Installed"
+        case .loaded: return String(localized: "Loaded")
+        case .updateAvailable: return String(localized: "Update available")
+        case .installed: return String(localized: "Installed")
         }
     }
 
@@ -360,18 +350,19 @@ extension LocalModelRowState {
     var spokenLabel: String {
         switch self {
         case .notInstalled:
-            return "Not installed"
+            return String(localized: "Not installed")
         case .staged(let staging):
             return LocalModelRowState.stagingSpokenLabel(staging)
         case .incompatible(let reason):
             return reason.spokenLabel
         case .loaded:
-            return "Loaded into memory"
+            return String(localized: "Loaded into memory")
         case .updateAvailable(let installed, let available):
-            return "Update available. Installed version \(shortRevision(installed)), "
-                + "version \(shortRevision(available)) is available."
+            let installedRevision = shortRevision(installed)
+            let availableRevision = shortRevision(available)
+            return String(localized: "Update available. Installed version \(installedRevision), version \(availableRevision) is available.")
         case .installed:
-            return "Installed, not loaded"
+            return String(localized: "Installed, not loaded")
         }
     }
 
@@ -381,36 +372,37 @@ extension LocalModelRowState {
 
     private static func stagingBadge(_ staging: LocalModelStagingSummary) -> String {
         switch staging.phase {
-        case .awaitingConsent: return "Waiting for you"
-        case .queued: return "Queued"
-        case .downloading: return "Downloading"
-        case .validating: return "Checking"
-        case .installing: return "Installing"
-        case .retryable: return "Stopped"
+        case .awaitingConsent: return String(localized: "Waiting for you")
+        case .queued: return String(localized: "Queued")
+        case .downloading: return String(localized: "Downloading")
+        case .validating: return String(localized: "Checking")
+        case .installing: return String(localized: "Installing")
+        case .retryable: return String(localized: "Stopped")
         }
     }
 
     private static func stagingSpokenLabel(_ staging: LocalModelStagingSummary) -> String {
         let percent = Int((staging.fractionCompleted * 100).rounded())
-        let fileClause: String
-        if let number = staging.fileNumber, staging.fileCount > 1 {
-            fileClause = ", file \(number) of \(staging.fileCount)"
-        } else {
-            fileClause = ""
-        }
+        let fileCount = staging.fileCount
+        // The file position, when the plan has more than one file.
+        let fileNumber: Int? = staging.fileCount > 1 ? staging.fileNumber : nil
         switch staging.phase {
         case .awaitingConsent:
-            return "Waiting for you to confirm the download"
+            return String(localized: "Waiting for you to confirm the download")
         case .queued:
-            return "Download queued\(fileClause)"
+            guard let number = fileNumber else { return String(localized: "Download queued") }
+            return String(localized: "Download queued, file \(number) of \(fileCount)")
         case .downloading:
-            return "Downloading, \(percent) percent\(fileClause)"
+            guard let number = fileNumber else { return String(localized: "Downloading, \(percent) percent") }
+            return String(localized: "Downloading, \(percent) percent, file \(number) of \(fileCount)")
         case .validating:
-            return "Checking the downloaded file\(fileClause)"
+            guard let number = fileNumber else { return String(localized: "Checking the downloaded file") }
+            return String(localized: "Checking the downloaded file, file \(number) of \(fileCount)")
         case .installing:
-            return "Installing"
+            return String(localized: "Installing")
         case .retryable(let reason):
-            return "Download stopped at \(percent) percent. \(retryExplanation(reason))"
+            let why = retryExplanation(reason)
+            return String(localized: "Download stopped at \(percent) percent. \(why)")
         }
     }
 
@@ -418,15 +410,15 @@ extension LocalModelRowState {
     /// reasons reach here — a terminal failure has already removed its plan.
     static func retryExplanation(_ reason: LocalModelDownloadPlan.FailureReason) -> String {
         switch reason {
-        case .transport: return "The connection dropped. You can try again."
-        case .httpStatus: return "The server refused the request. You can try again."
-        case .storageUnavailable: return "There wasn't room to write the file. Free up space and try again."
-        case .installFailed: return "The files downloaded but couldn't be installed. You can try again."
+        case .transport: return String(localized: "The connection dropped. You can try again.")
+        case .httpStatus: return String(localized: "The server refused the request. You can try again.")
+        case .storageUnavailable: return String(localized: "There wasn't room to write the file. Free up space and try again.")
+        case .installFailed: return String(localized: "The files downloaded but couldn't be installed. You can try again.")
         // Terminal reasons never carry a retry offer; if one is ever passed here, say so plainly
         // rather than inviting a retry that will fail the same way.
         case .sizeMismatch, .digestMismatch, .redirectHostRejected, .insecureRedirect,
              .containmentRefused, .revisionMismatch, .planUnreadable, .consentMissing, .fitRefused:
-            return "The download was refused and can't be resumed. Start it again."
+            return String(localized: "The download was refused and can't be resumed. Start it again.")
         }
     }
 }

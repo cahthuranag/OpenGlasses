@@ -27,33 +27,33 @@ enum MedicalFramework: String, CaseIterable, Identifiable {
 
     var region: String {
         switch self {
-        case .hipaa, .hitech: return "United States"
-        case .australianPrivacy, .myHealthRecords: return "Australia"
-        case .nzHIPC: return "New Zealand"
-        case .gdprHealth: return "European Union"
-        case .pipeda: return "Canada"
-        case .ukDPA: return "United Kingdom"
+        case .hipaa, .hitech: return String(localized: "United States")
+        case .australianPrivacy, .myHealthRecords: return String(localized: "Australia")
+        case .nzHIPC: return String(localized: "New Zealand")
+        case .gdprHealth: return String(localized: "European Union")
+        case .pipeda: return String(localized: "Canada")
+        case .ukDPA: return String(localized: "United Kingdom")
         }
     }
 
     var summary: String {
         switch self {
         case .hipaa:
-            return "Health Insurance Portability and Accountability Act — requires encryption, access control, audit trails, and BAAs for PHI."
+            return String(localized: "Health Insurance Portability and Accountability Act — requires encryption, access control, audit trails, and BAAs for PHI.")
         case .hitech:
-            return "Health Information Technology for Economic and Clinical Health Act — extends HIPAA with breach notification and enhanced penalties."
+            return String(localized: "Health Information Technology for Economic and Clinical Health Act — extends HIPAA with breach notification and enhanced penalties.")
         case .australianPrivacy:
-            return "Privacy Act 1988 (APP 11) — requires entities to take reasonable steps to protect personal information from misuse, loss, and unauthorised access."
+            return String(localized: "Privacy Act 1988 (APP 11) — requires entities to take reasonable steps to protect personal information from misuse, loss, and unauthorised access.")
         case .myHealthRecords:
-            return "My Health Records Act 2012 — governs the My Health Record system. Requires encryption, access controls, and penalties for unauthorised access to health records."
+            return String(localized: "My Health Records Act 2012 — governs the My Health Record system. Requires encryption, access controls, and penalties for unauthorised access to health records.")
         case .nzHIPC:
-            return "Health Information Privacy Code 2020 — governs how health agencies collect, use, store, and disclose health information. Requires secure storage and purpose limitation."
+            return String(localized: "Health Information Privacy Code 2020 — governs how health agencies collect, use, store, and disclose health information. Requires secure storage and purpose limitation.")
         case .gdprHealth:
-            return "General Data Protection Regulation Article 9 — health data is a special category requiring explicit consent, data minimisation, encryption, and DPIAs."
+            return String(localized: "General Data Protection Regulation Article 9 — health data is a special category requiring explicit consent, data minimisation, encryption, and DPIAs.")
         case .pipeda:
-            return "Personal Information Protection and Electronic Documents Act — requires consent, limiting collection, and safeguards appropriate to the sensitivity of health information."
+            return String(localized: "Personal Information Protection and Electronic Documents Act — requires consent, limiting collection, and safeguards appropriate to the sensitivity of health information.")
         case .ukDPA:
-            return "Data Protection Act 2018 (UK GDPR) — health data as special category, requires appropriate policy documents, encryption, and lawful basis for processing."
+            return String(localized: "Data Protection Act 2018 (UK GDPR) — health data as special category, requires appropriate policy documents, encryption, and lawful basis for processing.")
         }
     }
 
@@ -84,60 +84,60 @@ enum MedicalFramework: String, CaseIterable, Identifiable {
         switch self {
         case .hipaa:
             return [
-                "Signed BAA with each cloud LLM provider",
-                "Staff privacy and security training",
-                "Risk assessment and management plan",
-                "Policies and procedures documentation"
+                String(localized: "Signed BAA with each cloud LLM provider"),
+                String(localized: "Staff privacy and security training"),
+                String(localized: "Risk assessment and management plan"),
+                String(localized: "Policies and procedures documentation")
             ]
         case .hitech:
             return [
-                "Breach notification procedures (60-day rule)",
-                "All HIPAA administrative requirements",
-                "Meaningful use attestation (if applicable)"
+                String(localized: "Breach notification procedures (60-day rule)"),
+                String(localized: "All HIPAA administrative requirements"),
+                String(localized: "Meaningful use attestation (if applicable)")
             ]
         case .australianPrivacy:
             return [
-                "Privacy Impact Assessment (PIA)",
-                "APP-compliant privacy policy",
-                "Staff awareness training",
-                "Data breach notification to OAIC (if serious)"
+                String(localized: "Privacy Impact Assessment (PIA)"),
+                String(localized: "APP-compliant privacy policy"),
+                String(localized: "Staff awareness training"),
+                String(localized: "Data breach notification to OAIC (if serious)")
             ]
         case .myHealthRecords:
             return [
-                "Registration with Australian Digital Health Agency",
-                "Authorised representative management",
-                "Staff training on My Health Record obligations",
-                "Notifiable data breach reporting"
+                String(localized: "Registration with Australian Digital Health Agency"),
+                String(localized: "Authorised representative management"),
+                String(localized: "Staff training on My Health Record obligations"),
+                String(localized: "Notifiable data breach reporting")
             ]
         case .nzHIPC:
             return [
-                "Health agency registration",
-                "Patient consent processes",
-                "Staff training on HIPC obligations",
-                "Privacy breach notification to OPC"
+                String(localized: "Health agency registration"),
+                String(localized: "Patient consent processes"),
+                String(localized: "Staff training on HIPC obligations"),
+                String(localized: "Privacy breach notification to OPC")
             ]
         case .gdprHealth:
             return [
-                "Data Protection Impact Assessment (DPIA)",
-                "Explicit consent for health data processing",
-                "Data Processing Agreement (DPA) with cloud providers",
-                "Data Protection Officer (DPO) appointment",
-                "Records of processing activities"
+                String(localized: "Data Protection Impact Assessment (DPIA)"),
+                String(localized: "Explicit consent for health data processing"),
+                String(localized: "Data Processing Agreement (DPA) with cloud providers"),
+                String(localized: "Data Protection Officer (DPO) appointment"),
+                String(localized: "Records of processing activities")
             ]
         case .pipeda:
             return [
-                "Privacy officer designation",
-                "Meaningful consent documentation",
-                "Privacy breach reporting to OPC",
-                "Responding to access requests"
+                String(localized: "Privacy officer designation"),
+                String(localized: "Meaningful consent documentation"),
+                String(localized: "Privacy breach reporting to OPC"),
+                String(localized: "Responding to access requests")
             ]
         case .ukDPA:
             return [
-                "Data Protection Impact Assessment (DPIA)",
-                "Appropriate policy document for special category data",
-                "Data Processing Agreement with cloud providers",
-                "ICO registration",
-                "Breach notification to ICO within 72 hours"
+                String(localized: "Data Protection Impact Assessment (DPIA)"),
+                String(localized: "Appropriate policy document for special category data"),
+                String(localized: "Data Processing Agreement with cloud providers"),
+                String(localized: "ICO registration"),
+                String(localized: "Breach notification to ICO within 72 hours")
             ]
         }
     }
@@ -169,26 +169,41 @@ enum MedicalSafeguard: String, CaseIterable {
         }
     }
 
+    /// The safeguard's name as shown. The raw value is its stable identifier and stays English.
+    var title: String {
+        switch self {
+        case .encryption: return String(localized: "Encryption at Rest")
+        case .accessControl: return String(localized: "Biometric Access Control")
+        case .auditLog: return String(localized: "Audit Logging")
+        case .dataRetention: return String(localized: "Data Retention Policy")
+        case .baa: return String(localized: "Cloud Provider Agreements")
+        case .disableCloudLeakage: return String(localized: "Prevent Data Leakage")
+        case .breachNotification: return String(localized: "Breach Notification")
+        case .purposeLimitation: return String(localized: "Purpose Limitation")
+        case .dataMinimisation: return String(localized: "Data Minimisation")
+        }
+    }
+
     var detail: String {
         switch self {
         case .encryption:
-            return "While this mode is on, recordings (audio and video), their transcripts, the list of recorded sessions, the audit log and clinical exports can't be read while the phone is locked, and are kept out of iCloud backup. A recording that's still being written can finish while the phone is locked. Protection starts when you turn the mode on and also covers recordings already saved in the app at that moment. Copies in Photos or a folder you chose are outside this protection."
+            return String(localized: "While this mode is on, recordings (audio and video), their transcripts, the list of recorded sessions, the audit log and clinical exports can't be read while the phone is locked, and are kept out of iCloud backup. A recording that's still being written can finish while the phone is locked. Protection starts when you turn the mode on and also covers recordings already saved in the app at that moment. Copies in Photos or a folder you chose are outside this protection.")
         case .accessControl:
-            return "Face ID, Touch ID, or device passcode is required every time the app returns to the foreground."
+            return String(localized: "Face ID, Touch ID, or device passcode is required every time the app returns to the foreground.")
         case .auditLog:
-            return "All data access events are logged with timestamps — recordings started/stopped, files saved, shared, or deleted. Exportable for compliance review."
+            return String(localized: "All data access events are logged with timestamps — recordings started/stopped, files saved, shared, or deleted. Exportable for compliance review.")
         case .dataRetention:
-            return "Configurable auto-purge removes transcripts and recordings older than the retention period. Supports secure deletion (data overwrite before removal)."
+            return String(localized: "Configurable auto-purge removes transcripts and recordings older than the retention period. Supports secure deletion (data overwrite before removal).")
         case .baa:
-            return "When cloud LLMs are used, a reminder is shown that a Business Associate Agreement (US) or Data Processing Agreement (EU/UK/AU/NZ) must be in place. Enable 'Local LLM Only' to avoid this requirement."
+            return String(localized: "When cloud LLMs are used, a reminder is shown that a Business Associate Agreement (US) or Data Processing Agreement (EU/UK/AU/NZ) must be in place. Enable 'Local LLM Only' to avoid this requirement.")
         case .disableCloudLeakage:
-            return "Web search, external messaging, and cloud memory sync tools are disabled to prevent clinical data from leaving the device via uncontrolled channels."
+            return String(localized: "Web search, external messaging, and cloud memory sync tools are disabled to prevent clinical data from leaving the device via uncontrolled channels.")
         case .breachNotification:
-            return "Audit log provides a record of all data access for breach investigation and notification requirements."
+            return String(localized: "Audit log provides a record of all data access for breach investigation and notification requirements.")
         case .purposeLimitation:
-            return "Clinical recordings and transcripts are stored separately from general notes, with clear labelling of purpose."
+            return String(localized: "Clinical recordings and transcripts are stored separately from general notes, with clear labelling of purpose.")
         case .dataMinimisation:
-            return "Memory system does not persist clinical details beyond the session unless explicitly requested. Auto-purge enforces retention limits."
+            return String(localized: "Memory system does not persist clinical details beyond the session unless explicitly requested. Auto-purge enforces retention limits.")
         }
     }
 }
@@ -275,7 +290,7 @@ struct HIPAASettingsView: View {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .font(.caption2)
                                                 .foregroundStyle(OGTheme.okLabel)
-                                            Text(safeguard.rawValue)
+                                            Text(safeguard.title)
                                                 .font(.caption)
                                         }
                                     }
@@ -487,7 +502,7 @@ struct HIPAASettingsView: View {
 
     // MARK: - Helpers
 
-    private func changeRow(icon: String, color: Color, title: String, detail: String) -> some View {
+    private func changeRow(icon: String, color: Color, title: LocalizedStringKey, detail: LocalizedStringKey) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.body)
@@ -511,7 +526,7 @@ struct HIPAASettingsView: View {
         case .faceID: return "Face ID"
         case .touchID: return "Touch ID"
         case .opticID: return "Optic ID"
-        default: return "Passcode"
+        default: return String(localized: "Passcode")
         }
     }
 
@@ -538,7 +553,7 @@ struct SafeguardDetailView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } header: {
-                    Label(safeguard.rawValue, systemImage: safeguard.icon)
+                    Label(safeguard.title, systemImage: safeguard.icon)
                 }
             }
         }

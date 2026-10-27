@@ -38,7 +38,7 @@ struct JobTranscriptView: View {
                 }
             }
         }
-        .navigationTitle(thread?.title ?? "Conversation")
+        .navigationTitle(thread?.title ?? String(localized: "Conversation"))
         .navigationBarTitleDisplayMode(.inline)
     }
 

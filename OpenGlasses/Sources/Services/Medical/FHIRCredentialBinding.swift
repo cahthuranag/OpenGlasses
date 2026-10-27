@@ -86,7 +86,7 @@ enum FHIRServerSaveOutcome: Equatable {
     var message: String {
         switch self {
         case .saved:
-            return "Configuration saved."
+            return String(localized: "Configuration saved.")
         case .credentialBoundToSavedAddress:
             return String(localized: "The saved credential belongs to the address it was saved with, so nothing was saved. To use a new address, tap Replace and enter its credential, or clear the saved one first.")
         case .failed(let failure):

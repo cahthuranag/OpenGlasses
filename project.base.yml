@@ -134,6 +134,11 @@ targets:
       - path: Contracts/fixtures/workiz-v2
         type: folder
         buildPhase: resources
+      # Carries both string catalogs as resources: Resources/Localizable.xcstrings (the UI) and
+      # Resources/InfoPlist.xcstrings, which Xcode compiles into each language's InfoPlist.strings
+      # so the Info.plist privacy usage descriptions are shown in the phone's language. The
+      # catalog's keys are the Info.plist keys; its English must match OpenGlasses/Info.plist
+      # (LocalizationCatalogGuardTests holds the two together).
       - path: OpenGlasses/Sources
         excludes:
           - "Resources/Vaults/**"

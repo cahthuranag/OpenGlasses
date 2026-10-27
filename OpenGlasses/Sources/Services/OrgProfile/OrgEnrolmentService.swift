@@ -46,8 +46,8 @@ final class OrgEnrolmentService: ObservableObject {
 
         var message: String {
             switch self {
-            case .notAnEnrolmentLink, .missingURL: return "That isn't an organisation enrolment link."
-            case .insecureSource: return "Organisation profiles are only fetched over a secure (https) connection."
+            case .notAnEnrolmentLink, .missingURL: return String(localized: "That isn't an organisation enrolment link.")
+            case .insecureSource: return String(localized: "Organisation profiles are only fetched over a secure (https) connection.")
             }
         }
     }

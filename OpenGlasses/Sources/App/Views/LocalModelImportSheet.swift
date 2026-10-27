@@ -202,9 +202,9 @@ struct LocalModelImportSheet: View {
             // The disabled reason is on the button, not only in the list above it: a person who
             // reaches the action first must hear why it will not move.
             .accessibilityHint(controller.canDownload
-                                   ? "Starts the download. It continues in the background."
+                                   ? String(localized: "Starts the download. It continues in the background.")
                                    : (presentation.blockerMessages.first
-                                        ?? "This model can't be downloaded."))
+                                        ?? String(localized: "This model can't be downloaded.")))
         } header: {
             Text("Before downloading")
         } footer: {

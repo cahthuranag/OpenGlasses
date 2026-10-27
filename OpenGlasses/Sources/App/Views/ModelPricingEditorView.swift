@@ -54,7 +54,7 @@ struct ModelPricingEditorView: View {
         .onAppear(perform: load)
     }
 
-    private func rateField(_ title: String, text: Binding<String>) -> some View {
+    private func rateField(_ title: LocalizedStringKey, text: Binding<String>) -> some View {
         HStack(spacing: 4) {
             Text("$")
             TextField(title, text: text)

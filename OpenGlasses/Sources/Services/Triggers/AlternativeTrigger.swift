@@ -23,9 +23,9 @@ enum AlternativeTrigger: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .shake: return "Shake"
-        case .acoustic: return "Cough / Clap"
-        case .volume: return "Volume Button"
+        case .shake: return String(localized: "Shake")
+        case .acoustic: return String(localized: "Cough / Clap")
+        case .volume: return String(localized: "Volume Button")
         }
     }
 
@@ -39,9 +39,9 @@ enum AlternativeTrigger: String, CaseIterable, Identifiable, Codable {
 
     var detail: String {
         switch self {
-        case .shake: return "Shake the phone to start the assistant."
-        case .acoustic: return "A cough, clap, or whistle starts the assistant. Uses the microphone continuously while enabled."
-        case .volume: return "A volume-button press starts the assistant. Off by default — may conflict with normal volume control."
+        case .shake: return String(localized: "Shake the phone to start the assistant.")
+        case .acoustic: return String(localized: "A cough, clap, or whistle starts the assistant. Uses the microphone continuously while enabled.")
+        case .volume: return String(localized: "A volume-button press starts the assistant. Off by default — may conflict with normal volume control.")
         }
     }
 

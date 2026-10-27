@@ -88,13 +88,13 @@ struct SceneNarrationToggleView: View {
     static func haltCopy(_ interruption: NarrationSessionPolicy.Interruption) -> String {
         switch interruption {
         case .backgrounded:
-            return "Paused — on-device descriptions can't run while the app is in the background."
+            return String(localized: "Paused — on-device descriptions can't run while the app is in the background.")
         case .cameraUnavailable:
-            return "Paused — no live camera feed from the glasses."
+            return String(localized: "Paused — no live camera feed from the glasses.")
         case .userTurn, .realtimeSession, .ambientCaptions:
             // Not halts; the policy never reports these as a halt reason. Kept exhaustive so a new
             // interruption has to decide what the wearer is told.
-            return "Paused."
+            return String(localized: "Paused.")
         }
     }
 
@@ -103,10 +103,10 @@ struct SceneNarrationToggleView: View {
     static func silenceCopy(_ interruption: NarrationSessionPolicy.Interruption) -> String {
         switch interruption {
         case .ambientCaptions:
-            return "Quiet while live captions are running — still watching, so questions are still answered."
+            return String(localized: "Quiet while live captions are running — still watching, so questions are still answered.")
         case .userTurn, .realtimeSession:
             // Moments, not standing conditions; the policy never reports these here.
-            return "Quiet for a moment."
+            return String(localized: "Quiet for a moment.")
         case .backgrounded, .cameraUnavailable:
             return Self.haltCopy(interruption)
         }

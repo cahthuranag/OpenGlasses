@@ -21,8 +21,19 @@ enum ToolPermissionGate {
         "health_summary": "Apple Health access",
     ]
 
+    /// The permission's name in the UI's language, for the denial alert. `permissionTools` keeps
+    /// the English names as the record of which tools need a permission at all. A dictionary, not a
+    /// `switch`, so the request switch below stays the one place a tool's `case` appears.
     static func permissionName(for toolName: String) -> String? {
-        permissionTools[toolName]
+        let localizedNames: [String: String] = [
+            "calendar": String(localized: "Calendar access"),
+            "reminder": String(localized: "Reminders access"),
+            "lookup_contact": String(localized: "Contacts access"),
+            "set_alarm": String(localized: "Notification permission"),
+            "fitness_coach": String(localized: "HealthKit access"),
+            "health_summary": String(localized: "Apple Health access"),
+        ]
+        return localizedNames[toolName] ?? permissionTools[toolName]
     }
 
     /// Request the appropriate system permission for a tool. Returns true if

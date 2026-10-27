@@ -247,6 +247,50 @@ final class LocalizationCatalogGuardTests: XCTestCase {
                       "Bundled languages must not also be offered as downloads")
     }
 
+    // MARK: - Info.plist privacy strings
+
+    private static var repoURL: URL {
+        catalogURL.deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    /// The permission prompts iOS shows are Info.plist strings, localized through
+    /// `InfoPlist.xcstrings` (keyed by the Info.plist key). Its English must be the plist's own text,
+    /// every usage description must have an entry, and every complete language must carry it — a
+    /// prompt left out reaches an Arabic or Japanese wearer in English at the moment they decide.
+    func testInfoPlistCatalogMatchesInfoPlistAndCoversCompleteLanguages() throws {
+        let plistData = try Data(contentsOf: Self.repoURL.appendingPathComponent("OpenGlasses/Info.plist"))
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any])
+        let usage = plist.compactMapValues { $0 as? String }.filter { $0.key.hasSuffix("UsageDescription") }
+        XCTAssertFalse(usage.isEmpty)
+
+        let catalogData = try Data(contentsOf: Self.repoURL
+            .appendingPathComponent("OpenGlasses/Sources/Resources/InfoPlist.xcstrings"))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let strings = try XCTUnwrap(root["strings"] as? [String: [String: Any]])
+
+        for (key, english) in usage.sorted(by: { $0.key < $1.key }) {
+            guard let entry = strings[key] else {
+                XCTFail("\(key) is in Info.plist but not in InfoPlist.xcstrings")
+                continue
+            }
+            XCTAssertEqual(Self.source(for: key, entry: entry), english,
+                           "\(key): InfoPlist.xcstrings' English differs from Info.plist")
+            let localizations = entry["localizations"] as? [String: Any] ?? [:]
+            for language in Self.completeLanguages.keys.sorted() {
+                guard let localization = localizations[language] as? [String: Any],
+                      let value = Self.values(of: localization).first?.value, !value.isEmpty else {
+                    XCTFail("\(key) has no \(language) translation")
+                    continue
+                }
+                XCTAssertNotEqual(value, english, "\(key) is untranslated in \(language)")
+                XCTAssertTrue(value.contains("Avenkin"), "\(key) in \(language) lost the app's name")
+            }
+        }
+        XCTAssertEqual(Set(strings.keys), Set(usage.keys), "InfoPlist.xcstrings has a key Info.plist lacks")
+    }
+
     // MARK: - The checker itself
 
     func testSpecifierCheckerCatchesWhatMachineTranslationBreaks() {

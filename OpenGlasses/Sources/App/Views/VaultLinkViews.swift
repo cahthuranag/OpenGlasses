@@ -151,7 +151,7 @@ struct VaultLinkReviewSections: View {
 
         Section {
             Text(review.manualsSummary)
-            ForEach(review.manuals, id: \.self) { title in
+            ForEach(Array(review.manuals.enumerated()), id: \.offset) { _, title in
                 Label(title, systemImage: "doc.text")
                     .font(.callout)
             }

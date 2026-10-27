@@ -322,4 +322,21 @@ final class ModelFetcherTests: XCTestCase {
         XCTAssertTrue(inferredVision(.openrouter, "meta-llama/llava-13b"))
         XCTAssertFalse(inferredVision(.openrouter, "mistralai/mistral-7b"))
     }
+
+    // MARK: - uniqueByID(_:)
+
+    /// The model pickers are lists keyed by id; a provider listing an id twice must not reach them.
+    func testUniqueByIDKeepsTheFirstOfEachIdInOrder() {
+        let listed = [
+            ModelFetcher.RemoteModel(id: "qwen-plus", name: "first"),
+            ModelFetcher.RemoteModel(id: "qwen-max", name: "Qwen Max"),
+            ModelFetcher.RemoteModel(id: "qwen-plus", name: "second"),
+            ModelFetcher.RemoteModel(id: "qwen-turbo", name: "Qwen Turbo"),
+            ModelFetcher.RemoteModel(id: "qwen-max", name: "again"),
+        ]
+        let unique = ModelFetcher.uniqueByID(listed)
+        XCTAssertEqual(unique.map(\.id), ["qwen-plus", "qwen-max", "qwen-turbo"])
+        XCTAssertEqual(unique.first?.name, "first")
+        XCTAssertEqual(ModelFetcher.uniqueByID([]), [])
+    }
 }

@@ -19,6 +19,25 @@ catalogs. Two PRs: P1+P2 (code, reviewable), then P3 (mechanical per-language ca
 
 ## Progress (2026-10-11)
 
+- **Urdu (2026-10-27, owner request).** `ur` is the thirteenth complete catalog and the second
+  right-to-left one. Every translatable key carries an Urdu value, with `one`/`other` plural
+  variants for the 30 counted strings. It is listed in `bundledLanguages` (Urdu, اردو), joins
+  `completeLanguages` in the catalog guard and is declared in `knownRegions`. Like the others it
+  is a machine-translated first pass, made against the English with the shipped Arabic as a guide
+  to which terms stay in Latin script. Brand, product and model names stay in Latin, as do units,
+  literal wake phrases and voice triggers. In-app feature names (My Day, Connections, Blind
+  Assistant) match their own Urdu titles. A script checked every value for specifier parity
+  (`specifier_problems`), line breaks, numbers, `{placeholders}` and the old product name. The
+  catalog was written with the review script's Xcode-exact writer, so only the `ur`
+  localizations are added. iOS 27 ships Urdu as a system language (`ur.lproj` throughout UIKit,
+  Foundation and Settings), so an Urdu phone picks the catalog up the same way an Arabic one does. On the simulator, launched
+  with `-AppleLanguages (ur)`, the splash, welcome page and screen titles render in Urdu, right to
+  left. The main screen's tiles, status card and tab bar, and the Settings hub's rows, stay in
+  English. Arabic shows the same: those views take plain `String`s, the verbatim gap P1 still owes.
+  So do the onboarding "Get Started" button and the system permission prompts (no
+  `InfoPlist.strings`).
+  Native review is owed: `Scripts/translation-review.py export --language ur`. The draft's
+  "bridge" (برج, which can also read as "tower") is worth a reviewer's look.
 - **Native-speaker review by spreadsheet (2026-10-27).** `Scripts/translation-review.py export`
   writes an .xlsx for one language. Each row holds the English, the current translation, a blank
   suggestion column and notes, one row per string and plural form. Rows are tagged with the screen

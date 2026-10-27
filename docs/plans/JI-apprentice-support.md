@@ -855,6 +855,11 @@ experience. An apprentice-facing **From the crew** list on the Apprenticeship sc
 
 ### 11 · The apprentice's progress screen, and what they choose to share
 
+> **Amended 2026-10-27 by Plan [JX](JX-journeyman-engine.md) §1 (owner decision):** logbook entries,
+> sign-offs and certificates are the organisation's record and reach it with the job's records, not
+> by the apprentice's share; the apprentice can always export a signed copy and import it read-only at
+> a new employer. Everything else below stays the apprentice's choice.
+
 **My apprenticeship** (Settings › Field Assist › Apprenticeship, and a row on the Job tab when the
 role is apprentice), from `ApprenticeProgress` (pure, over local stores only):
 
@@ -883,6 +888,9 @@ transport (`DeliveryRequest.Payload.progressShare`, `OpKind.progressShare` in
 designs it.
 
 ### 12 · Roles, consent and the EU AI Act
+
+> **Amended 2026-10-27 by Plan [JX](JX-journeyman-engine.md) §1:** "An apprentice's data is theirs"
+> no longer covers the logbook, its sign-offs or certificates, which are held by the organisation.
 
 - **An apprentice's data is theirs.** Everything in §§2–11 lives on the phone in
   `SensitiveStore.apprenticeship` (and JG's `practice`, IW's goals and trail). The office sees only

@@ -553,7 +553,14 @@ enum TableFixtureLayouts {
         items.append(Item(text: "Plain widgets", x: 230, y: 150))
         for (index, key) in ["W2", "W4", "W6", "W8"].enumerated() {
             let base = 5 + 2 * index
-            items += row(166 + Double(index) * 14, [(key, 73)] + (1...4).map { (String(base * $0), 152 + 60 * Double($0 - 1)) })
+            // Spelled out in steps: as one expression it exceeds CI's type-check time limit.
+            var cells: [(String, Double)] = [(key, 73)]
+            for column in 1...4 {
+                let x: Double = 152 + 60 * Double(column - 1)
+                cells.append((String(base * column), x))
+            }
+            let y: Double = 166 + Double(index) * 14
+            items += row(y, cells)
         }
         return items
     }

@@ -282,6 +282,64 @@ final class FieldAssistTierTests: XCTestCase {
             source: .storeProduct(productID: StoreKitService.fieldAssistMonthlyId), tier: .solo, expiresAt: nil)
         guard case .granted(let grant) = FieldAssistEntitlementStatus.make(decision: decision) else { return XCTFail() }
         XCTAssertEqual(grant.sourceLabel, "App Store subscription")
+        XCTAssertNil(grant.renews)
+        XCTAssertEqual(grant.expiryLabel, "Expires")
+    }
+
+    private func subscription(expiresIn seconds: TimeInterval, renewing: Bool) -> FieldAssistEntitlementStatus.Grant? {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let product = StoreKitService.fieldAssistMonthlyId
+        let decision = FieldAssistEntitlementDecision.granted(
+            source: .storeProduct(productID: product), tier: .solo, expiresAt: now.addingTimeInterval(seconds))
+        let state = FieldAssistEntitlementStatus.make(decision: decision, now: now,
+                                                      nonRenewingProductIDs: renewing ? [] : [product])
+        guard case .granted(let grant) = state else { return nil }
+        return grant
+    }
+
+    /// A monthly subscription's expiry is the end of its period, at most a month away, so warning
+    /// on it would show from the day it is bought — and daily in TestFlight, where it renews daily.
+    func testRenewingSubscriptionNeverWarns() throws {
+        // 30 days, just under 7 days, just over a day, an hour — as literals, since an arithmetic
+        // array literal can time out CI's type checker.
+        let expiries: [TimeInterval] = [2_592_000, 604_799, 86_460, 3_600]
+        for seconds in expiries {
+            let grant = try XCTUnwrap(subscription(expiresIn: seconds, renewing: true))
+            XCTAssertNil(grant.warning, "\(seconds)")
+            XCTAssertEqual(grant.renews, true)
+            XCTAssertEqual(grant.expiryLabel, "Renews")
+        }
+    }
+
+    func testSubscriptionWithRenewalOffWarnsThatItEnds() throws {
+        let far = try XCTUnwrap(subscription(expiresIn: 31 * 86_400 + 60, renewing: false))
+        XCTAssertNil(far.warning)
+        XCTAssertEqual(far.expiryLabel, "Access ends")
+
+        let tomorrow = try XCTUnwrap(subscription(expiresIn: 86_400 + 60, renewing: false))
+        XCTAssertEqual(tomorrow.warning, .subscriptionEnding(daysRemaining: 1, threshold: 7))
+        let copy = FieldAssistPaywallCopy.expiring(try XCTUnwrap(tomorrow.warning))
+        XCTAssertTrue(copy.hasPrefix("Your subscription ends tomorrow and won't renew"), copy)
+        XCTAssertFalse(copy.contains("Renew now"), copy)
+    }
+
+    /// Another product turned off doesn't stop the granting one renewing.
+    func testRenewalOffForAnotherProductDoesNotWarn() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let decision = FieldAssistEntitlementDecision.granted(
+            source: .storeProduct(productID: StoreKitService.fieldAssistMonthlyId), tier: .solo,
+            expiresAt: now.addingTimeInterval(3_600))
+        let state = FieldAssistEntitlementStatus.make(decision: decision, now: now,
+                                                      nonRenewingProductIDs: [StoreKitService.fieldAssistAnnualId])
+        guard case .granted(let grant) = state else { return XCTFail() }
+        XCTAssertNil(grant.warning)
+    }
+
+    func testLicenceWarningIgnoresStoreRenewal() {
+        guard case .granted(let licence) = granted(expiresIn: 3_600) else { return XCTFail() }
+        XCTAssertNil(licence.renews)
+        XCTAssertEqual(licence.expiryLabel, "Expires")
+        XCTAssertEqual(licence.warning, .expiring(daysRemaining: 0, threshold: 7))
     }
 
     // MARK: - Copy guard

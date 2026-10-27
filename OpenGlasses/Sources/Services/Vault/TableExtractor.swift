@@ -13,12 +13,16 @@ struct PositionedWord: Equatable {
     /// Point size of the word's font.
     var size: Double
     var bold: Bool
+    /// On a page the PDF turns to show it, a word still drawn the page's own way up — a running
+    /// head or footer — and so on its side as the page is shown (Plan JW follow-up).
+    var sideways: Bool
 
-    init(_ text: String, rect: CGRect, size: Double, bold: Bool = false) {
+    init(_ text: String, rect: CGRect, size: Double, bold: Bool = false, sideways: Bool = false) {
         self.text = text
         self.rect = rect
         self.size = size
         self.bold = bold
+        self.sideways = sideways
     }
 
     /// A word whose box sits at `x`, with its top at `y`, sized as type of `size` points sets it.
@@ -28,8 +32,9 @@ struct PositionedWord: Equatable {
         self.init(text, rect: CGRect(x: x, y: y, width: w, height: size), size: size, bold: bold)
     }
 
-    /// Set on its side: a box much taller than it is wide for a word of several letters.
-    var isRotated: Bool { text.count >= 3 && rect.height > 2 * rect.width }
+    /// Set on its side: a box much taller than it is wide for a word of several letters, or a
+    /// word read as `sideways`.
+    var isRotated: Bool { sideways || (text.count >= 3 && rect.height > 2 * rect.width) }
 }
 
 /// A table extracted from an organisation's own loaded manual or code book (Plan JJ P0): its
@@ -596,7 +601,7 @@ enum TableExtractor {
     /// Characters a mark glued to a caption's first word may not be: an opening bracket or a quote
     /// starts a cross-reference ("(Table 99)"), and a footnote marker starts a note.
     private static let notMarginMark: Set<Character> = ["(", "[", "{", "\"", "'", "\u{201C}", "\u{2018}",
-                                                         "*", "\u{2020}", "\u{2021}"]
+                                                         "*", "\u{2020}", "\u{2021}", "\u{00A7}", "\u{2016}", "\u{00B6}"]
 
     /// A character a code book prints in the margin to flag a revision: a triangle, a bar, an
     /// arrow, a bullet — anything that is neither a letter nor a digit — or the triangle set as a
@@ -643,6 +648,13 @@ enum TableExtractor {
             // "No." or an abbreviation with a dot inside is not the end of a sentence.
             return word.count > 2 && !word.dropLast().contains(".")
         }
+    }
+
+    /// Whether the page sets words on their side that may be a table's headings: any but those
+    /// read as `sideways` — a turned page's running head and footer, which every such page has
+    /// (Plan JW follow-up) and which say nothing of why a grid failed.
+    static func hasRotatedHeadings(_ words: [PositionedWord]) -> Bool {
+        words.contains { $0.isRotated && !$0.sideways }
     }
 
     /// Whether any word on the page is set in bold.
@@ -705,7 +717,7 @@ enum TableExtractor {
     static func diagnoseTooFewRows(words: [PositionedWord], page: ManualTable.Page) -> [TooFewRows] {
         let all = lines(of: words)
         let bold = hasBold(words)
-        let rotated = words.contains(where: \.isRotated)
+        let rotated = hasRotatedHeadings(words)
         return captionLines(in: all, pageHasBold: bold).compactMap { found -> TooFewRows? in
             let outcome = extract(lines: all, at: found.index, titleLines: found.titleLines, caption: found.caption,
                                   page: page, hasRotatedWords: rotated, pageHasBold: bold)
@@ -735,10 +747,13 @@ enum TableExtractor {
             return .failed(.captionNotFound)
         }
         return extract(lines: all, at: found.index, titleLines: found.titleLines, caption: found.caption,
-                       page: page, hasRotatedWords: words.contains(where: \.isRotated), pageHasBold: bold)
+                       page: page, hasRotatedWords: hasRotatedHeadings(words), pageHasBold: bold)
     }
 
-    private static let noteStart = #"^(\*+|\x{2020}|\x{2021}|\([a-z0-9]\)|\d{1,2}[\).]|[\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{2079}]+|notes?\b)"#
+    /// The footnote markers a book runs through after the asterisk, in order: dagger, double
+    /// dagger, section sign, double bar, pilcrow (the last three, Plan JW follow-up).
+    private static let footnoteSigns = #"\x{2020}|\x{2021}|\x{00A7}|\x{2016}|\x{00B6}"#
+    private static let noteStart = #"^(\*+|"# + footnoteSigns + #"|\([a-z0-9]\)|\d{1,2}[\).]|[\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{2079}]+|notes?\b)"#
 
     /// A line that starts a note under the table: a superscript marker first, or one phrase of
     /// text opening with a marker or "Note", or a marker standing apart from the note it keys. A
@@ -762,6 +777,20 @@ enum TableExtractor {
     static let plainHeaderMaximumLines = 4
     /// Most lines a plain page's caption title is read as wrapping onto.
     static let plainTitleMaximumLines = 3
+    /// Most lines past those a bracketed line under a plain page's title is read as part of it.
+    static let plainBracketMaximumLines = 3
+
+    /// A line that is a bracketed phrase of words, not a unit: "(see the notes below)", never
+    /// "(A)" or "(mm²)", which head a column.
+    static func opensBracket(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("(") && trimmed.split(whereSeparator: \.isWhitespace).count >= 3
+    }
+
+    /// The text opens more round brackets than it closes.
+    static func bracketOpen(_ text: String) -> Bool {
+        text.filter { $0 == "(" }.count > text.filter { $0 == ")" }.count
+    }
 
     /// Most heading lines a plain page's table is read with when its first rows of numbers sit
     /// further down than a short header reaches (Plan JJ P5), and how far down they are looked for.
@@ -773,23 +802,73 @@ enum TableExtractor {
     struct HeaderRuleRow: Equatable {
         var cells: Int
         var numbersAfterFirst: Int
+        /// Of those numbers, the ones that carry a unit of their own ("40 kg", "16 A").
+        var unitNumbersAfterFirst = 0
+        /// Cells after the first that print only a dash: a value the table does not give.
+        var dashesAfterFirst = 0
+        /// Every cell after the first is a number with no unit of its own, each larger than the
+        /// one before — and the first too, when it is a number: "1 2 3 4", as a row of headings
+        /// printed as numbers reads, with a word or two at its left or none.
+        var ascendingNumbers = false
 
         /// A row of cells, each as its text and markers, left to right.
         init(cells: [(text: String, markers: [String])]) {
             self.cells = cells.count
-            numbersAfterFirst = cells.dropFirst().filter {
-                TableExtractor.parseCell($0.text, markers: $0.markers, columnUnit: nil).value != nil
-            }.count
+            let parsed = cells.map { TableExtractor.parseCell($0.text, markers: $0.markers, columnUnit: nil) }
+            let after = parsed.dropFirst()
+            let numbers = after.filter { $0.value != nil }
+            numbersAfterFirst = numbers.count
+            unitNumbersAfterFirst = numbers.filter { $0.unit != nil }.count
+            dashesAfterFirst = cells.dropFirst().filter { TableExtractor.isDash($0.text) }.count
+            func bare(_ cell: ManualTable.Cell) -> Double? { cell.unit == nil ? cell.value : nil }
+            let values = after.compactMap(bare)
+            let rising = (parsed.first.flatMap(bare).map { [$0] } ?? []) + values
+            ascendingNumbers = values.count >= 2 && values.count == after.count
+                && zip(rising, rising.dropFirst()).allSatisfy { $0 < $1 }
         }
 
         init(phrases: [Phrase]) {
             self.init(cells: phrases.map { ($0.text, $0.markers) })
         }
 
-        /// A row of two or more cells whose cells after the first are at least half numbers.
-        var isNumeric: Bool { cells >= 2 && numbersAfterFirst * 2 >= cells - 1 }
+        /// A row of two or more cells whose cells after the first are at least half numbers — of
+        /// the cells that print a value at all: a dash for a value not given counts for neither
+        /// side (Plan JW follow-up), so a row of a sparse table is still a row of numbers.
+        var isNumeric: Bool {
+            cells >= 2 && numbersAfterFirst > 0 && numbersAfterFirst * 2 >= cells - 1 - dashesAfterFirst
+        }
         /// Every cell after the first is text.
         var isTextAfterFirst: Bool { numbersAfterFirst == 0 }
+        /// A row of numbers each printed with a unit of its own: over rows whose numbers carry
+        /// none, the columns' headings printed as quantities ("40 kg", "80 kg").
+        var isUnitHeading: Bool { isNumeric && unitNumbersAfterFirst == numbersAfterFirst }
+    }
+
+    /// A cell that prints only a dash (or a run of them): no value.
+    static func isDash(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        return !trimmed.isEmpty && trimmed.allSatisfy { "-\u{2010}\u{2011}\u{2012}\u{2013}\u{2014}\u{2212}".contains($0) }
+    }
+
+    /// Most lines of headings printed as quantities over a table's first row of numbers.
+    static let unitHeadingMaximumLines = 2
+
+    /// Past the headings printed as quantities at `index`: at most `unitHeadingMaximumLines` rows,
+    /// the first of them one whose numbers each carry a unit and the others that or a row of
+    /// words ("Widget A" under "40 kg"), directly over a run of `minimumBodyRows` rows of
+    /// numbers the first of which carries a number with none. Those rows head the columns under
+    /// them, so the body starts after them. `index` itself when the rows there are not such
+    /// headings — and a table whose every row prints its units is never read as all heading.
+    static func pastUnitHeadings(_ index: Int, in rows: [HeaderRuleRow]) -> Int {
+        guard index < rows.count, rows[index].isUnitHeading else { return index }
+        var next = index + 1
+        while next < rows.count, next - index < unitHeadingMaximumLines,
+              rows[next].isUnitHeading || (rows[next].cells >= 2 && rows[next].isTextAfterFirst) {
+            next += 1
+        }
+        guard next + minimumBodyRows <= rows.count, !rows[next].isUnitHeading,
+              rows[next..<(next + minimumBodyRows)].allSatisfy(\.isNumeric) else { return index }
+        return next
     }
 
     /// The rows the one-weight header rule ever looks at: far enough down for the deepest header
@@ -806,15 +885,25 @@ enum TableExtractor {
     static func plainHeader(rows: [HeaderRuleRow], wrapTitle: (_ before: Int) -> Int,
                             isHeaderLine: (Int) -> Bool) -> (start: Int, count: Int) {
         let reach = plainTitleMaximumLines + plainHeaderMaximumLines
-        let run = numericRunStart(in: rows)
+        // Headings printed as quantities over the first rows of numbers head the table, not
+        // start its body (Plan JW follow-up).
+        let run = numericRunStart(in: rows).map { pastUnitHeadings($0, in: rows) }
         // A run of rows of numbers under headings stacked deeper than a short header (Plan JJ
         // P5): at most `plainLongHeaderMaximumLines` lines of headings that are neither prose nor
         // a note, after the title's wrapped lines.
         func deepHeader(_ run: Int, from start: Int) -> Bool {
             run - start <= plainLongHeaderMaximumLines && (start..<run).allSatisfy(isHeaderLine)
         }
-        if let firstRow = rows.prefix(reach + 1).firstIndex(where: \.isNumeric) {
+        if let found = rows.prefix(reach + 1).firstIndex(where: \.isNumeric) {
+            let firstRow = pastUnitHeadings(found, in: rows)
             let start = wrapTitle(firstRow)
+            // A lone row of numbers over more headings — a row of cells all words — and then the
+            // run of rows: the columns' own headings printed as numbers ("1", "2", "3" under
+            // "Number of widgets"), read with the headings round them (Plan JW follow-up).
+            if let run, run > firstRow + 1, numberedHeadingsAbove(run, from: firstRow, in: rows, isHeaderLine: isHeaderLine),
+               deepHeader(run, from: start) {
+                return (start, run)
+            }
             if firstRow - start <= plainHeaderMaximumLines, (start..<firstRow).allSatisfy(isHeaderLine) {
                 return (start, firstRow)
             }
@@ -835,6 +924,18 @@ enum TableExtractor {
             return (start, start)
         }
         return (0, 0)
+    }
+
+    /// The row of numbers at `row` heads the columns, with the lines under it down to `run`: the
+    /// row is numbers only, rising ("1 2 3"), none of the lines under it is a row of numbers, each
+    /// may be a heading, and one of them is a row of two or more cells all words — the headings
+    /// under the numbers, which no group heading over a run of rows is.
+    private static func numberedHeadingsAbove(_ run: Int, from row: Int, in rows: [HeaderRuleRow],
+                                              isHeaderLine: (Int) -> Bool) -> Bool {
+        guard rows[row].ascendingNumbers else { return false }
+        let between = (row + 1)..<run
+        return between.allSatisfy { !rows[$0].isNumeric && isHeaderLine($0) }
+            && between.contains { rows[$0].cells >= 2 && rows[$0].isTextAfterFirst && rows[$0].dashesAfterFirst == 0 }
     }
 
     /// The first of `minimumBodyRows` consecutive rows of numbers within `plainLongHeaderReach`
@@ -880,6 +981,16 @@ enum TableExtractor {
         var bodyEnd: Int
     }
 
+    /// Widest space between two bands of a table's rows, in lines of its type.
+    static let bandGapMaximumLines = 3.0
+
+    /// A row past a wide space that carries on the rows above it: as many cells as the row above,
+    /// at least three, each over the cell above it.
+    static func continuesBand(_ phrases: [Phrase], under above: [Phrase]) -> Bool {
+        phrases.count >= 3 && phrases.count == above.count
+            && zip(phrases, above).allSatisfy { min($0.maxX, $1.maxX) - max($0.minX, $1.minX) > 0 }
+    }
+
     static func layout(lines all: [Line], at captionIndex: Int, titleLines: Int, caption: Caption,
                        pageHasBold: Bool) -> Layout {
         // The table's region: under the caption and its title, up to the next caption or the end.
@@ -916,10 +1027,17 @@ enum TableExtractor {
                 headerCount += 1
             }
         } else {
-            // The lines of a long title that wrapped under the caption, up to `first`.
+            // The lines of a long title that wrapped under the caption, up to `first` — and, past
+            // `plainTitleMaximumLines`, a bracketed line under it (a cross-reference, the basis of
+            // its values) and the lines that bracket runs on to (Plan JW follow-up).
             func wrapTitle(before first: Int) -> Int {
                 var previous = captionIndex
-                while headerStart < min(first, plainTitleMaximumLines),
+                func takes(_ index: Int) -> Bool {
+                    if index < plainTitleMaximumLines { return true }
+                    guard index < plainTitleMaximumLines + plainBracketMaximumLines else { return false }
+                    return bracketOpen(title) || opensBracket(region[index].text)
+                }
+                while headerStart < first, takes(headerStart),
                       region[headerStart].phrases.count == 1, !isNoteLine(region[headerStart]),
                       region[headerStart].top - all[previous].bottom < region[headerStart].size {
                     title += (title.isEmpty ? "" : " ") + region[headerStart].text
@@ -947,7 +1065,16 @@ enum TableExtractor {
             if let previous = body.last ?? header.last {
                 let gap = line.top - previous.bottom
                 let typical = gaps.isEmpty ? line.size : gaps.sorted()[gaps.count / 2]
-                if gap > max(3 * typical, 1.5 * line.size) { break }
+                if gap > max(3 * typical, 1.5 * line.size) {
+                    // Rows printed in bands with a wider space between them (Plan JW follow-up):
+                    // past the gap, a row that prints in the same columns as the row above it,
+                    // every cell over the one above, carries the body on. The gap is not counted.
+                    guard let last = body.last, gap <= bandGapMaximumLines * line.size,
+                          continuesBand(phrases, under: last.phrases) else { break }
+                    body.append(line)
+                    bodyEnd = index + 1
+                    continue
+                }
                 gaps.append(max(gap, 0))
             }
             body.append(line)
@@ -1420,7 +1547,7 @@ enum TableExtractor {
     static func extractGrids(words: [PositionedWord], page: ManualTable.Page)
         -> [(caption: Caption, outcome: Outcome, grid: Grid?, placement: Placement)] {
         let all = lines(of: words)
-        let rotated = words.contains(where: \.isRotated)
+        let rotated = hasRotatedHeadings(words)
         let bold = hasBold(words)
         let captions = captionLines(in: all, pageHasBold: bold)
         return captions.enumerated().map { position, found in
@@ -1486,7 +1613,7 @@ enum TableExtractor {
         }
         let joined = head + moved
         let read = read(lines: joined, at: 0, titleLines: found.titleLines, caption: found.caption, page: nextPage,
-                        hasRotatedWords: (words + next).contains(where: \.isRotated), pageHasBold: bold)
+                        hasRotatedWords: hasRotatedHeadings(words + next), pageHasBold: bold)
         guard var table = read.outcome.table else { return nil }
         table.page = page
         return (table, read.grid)
@@ -1672,7 +1799,7 @@ enum TableExtractor {
         return nil
     }
 
-    /// A cell's number, unit and markers. Trailing markers — asterisks, daggers, superscript
+    /// A cell's number, unit and markers. Trailing markers — asterisks, daggers, section signs, superscript
     /// digits after a number, "(a)" — are taken off before the number is read; the text keeps
     /// them, as printed. A unit is the cell's own ("30 A") or, for a number, its column's.
     static func parseCell(_ raw: String, markers given: [String], columnUnit: String?) -> ManualTable.Cell {
@@ -1681,7 +1808,7 @@ enum TableExtractor {
         var markers = given
         var trailing: [String] = []
         while true {
-            if let range = body.range(of: #"(\*+|\x{2020}|\x{2021})$"#, options: .regularExpression) {
+            if let range = body.range(of: #"(\*+|"# + footnoteSigns + #")$"#, options: .regularExpression) {
                 trailing.insert(String(body[range]), at: 0)
                 body.removeSubrange(range)
             } else if let range = body.range(of: #"(?<=[\d)])[\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{2079}]+$"#,

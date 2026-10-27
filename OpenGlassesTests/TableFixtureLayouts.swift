@@ -506,6 +506,116 @@ enum TableFixtureLayouts {
         [lead(60), Item(text: footerWithFolio(folio), x: 50, y: pageHeight - 40, size: 8)]
     }
 
+    // MARK: - Headings printed as quantities, a sparse first row, rows in bands, a turned page (Plan JW follow-up)
+
+    /// Table 99 on a page set in one weight: a margin mark, a title wrapping three lines and a
+    /// long bracketed line under it, a row-header heading wrapped over three lines with the value
+    /// columns' headings printed as quantities ("40 kg‡") on the same lines, row keys with a
+    /// marker glued to them, and notes keyed by the double dagger, the section sign, two
+    /// asterisks and "Note:". Every word and value is invented.
+    static func quantityHeadings() -> Page {
+        var items = [Item(text: "\u{0394}", x: 53, y: 60, size: 12),
+                     Item(text: "Table 99", x: 285, y: 60, size: 12),
+                     Item(text: "Invented loads for not more than three widgets in one crate,", x: 117, y: 74, size: 12),
+                     Item(text: "stacked no more than two crates high and kept dry", x: 128, y: 88, size: 12),
+                     Item(text: "(based on an invented room of 20 degrees*)", x: 181, y: 102, size: 12),
+                     Item(text: "(See the invented notes, the example rules and the other example tables.)",
+                          x: 120, y: 116, size: 11),
+                     Item(text: "Load\u{2020},\u{00A7}", x: 175, y: 146, size: 10),
+                     Item(text: "Widget,", x: 106, y: 158, size: 10)]
+        items += row(170, [("size or", 106), ("85 kg\u{2021}", 320), ("100 kg\u{2021}", 385), ("150 kg\u{2021}", 449)], size: 10)
+        items += row(182, [("grade", 106), ("40 kg\u{2021}", 173), ("55 kg\u{2021}", 223), ("70 kg\u{2021}", 270),
+                           ("See Note", 320), ("See Note", 385), ("See Note", 449)], size: 10)
+        for (index, key) in quantityKeys.enumerated() {
+            let values = [11, 17, 23, 29, 34, 41].map { String($0 + 10 * index) }
+            items += row(198 + Double(index) * 16, zip([key] + values, [106, 173, 223, 270, 320, 385, 449]).map { ($0, $1) },
+                         size: 10)
+        }
+        items += [Item(text: "\u{2021} The invented loads are the most one crate may carry.", x: 72, y: 300, size: 10),
+                  Item(text: "\u{00A7} See the example table for invented correction factors.", x: 72, y: 312, size: 10),
+                  Item(text: "** See the example rule for the smallest widgets.", x: 72, y: 324, size: 10),
+                  Item(text: "Note: The invented loads apply to dry widgets only.", x: 72, y: 336, size: 10)]
+        return items
+    }
+
+    static let quantityKeys = ["71**", "63**", "55", "47", "39", "31"]
+
+    /// Table 98 on a page set in one weight, its value columns headed by a group heading over a
+    /// row of numbers ("1 2 3 4") with a row of words under it ("Area,", "mm²"), a heading set
+    /// alone over the rows, then rows of numbers.
+    static func numberedColumnHeadings() -> Page {
+        var items = [Item(text: "Table 98 Invented widget areas", x: 200, y: 60, size: 12),
+                     Item(text: "Widget", x: 73, y: 90),
+                     Item(text: "Number of widgets", x: 260, y: 100)]
+        items += row(114, [("1", 160), ("2", 220), ("3", 280), ("4", 340)])
+        items += row(126, [("Widget size", 73), ("Area,", 155), ("Area,", 215), ("Area,", 275), ("Area,", 335)])
+        items += row(136, [("grade", 73), ("mm\u{00B2}", 157), ("mm\u{00B2}", 217), ("mm\u{00B2}", 277), ("mm\u{00B2}", 337)])
+        items.append(Item(text: "Plain widgets", x: 230, y: 150))
+        for (index, key) in ["W2", "W4", "W6", "W8"].enumerated() {
+            let base = 5 + 2 * index
+            // Spelled out in steps: as one expression it exceeds CI's type-check time limit.
+            var cells: [(String, Double)] = [(key, 73)]
+            for column in 1...4 {
+                let x: Double = 152 + 60 * Double(column - 1)
+                cells.append((String(base * column), x))
+            }
+            let y: Double = 166 + Double(index) * 14
+            items += row(y, cells)
+        }
+        return items
+    }
+
+    /// Table 99 on a page set in one weight whose first row prints a value in a few columns only,
+    /// a dash in the rest.
+    static func sparseFirstRow() -> Page {
+        var items = [Item(text: "Table 99 Invented widget sizes", x: 200, y: 60, size: 12)]
+        items += row(90, [("Widget", 50), ("Inner A", 120), ("Outer A", 180), ("Inner B", 240), ("Outer B", 300),
+                          ("Inner C", 360), ("Outer C", 420)])
+        let body: [[String]] = [["W1", "\u{2014}", "\u{2014}", "8.7", "64", "\u{2014}", "\u{2014}"],
+                                ["W2", "13.3", "143", "12.8", "131", "11.9", "118"],
+                                ["W3", "17.6", "241", "16.2", "212", "15.4", "188"],
+                                ["W4", "22.9", "402", "21.7", "377", "20.3", "351"]]
+        for (index, cells) in body.enumerated() {
+            items += row(106 + Double(index) * 14, zip(cells, [50, 122, 182, 242, 302, 362, 422]).map { ($0, $1) })
+        }
+        return items
+    }
+
+    /// Table 98A with its rows printed in bands of three, a wider space between the bands.
+    static func bandedRows() -> Page {
+        var items = [caption("TABLE 98A Invented widget currents")]
+        items += row(90, [("Widget", 50), ("Low (A)", 200), ("Mid (A)", 280), ("High (A)", 360)], bold: true)
+        var y = 106.0
+        for index in 0..<9 {
+            if index > 0, index % 3 == 0 { y += 18 }
+            items += row(y, [("W\(index + 1)", 50), (String(4 + index), 210), (String(8 + 2 * index), 290),
+                             (String(12 + 3 * index), 370)])
+            y += 14
+        }
+        return items
+    }
+
+    /// The table of a page the PDF turns a quarter to show (its `/Rotate` 90), as shown: on a
+    /// page as wide as `pageHeight` and as tall as `pageWidth`, Table 98A with a margin mark, a
+    /// heading line and five rows. Drawn turned by `TableFixtures.turned`.
+    static func turnedTable() -> Page {
+        var items = [Item(text: "\u{0394}", x: 68, y: 72, size: 12),
+                     Item(text: "Table 98A", x: 370, y: 72, size: 12),
+                     Item(text: "Invented widget ratings across a turned page", x: 250, y: 88, size: 12)]
+        items += row(130, [("Widget", 73), ("Rating A", 200), ("Rating B", 300), ("Rating C", 400)])
+        for (index, key) in ["W1", "W2", "W3", "W4", "W5"].enumerated() {
+            items += row(150 + Double(index) * 16, [(key, 73), (String(11 + index), 205), (String(21 + 2 * index), 305),
+                                                    (String(31 + 3 * index), 405)])
+        }
+        return items
+    }
+
+    /// The footer of that turned page, printed the page's own way up — so on its side as shown,
+    /// alongside the table's rows.
+    static func turnedFooter() -> Page {
+        [Item(text: "March 2031 \u{00A9} 2031 Example Standards Body 41", x: 120, y: pageHeight - 30)]
+    }
+
     // MARK: - As positioned words
 
     /// The page as the extractor's input, each item split into words at the advance a typical

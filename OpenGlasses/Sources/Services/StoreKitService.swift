@@ -114,11 +114,6 @@ class StoreKitService: ObservableObject {
         var planName: String {
             productId.hasSuffix("annual") ? "Annual" : "Monthly"
         }
-
-        var isExpiringSoon: Bool {
-            guard let expiry = expirationDate else { return false }
-            return expiry.timeIntervalSinceNow < 7 * 24 * 3600 // within 7 days
-        }
     }
 
     // MARK: - Init

@@ -1096,7 +1096,10 @@ struct FieldAssistSettingsView: View {
     }
 
     private var entitlementState: FieldAssistEntitlementStatus.State {
-        FieldAssistEntitlementStatus.make(decision: FieldAssistEntitlement.shared.decision())
+        let nonRenewing = [store.fieldAssistSubscription, store.myManualsSubscription]
+            .compactMap { $0 }.filter { !$0.willAutoRenew }.map(\.productId)
+        return FieldAssistEntitlementStatus.make(decision: FieldAssistEntitlement.shared.decision(),
+                                                 nonRenewingProductIDs: Set(nonRenewing))
     }
 
     @ViewBuilder
@@ -1266,7 +1269,7 @@ struct FieldAssistSettingsView: View {
                     if let seats = lic.seats { LabeledContent("Seats", value: "\(seats)") }
                     if let reference = lic.reference, !reference.isEmpty { LabeledContent("Reference", value: reference) }
                 }
-                LabeledContent("Expires", value: grant.expiresAt?.formatted(date: .abbreviated, time: .omitted) ?? "Never")
+                LabeledContent(grant.expiryLabel, value: grant.expiresAt?.formatted(date: .abbreviated, time: .omitted) ?? "Never")
                 if let warning = grant.warning {
                     Label(FieldAssistPaywallCopy.expiring(warning), systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)

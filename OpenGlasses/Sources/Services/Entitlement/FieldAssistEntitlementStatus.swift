@@ -8,13 +8,28 @@ struct FieldAssistEntitlementStatus: Equatable {
         /// The granted tier lapses within `threshold` days (30 or 7); `daysRemaining` is the
         /// whole-day count left, never negative.
         case expiring(daysRemaining: Int, threshold: Int)
+        /// An App Store subscription whose renewal was turned off ends within `threshold` days.
+        case subscriptionEnding(daysRemaining: Int, threshold: Int)
     }
 
     struct Grant: Equatable {
         let tier: FieldAssistTier
         let source: FieldAssistEntitlementDecision.Source
         let expiresAt: Date?
+        /// Whether the App Store subscription that grants will renew; nil when the grant is not a
+        /// subscription (a licence code, the retired one-time unlock).
+        let renews: Bool?
         let warning: Warning?
+
+        /// What the date row is called: a subscription's expiry is only the end of its current
+        /// period, so one that renews says so rather than "Expires".
+        var expiryLabel: String {
+            switch renews {
+            case true?: return "Renews"
+            case false?: return "Access ends"
+            case nil: return "Expires"
+            }
+        }
 
         var sourceLabel: String {
             switch source {
@@ -40,7 +55,10 @@ struct FieldAssistEntitlementStatus: Equatable {
     /// renew before technicians lose access in the field; seven is the last call.
     static let warningThresholdsDays = [30, 7]
 
-    static func make(decision: FieldAssistEntitlementDecision, now: Date = Date()) -> State {
+    /// `nonRenewingProductIDs` names the App Store subscriptions whose renewal is turned off. Any
+    /// other subscription is taken to renew, as StoreKit does until its renewal info says otherwise.
+    static func make(decision: FieldAssistEntitlementDecision, now: Date = Date(),
+                     nonRenewingProductIDs: Set<String> = []) -> State {
         guard decision.isGranted, let tier = decision.tier, let source = decision.source else {
             switch decision.denial {
             case .expired(let date): return .expired(date)
@@ -48,15 +66,23 @@ struct FieldAssistEntitlementStatus: Equatable {
             case .noEvidence, nil: return .none
             }
         }
+        var renews: Bool?
+        if case .storeProduct(let productID) = source, decision.expiresAt != nil {
+            renews = !nonRenewingProductIDs.contains(productID)
+        }
         var warning: Warning?
-        if let expiresAt = decision.expiresAt {
+        // A subscription that renews has nothing to warn about: its expiry is the end of the
+        // current period, a month away at most, and would otherwise warn from the day it is bought.
+        if let expiresAt = decision.expiresAt, renews != true {
             let seconds = expiresAt.timeIntervalSince(now)
             let days = max(0, Int(seconds / 86_400))
             if let threshold = warningThresholdsDays.sorted().first(where: { days <= $0 }) {
-                warning = .expiring(daysRemaining: days, threshold: threshold)
+                warning = renews == false
+                    ? .subscriptionEnding(daysRemaining: days, threshold: threshold)
+                    : .expiring(daysRemaining: days, threshold: threshold)
             }
         }
-        return .granted(Grant(tier: tier, source: source, expiresAt: decision.expiresAt, warning: warning))
+        return .granted(Grant(tier: tier, source: source, expiresAt: decision.expiresAt, renews: renews, warning: warning))
     }
 }
 
@@ -116,6 +142,9 @@ enum FieldAssistPaywallCopy {
             case 1: return "Expires tomorrow. Renew now to keep Field Assist available in the field."
             default: return "Expires in \(days) days. Renew before then to keep Field Assist available in the field."
             }
+        case .subscriptionEnding(let days, _):
+            let when = days == 0 ? "today" : days == 1 ? "tomorrow" : "in \(days) days"
+            return "Your subscription ends \(when) and won't renew. Turn renewal back on in your App Store subscriptions to keep access."
         }
     }
 
@@ -129,6 +158,7 @@ enum FieldAssistPaywallCopy {
          renewLicense, unverifiable, removeStoredCode, subscriptionLapsed, manageSubscription, seatsNote,
          expiring(.expiring(daysRemaining: 0, threshold: 7)),
          expiring(.expiring(daysRemaining: 1, threshold: 7)),
-         expiring(.expiring(daysRemaining: 12, threshold: 30))]
+         expiring(.expiring(daysRemaining: 12, threshold: 30)),
+         expiring(.subscriptionEnding(daysRemaining: 1, threshold: 7))]
     }
 }

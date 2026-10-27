@@ -76,7 +76,7 @@ struct StatusIndicator: View {
                         .font(.system(.caption, design: .monospaced).weight(.bold))
                         .foregroundStyle(chip.isHealthy ? OGTheme.okLabel : OGTheme.warnLabel)
                 }
-                Image(systemName: "chevron.right").font(.caption)
+                Image(systemName: "chevron.forward").font(.caption)
                     .foregroundStyle(OGTheme.secondaryLabel)
                     .accessibilityHidden(true)
             }

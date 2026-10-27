@@ -192,14 +192,14 @@ private struct ManualSourcePage: View {
     /// Moves between the pages "show me the relevant pages" opened.
     private func sourceStepper(_ position: (current: Int, count: Int)) -> some View {
         HStack {
-            Button(action: onPreviousSource) { Image(systemName: "chevron.left") }
+            Button(action: onPreviousSource) { Image(systemName: "chevron.backward") }
                 .disabled(position.current <= 1)
                 .accessibilityLabel("Previous source")
             Spacer()
             Text("Source \(position.current) of \(position.count)")
                 .font(.footnote.weight(.semibold))
             Spacer()
-            Button(action: onNextSource) { Image(systemName: "chevron.right") }
+            Button(action: onNextSource) { Image(systemName: "chevron.forward") }
                 .disabled(position.current >= position.count)
                 .accessibilityLabel("Next source")
         }
@@ -235,10 +235,10 @@ private struct ManualSourcePage: View {
     private var bottomControls: some View {
         HStack(spacing: 14) {
             if model.route == .extractedText, !model.extractedPages.isEmpty {
-                Button { controller.previous() } label: { Image(systemName: "chevron.left") }
+                Button { controller.previous() } label: { Image(systemName: "chevron.backward") }
                     .disabled(!model.paging.canGoBack)
                     .accessibilityLabel("Previous page")
-                Button { controller.next() } label: { Image(systemName: "chevron.right") }
+                Button { controller.next() } label: { Image(systemName: "chevron.forward") }
                     .disabled(!model.paging.canGoForward)
                     .accessibilityLabel("Next page")
             }

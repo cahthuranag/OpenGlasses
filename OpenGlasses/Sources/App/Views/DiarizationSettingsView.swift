@@ -42,7 +42,7 @@ struct DiarizationSettingsView: View {
                 if keyInput.isEmpty {
                     Link(destination: URL(string: "https://console.deepgram.com/")!) {
                         HStack {
-                            Label("Get API Key", systemImage: "arrow.up.right.square")
+                            Label("Get API Key", systemImage: "arrow.up.forward.square")
                             Spacer()
                             Text("deepgram.com").font(.caption).foregroundStyle(.secondary)
                         }

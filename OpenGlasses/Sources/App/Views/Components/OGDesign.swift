@@ -232,7 +232,7 @@ struct OGRow<Trailing: View>: View {
                 trailing()
             }
             if showsChevron {
-                Image(systemName: "chevron.right")
+                Image(systemName: "chevron.forward")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)

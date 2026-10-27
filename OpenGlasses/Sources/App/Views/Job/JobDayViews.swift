@@ -318,7 +318,7 @@ struct JobDayView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(warn ? OGTheme.warnLabel : .secondary)
                 }
-                Image(systemName: "chevron.right")
+                Image(systemName: "chevron.forward")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)

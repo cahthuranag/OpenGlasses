@@ -189,7 +189,7 @@ struct OnboardingView: View {
                     Button {
                         go(to: OrgFirstRun.pageBefore(page, organisationChoseModel: orgChoseModel))
                     } label: {
-                        Image(systemName: "chevron.left")
+                        Image(systemName: "chevron.backward")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .frame(width: 44, height: 44)
@@ -769,7 +769,7 @@ struct OnboardingView: View {
             Button {
                 openAPIKeyURL(for: provider)
             } label: {
-                Label(apiKeyURLLabel(for: provider), systemImage: "arrow.up.right.square")
+                Label(apiKeyURLLabel(for: provider), systemImage: "arrow.up.forward.square")
                     .font(.subheadline)
                     .foregroundStyle(OGTheme.tintedAccentLabel(accent))
                     .frame(minHeight: rowMinHeight)
@@ -1105,7 +1105,7 @@ struct OnboardingView: View {
 
                     if elevenLabsKey.isEmpty {
                         Link(destination: URL(string: "https://elevenlabs.io/app/settings/api-keys")!) {
-                            Label("Get key from elevenlabs.io", systemImage: "arrow.up.right.square")
+                            Label("Get key from elevenlabs.io", systemImage: "arrow.up.forward.square")
                                 .font(.subheadline)
                                 .foregroundStyle(OGTheme.tintedAccentLabel(accent))
                                 .frame(minHeight: rowMinHeight)
@@ -1123,7 +1123,7 @@ struct OnboardingView: View {
 
                     if perplexityKey.isEmpty {
                         Link(destination: URL(string: "https://www.perplexity.ai/settings/api")!) {
-                            Label("Get key from perplexity.ai", systemImage: "arrow.up.right.square")
+                            Label("Get key from perplexity.ai", systemImage: "arrow.up.forward.square")
                                 .font(.subheadline)
                                 .foregroundStyle(OGTheme.tintedAccentLabel(accent))
                                 .frame(minHeight: rowMinHeight)
@@ -1138,7 +1138,7 @@ struct OnboardingView: View {
 
                     if searxngBaseURL.isEmpty {
                         Link(destination: URL(string: "https://searx.space")!) {
-                            Label("Find a public instance at searx.space", systemImage: "arrow.up.right.square")
+                            Label("Find a public instance at searx.space", systemImage: "arrow.up.forward.square")
                                 .font(.subheadline)
                                 .foregroundStyle(OGTheme.tintedAccentLabel(accent))
                                 .frame(minHeight: rowMinHeight)
@@ -1549,7 +1549,7 @@ struct OnboardingView: View {
 
                 Spacer(minLength: 8)
 
-                Image(systemName: "chevron.right")
+                Image(systemName: "chevron.forward")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.tertiary)
                     .accessibilityHidden(true)

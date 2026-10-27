@@ -119,7 +119,7 @@ struct AdvancedQuickActionsView: View {
                                         .lineLimit(1)
                                 }
                                 Spacer()
-                                Image(systemName: "chevron.right")
+                                Image(systemName: "chevron.forward")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .accessibilityHidden(true)
@@ -172,7 +172,7 @@ struct AdvancedQuickActionsView: View {
                                         .lineLimit(1)
                                 }
                                 Spacer()
-                                Image(systemName: "chevron.right")
+                                Image(systemName: "chevron.forward")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .accessibilityHidden(true)

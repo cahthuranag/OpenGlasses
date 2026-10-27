@@ -32,7 +32,7 @@ struct AssessmentCardView: View {
             }
 
             if let action = card.recommendedAction, !action.isEmpty {
-                Label(action, systemImage: "arrow.right.circle.fill")
+                Label(action, systemImage: "arrow.forward.circle.fill")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(tierLabelColor)
             }

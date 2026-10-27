@@ -183,7 +183,7 @@ struct ModelFormView: View {
                                                                  baseURL: baseURL) {
                     Link(destination: url) {
                         HStack {
-                            Label("Get API Key", systemImage: "arrow.up.right.square")
+                            Label("Get API Key", systemImage: "arrow.up.forward.square")
                                 .foregroundStyle(OGTheme.tintedAccentLabel(accent))
                             Spacer()
                             Text(url.host ?? "")

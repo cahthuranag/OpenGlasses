@@ -159,7 +159,7 @@ struct DiagnosticsSupportView: View {
                     UIApplication.shared.open(Self.discordURL)
                 } label: {
                     OGRow("Discord", icon: "bubble.left.and.bubble.right", showsChevron: false) {
-                        Image(systemName: "arrow.up.right")
+                        Image(systemName: "arrow.up.forward")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -402,10 +402,10 @@ private struct DiagnosticsReportSheet: View {
                         UIApplication.shared.open(PublicSite.support)
                     } label: {
                         OGRow(
-                            "Open the Support Page", icon: "arrow.up.right.square", mutedIcon: true,
+                            "Open the Support Page", icon: "arrow.up.forward.square", mutedIcon: true,
                             subtitle: "Other ways to reach us, no account needed", showsChevron: false
                         ) {
-                            Image(systemName: "arrow.up.right")
+                            Image(systemName: "arrow.up.forward")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

@@ -138,7 +138,7 @@ subject column distinguishes the wearer from a third party who never installed t
 | tableChecks | `TableCheckStore` | documentCorpus | wearer | completeUntilFirstUserAuthentication | yes | removed with the manual it checks, and with its vault | `TableCheckStore.removeAll()` | `TableCheckStore.forget(documentHashes:vaultId:)` |
 | teleprompterScripts | `TeleprompterScriptStore` | personalMemory | wearer | platformDefault | no | none | none — scripts are the wearer's authored content, removed individually | n/a — no subject linkage |
 | toolDefinitionDigests | `ToolDefinitionDigestStore` | operationalAudit | none | completeUntilFirstUserAuthentication | yes | none | `ToolDefinitionDigestStore.forget(serverID:) per server` | n/a — no subject linkage |
-| turnTraces | `TurnTraceStore` | operationalAudit | wearer | completeUntilFirstUserAuthentication | yes | 14 days, at most 2000 turns | `TurnTraceStore.shared.removeAll()` | n/a — no subject linkage |
+| turnTraces | `TurnTraceStore` | conversationContent | wearer | completeUntilFirstUserAuthentication | yes | up to 14 days, at most 2000 turns and 8 MB; bounded, credential-redacted search contents | `TurnTraceStore.shared.removeAll()` | n/a — no subject linkage |
 | upcomingJobs | `UpcomingJobStore` | operationalAudit | wearer | completeUntilFirstUserAuthentication | yes | cap 100 | `UpcomingJobStore.removeAll()` | n/a — no subject linkage |
 | usage | `UsageStore` | operationalAudit | none | completeUntilFirstUserAuthentication | yes | none | `UsageStore.deleteAll()` | n/a — no subject linkage |
 | vanStock | `VanStockStore` | operationalAudit | none | completeUntilFirstUserAuthentication | no | history folded after 400 days | `VanStockStore.removeAll()` | n/a — no subject linkage |

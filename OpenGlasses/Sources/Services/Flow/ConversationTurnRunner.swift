@@ -54,6 +54,7 @@ enum ConversationTurnRunner {
         // first-wins marks would hand the turn its neighbour's timings.
         TurnRecorder.beginTurn()
         do {
+            try Task.checkCancellation()
             TurnRecorder.mark(.commit)
             let raw = try await TurnUtteranceScope.$current.withValue(deps.utterance) {
                 try await deps.send()

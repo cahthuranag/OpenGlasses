@@ -30,6 +30,19 @@ final class TurnLedgerTests: XCTestCase {
 
     // MARK: - Lifecycle: start, mark, seal
 
+    func testSearchContentsCountTowardTheLedgerMemoryLimit() {
+        var timeline = TurnTimeline()
+        let base = TurnLedger.approximateByteSize(of: timeline)
+        timeline.toolCalls = [.init(name: "web_search", outcome: "completed",
+                                    search: .init(query: "Sporting", result: "結果"))]
+        XCTAssertEqual(TurnLedger.approximateByteSize(of: timeline),
+                       base + "Sporting".utf8.count + "結果".utf8.count)
+        let ledger = TurnLedger(maxBytes: base)
+        let id = ledger.start(timeline)
+        ledger.seal(id)
+        XCTAssertTrue(ledger.sealed.isEmpty)
+    }
+
     func testStartReturnsTheTimelinesOwnIdAndTracksItInFlight() {
         let ledger = TurnLedger()
         let timeline = TurnTimeline(backend: .direct(.anthropic))

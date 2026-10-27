@@ -183,6 +183,16 @@ enum TurnMicHandoff {
                       routePortAvailable: true) != .phone
     }
 
+    /// An interruption can put the session on the idle phone mic without changing the stored
+    /// conversation route. Reconcile the actual input at a foreground turn boundary as well.
+    static func shouldRepairConversationRoute(turnMic: MicRoute?, actualMic: MicRoute?, micRoute: MicRoute,
+                                               glassesStoodDown: Bool, glassesWorn: Bool?,
+                                               appInForeground: Bool) -> Bool {
+        guard appInForeground, micRoute != .phone, turnMic == micRoute, actualMic != micRoute else { return false }
+        return target(micRoute: micRoute, glassesStoodDown: glassesStoodDown, glassesWorn: glassesWorn,
+                      routePortAvailable: true) == micRoute
+    }
+
     enum State: Equatable {
         /// The route has been asked for; `currentRoute.inputs` does not show it yet.
         case waitingForRoute

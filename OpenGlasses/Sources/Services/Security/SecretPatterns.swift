@@ -41,7 +41,9 @@ enum SecretPatterns {
         pattern("private_key_block", .secret, #"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----"#),
 
         // MARK: PII / PHI
-        pattern("email", .pii, #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#),
+        // Start only at the beginning of a possible local part. Without this boundary, a long
+        // token with no @ retries the greedy prefix at every character (quadratic scan time).
+        pattern("email", .pii, #"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#),
         // NZ IRD number — 8 or 9 digits, conventionally dash-grouped (xx-xxx-xxx / xxx-xxx-xxx).
         pattern("nz_ird", .pii, #"\b\d{2,3}-\d{3}-\d{3}\b"#),
     ]

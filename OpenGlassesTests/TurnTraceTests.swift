@@ -176,6 +176,92 @@ final class TurnTraceTests: XCTestCase {
 
     // MARK: - The banner's words
 
+    func testSearchQueryAndReturnedSourcesSurviveSealingAndPersistence() throws {
+        let url = directory.appendingPathComponent("search-traces.json")
+        let store = TurnTraceStore(url: url, clock: { [epoch] in epoch })
+        TurnRecorder.traceSink = { store.record($0) }
+        TurnRecorder.beginTurn()
+        TurnRecorder.noteToolResult(name: "web_search", outcome: "completed",
+                                    query: "Sporting today password=super-secret",
+                                    result: "Kickoff 20:30\nSources: https://example.com/fixture?token=private-token",
+                                    turnID: TurnRecorder.toolTraceID, secrets: { ["super-secret", "private-token"] })
+        TurnRecorder.endTurn()
+        store.waitForPendingWrites()
+
+        let search = try XCTUnwrap(TurnTraceStore(url: url, clock: { [epoch] in epoch })
+            .all.first?.toolCalls.first?.search)
+        XCTAssertTrue(search.query.contains("Sporting today"))
+        XCTAssertTrue(search.result.contains("Kickoff 20:30\nSources: https://example.com/fixture"))
+        let saved = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(saved.contains("super-secret"))
+        XCTAssertFalse(saved.contains("private-token"))
+        XCTAssertFalse(search.queryTruncated)
+        XCTAssertFalse(search.resultTruncated)
+    }
+
+    func testSearchContentIsBoundedAcrossMultipleCallsAndMarksTruncation() {
+        var sunk: [TurnTimeline] = []
+        TurnRecorder.traceSink = { sunk.append($0) }
+        TurnRecorder.beginTurn()
+        for _ in 0..<5 {
+            TurnRecorder.noteToolResult(name: "web_search", outcome: "completed",
+                                        query: String(repeating: "q", count: 2_000),
+                                        result: String(repeating: "r", count: 20_000),
+                                        turnID: TurnRecorder.toolTraceID, secrets: { [] })
+        }
+        TurnRecorder.endTurn()
+        let searches = sunk[0].toolCalls.compactMap(\.search)
+        XCTAssertEqual(searches.count, 5)
+        XCTAssertTrue(searches.allSatisfy { $0.query.count == TurnTimeline.SearchEvidence.queryLimit })
+        XCTAssertTrue(searches.allSatisfy { $0.result.count <= TurnTimeline.SearchEvidence.resultLimit })
+        XCTAssertEqual(searches.reduce(0) { $0 + $1.result.count }, TurnTimeline.SearchEvidence.turnResultLimit)
+        XCTAssertTrue(searches.allSatisfy { $0.queryTruncated && $0.resultTruncated })
+        XCTAssertTrue(searches.last?.result.isEmpty == true)
+    }
+
+    func testOtherToolsOffTurnAndLateSearchesCannotCaptureContents() async {
+        var sunk: [TurnTimeline] = []
+        TurnRecorder.traceSink = { sunk.append($0) }
+        TurnRecorder.beginTurn()
+        let oldID = TurnRecorder.toolTraceID
+        TurnRecorder.endTurn()
+        TurnRecorder.beginTurn()
+        TurnRecorder.noteToolResult(name: "web_search", outcome: "completed", query: "late",
+                                    result: "stale result", turnID: oldID)
+        TurnRecorder.noteToolResult(name: "save_note", outcome: "completed", query: "private",
+                                    result: "private note", turnID: TurnRecorder.toolTraceID,
+                                    secrets: { XCTFail("Other tool contents must not be processed"); return [] })
+        await TurnRecorder.offTurn {
+            XCTAssertNil(TurnRecorder.toolTraceID)
+            TurnRecorder.noteToolResult(name: "web_search", outcome: "completed", query: "background",
+                                        result: "background result", turnID: nil)
+        }
+        TurnRecorder.endTurn()
+        XCTAssertEqual(sunk[1].toolCalls.map(\.name), ["save_note"])
+        XCTAssertNil(sunk[1].toolCalls.first?.search)
+    }
+
+    func testLegacyToolNotesDecodeWithoutSearchEvidence() throws {
+        let old = Data(#"{"name":"web_search","outcome":"completed"}"#.utf8)
+        let note = try JSONDecoder().decode(TurnTimeline.ToolNote.self, from: old)
+        XCTAssertNil(note.search)
+    }
+
+    func testTraceStorageByteCapKeepsNewestAndAccountsForJSONEscaping() throws {
+        var older = trace(at: at(-1))
+        older.toolCalls = [.init(name: "web_search", outcome: "completed",
+                                 search: .init(query: "old", result: String(repeating: "\"\n", count: 100)))]
+        var newer = trace(at: at(0))
+        newer.toolCalls = [.init(name: "web_search", outcome: "completed",
+                                 search: .init(query: "new", result: "新しい結果"))]
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let budget = try encoder.encode([newer]).count
+        let kept = TurnTraceStore.retained([older, newer], now: epoch, capacity: 2, maxBytes: budget)
+        XCTAssertEqual(kept.map(\.id), [newer.id])
+        XCTAssertLessThanOrEqual(try encoder.encode(kept).count, budget)
+    }
+
     func testTheBannerNamesTheCategoryInPlainWords() {
         XCTAssertEqual(AppState.plainReason("rateLimited#429"), "the AI service was busy (rate-limited)")
         XCTAssertEqual(AppState.plainReason("offline(NSURLErrorDomain)#-1009"), "no internet connection")

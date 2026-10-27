@@ -1040,9 +1040,10 @@ enum SensitiveStore: String, CaseIterable {
                           location: "Documents/debug-events.log")
 
         case .turnTraces:
-            return Record(store: self, dataClass: .operationalAudit, subjectLinkage: .wearer,
+            // Search queries and returned snippets can contain personal information.
+            return Record(store: self, dataClass: .conversationContent, subjectLinkage: .wearer,
                           protection: .completeUntilFirstUserAuthentication, backupExcluded: true,
-                          retention: .policy("14 days, at most 2000 turns"),
+                          retention: .policy("up to 14 days, at most 2000 turns and 8 MB; bounded, credential-redacted search contents"),
                           deleteAll: .api("TurnTraceStore.shared.removeAll()"),
                           deleteSubject: .notSubjectLinked,
                           owner: "TurnTraceStore",

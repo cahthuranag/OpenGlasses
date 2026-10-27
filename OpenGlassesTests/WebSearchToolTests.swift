@@ -5,6 +5,14 @@ final class WebSearchToolTests: XCTestCase {
 
     private static let searxngKey = "searxngBaseURL"
 
+    func testEmptySearchEvidenceCannotInviteACurrentAnswerFromMemory() {
+        let message = WebSearchTool.noClearAnswer(query: "Sporting today")
+        XCTAssertTrue(message.contains("Sporting today"))
+        XCTAssertTrue(message.contains("No verified search answer"))
+        XCTAssertTrue(message.contains("do not substitute an answer from memory"))
+        XCTAssertFalse(message.contains("should try answering from its own knowledge"))
+    }
+
     func testSearXNGSearchURLTrimsTrailingSlash() {
         let url = WebSearchTool.searxngSearchURL(baseURL: "https://search.example.com/", query: "meta glasses")
         XCTAssertEqual(url?.absoluteString, "https://search.example.com/search?q=meta%20glasses&format=json")

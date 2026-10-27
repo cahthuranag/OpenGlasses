@@ -127,15 +127,14 @@ final class TurnLedger: ObservableObject {
 
     /// Approximate in-memory footprint of one sealed timeline, in bytes.
     ///
-    /// Deliberately not a real measurement — `TurnTimeline` is a value type with no heap indirection
-    /// except its optional `model` string, and Swift has no cheap way to size a struct at runtime
-    /// regardless. What the cap needs to catch is the one field that can grow without bound while
-    /// everything else stays a fixed handful of bytes: a local model's filesystem path can run to a
-    /// hundred-plus characters. So: a flat allowance for the marks, tags, and accumulators, plus the
-    /// model name's real length. Not `private` — tests size `maxBytes` against this directly instead
-    /// of duplicating the estimate.
+    /// A flat allowance for marks and tags plus the model name and captured search strings.
+    /// Search contents are bounded at capture, and must also count toward the ring's byte cap.
+    /// Not `private` — tests size `maxBytes` against this directly instead of duplicating it.
     static func approximateByteSize(of timeline: TurnTimeline) -> Int {
         fixedFootprint + (timeline.model?.utf8.count ?? 0)
+            + timeline.toolCalls.reduce(0) {
+                $0 + ($1.search?.query.utf8.count ?? 0) + ($1.search?.result.utf8.count ?? 0)
+            }
     }
 
     private static let fixedFootprint = 200

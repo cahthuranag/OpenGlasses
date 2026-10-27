@@ -3,13 +3,11 @@ import Foundation
 /// One finished turn, as support needs to see it: what went to the model with the words, which
 /// model answered, how long it took, and how it ended (support ask, 2026-09-26).
 ///
-/// **No words.** What the technician said and what the assistant replied are in the conversation
-/// thread; a trace carries what went *with* them — the prompt's blocks by name and size, the manual
-/// pages by citation, the tools by name and result class, the error by `SafeErrorSummary` category —
-/// and the thread and job it belongs to, so an export can line the two up. That is why keeping it
-/// on the device for a fortnight needs no consent of its own: it holds nothing the conversation
-/// store does not already hold more of, and it leaves the phone only in a file the wearer reads and
-/// shares.
+/// Conversation words remain in the conversation thread. A trace carries what went *with* them:
+/// prompt sizes, manual citations, tool outcomes and errors. Web searches additionally carry a
+/// bounded, credential-redacted query and returned text, which may contain personal information.
+/// Traces stay on the device for up to a fortnight and leave only in a support report the wearer
+/// previews and shares. Ordinary event-log diagnostics contain none of this search content.
 struct TurnTrace: Codable, Equatable, Identifiable {
 
     enum Outcome: String, Codable {
@@ -130,6 +128,7 @@ final class TurnTraceStore {
 
     nonisolated static let retention: TimeInterval = 14 * 24 * 60 * 60
     nonisolated static let capacity = 2_000
+    nonisolated static let maxStorageBytes = 8_000_000
 
     static let shared = TurnTraceStore(url: FileManager.default.urls(
         for: .applicationSupportDirectory, in: .userDomainMask).first?
@@ -180,17 +179,29 @@ final class TurnTraceStore {
         queue.sync {}
     }
 
-    /// Newest `capacity` traces younger than `retention`, oldest first. Pure.
-    nonisolated static func retained(_ traces: [TurnTrace], now: Date, capacity: Int) -> [TurnTrace] {
+    /// Newest traces within age, count and encoded-byte bounds, oldest first. The byte bound
+    /// matches the reader: search content must never grow a file that the next launch refuses.
+    nonisolated static func retained(_ traces: [TurnTrace], now: Date, capacity: Int,
+                                    maxBytes: Int = maxStorageBytes) -> [TurnTrace] {
         let fresh = traces.filter { now.timeIntervalSince($0.at) <= retention && $0.at <= now.addingTimeInterval(60) }
             .sorted { $0.at < $1.at }
-        return Array(fresh.suffix(max(0, capacity)))
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var kept: [TurnTrace] = []
+        var bytes = 2 // JSON array brackets, plus a comma between adjacent records below.
+        for trace in fresh.suffix(max(0, capacity)).reversed() {
+            guard let size = try? encoder.encode(trace).count,
+                  bytes + size + (kept.isEmpty ? 0 : 1) <= maxBytes else { break }
+            bytes += size + (kept.isEmpty ? 0 : 1)
+            kept.append(trace)
+        }
+        return kept.reversed()
     }
 
     private func load() -> [TurnTrace] {
         if let cache { return cache }
         guard let url,
-              let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 8_000_000,
+              let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= Self.maxStorageBytes,
               let data = try? Data(contentsOf: url) else {
             cache = []
             return []

@@ -7,7 +7,7 @@ import Foundation
 /// then DuckDuckGo Instant Answer as a last resort.
 struct WebSearchTool: NativeTool {
     let name = "web_search"
-    let description = "Search the web for information. Uses configured providers when set; otherwise Tavily (free) or DuckDuckGo. Returns a brief summary."
+    let description = "Search the web for information. Uses configured providers when set; otherwise Tavily (free) or DuckDuckGo. Returns a brief summary and sources when available. For current events, verify the exact event, date and local time against the sources. If results conflict or do not verify the requested fact, say you could not verify it. When the user corrects an answer, re-check the evidence rather than repeating it as confirmed."
     let parametersSchema: [String: Any] = [
         "type": "object",
         "properties": [
@@ -392,10 +392,17 @@ struct WebSearchTool: NativeTool {
                 }
             }
 
-            return "I searched for \"\(query)\" but didn't find a clear answer. The LLM should try answering from its own knowledge."
+            return Self.noClearAnswer(query: query)
 
         } catch {
             return "Search failed: \(error.localizedDescription)"
         }
+    }
+
+    nonisolated static func noClearAnswer(query: String) -> String {
+        "No verified search answer was found for \"\(query)\". "
+            + "This result does not confirm the requested fact. For current events, schedules, "
+            + "scores or other time-sensitive information, do not substitute an answer from memory. "
+            + "Say you could not verify it, or ask for clarification if the event is ambiguous."
     }
 }

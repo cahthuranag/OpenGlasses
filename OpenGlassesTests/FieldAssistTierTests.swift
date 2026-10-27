@@ -300,7 +300,10 @@ final class FieldAssistTierTests: XCTestCase {
     /// A monthly subscription's expiry is the end of its period, at most a month away, so warning
     /// on it would show from the day it is bought — and daily in TestFlight, where it renews daily.
     func testRenewingSubscriptionNeverWarns() throws {
-        for seconds: TimeInterval in [30 * 86_400, 7 * 86_400 - 1, 86_400 + 60, 3_600] {
+        // 30 days, just under 7 days, just over a day, an hour — as literals, since an arithmetic
+        // array literal can time out CI's type checker.
+        let expiries: [TimeInterval] = [2_592_000, 604_799, 86_460, 3_600]
+        for seconds in expiries {
             let grant = try XCTUnwrap(subscription(expiresIn: seconds, renewing: true))
             XCTAssertNil(grant.warning, "\(seconds)")
             XCTAssertEqual(grant.renews, true)

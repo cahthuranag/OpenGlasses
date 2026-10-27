@@ -57,7 +57,9 @@ enum LLMProvider: String, CaseIterable {
         case .xai: return URL(string: "https://console.x.ai")
         case .openrouter: return URL(string: "https://openrouter.ai/keys")
         case .qwen: return URL(string: "https://dashscope.console.aliyun.com/apiKey")
-        case .zai, .chatgpt, .custom, .local, .appleOnDevice: return nil
+        // The GLM Coding Plan on api.z.ai; a key from Zhipu's mainland console is refused there.
+        case .zai: return URL(string: "https://z.ai/manage-apikey/apikey-list")
+        case .chatgpt, .custom, .local, .appleOnDevice: return nil
         }
     }
 

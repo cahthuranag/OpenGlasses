@@ -2055,7 +2055,7 @@ struct OnboardingView: View {
         case .mistral: urlString = "https://admin.mistral.ai/plateforme/api-keys"
         case .openrouter: urlString = "https://openrouter.ai/keys"
         case .qwen: urlString = "https://dashscope.console.aliyun.com/apiKey"
-        case .zai: urlString = "https://open.bigmodel.cn/usercenter/apikeys"
+        case .zai: urlString = "https://z.ai/manage-apikey/apikey-list"
         case .xai: urlString = "https://console.x.ai"
         default: urlString = ""
         }
@@ -2077,7 +2077,7 @@ struct OnboardingView: View {
         case .mistral: return "Get a key at admin.mistral.ai"
         case .openrouter: return "Get a key at openrouter.ai"
         case .qwen: return "Get a key at dashscope.console.aliyun.com"
-        case .zai: return "Get a key at open.bigmodel.cn"
+        case .zai: return "Get a key at z.ai"
         case .xai: return "Get a key at console.x.ai"
         default: return "Get an access key"
         }

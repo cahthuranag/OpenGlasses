@@ -178,7 +178,9 @@ struct ModelFormView: View {
                         .onChange(of: apiKey) { _, _ in resetModelList() }
                 }
 
-                if let url = selectedProvider.consoleURL {
+                if let url = OnboardingProviderPolicy.keyPageURL(provider: selectedProvider,
+                                                                 templateID: providerTemplateID.wrappedValue,
+                                                                 baseURL: baseURL) {
                     Link(destination: url) {
                         HStack {
                             Label("Get API Key", systemImage: "arrow.up.right.square")

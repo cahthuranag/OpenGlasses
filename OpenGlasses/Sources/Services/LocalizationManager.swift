@@ -37,7 +37,7 @@ final class LocalizationManager: ObservableObject {
     /// Bundled language codes — these ship with the app in Localizable.xcstrings.
     static let bundledLanguages: Set<String> = [
         "en", "fr", "fr-CA", "es", "es-MX", "de", "it", "hu", "ko", "ja", "ar", "pt-BR", "nl",
-        "pl", "ru", "zh-Hans", "zh-Hant", "uk"
+        "pl", "ru", "zh-Hans", "zh-Hant", "uk", "ur"
     ]
 
     /// Base URL for downloading translation JSON files from GitHub.
@@ -90,6 +90,7 @@ final class LocalizationManager: ObservableObject {
         ("zh-Hans", "Chinese (Simplified)", "简体中文"),
         ("zh-Hant", "Chinese (Traditional)", "繁體中文"),
         ("uk", "Ukrainian", "Українська"),
+        ("ur", "Urdu", "اردو"),
     ]
 
     // MARK: - Storage

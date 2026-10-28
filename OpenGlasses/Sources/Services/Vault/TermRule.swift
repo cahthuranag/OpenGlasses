@@ -123,7 +123,10 @@ enum TermRule: Hashable, Codable, Sendable {
             pendingApostrophe = false
         }
         for character in text {
-            if let script = TextScript.of(character) {
+            // Checked before the letters: "ʼ" (U+02BC) is itself a letter, of no script.
+            if apostrophes.contains(character), currentScript == .cyrillic, !pendingApostrophe {
+                pendingApostrophe = true
+            } else if let script = TextScript.of(character) {
                 let group: TextScript = script.isCJK ? .han : script
                 if group == currentScript {
                     current.append(character)
@@ -133,8 +136,6 @@ enum TermRule: Hashable, Codable, Sendable {
                     currentScript = group
                     current.append(character)
                 }
-            } else if apostrophes.contains(character), currentScript == .cyrillic, !pendingApostrophe {
-                pendingApostrophe = true
             } else {
                 flush()
             }

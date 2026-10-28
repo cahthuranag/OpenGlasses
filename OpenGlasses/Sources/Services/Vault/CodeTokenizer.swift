@@ -134,12 +134,13 @@ enum CodeTokenizer {
     }
 
     /// Whether `c`, standing beside a token whose edge character is `edge`, continues the
-    /// token's word. A letter of a separating script (Han, kana, Hangul, Cyrillic, Arabic) does
-    /// not continue a code written in other characters (Plan JY P0), so "ABC123" is whole in
-    /// "型号ABC123的"; beside a token that is itself in such a script it does, as any letter does.
+    /// token's word — as `words(in:)` reads words. A letter of a separating script (Han, kana,
+    /// Hangul, Cyrillic, Arabic) and any other letter or digit belong to different words (Plan JY
+    /// P0), so "ABC123" is whole in "型号ABC123的", and "модель" in "ABC123модель"; two letters of
+    /// separating scripts, or two of the others, are one word, as before.
     private static func isWordChar(_ c: Character, beside edge: Character) -> Bool {
         guard c.isLetter || c.isNumber else { return false }
-        return !separates(c) || separates(edge)
+        return separates(c) == separates(edge)
     }
 
     /// A letter of a script that separates code tokens — the Swift side of `separatingScripts`.

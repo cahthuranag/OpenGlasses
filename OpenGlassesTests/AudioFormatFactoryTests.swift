@@ -107,4 +107,29 @@ final class TapFormatGuardTests: XCTestCase {
         XCTAssertFalse(AudioFormatFactory.isUsableTapFormat(sampleRate: 16000, channelCount: 0))
         XCTAssertTrue(AudioFormatFactory.isUsableTapFormat(sampleRate: 16000, channelCount: 1))
     }
+
+    // MARK: - Stale tap format (build 581)
+
+    func testATapFormatAtTheHardwareRateMatches() {
+        XCTAssertTrue(AudioFormatFactory.tapFormatMatchesHardware(tapSampleRate: 48000,
+                                                                  hardwareSampleRate: 48000))
+        XCTAssertTrue(AudioFormatFactory.tapFormatMatchesHardware(tapSampleRate: 16000,
+                                                                  hardwareSampleRate: 16000))
+    }
+
+    func testARateLeftOverFromTheLastRouteDoesNotMatch() {
+        // The reset shape: the node still says 48 kHz after the session moved to a 16 kHz
+        // Bluetooth route, or the other way round.
+        XCTAssertFalse(AudioFormatFactory.tapFormatMatchesHardware(tapSampleRate: 48000,
+                                                                   hardwareSampleRate: 16000))
+        XCTAssertFalse(AudioFormatFactory.tapFormatMatchesHardware(tapSampleRate: 16000,
+                                                                   hardwareSampleRate: 24000))
+    }
+
+    func testAnUnknownHardwareRateIsNotAMismatch() {
+        // 0 Hz is the unavailable input `isUsableTapFormat` already refuses; this check must not
+        // turn it into a second, differently logged refusal.
+        XCTAssertTrue(AudioFormatFactory.tapFormatMatchesHardware(tapSampleRate: 48000,
+                                                                  hardwareSampleRate: 0))
+    }
 }

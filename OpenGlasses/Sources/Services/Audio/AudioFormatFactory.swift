@@ -49,4 +49,17 @@ enum AudioFormatFactory {
     static func isUsableTapFormat(sampleRate: Double, channelCount: AVAudioChannelCount) -> Bool {
         sampleRate > 0 && channelCount > 0
     }
+
+    /// Whether a tap format still describes the hardware it will be installed on.
+    ///
+    /// An input node keeps the output format it last negotiated. A graph reset re-activates the
+    /// session — a new preferred rate, often a new Bluetooth route — under the same engine, and
+    /// the node can go on reporting the old rate after the hardware has moved. `installTap` with
+    /// that format fails AVFAudio's sample-rate condition and raises the same uncatchable
+    /// exception as the empty format (TestFlight build 581, from the graph-reset path). An
+    /// unknown hardware rate is not evidence of a mismatch; `isUsableTapFormat` covers that case.
+    static func tapFormatMatchesHardware(tapSampleRate: Double, hardwareSampleRate: Double) -> Bool {
+        guard hardwareSampleRate > 0 else { return true }
+        return tapSampleRate == hardwareSampleRate
+    }
 }

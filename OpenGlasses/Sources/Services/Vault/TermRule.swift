@@ -209,6 +209,9 @@ enum TermRule: Hashable, Codable, Sendable {
         let group = TermRule.prefixStem(language).group
         guard lower.count >= minimumLength(for: group),
               !TermRuleStopwords.words(for: language).contains(lower) else { return nil }
+        if group == .cyrillic, foldsCyrillicVariants {
+            lower = String(lower.map { cyrillicFolds[$0] ?? $0 })
+        }
         if stripsEndings(group), let ending = TermRuleStopwords.endings(for: group).first(where: {
             lower.hasSuffix($0) && lower.count - $0.count >= minimumStemAfterEnding
         }) {
@@ -216,6 +219,18 @@ enum TermRule: Hashable, Codable, Sendable {
         }
         let length = prefixLength(for: group)
         return lower.count > length ? String(lower.prefix(length)) : lower
+    }
+
+    /// Letters printed for one another in Cyrillic text (P3): "ё" is usually printed "е", and older
+    /// Ukrainian printing writes "ї" where today's has "і"; "ґ" is often printed "г".
+    static let cyrillicFolds: [Character: Character] = ["ё": "е", "ї": "і", "ґ": "г"]
+
+    /// Whether Cyrillic words are compared with those letters folded (P3).
+    static var foldsCyrillicVariants: Bool {
+        #if RETRIEVAL_EVAL
+        if let measured = RetrievalEvalTuning.flag("RETRIEVAL_EVAL_FOLD") { return measured }
+        #endif
+        return false
     }
 
     /// The letters a word keeps when an ending is stripped from it (P3).

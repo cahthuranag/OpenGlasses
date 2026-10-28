@@ -116,11 +116,25 @@ struct RetrievalEvalMain {
                                        passageLimit: env["RETRIEVAL_EVAL_PASSAGES"] == "4" ? nil : ManualPassageLimit())
         let label = (env["RETRIEVAL_EVAL_LABEL"] ?? "local vault") + (env["RETRIEVAL_EVAL_GATE"].map { " gate=\($0)" } ?? "")
             + (env["RETRIEVAL_EVAL_VECTORS"].map { " vectors=\($0)" } ?? "")
-            + ["RETRIEVAL_EVAL_GATE_GROUP", "RETRIEVAL_EVAL_PENDING", "RETRIEVAL_EVAL_PREFIX", "RETRIEVAL_EVAL_MINLEN", "RETRIEVAL_EVAL_ENDINGS", "RETRIEVAL_EVAL_CJK"]
+            + ["RETRIEVAL_EVAL_GATE_GROUP", "RETRIEVAL_EVAL_PENDING", "RETRIEVAL_EVAL_PREFIX", "RETRIEVAL_EVAL_MINLEN", "RETRIEVAL_EVAL_ENDINGS", "RETRIEVAL_EVAL_FOLD", "RETRIEVAL_EVAL_CJK"]
                 .compactMap { name in env[name].map { " \(name.dropFirst(15).lowercased())=\($0)" } }.joined()
             + " table_rows=\(RetrievalEval.tableRows.rawValue)"
         for line in report.lines(label: label, embedder: embedder.modelId) {
             print(line)
+        }
+        // RETRIEVAL_EVAL_DETAIL=1: each question by its line number in the key, with the pages it
+        // expects and the pages of the four passages it got — numbers only, for a local look at
+        // the misses. Never a question's text.
+        if env["RETRIEVAL_EVAL_DETAIL"] == "1" {
+            for (index, q) in questions.enumerated() {
+                let outcome = RetrievalEval.retriever(over: store, policy: policy, editions: editions, turn: q.q)
+                    .retrieve(.init(turn: q.q, limit: 4))
+                let got = outcome.passages.prefix(4).map { p in p.page.map(String.init) ?? "-" }.joined(separator: ",")
+                let expected = (q.pages ?? [:]).values.flatMap { $0 }.map(String.init).joined(separator: ",")
+                let hit = outcome.passages.prefix(4).contains { RetrievalEval.holds($0, q) }
+                print("[DETAIL] \(index + 1) \(q.outOfScope == true ? "oos" : "in") expect [\(expected)] got [\(got)] "
+                      + (outcome.isSufficient ? "answered" : "refused") + (hit ? " hit" : ""))
+            }
         }
         print("[EVAL]   documents: " + profiles.sorted { $0.key < $1.key }.map { "\($0.key) ×\($0.value)" }.joined(separator: ", "))
     }

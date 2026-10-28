@@ -9,6 +9,7 @@ import NaturalLanguage
 //   RETRIEVAL_EVAL_PREFIX="6" or "cyrillic=5,latinHeavy=7"   letters a prefix stem keeps
 //   RETRIEVAL_EVAL_MINLEN="3" or "cjk=…,urdu=2"               the shortest word kept
 //   RETRIEVAL_EVAL_ENDINGS="1" or "cyrillic=1"                strip one ending before the prefix
+//   RETRIEVAL_EVAL_FOLD=1                                     fold ё/ї/ґ in Cyrillic words
 //   RETRIEVAL_EVAL_CJK=words                                  NLTokenizer words instead of bigrams
 //   RETRIEVAL_EVAL_GATE_GROUP="cjk=3,0.6;cyrillic=2,0.5"      a group's lexical criterion
 //   RETRIEVAL_EVAL_PENDING="0.25" or "cjk=0.25,arabic=0.1"    the stricter share for a pending passage
@@ -35,6 +36,9 @@ enum RetrievalEvalTuning {
 
     private static let prefixes = perGroup("RETRIEVAL_EVAL_PREFIX") { Int($0) }
     private static let minimums = perGroup("RETRIEVAL_EVAL_MINLEN") { Int($0) }
+    /// A switch read as "1" or "0"; nil when unset.
+    static func flag(_ name: String) -> Bool? { env[name].map { $0 == "1" } }
+
     private static let endings = perGroup("RETRIEVAL_EVAL_ENDINGS") { ["1": true, "0": false][$0] }
     static func stripsEndings(_ group: TermRule.Group) -> Bool? { endings[group] }
     static func prefixLength(_ group: TermRule.Group) -> Int? { prefixes[group] }

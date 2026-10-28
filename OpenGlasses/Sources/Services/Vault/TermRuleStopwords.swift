@@ -140,6 +140,7 @@ enum TermRuleStopwords {
         case .cyrillic: return cyrillicEndings
         case .latinHeavy: return latinHeavyEndings
         case .latinLight: return latinLightEndings
+        case .urdu: return urduEndings
         default: return []
         }
     }
@@ -163,6 +164,13 @@ enum TermRuleStopwords {
         "ban", "ben", "nak", "nek", "val", "vel", "ból", "ből", "hoz", "hez", "höz", "ról", "ről", "nál", "nél",
         "ra", "re", "ba", "be", "on", "en", "ön", "at", "et", "ot", "öt", "ok", "ek", "ök", "ak", "t", "k",
     ].reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.sorted { $0.count > $1.count }
+
+    /// Arabic pronoun, plural and feminine endings, compared after `normalisedArabic` (P3).
+    static let arabicEndings: [String] = ["هما", "كما", "كم", "هم", "هن", "نا", "ها", "ات", "ون", "ين", "ان", "ه", "ة", "ي", "ك"]
+        .map(TermRule.normalisedArabic).sorted { $0.count > $1.count }
+
+    /// Urdu plural, oblique and gender endings (P3).
+    static let urduEndings: [String] = ["یاں", "وں", "یں", "ئیں", "ے", "ی", "ا", "ہ"].sorted { $0.count > $1.count }
 
     static let latinLightEndings: [String] = [
         "mente", "ções", "ción", "zione", "ciones", "zioni", "ões", "es", "os", "as", "is", "ns", "en",

@@ -67,7 +67,8 @@ enum RetrievalEvalTuning {
 
     private static let wordsWanted = env["RETRIEVAL_EVAL_CJK"] == "words"
     private static let cjkVariants = Set((env["RETRIEVAL_EVAL_CJK"] ?? "").split(separator: "+").map(String.init))
-    /// "kana", "kopart": the bigram variants (RETRIEVAL_EVAL_CJK=kana+kopart); nil when unset.
+    /// "kana", "kopart": the bigram variants (RETRIEVAL_EVAL_CJK=kana+kopart, "none" for neither);
+    /// nil when unset, which keeps the shipped ones.
     static func cjkVariant(_ name: String) -> Bool? { env["RETRIEVAL_EVAL_CJK"] == nil ? nil : cjkVariants.contains(name) }
     nonisolated(unsafe) private static var cache: [String: [String]] = [:]
     private static let lock = NSLock()

@@ -870,14 +870,28 @@ struct RetrievalEvidencePolicy: Equatable {
     ///   settings refuse 2–7. This model ranks the answering passage high enough that the stricter
     ///   rule only costs answers.
     static func `default`(for modelId: String) -> RetrievalEvidencePolicy {
+        var policy: RetrievalEvidencePolicy
         if modelId.hasPrefix("nl-word") || modelId.hasPrefix("nl-sentence") {
-            return RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.75)
+            policy = RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.75)
+        } else if modelId.hasPrefix("nl-contextual") {
+            policy = RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.6)
+        } else {
+            return RetrievalEvidencePolicy()
         }
-        if modelId.hasPrefix("nl-contextual") {
-            return RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.6)
-        }
-        return RetrievalEvidencePolicy()
+        policy.groupCriteria = measuredGroupCriteria
+        return policy
     }
+
+    /// The language groups whose criterion Plan JY P3 measured apart from the backend's own
+    /// (Bible, EU 2023/1230, UN TDG, Python tutorial and KMU sets on each group's script model;
+    /// the plan's P3 tables). Every other group keeps the backend's values, which P3 measured as
+    /// the best of those tried for it. A group's documents are searched with their own script's
+    /// model whatever the Latin backend is, so the value does not depend on it.
+    static let measuredGroupCriteria: [TermRule.Group: LexicalCriterion] = [
+        // Measured on the Bible: 0.5 over 0.6 — hit@4 15 → 18, in-scope refusals 20 → 15, one more
+        // out-of-scope answer of 15.
+        .arabic: LexicalCriterion(minSharedTerms: 3, sharedFraction: 0.5),
+    ]
 
     /// Whether a passage is evidence. `bestSimilarity` and `queryTerms` are what the relative and
     /// lexical criteria need; omitting either switches that criterion off, so the two-argument form

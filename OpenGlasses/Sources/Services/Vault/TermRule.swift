@@ -96,13 +96,21 @@ enum TermRule: Hashable, Codable, Sendable {
         }
     }
 
-    /// Letters a `.prefixStem` (and `.arabicStem`) term keeps, per group. 6 to start (Plan JY
-    /// decision 1); P3 sets one per group.
+    /// Letters a `.prefixStem` (and `.arabicStem`) term keeps, per group (Plan JY decision 1,
+    /// set by P3 with each group's ending stripping on; the plan's P3 tables have the counts).
     static func prefixLength(for group: Group) -> Int {
         #if RETRIEVAL_EVAL
         if let measured = RetrievalEvalTuning.prefixLength(group) { return measured }
         #endif
-        return 6
+        switch group {
+        // Measured: 7 beat 6 once an ending is stripped (Bible + EU + Python, 389 questions).
+        case .latinLight: return 7
+        // Measured: 7 beat 6 and 5 once an ending is stripped (Bible, Python, KMU, UN; 163 questions).
+        case .cyrillic: return 7
+        // Measured: 4 beat 5 and 6 after the clitic and ending (Bible, 38 questions a language).
+        case .arabic, .urdu: return 4
+        case .english, .latinHeavy, .cjk: return 6
+        }
     }
 
     /// The shortest word `.prefixStem` keeps, per group. Three for every group to start; P3 sets
@@ -241,7 +249,15 @@ enum TermRule: Hashable, Codable, Sendable {
         #if RETRIEVAL_EVAL
         if let measured = RetrievalEvalTuning.stripsEndings(group) { return measured }
         #endif
-        return false
+        switch group {
+        // Measured: hit@4 +4, in-scope refusals −9 for one more out-of-scope answer (389 questions).
+        case .latinLight: return true
+        // Measured: hit@4 79 → 92, in-scope refusals 57 → 40 (163 questions).
+        case .cyrillic: return true
+        // Measured on the Bible: Arabic hit@4 7 → 13, Urdu 15 → 17, refusals down in both.
+        case .arabic, .urdu: return true
+        case .english, .latinHeavy, .cjk: return false
+        }
     }
 
     // MARK: - Arabic
@@ -260,6 +276,14 @@ enum TermRule: Hashable, Codable, Sendable {
         // "ال" + "م".
         if let clitic = arabicClitics.first(where: { stem.hasPrefix($0) && stem.count - $0.count >= 3 }) {
             stem = String(stem.dropFirst(clitic.count))
+        }
+        // P3 candidate: a one-letter conjunction or preposition written onto the word (و ف ب ل ك),
+        // and a pronoun or feminine ending, stripped while four letters are left.
+        if stripsEndings(.arabic) {
+            if let first = stem.first, "وفبلك".contains(first), stem.count - 1 >= 4 { stem.removeFirst() }
+            if let ending = TermRuleStopwords.arabicEndings.first(where: { stem.hasSuffix($0) && stem.count - $0.count >= 3 }) {
+                stem = String(stem.dropLast(ending.count))
+            }
         }
         guard stem.count >= 3, !stopwords.contains(stem) else { return nil }
         let length = prefixLength(for: .arabic)
@@ -317,19 +341,21 @@ enum TermRule: Hashable, Codable, Sendable {
 
     /// Whether a pair of hiragana is left out (P3): in Japanese the grammar — particles, verb and
     /// polite endings — is written in hiragana, and content words mostly in kanji or katakana.
+    /// Measured: Japanese out-of-scope refusals 2 → 9 of 30 at the same hit@4 (Bible + Python).
     static var dropsHiraganaPairs: Bool {
         #if RETRIEVAL_EVAL
         if let measured = RetrievalEvalTuning.cjkVariant("kana") { return measured }
         #endif
-        return false
+        return true
     }
 
     /// Whether a Hangul word loses a trailing particle before its pieces are cut (P3): "온도를"
     /// and "온도는" both read as "온도".
+    /// Measured: Korean hit@4 55 → 56, out-of-scope refusals 7 → 12 of 30 (Bible + Python).
     static var stripsKoreanParticles: Bool {
         #if RETRIEVAL_EVAL
         if let measured = RetrievalEvalTuning.cjkVariant("kopart") { return measured }
         #endif
-        return false
+        return true
     }
 }

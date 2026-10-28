@@ -96,6 +96,8 @@ struct RetrievalEvalMain {
                 policy = RetrievalEvidencePolicy()
             } else if parts.count == 2, let terms = Int(parts[0]), let fraction = Double(parts[1]) {
                 policy = RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: terms, sharedFraction: fraction)
+                // The groups P3 measured keep their own criterion; RETRIEVAL_EVAL_GATE_GROUP moves them.
+                policy.groupCriteria = RetrievalEvidencePolicy.measuredGroupCriteria
             } else {
                 fail("RETRIEVAL_EVAL_GATE is \"floor\" or \"<terms>,<fraction>\"")
             }

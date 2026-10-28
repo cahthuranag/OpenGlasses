@@ -54,10 +54,15 @@ enum TableDirectory {
         let tables = merged(catalogue)
         guard !tables.isEmpty else { return [] }
         // "Table" says the question wants a table, not which: titles that mention other tables
-        // ("multipliers for Tables 97 and 99") would otherwise gain from it.
-        let asked = terms(question).subtracting(tableWords)
-        guard !asked.isEmpty else { return [] }
-        let fields = tables.map { (title: terms($0.title), headings: headingTerms($0.headings)) }
+        // ("multipliers for Tables 97 and 99") would otherwise gain from it. The question's terms
+        // are cut under each table's document's rule (Plan JY P0).
+        var askedByRule: [TermRule: Set<String>] = [:]
+        for rule in Set(tables.map(\.termRule)).union([.english]) {
+            askedByRule[rule] = terms(question, rule: rule).subtracting(tableWords(rule))
+        }
+        guard askedByRule.values.contains(where: { !$0.isEmpty }) else { return [] }
+        let fields = tables.map { (title: terms($0.title, rule: $0.termRule),
+                                   headings: headingTerms($0.headings, rule: $0.termRule)) }
         var frequency: [String: Int] = [:]
         for field in fields {
             for term in field.title.union(field.headings) { frequency[term, default: 0] += 1 }
@@ -75,7 +80,7 @@ enum TableDirectory {
         for (index, field) in fields.enumerated() {
             var score = 0.0
             var shared = 0
-            for term in asked {
+            for term in askedByRule[tables[index].termRule] ?? [] {
                 let weight = field.title.contains(term) ? 1.0 : (field.headings.contains(term) ? headingWeight : 0)
                 guard weight > 0 else { continue }
                 score += weight * rarity(term)
@@ -124,7 +129,7 @@ enum TableDirectory {
             }
             let title = existing.title.trimmingCharacters(in: .whitespaces).isEmpty ? entry.title : existing.title
             existing = TableReference.Entry(label: existing.label, title: title, documentName: existing.documentName,
-                                            headings: existing.headings + entry.headings)
+                                            headings: existing.headings + entry.headings, termRule: existing.termRule)
             byKey[key] = existing
         }
         return order.compactMap { byKey[$0] }
@@ -134,8 +139,14 @@ enum TableDirectory {
 
     /// The terms a question or a table is compared on: content terms, a number with its unit, and
     /// a unit named on its own.
-    static func terms(_ text: String) -> Set<String> {
-        var out = Set(LexicalSupport.contentTerms(text).map(singularY)).subtracting(unitTerms)
+    ///
+    /// Under a rule other than `.english` (Plan JY P0) the content terms are that rule's, without
+    /// the English "-ies" fix; the units read are still the English spellings (localised unit
+    /// words are Plan JY P4), and a number with "°C" or "%" reads alike in any language.
+    static func terms(_ text: String, rule: TermRule = .english) -> Set<String> {
+        var out = rule == .english
+            ? Set(LexicalSupport.contentTerms(text).map(singularY)).subtracting(unitTerms)
+            : LexicalSupport.contentTerms(text, rule: rule).subtracting(unitTerms)
         let lower = text.lowercased()
         let ns = lower as NSString
         for match in measured.matches(in: lower, range: NSRange(location: 0, length: ns.length)) {
@@ -155,10 +166,10 @@ enum TableDirectory {
 
     /// The terms of a table's headings: each heading's, and a heading that is a unit by itself
     /// ("A", "mm") as that unit.
-    static func headingTerms(_ headings: [String]) -> Set<String> {
+    static func headingTerms(_ headings: [String], rule: TermRule = .english) -> Set<String> {
         var out = Set<String>()
         for heading in Set(headings) {
-            out.formUnion(terms(heading))
+            out.formUnion(terms(heading, rule: rule))
             let bare = heading.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 .trimmingCharacters(in: CharacterSet(charactersIn: "()[]"))
             if let unit = unitWords[bare] { out.insert("unit:" + unit) }
@@ -167,6 +178,11 @@ enum TableDirectory {
     }
 
     private static let tableWords = LexicalSupport.contentTerms("table tables")
+
+    /// The table words under `rule`.
+    private static func tableWords(_ rule: TermRule) -> Set<String> {
+        rule == .english ? tableWords : LexicalSupport.contentTerms("table tables", rule: rule)
+    }
 
     /// The content terms the unit spellings make, left out of the plain terms: a unit counts as
     /// a unit, once.

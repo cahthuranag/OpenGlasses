@@ -2146,7 +2146,7 @@ final class FieldSessionService: ObservableObject {
         }, tableCatalogue: {
             searched.filter { $0.source == .manual || $0.source == .capturedManual }.flatMap { space in
                 (documentStore?.storedTables(namespace: space.namespace, documentIds: ids(for: space)) ?? [])
-                    .map { TableReference.Entry(table: $0.table, documentName: $0.documentName) }
+                    .map { TableReference.Entry(table: $0.table, documentName: $0.documentName, termRule: $0.termRule) }
             }
         }, termStatistics: {
             documentStore?.termStatistics(namespaces: searched.map(\.namespace))

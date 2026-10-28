@@ -44,8 +44,23 @@ enum CodeTokenizer {
 
     /// A decimal number bounded by non-word characters, or else a run of word characters. The
     /// decimal alternative is tried first so "0.28" is not taken as "0" then "28".
-    private static let wordPattern = try! NSRegularExpression(
-        pattern: #"(?<![\p{L}\p{N}])\d+(?:[.,]\d+)+(?![\p{L}\p{N}])|[\p{L}\p{N}]+"#)
+    ///
+    /// A letter of a script that separates codes (`separatingScripts`) is never part of a code's
+    /// word (Plan JY P0): "型号ABC123的" and "модельABC123" are written without a space before the
+    /// model number, and the whole run was one token that no spoken "ABC123" matched. Such letters
+    /// make words of their own. Text without them is read exactly as before.
+    private static let wordPattern: NSRegularExpression = {
+        let separating = "[\\p{L}&&[\(separatingScripts)]]"
+        let word = "[\\p{N}[\\p{L}&&[^\(separatingScripts)]]]"
+        return try! NSRegularExpression(
+            pattern: "(?<!\(word))\\d+(?:[.,]\\d+)+(?!\(word))|\(word)+|\(separating)+")
+    }()
+
+    /// The scripts whose letters separate code tokens: those of the interface languages that are
+    /// not Latin, and the katakana prolonged-sound mark, which is a letter of no script. Greek is
+    /// not among them, so "10μF" and "10Ω" stay whole as they always have.
+    private static let separatingScripts =
+        #"\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}\p{Cyrillic}\p{Arabic}\x{30FC}\x{FF70}"#
 
     /// "0.28", "1,5", "12.0" — digits either side of a decimal mark.
     static func isDecimal(_ token: String) -> Bool {
@@ -109,14 +124,29 @@ enum CodeTokenizer {
         var searchStart = lowerHay.startIndex
         while let range = lowerHay.range(of: lowerToken, range: searchStart..<lowerHay.endIndex) {
             let leadingOK = range.lowerBound == lowerHay.startIndex
-                || !isWordChar(lowerHay[lowerHay.index(before: range.lowerBound)])
+                || !isWordChar(lowerHay[lowerHay.index(before: range.lowerBound)], beside: lowerHay[range.lowerBound])
             let trailingOK = range.upperBound == lowerHay.endIndex
-                || !isWordChar(lowerHay[range.upperBound])
+                || !isWordChar(lowerHay[range.upperBound], beside: lowerHay[lowerHay.index(before: range.upperBound)])
             if leadingOK && trailingOK { return true }
             searchStart = range.upperBound
         }
         return false
     }
 
-    private static func isWordChar(_ c: Character) -> Bool { c.isLetter || c.isNumber }
+    /// Whether `c`, standing beside a token whose edge character is `edge`, continues the
+    /// token's word — as `words(in:)` reads words. A letter of a separating script (Han, kana,
+    /// Hangul, Cyrillic, Arabic) and any other letter or digit belong to different words (Plan JY
+    /// P0), so "ABC123" is whole in "型号ABC123的", and "модель" in "ABC123модель"; two letters of
+    /// separating scripts, or two of the others, are one word, as before.
+    private static func isWordChar(_ c: Character, beside edge: Character) -> Bool {
+        guard c.isLetter || c.isNumber else { return false }
+        return separates(c) == separates(edge)
+    }
+
+    /// A letter of a script that separates code tokens — the Swift side of `separatingScripts`.
+    private static func separates(_ c: Character) -> Bool {
+        if c == "\u{30FC}" || c == "\u{FF70}" { return true }
+        guard let script = TextScript.of(c) else { return false }
+        return script == .cyrillic || script == .arabic || script.isCJK
+    }
 }

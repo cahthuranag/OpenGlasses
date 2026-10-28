@@ -1,6 +1,15 @@
 # Plan JY — Manuals in Every Interface Language (search keyed on the document's script)
 
-**Status:** 📝 Drafted 2026-10-28. Nothing built. A tester in China asked about using My Manuals
+**Status:** 🚧 P0 built 2026-10-29 (PR pending): `DocumentLanguageProfile` (script by a weighted
+letter count, then language by a constrained recogniser) is recorded per document in a nullable
+`documents.language_profile` column and backfilled from stored text on first use, and `TermRule`
+(`.english` unchanged, `.prefixStem` with per-language stopwords, `.arabicStem`, `.bigram`) now
+cuts both the question and each passage under that document's rule in the term search, BM25F
+statistics, the evidence gate, the back-of-book index and the table directory; `CodeTokenizer`
+splits codes off Han, kana, Hangul, Cyrillic and Arabic letters. The gate's fractions for the
+non-English rules are the English ones, provisional until P3; the profile is not yet shown in the
+support report or Developer panel. P1–P5 not started.
+**Drafted:** 2026-10-28. A tester in China asked about using My Manuals
 with research papers. A check of build 581 found that a Chinese PDF indexes but can't be searched,
 and a check of the other interface languages found the same problem in different strengths. The
 plan was widened the same day, before merging, from Chinese, Japanese and Korean to all 19

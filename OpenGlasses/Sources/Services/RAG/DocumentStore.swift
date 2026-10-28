@@ -52,6 +52,10 @@ final class DocumentStore: ObservableObject {
         /// found for. Carried rather than recomputed because a continuation chunk need not print
         /// the clause number at all.
         var clauseMatch: ClauseReference.Match?
+        /// The rule the passage's document is read with (Plan JY P0), from its
+        /// [[DocumentLanguageProfile]]: a question is compared with this passage under the same
+        /// rule. Set by the store; a passage made anywhere else is read with today's rule.
+        var termRule: TermRule = .english
     }
 
     // MARK: - Published
@@ -115,6 +119,7 @@ final class DocumentStore: ObservableObject {
 
         insertDocument(id: docId, name: safeName, sourceType: sourceType, namespace: namespace,
                        createdAt: now, chunkCount: chunks.count, charCount: cleaned.count)
+        recordLanguageProfile(of: cleaned, documentId: docId)
 
         // A vault manual is embedded with the model its vault is served by (Plan IV P4), so it
         // never joins an index another model built; everything else keeps the store's embedder.
@@ -177,7 +182,8 @@ final class DocumentStore: ObservableObject {
                 guard sim > minSimilarity else { return nil }
                 return Passage(documentId: row.documentId, documentName: row.documentName,
                                chunkIndex: row.chunkIndex, text: row.text, similarity: sim,
-                               page: row.page, section: row.section, kind: row.kind, figure: row.figure)
+                               page: row.page, section: row.section, kind: row.kind, figure: row.figure,
+                               termRule: row.termRule)
             }
             guard let qv else { return nil }
             // A chunk embedded by a different model can't be compared against `qv`. Re-embed it from
@@ -201,7 +207,8 @@ final class DocumentStore: ObservableObject {
             guard sim > minSimilarity else { return nil }
             return Passage(documentId: row.documentId, documentName: row.documentName,
                            chunkIndex: row.chunkIndex, text: row.text, similarity: sim,
-                           page: row.page, section: row.section, kind: row.kind, figure: row.figure)
+                           page: row.page, section: row.section, kind: row.kind, figure: row.figure,
+                           termRule: row.termRule)
         }
         vaultQuery.logTimings()
         return Array(scored.sorted { $0.similarity > $1.similarity }.prefix(limit))
@@ -220,7 +227,7 @@ final class DocumentStore: ObservableObject {
         return rows.prefix(max(limit, 1)).map {
             Passage(documentId: $0.documentId, documentName: $0.documentName, chunkIndex: $0.chunkIndex,
                     text: $0.text, similarity: 0, page: $0.page, section: $0.section,
-                    kind: $0.kind, figure: $0.figure)
+                    kind: $0.kind, figure: $0.figure, termRule: $0.termRule)
         }
     }
 
@@ -236,15 +243,18 @@ final class DocumentStore: ObservableObject {
     func passages(sharingTermsWith text: String, limit: Int = 8, namespace: String? = nil,
                   documentIds: [String]? = nil,
                   kinds: Set<DocumentChunker.Kind> = DocumentStore.searchedKinds) -> [Passage] {
-        let terms = LexicalSupport.contentTerms(text)
-        guard !terms.isEmpty else { return [] }
+        // The question's terms under every rule, each row compared under its own document's (Plan
+        // JY P0): a Chinese manual's passage with the question cut into bigrams, an English one's
+        // with today's terms.
+        let question = LexicalSupport.QueryTerms(text)
+        guard !question.isEmpty else { return [] }
         let current = embedder.version
         let rows = fetchChunks(namespace: namespace, documentIds: documentIds).filter { kinds.contains($0.kind) }
         let vaultQuery = QueryVectors(text: text, store: self)
         let qv = rows.contains { !Self.isVaultNamespace($0.namespace) } ? embedder.embed(text) : nil
         let scored = rows
             .compactMap { row -> (row: ChunkRow, shared: Int, similarity: Float)? in
-                let shared = LexicalSupport.sharedTermCount(text: row.text, queryTerms: terms)
+                let shared = LexicalSupport.sharedTermCount(text: row.text, question: question, rule: row.termRule)
                 guard shared > 0 else { return nil }
                 var similarity: Float = 0
                 if Self.isVaultNamespace(row.namespace) {
@@ -262,7 +272,8 @@ final class DocumentStore: ObservableObject {
         return scored.prefix(max(limit, 1)).map {
             Passage(documentId: $0.row.documentId, documentName: $0.row.documentName,
                     chunkIndex: $0.row.chunkIndex, text: $0.row.text, similarity: $0.similarity,
-                    page: $0.row.page, section: $0.row.section, kind: $0.row.kind, figure: $0.row.figure)
+                    page: $0.row.page, section: $0.row.section, kind: $0.row.kind, figure: $0.row.figure,
+                    termRule: $0.row.termRule)
         }
     }
 
@@ -305,7 +316,7 @@ final class DocumentStore: ObservableObject {
                 Passage(documentId: $0.row.documentId, documentName: $0.row.documentName,
                         chunkIndex: $0.row.chunkIndex, text: $0.row.text, similarity: 0, page: $0.row.page,
                         section: $0.row.section, kind: $0.row.kind, figure: $0.row.figure,
-                        clauseMatch: $0.match)
+                        clauseMatch: $0.match, termRule: $0.row.termRule)
             }
     }
 
@@ -338,7 +349,7 @@ final class DocumentStore: ObservableObject {
         .prefix(max(limit, 1)).map {
             Passage(documentId: $0.documentId, documentName: $0.documentName, chunkIndex: $0.chunkIndex,
                     text: $0.text, similarity: 0, page: $0.page, section: $0.section,
-                    kind: $0.kind, figure: $0.figure)
+                    kind: $0.kind, figure: $0.figure, termRule: $0.termRule)
         }
     }
 
@@ -617,6 +628,7 @@ final class DocumentStore: ObservableObject {
         let now = Date().timeIntervalSince1970
         insertDocument(id: documentId, name: name, sourceType: sourceType, namespace: namespace,
                        createdAt: now, chunkCount: 1, charCount: cleaned.count)
+        recordLanguageProfile(of: cleaned, documentId: documentId)
         let embedding = embedder.embed(cleaned)
         insertChunk(documentId: documentId, index: 0, text: cleaned,
                     embedding: embedding.map(vecToData), page: nil, section: nil,
@@ -656,6 +668,7 @@ final class DocumentStore: ObservableObject {
         insertDocument(id: documentId, name: name, sourceType: sourceType, namespace: namespace,
                        createdAt: now, chunkCount: chunks.count, charCount: pages.reduce(0) { $0 + $1.text.count })
         guard sqlite3_errcode(db) == SQLITE_OK || sqlite3_errcode(db) == SQLITE_DONE else { return false }
+        recordLanguageProfile(of: pages.map(\.text).joined(separator: "\n"), documentId: documentId)
         for (index, chunk) in chunks.enumerated() {
             insertChunk(documentId: documentId, index: index, text: chunk.text, embedding: vectors[index],
                         page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
@@ -750,7 +763,7 @@ final class DocumentStore: ObservableObject {
     func backOfBookIndex(documentId: String) -> BackOfBookIndex? {
         let count = chunkCount(documentId: documentId)
         if let cached = indexCache[documentId], cached.chunks == count { return cached.index }
-        let index = BackOfBookIndex.parse(storedText(documentId: documentId))
+        let index = BackOfBookIndex.parse(storedText(documentId: documentId), rule: termRule(documentId: documentId))
         indexCache[documentId] = (count, index)
         return index
     }
@@ -768,6 +781,56 @@ final class DocumentStore: ObservableObject {
         let value = DocumentChunker.isClauseNumbered(storedText(documentId: documentId))
         clauseNumberedCache[documentId] = (count, value)
         return value
+    }
+
+    // MARK: - A document's language (Plan JY P0)
+
+    private var languageProfileCache: [String: DocumentLanguageProfile] = [:]
+
+    /// The document's language profile: the one recorded when it was indexed, or — for a document
+    /// indexed before profiles were, or under an older detection — detected now from its stored
+    /// text and recorded, so the backfill happens once per document and needs no re-index. Held
+    /// in memory until the store next changes.
+    func languageProfile(documentId: String) -> DocumentLanguageProfile {
+        if let cached = languageProfileCache[documentId] { return cached }
+        let stored = rows("SELECT language_profile FROM documents WHERE id = '\(escapedSQL(documentId))'") { stmt in
+            sqlite3_column_text(stmt, 0).map { String(cString: $0) }
+        }.first ?? nil
+        let decoded = stored.flatMap { try? JSONDecoder().decode(DocumentLanguageProfile.self, from: Data($0.utf8)) }
+        let profile: DocumentLanguageProfile
+        if let decoded, decoded.version == DocumentLanguageProfile.currentVersion {
+            profile = decoded
+        } else {
+            profile = DocumentLanguageProfile.detect(storedText(documentId: documentId))
+            writeLanguageProfile(profile, documentId: documentId)
+        }
+        languageProfileCache[documentId] = profile
+        return profile
+    }
+
+    /// The rule the document's passages are read with.
+    func termRule(documentId: String) -> TermRule {
+        languageProfile(documentId: documentId).termRule
+    }
+
+    /// Detect and record the profile of a document's text at ingest or re-index. The cache is
+    /// left to the next read: a write that rolls back must not leave its profile behind.
+    private func recordLanguageProfile(of text: String, documentId: String) {
+        writeLanguageProfile(DocumentLanguageProfile.detect(text), documentId: documentId)
+        languageProfileCache[documentId] = nil
+    }
+
+    private func writeLanguageProfile(_ profile: DocumentLanguageProfile, documentId: String) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let json = try? encoder.encode(profile), let text = String(data: json, encoding: .utf8) else { return }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "UPDATE documents SET language_profile = ? WHERE id = ?", -1, &stmt, nil) == SQLITE_OK
+        else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, text, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, documentId, -1, SQLITE_TRANSIENT)
+        _ = sqlite3_step(stmt)
     }
 
     // MARK: - A corpus's word statistics (Plan IV P7)
@@ -790,9 +853,17 @@ final class DocumentStore: ObservableObject {
         let key = namespace ?? "*"
         if let cached = termStatisticsCache[key], cached.stamp == stamp { return cached.statistics }
         var statistics = LexicalSupport.TermStatistics()
-        _ = rows("SELECT c.text, c.section FROM doc_chunks c \(scope)") { stmt in
+        // Each chunk is counted under its document's rule (Plan JY P0), as it is scored. The rules
+        // are read first: a profile not yet recorded is written, and not under an open read.
+        let documentIds = rows("SELECT DISTINCT c.document_id FROM doc_chunks c \(scope)") { stmt in
+            sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+        }
+        let rules = Dictionary(documentIds.map { ($0, termRule(documentId: $0)) }, uniquingKeysWith: { first, _ in first })
+        _ = rows("SELECT c.text, c.section, c.document_id FROM doc_chunks c \(scope)") { stmt in
+            let documentId = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+            let rule = rules[documentId] ?? .english
             statistics.add(text: sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? "",
-                           heading: sqlite3_column_text(stmt, 1).map { String(cString: $0) })
+                           heading: sqlite3_column_text(stmt, 1).map { String(cString: $0) }, rule: rule)
         }
         termStatisticsCache[key] = (stamp, statistics)
         return statistics
@@ -1214,6 +1285,8 @@ final class DocumentStore: ObservableObject {
                         location: chunk)
         }
         exec("UPDATE documents SET chunk_count = \(chunks.count) WHERE id = '\(escapedSQL(documentId))'")
+        recordLanguageProfile(of: chunks.filter { $0.kind != .tableRow }.map(\.text).joined(separator: "\n"),
+                              documentId: documentId)
         guard exec("COMMIT") else { exec("ROLLBACK"); return false }
         refresh()
         return true
@@ -1294,6 +1367,9 @@ final class DocumentStore: ObservableObject {
         let documentId: String
         let documentName: String
         let table: ManualTable
+        /// The rule the table's document is read with (Plan JY P0), so its title and headings are
+        /// compared with a question the way its passages are.
+        var termRule: TermRule = .english
     }
 
     /// Every table stored for the documents of `namespace` (or of `documentIds` within it), the
@@ -1317,7 +1393,11 @@ final class DocumentStore: ObservableObject {
                 return nil
             }
             return StoredTable(documentId: String(cString: id), documentName: String(cString: name), table: table)
-        }.compactMap { $0 }
+        }.compactMap { $0 }.map { stored in
+            var stored = stored
+            stored.termRule = termRule(documentId: stored.documentId)
+            return stored
+        }
     }
 
     /// Whether any document of `documentIds` has a table row passage — what asks the retriever
@@ -1502,6 +1582,10 @@ final class DocumentStore: ObservableObject {
             PRIMARY KEY (document_id, table_index)
         )
         """)
+        // Each document's language profile (Plan JY P0), as JSON: its script, its language and how
+        // sure the detection was. Null for a document indexed before the column, which
+        // `languageProfile(documentId:)` fills in from the document's stored text on first use.
+        exec("ALTER TABLE documents ADD COLUMN language_profile TEXT")
         exec("CREATE INDEX IF NOT EXISTS idx_chunk_doc ON doc_chunks(document_id)")
         exec("CREATE INDEX IF NOT EXISTS idx_doc_ns ON documents(namespace)")
     }
@@ -1580,6 +1664,8 @@ final class DocumentStore: ObservableObject {
         let embeddingVersion: String?
         let kind: DocumentChunker.Kind
         let figure: String?
+        /// The document's rule (Plan JY P0), set once the rows are read.
+        var termRule: TermRule = .english
     }
 
     private func fetchChunks(namespace: String?, documentIds: [String]?) -> [ChunkRow] {
@@ -1625,10 +1711,19 @@ final class DocumentStore: ObservableObject {
                                  kind: kindTag.flatMap(DocumentChunker.Kind.init(rawValue:)) ?? .prose,
                                  figure: figure))
         }
+        var rules: [String: TermRule] = [:]
+        for index in rows.indices {
+            let documentId = rows[index].documentId
+            let rule = rules[documentId] ?? termRule(documentId: documentId)
+            rules[documentId] = rule
+            rows[index].termRule = rule
+        }
         return rows
     }
 
     private func refresh() {
+        // Every write ends here, so a document replaced, re-indexed or removed is read afresh.
+        languageProfileCache.removeAll()
         var refs: [DocumentRef] = []
         var stmt: OpaquePointer?
         let sql = "SELECT id, name, source_type, namespace, created_at, chunk_count, char_count FROM documents ORDER BY created_at DESC"

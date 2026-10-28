@@ -26,11 +26,15 @@ struct BackOfBookIndex: Equatable {
     }
 
     let entries: [Entry]
+    /// The rule the document is read with (Plan JY P0): its entries' terms, and a question's
+    /// compared with them, are cut this way.
+    let rule: TermRule
     /// How many entries each term appears in.
     private let frequency: [String: Int]
 
-    init(entries: [Entry]) {
+    init(entries: [Entry], rule: TermRule = .english) {
         self.entries = entries
+        self.rule = rule
         var df: [String: Int] = [:]
         for entry in entries { for term in entry.terms { df[term, default: 0] += 1 } }
         frequency = df
@@ -39,8 +43,9 @@ struct BackOfBookIndex: Equatable {
     /// How many referencing entries make a list an index.
     static let minimumEntries = 30
 
-    /// The index in `text`, or nil when the document has none.
-    static func parse(_ text: String) -> BackOfBookIndex? {
+    /// The index in `text`, or nil when the document has none. `rule` is the document's
+    /// ([[DocumentLanguageProfile]]); the heading it is detected by is English's still (Plan JY P4).
+    static func parse(_ text: String, rule: TermRule = .english) -> BackOfBookIndex? {
         let lines = text.components(separatedBy: "\n")
         // The heading is in the last part of the document; the contents page's "Index" line, at
         // the front, is not where the index starts.
@@ -55,7 +60,7 @@ struct BackOfBookIndex: Equatable {
             guard line.count > 1 else { continue }
             let found = references(in: line)
             let label = found.first.map { String(line[..<$0.range.lowerBound]) } ?? line
-            let terms = LexicalSupport.contentTerms(label)
+            let terms = LexicalSupport.contentTerms(label, rule: rule)
             if found.isEmpty {
                 // A heading line for the sub-entries under it ("Fittings" before "covers 41-310").
                 if !terms.isEmpty, line.rangeOfCharacter(from: .decimalDigits) == nil { heading = terms }
@@ -73,13 +78,13 @@ struct BackOfBookIndex: Equatable {
             previous = entryTerms
             entries.append(Entry(terms: entryTerms, references: refs))
         }
-        return entries.count >= minimumEntries ? BackOfBookIndex(entries: entries) : nil
+        return entries.count >= minimumEntries ? BackOfBookIndex(entries: entries, rule: rule) : nil
     }
 
     /// The references for a question's words, best first: entries scored by how much of the
     /// question's weight they carry (rarer index words weigh more), less what they add beyond it.
     func references(for question: String, limit: Int = 3) -> [String] {
-        let asked = LexicalSupport.contentTerms(question)
+        let asked = LexicalSupport.contentTerms(question, rule: rule)
         guard !asked.isEmpty else { return [] }
         let scored = entries.compactMap { entry -> (Entry, Double)? in
             let shared = entry.terms.intersection(asked)

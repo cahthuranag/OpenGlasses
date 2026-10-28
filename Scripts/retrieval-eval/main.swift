@@ -72,6 +72,21 @@ struct RetrievalEvalMain {
             _ = await store.ingest(name: document.title, text: text, sourceType: "vault_document", tables: tables)
         }
 
+        // Plan JY P3: what each document was detected as, counted by script, language and rule —
+        // codes only, so the line is as safe to paste as the counts.
+        var profiles: [String: Int] = [:]
+        for document in store.documents {
+            let profile = store.languageProfile(documentId: document.id)
+            profiles["\(profile.script.rawValue)/\(profile.language ?? "?")/\(profile.termRule)", default: 0] += 1
+        }
+        // Plan JY P3: RETRIEVAL_EVAL_VECTORS=pending measures a document in another script as it is
+        // searched while its script's model is missing (decision 6): the index keeps its vectors,
+        // but no script model answers, so every such passage is judged by its words alone.
+        if let vectors = env["RETRIEVAL_EVAL_VECTORS"] {
+            guard vectors == "pending" else { fail("RETRIEVAL_EVAL_VECTORS is pending") }
+            store.scriptEmbedderProvider = { _ in nil }
+        }
+
         // The shipped gate for this embedder, or a candidate one to calibrate a gate against both
         // sets: RETRIEVAL_EVAL_GATE="<min shared terms>,<shared fraction>" (floor 0.30), or "floor".
         var policy = RetrievalEvidencePolicy.default(for: embedder.modelId)
@@ -85,6 +100,10 @@ struct RetrievalEvalMain {
                 fail("RETRIEVAL_EVAL_GATE is \"floor\" or \"<terms>,<fraction>\"")
             }
         }
+        // Plan JY P3: a language group's candidate criterion and pending-passage increase
+        // (RETRIEVAL_EVAL_GATE_GROUP, RETRIEVAL_EVAL_PENDING), over whatever the gate above is.
+        for (group, criterion) in RetrievalEvalTuning.groupCriteria { policy.groupCriteria[group] = criterion }
+        for (group, increase) in RetrievalEvalTuning.pendingIncrease { policy.pendingIncrease[group] = increase }
         // A vault holding a work in more than one edition answers from the newest unless the
         // question reaches past it, as the app's retrieval factory does.
         let documents = manifestDocuments(in: vault)
@@ -96,10 +115,14 @@ struct RetrievalEvalMain {
                                        store: store,
                                        passageLimit: env["RETRIEVAL_EVAL_PASSAGES"] == "4" ? nil : ManualPassageLimit())
         let label = (env["RETRIEVAL_EVAL_LABEL"] ?? "local vault") + (env["RETRIEVAL_EVAL_GATE"].map { " gate=\($0)" } ?? "")
+            + (env["RETRIEVAL_EVAL_VECTORS"].map { " vectors=\($0)" } ?? "")
+            + ["RETRIEVAL_EVAL_GATE_GROUP", "RETRIEVAL_EVAL_PENDING", "RETRIEVAL_EVAL_PREFIX", "RETRIEVAL_EVAL_MINLEN", "RETRIEVAL_EVAL_ENDINGS", "RETRIEVAL_EVAL_CJK"]
+                .compactMap { name in env[name].map { " \(name.dropFirst(15).lowercased())=\($0)" } }.joined()
             + " table_rows=\(RetrievalEval.tableRows.rawValue)"
         for line in report.lines(label: label, embedder: embedder.modelId) {
             print(line)
         }
+        print("[EVAL]   documents: " + profiles.sorted { $0.key < $1.key }.map { "\($0.key) ×\($0.value)" }.joined(separator: ", "))
     }
 
     struct Document { let title: String; let url: URL; let kind: String?; let edition: String?; let source: URL? }

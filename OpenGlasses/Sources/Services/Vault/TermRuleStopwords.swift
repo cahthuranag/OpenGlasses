@@ -129,6 +129,46 @@ enum TermRuleStopwords {
         "غير", "أن", "إن", "ألا", "إلا", "ماذا", "فيه", "فيها", "منه", "منها",
     ].map(TermRule.normalisedArabic))
 
+    // MARK: - Endings (Plan JY P3)
+
+    /// The case and verb endings a word in a heavily inflected language may carry, longest first:
+    /// stripped from a word before its prefix is kept, so a word shorter than the prefix length
+    /// meets its other forms ("жінка", "жінкою" → "жінк"). Written for this plan; one ending is
+    /// stripped, only when at least `TermRule.minimumStemAfterEnding` letters are left.
+    static func endings(for group: TermRule.Group) -> [String] {
+        switch group {
+        case .cyrillic: return cyrillicEndings
+        case .latinHeavy: return latinHeavyEndings
+        case .latinLight: return latinLightEndings
+        default: return []
+        }
+    }
+
+    static let cyrillicEndings: [String] = [
+        "ьтеся", "ться", "ются", "ются", "ется", "ится", "ішся", "ешся",
+        "ами", "ями", "ові", "еві", "єві", "ого", "его", "ому", "ему", "ими", "іми", "ыми", "ях", "ах", "иях",
+        "ів", "їв", "ов", "ев", "ою", "ею", "єю", "ий", "ій", "ый", "ой", "ей", "им", "ім", "ым", "их", "іх", "ых",
+        "ом", "ем", "ам", "ям", "ая", "яя", "ое", "ее", "ую", "юю", "ть", "ти", "ла", "ли", "ло", "ся", "сь",
+        "ут", "ют", "ать", "ять", "ить", "ити", "ати",
+        "а", "я", "у", "ю", "ы", "и", "і", "ї", "е", "є", "о", "ь", "й",
+    ].sorted { $0.count > $1.count }
+
+    static let latinHeavyEndings: [String] = [
+        // German
+        "ungen", "ern", "en", "er", "es", "em", "e", "n", "s",
+        // Polish
+        "ami", "ach", "owi", "ego", "emu", "ych", "ich", "ymi", "imi", "ów", "om", "ie", "ia", "iu", "ą", "ę",
+        "y", "a", "u", "o", "i",
+        // Hungarian
+        "ban", "ben", "nak", "nek", "val", "vel", "ból", "ből", "hoz", "hez", "höz", "ról", "ről", "nál", "nél",
+        "ra", "re", "ba", "be", "on", "en", "ön", "at", "et", "ot", "öt", "ok", "ek", "ök", "ak", "t", "k",
+    ].reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.sorted { $0.count > $1.count }
+
+    static let latinLightEndings: [String] = [
+        "mente", "ções", "ción", "zione", "ciones", "zioni", "ões", "es", "os", "as", "is", "ns", "en",
+        "e", "a", "o", "s", "i",
+    ].sorted { $0.count > $1.count }
+
     /// Pieces a question is phrased with: question words, demonstratives, and the polite and verb
     /// endings that attach to everything ("です", "합니다").
     static let bigrams: Set<String> = [
@@ -142,6 +182,12 @@ enum TermRuleStopwords {
         // Korean
         "어떤", "무엇", "어떻", "떻게", "합니", "니다", "니까", "습니", "입니", "있습", "됩니", "하는",
     ]
+
+    /// The particles a Korean word may end in, longest first (P3).
+    static let koreanParticles: [String] = [
+        "에서는", "으로는", "에게서", "까지", "부터", "에서", "으로", "에게", "한테", "보다", "처럼", "하고", "이나",
+        "은", "는", "이", "가", "을", "를", "의", "에", "도", "로", "와", "과", "만",
+    ].sorted { $0.count > $1.count }
 
     /// One-character runs that are particles, not terms.
     static let singleCharacters: Set<String> = [

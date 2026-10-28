@@ -30,6 +30,13 @@ enum ManualLanguageReport {
         }.joined(separator: ", ")
         let byWords = diagnostics.filter(\.searchesByWords).count
         var out = ["Document languages: \(diagnostics.count) documents (\(manuals) manuals); by script \(scripts); words only \(byWords)"]
+        // Plan JY P3: groups whose search values were not measured on both a parallel baseline
+        // and a technical document.
+        let lessTested = TermRule.Group.allCases.compactMap { group -> String? in
+            let n = diagnostics.filter { $0.profile.termRule.group == group && group.isLessTested }.count
+            return n > 0 ? "\(group.rawValue) \(n)" : nil
+        }
+        if !lessTested.isEmpty { out.append("Less tested: " + lessTested.joined(separator: ", ")) }
         if let models = modelLine(models) { out.append(models) }
         for (index, diagnostic) in diagnostics.prefix(max(limit, 0)).enumerated() {
             out.append("Document \(index + 1): \(diagnostic.line)")

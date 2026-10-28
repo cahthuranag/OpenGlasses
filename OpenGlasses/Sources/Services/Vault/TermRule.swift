@@ -52,12 +52,67 @@ enum TermRule: Hashable, Codable, Sendable {
     /// Every rule, for turning a question into terms once per rule.
     static let allCases: [TermRule] = [.english, .arabicStem, .bigram] + StemLanguage.allCases.map(TermRule.prefixStem)
 
-    /// Letters a `.prefixStem` term keeps. 6 to start (Plan JY decision 1); P3 sets one per group.
-    static let prefixLength = 6
+    /// The language groups Plan JY P3 calibrates one at a time: each has its own prefix length,
+    /// shortest word and evidence-gate criterion. English is today's rule and is never tuned.
+    enum Group: String, CaseIterable, Codable, Sendable {
+        case english
+        /// es, fr, it, nl, pt: endings that vary little.
+        case latinLight
+        /// de, hu, pl: heavy endings or compounds.
+        case latinHeavy
+        /// uk, ru, and Cyrillic whose language was not settled.
+        case cyrillic
+        /// Arabic (`.arabicStem`).
+        case arabic
+        /// Urdu, prefix-stemmed in Arabic script.
+        case urdu
+        /// zh-Hans, zh-Hant, ja, ko (`.bigram`).
+        case cjk
 
-    /// The shortest word `.prefixStem` keeps, per language. Three for every language to start;
-    /// P3 sets each group's.
-    static func minimumLength(for language: StemLanguage) -> Int { 3 }
+        /// The group's search values were not measured on both a parallel baseline and a
+        /// technical document (Plan JY P3), so the Developer panel and the support report mark
+        /// its documents "less tested". Set from the P3 tables in the plan.
+        var isLessTested: Bool {
+            switch self {
+            case .english, .latinLight, .latinHeavy, .cyrillic, .cjk: return false
+            case .arabic, .urdu: return true
+            }
+        }
+    }
+
+    /// The calibration group of the rule.
+    var group: Group {
+        switch self {
+        case .english: return .english
+        case .arabicStem: return .arabic
+        case .bigram: return .cjk
+        case .prefixStem(let language):
+            switch language {
+            case .spanish, .french, .italian, .dutch, .portuguese: return .latinLight
+            case .german, .hungarian, .polish: return .latinHeavy
+            case .ukrainian, .russian, .cyrillic: return .cyrillic
+            case .urdu: return .urdu
+            }
+        }
+    }
+
+    /// Letters a `.prefixStem` (and `.arabicStem`) term keeps, per group. 6 to start (Plan JY
+    /// decision 1); P3 sets one per group.
+    static func prefixLength(for group: Group) -> Int {
+        #if RETRIEVAL_EVAL
+        if let measured = RetrievalEvalTuning.prefixLength(group) { return measured }
+        #endif
+        return 6
+    }
+
+    /// The shortest word `.prefixStem` keeps, per group. Three for every group to start; P3 sets
+    /// each group's.
+    static func minimumLength(for group: Group) -> Int {
+        #if RETRIEVAL_EVAL
+        if let measured = RetrievalEvalTuning.minimumLength(group) { return measured }
+        #endif
+        return 3
+    }
 
     /// The script the rule is written for.
     var script: TextScript {
@@ -150,10 +205,28 @@ enum TermRule: Hashable, Codable, Sendable {
 
     /// A word's prefix stem, or nil for a stopword or a word too short to count.
     static func prefixStem(_ word: String, language: StemLanguage) -> String? {
-        let lower = word.lowercased()
-        guard lower.count >= minimumLength(for: language),
+        var lower = word.lowercased()
+        let group = TermRule.prefixStem(language).group
+        guard lower.count >= minimumLength(for: group),
               !TermRuleStopwords.words(for: language).contains(lower) else { return nil }
-        return lower.count > prefixLength ? String(lower.prefix(prefixLength)) : lower
+        if stripsEndings(group), let ending = TermRuleStopwords.endings(for: group).first(where: {
+            lower.hasSuffix($0) && lower.count - $0.count >= minimumStemAfterEnding
+        }) {
+            lower = String(lower.dropLast(ending.count))
+        }
+        let length = prefixLength(for: group)
+        return lower.count > length ? String(lower.prefix(length)) : lower
+    }
+
+    /// The letters a word keeps when an ending is stripped from it (P3).
+    static let minimumStemAfterEnding = 3
+
+    /// Whether a group's words lose one ending before the prefix is kept (P3).
+    static func stripsEndings(_ group: Group) -> Bool {
+        #if RETRIEVAL_EVAL
+        if let measured = RetrievalEvalTuning.stripsEndings(group) { return measured }
+        #endif
+        return false
     }
 
     // MARK: - Arabic
@@ -174,7 +247,8 @@ enum TermRule: Hashable, Codable, Sendable {
             stem = String(stem.dropFirst(clitic.count))
         }
         guard stem.count >= 3, !stopwords.contains(stem) else { return nil }
-        return stem.count > prefixLength ? String(stem.prefix(prefixLength)) : stem
+        let length = prefixLength(for: .arabic)
+        return stem.count > length ? String(stem.prefix(length)) : stem
     }
 
     /// Tatweel and the short-vowel marks removed, and the alef written with a hamza or madda read
@@ -203,13 +277,44 @@ enum TermRule: Hashable, Codable, Sendable {
     /// The overlapping two-character pieces of a Han, kana or Hangul run, stop-bigrams removed; a
     /// run of one character is that character, unless it is a particle.
     static func bigrams(_ run: String) -> [String] {
-        let characters = Array(foldedToSimplified(run))
+        #if RETRIEVAL_EVAL
+        if let words = RetrievalEvalTuning.cjkWords(foldedToSimplified(run)) { return words }
+        #endif
+        var characters = Array(foldedToSimplified(run))
+        if stripsKoreanParticles, let particle = TermRuleStopwords.koreanParticles.first(where: {
+            characters.count > $0.count && String(characters.suffix($0.count)) == $0
+        }) {
+            characters.removeLast(particle.count)
+        }
         guard characters.count > 1 else {
             return characters.map(String.init).filter { !TermRuleStopwords.singleCharacters.contains($0) }
         }
         return (0..<(characters.count - 1)).compactMap { index in
             let piece = String(characters[index...index + 1])
+            if dropsHiraganaPairs, isHiragana(characters[index]), isHiragana(characters[index + 1]) { return nil }
             return TermRuleStopwords.bigrams.contains(piece) ? nil : piece
         }
+    }
+
+    private static func isHiragana(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { (0x3041...0x309F).contains($0.value) }
+    }
+
+    /// Whether a pair of hiragana is left out (P3): in Japanese the grammar — particles, verb and
+    /// polite endings — is written in hiragana, and content words mostly in kanji or katakana.
+    static var dropsHiraganaPairs: Bool {
+        #if RETRIEVAL_EVAL
+        if let measured = RetrievalEvalTuning.cjkVariant("kana") { return measured }
+        #endif
+        return false
+    }
+
+    /// Whether a Hangul word loses a trailing particle before its pieces are cut (P3): "온도를"
+    /// and "온도는" both read as "온도".
+    static var stripsKoreanParticles: Bool {
+        #if RETRIEVAL_EVAL
+        if let measured = RetrievalEvalTuning.cjkVariant("kopart") { return measured }
+        #endif
+        return false
     }
 }

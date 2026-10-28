@@ -739,6 +739,21 @@ struct RetrievalEvidencePolicy: Equatable {
     var tokenBoost: Float = 0.25
     var maxBoost: Float = 0.5
 
+    /// One language group's lexical criterion (Plan JY P3): the count and the share of the
+    /// question's own terms a passage of that group must share, read like `minSharedTerms` and
+    /// `sharedFraction`.
+    struct LexicalCriterion: Equatable, Sendable {
+        var minSharedTerms: Int
+        var sharedFraction: Double
+    }
+
+    /// The criterion for each language group measured apart from English (Plan JY P3). A group
+    /// with no entry — English always — uses `minSharedTerms` and `sharedFraction` above.
+    var groupCriteria: [TermRule.Group: LexicalCriterion] = [:]
+    /// How much stricter the criterion is for a passage awaiting its script model, per group
+    /// (Plan JY P3); a group with no entry uses `pendingVectorFractionIncrease`.
+    var pendingIncrease: [TermRule.Group: Double] = [:]
+
     /// What a turn the gate turned away is told. It says the search came up short, not that the
     /// manuals are silent: measured on a field manual pair, the device gate (Plan IV P1) refuses a
     /// third of the in-scope questions it cannot place, and "the manuals do not cover this" told a
@@ -779,10 +794,18 @@ struct RetrievalEvidencePolicy: Equatable {
     /// "法来") are not, so a fraction of the bigram count would ask too much and the flat
     /// `minSharedTerms` is what binds.
     func requiredSharedTerms(queryTermCount: Int, rule: TermRule) -> Int {
-        switch rule {
-        case .english, .prefixStem, .arabicStem, .bigram:
-            return requiredSharedTerms(queryTermCount: queryTermCount)
-        }
+        guard let criterion = groupCriteria[rule.group] else { return requiredSharedTerms(queryTermCount: queryTermCount) }
+        guard minSharedTerms > 0 else { return 0 }
+        return Self.required(queryTermCount: queryTermCount, minSharedTerms: criterion.minSharedTerms,
+                             fraction: criterion.sharedFraction)
+    }
+
+    /// The formula every count shares: `minimum`, lowered to `ceil(fraction × terms)` when a
+    /// fraction is set, never below 1.
+    private static func required(queryTermCount: Int, minSharedTerms: Int, fraction: Double) -> Int {
+        guard minSharedTerms > 0 else { return 0 }
+        guard fraction > 0, queryTermCount > 0 else { return minSharedTerms }
+        return min(minSharedTerms, max(1, Int(ceil(fraction * Double(queryTermCount)))))
     }
 
     /// How much stricter the lexical criterion is for a passage with no vector yet (Plan JY P1,
@@ -802,9 +825,11 @@ struct RetrievalEvidencePolicy: Equatable {
     /// terms), and for a one- or two-term question nothing is looser than today.
     func requiredSharedTermsWithoutVector(queryTermCount: Int, rule: TermRule) -> Int {
         guard minSharedTerms > 0 else { return 0 }
-        guard sharedFraction > 0, queryTermCount > 0 else { return minSharedTerms }
-        let fraction = min(1, sharedFraction + Self.pendingVectorFractionIncrease)
-        return min(minSharedTerms, max(1, Int(ceil(fraction * Double(queryTermCount)))))
+        let criterion = groupCriteria[rule.group] ?? LexicalCriterion(minSharedTerms: minSharedTerms, sharedFraction: sharedFraction)
+        guard criterion.sharedFraction > 0, queryTermCount > 0 else { return criterion.minSharedTerms }
+        let increase = pendingIncrease[rule.group] ?? Self.pendingVectorFractionIncrease
+        return Self.required(queryTermCount: queryTermCount, minSharedTerms: criterion.minSharedTerms,
+                             fraction: min(1, criterion.sharedFraction + increase))
     }
 
     /// The defaults measured for an embedding backend, chosen by [[Embedder]] `modelId` prefix.

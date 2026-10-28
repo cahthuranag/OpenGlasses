@@ -1077,12 +1077,17 @@ final class DocumentStore: ObservableObject {
         /// until its script's model downloads and re-indexes it.
         var searchesByWords: Bool { script != .latin && chunksWithVectors < chunks }
 
+        /// The document's language group has not been measured on both a parallel baseline and a
+        /// technical document (Plan JY P3), so its search values are less certain.
+        var isLessTested: Bool { profile.termRule.group.isLessTested }
+
         /// "manual · han zh-Hans 0.97 · CJK model contextual · vectors 0/42 · words only".
         var line: String {
             let language = profile.language.map { "\($0) \(String(format: "%.2f", profile.confidence))" } ?? "language unsure"
             var parts = [isManual ? "manual" : "document", "\(profile.script.rawValue) \(language)",
                          "\(script.diagnosticLabel) model \(modelClass)", "vectors \(chunksWithVectors)/\(chunks)"]
             if searchesByWords { parts.append("words only") }
+            if isLessTested { parts.append("less tested") }
             return parts.joined(separator: " · ")
         }
     }

@@ -47,7 +47,7 @@ final class TermRuleTests: XCTestCase {
         XCTAssertEqual(LexicalSupport.contentTerms("температура", rule: rule), ["темпер"])
         XCTAssertEqual(LexicalSupport.contentTerms("Температуру", rule: rule), ["темпер"])
         XCTAssertEqual(LexicalSupport.contentTerms("максимальна максимальне", rule: rule), ["максим"])
-        XCTAssertEqual(TermRule.prefixLength, 6)
+        XCTAssertEqual(TermRule.prefixLength(for: .cyrillic), 6)
     }
 
     func testShortWordsAreKeptWholeAndShorterOnesDropped() {
@@ -55,7 +55,7 @@ final class TermRuleTests: XCTestCase {
         XCTAssertEqual(rule.termSequence("pompa"), ["pompa"], "under the prefix length: kept whole")
         XCTAssertEqual(rule.termSequence("gaz"), ["gaz"], "at the minimum length: kept")
         XCTAssertEqual(rule.termSequence("w o"), [], "under the minimum length: dropped")
-        XCTAssertEqual(TermRule.minimumLength(for: .polish), 3)
+        XCTAssertEqual(TermRule.minimumLength(for: .latinHeavy), 3)
     }
 
     func testEachLanguageDropsItsOwnStopwords() {

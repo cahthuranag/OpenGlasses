@@ -129,6 +129,17 @@ final class ManualLanguageLookupTests: XCTestCase {
         XCTAssertTrue(context.contains("Source: Invented Chinese Manual"), "the turn's own words reach the Chinese manual: \(context)")
     }
 
+    func testAnEnglishVaultWithAShortLearningStaysOneGroup() async throws {
+        let (service, store) = try await startSession(manuals: [("Invented English Manual", english)])
+        _ = await store.ingest(name: "Invented crew finding",
+                               text: "Crew note: the condensate pump trips when its float sticks. Clean the float chamber first.",
+                               sourceType: "team_learning", namespace: DocumentStore.learningNamespace(vaultId))
+        let vault = try XCTUnwrap(service.activeVault)
+        let groups = service.manualLanguageGroups(store: vault)
+        XCTAssertEqual(groups.map(\.language), ["en"])
+        XCTAssertEqual(groups.first?.documentIds.count, 2, "the learning searches with the manual")
+    }
+
     func testAnEnglishVaultReadsExactlyAsBefore() async throws {
         let (service, _) = try await startSession(manuals: [("Invented English Manual", english)])
         let store = try XCTUnwrap(service.activeVault)

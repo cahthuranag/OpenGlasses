@@ -209,11 +209,36 @@ enum ManualLanguageSearch {
     }
 
     /// The searched documents by language group, in `codes` order (an unsure Cyrillic group after
-    /// them), each group's ids in the order given.
+    /// them), each group's ids in the order given. Every document is a reference manual.
     static func groups(_ documents: [(id: String, profile: DocumentLanguageProfile)]) -> [Group] {
-        var byCode: [String: [String]] = [:]
-        for document in documents { byCode[code(for: document.profile), default: []].append(document.id) }
+        groups(documents.map { (id: $0.id, profile: $0.profile, isReference: true) })
+    }
+
+    /// The groups, with the documents that aren't reference manuals — team learnings — never
+    /// forming a group of their own: a learning joins the reference group of its own language when
+    /// there is one, else the largest reference group (the earlier on a tie). A short crew note is
+    /// no evidence of a language, and a group of its own would split an English vault's search.
+    /// With no reference documents at all, the learnings are one group, their commonest language's.
+    static func groups(_ documents: [(id: String, profile: DocumentLanguageProfile, isReference: Bool)]) -> [Group] {
         let order = codes + [cyrillicUnsure]
+        var byCode: [String: [String]] = [:]
+        for document in documents where document.isReference {
+            byCode[code(for: document.profile), default: []].append(document.id)
+        }
+        let others = documents.filter { !$0.isReference }
+        func largest(_ counts: [String: Int]) -> String? {
+            order.filter { counts[$0] != nil }.max { a, b in
+                // `max` keeps the later of equals; reversing the tie keeps the earlier code.
+                counts[a]! != counts[b]! ? counts[a]! < counts[b]! : order.firstIndex(of: a)! > order.firstIndex(of: b)!
+            }
+        }
+        let host = largest(byCode.mapValues(\.count))
+            ?? largest(Dictionary(others.map { (code(for: $0.profile), 1) }, uniquingKeysWith: +))
+        let referenceCodes = Set(byCode.keys)
+        for document in others {
+            let own = code(for: document.profile)
+            byCode[referenceCodes.contains(own) ? own : (host ?? own), default: []].append(document.id)
+        }
         return order.compactMap { code in byCode[code].map { Group(language: code, documentIds: $0) } }
     }
 

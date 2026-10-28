@@ -113,6 +113,42 @@ final class ManualLanguageSearchTests: XCTestCase {
                                 Search.Group(language: "zh-Hans", documentIds: ["zh-1"])])
     }
 
+    func testALearningJoinsItsReferenceManualsGroupNeverItsOwn() {
+        // An English vault with a learning the recogniser called German: still one group.
+        let english = Search.groups([
+            (id: "manual", profile: profile(.latin, "en"), isReference: true),
+            (id: "learning", profile: profile(.latin, "de"), isReference: false),
+        ])
+        XCTAssertEqual(english, [Search.Group(language: "en", documentIds: ["manual", "learning"])])
+
+        // Manuals in two languages: a learning in one of them joins it; any other joins the larger.
+        let mixed = Search.groups([
+            (id: "zh-1", profile: profile(.han, "zh-Hans"), isReference: true),
+            (id: "zh-2", profile: profile(.han, "zh-Hans"), isReference: true),
+            (id: "en-1", profile: profile(.latin, "en"), isReference: true),
+            (id: "learn-en", profile: profile(.latin, "en"), isReference: false),
+            (id: "learn-uk", profile: profile(.cyrillic, "uk"), isReference: false),
+        ])
+        XCTAssertEqual(mixed, [Search.Group(language: "en", documentIds: ["en-1", "learn-en"]),
+                               Search.Group(language: "zh-Hans", documentIds: ["zh-1", "zh-2", "learn-uk"])])
+
+        // An even split goes to the earlier group.
+        let even = Search.groups([
+            (id: "zh-1", profile: profile(.han, "zh-Hans"), isReference: true),
+            (id: "en-1", profile: profile(.latin, "en"), isReference: true),
+            (id: "learn-de", profile: profile(.latin, "de"), isReference: false),
+        ])
+        XCTAssertEqual(even.first { $0.language == "en" }?.documentIds, ["en-1", "learn-de"])
+
+        // Learnings alone are one group.
+        let learningsOnly = Search.groups([
+            (id: "l1", profile: profile(.latin, "en"), isReference: false),
+            (id: "l2", profile: profile(.latin, "nl"), isReference: false),
+            (id: "l3", profile: profile(.latin, "en"), isReference: false),
+        ])
+        XCTAssertEqual(learningsOnly, [Search.Group(language: "en", documentIds: ["l1", "l2", "l3"])])
+    }
+
     // MARK: - Routing
 
     func testOneLanguageIsTodaysSingleSearchWithQuery() {

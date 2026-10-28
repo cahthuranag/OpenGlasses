@@ -81,7 +81,10 @@ final class MultilingualEvidenceGateTests: XCTestCase {
 
     func testEveryLanguagesAnswerPassesAndAnUnrelatedPassageFails() {
         for sample in Self.cases {
-            let profile = DocumentLanguageProfile.detect(sample.answer)
+            // The answer as a passage of a document long enough to be named its language: a
+            // Latin language other than English needs 400 letters (Plan JY P2).
+            let script = DocumentLanguageProfile.detect(sample.answer).script
+            let profile = DocumentLanguageProfile.detect(DocumentLanguageProfileTests.document(sample.answer, script: script))
             XCTAssertEqual(profile.language, sample.language, sample.answer)
             let rule = profile.termRule
             let question = LexicalSupport.QueryTerms(sample.question)

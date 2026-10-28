@@ -2085,11 +2085,13 @@ final class FieldSessionService: ObservableObject {
                                                                  editionRequest: editionRequest) : nil
         let all = retrievalNamespaces(vaultId: store.manifest.id)
         let searched = documentIds == nil ? all : all.filter { $0.source.isReference }
-        let documents = searched.flatMap { space -> [(id: String, profile: DocumentLanguageProfile)] in
+        // A team learning joins its reference manuals' group, never one of its own.
+        let documents = searched.flatMap { space -> [(id: String, profile: DocumentLanguageProfile, isReference: Bool)] in
             let ids = documentStore.list(namespace: space.namespace).map(\.id)
             let kept = Self.searchedIds(for: space, documentIds: documentIds, editionIds: editionIds)
                 .map { wanted in ids.filter(wanted.contains) } ?? ids
-            return kept.map { (id: $0, profile: documentStore.languageProfile(documentId: $0)) }
+            return kept.map { (id: $0, profile: documentStore.languageProfile(documentId: $0),
+                               isReference: space.source.isReference) }
         }
         return ManualLanguageSearch.groups(documents)
     }

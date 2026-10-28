@@ -44,37 +44,38 @@ final class TermRuleTests: XCTestCase {
 
     func testPrefixStemsMeetAcrossEndings() {
         let rule = TermRule.prefixStem(.ukrainian)
-        XCTAssertEqual(LexicalSupport.contentTerms("температура", rule: rule), ["темпер"])
-        XCTAssertEqual(LexicalSupport.contentTerms("Температуру", rule: rule), ["темпер"])
-        XCTAssertEqual(LexicalSupport.contentTerms("максимальна максимальне", rule: rule), ["максим"])
-        XCTAssertEqual(TermRule.prefixLength(for: .cyrillic), 6)
+        // Plan JY P3: the ending goes, then seven letters are kept.
+        XCTAssertEqual(LexicalSupport.contentTerms("температура", rule: rule), ["темпера"])
+        XCTAssertEqual(LexicalSupport.contentTerms("Температуру", rule: rule), ["темпера"])
+        XCTAssertEqual(LexicalSupport.contentTerms("максимальна максимальне", rule: rule), ["максима"])
+        XCTAssertEqual(TermRule.prefixLength(for: .cyrillic), 7)
     }
 
     func testShortWordsAreKeptWholeAndShorterOnesDropped() {
         let rule = TermRule.prefixStem(.polish)
-        XCTAssertEqual(rule.termSequence("pompa"), ["pompa"], "under the prefix length: kept whole")
+        XCTAssertEqual(rule.termSequence("pompa"), ["pomp"], "under the prefix length: kept whole but for its ending (P3)")
         XCTAssertEqual(rule.termSequence("gaz"), ["gaz"], "at the minimum length: kept")
         XCTAssertEqual(rule.termSequence("w o"), [], "under the minimum length: dropped")
         XCTAssertEqual(TermRule.minimumLength(for: .latinHeavy), 3)
     }
 
     func testEachLanguageDropsItsOwnStopwords() {
-        XCTAssertEqual(TermRule.prefixStem(.ukrainian).termSequence("Яка температура"), ["темпер"])
-        XCTAssertEqual(TermRule.prefixStem(.russian).termSequence("Какова температура"), ["темпер"])
+        XCTAssertEqual(TermRule.prefixStem(.ukrainian).termSequence("Яка температура"), ["темпера"])
+        XCTAssertEqual(TermRule.prefixStem(.russian).termSequence("Какова температура"), ["темпера"])
         XCTAssertEqual(TermRule.prefixStem(.german).termSequence("Wie hoch ist die Temperatur"), ["hoch", "temper"])
-        XCTAssertEqual(TermRule.prefixStem(.french).termSequence("Quelle est la pression"), ["pressi"])
-        XCTAssertEqual(TermRule.prefixStem(.urdu).termSequence("درجہ حرارت کیا ہے"), ["درجہ", "حرارت"])
+        XCTAssertEqual(TermRule.prefixStem(.french).termSequence("Quelle est la pression"), ["pressio"])
+        XCTAssertEqual(TermRule.prefixStem(.urdu).termSequence("درجہ حرارت کیا ہے"), ["درج", "حرار"])
         // Another language's stopword is a word like any other.
-        XCTAssertEqual(TermRule.prefixStem(.german).termSequence("quelle"), ["quelle"])
+        XCTAssertEqual(TermRule.prefixStem(.german).termSequence("quelle"), ["quell"])
         XCTAssertTrue(TermRuleStopwords.cyrillic.isSuperset(of: TermRuleStopwords.ukrainian))
         XCTAssertTrue(TermRuleStopwords.cyrillic.isSuperset(of: TermRuleStopwords.russian))
     }
 
     func testCyrillicApostrophesJoinTheWord() {
         let rule = TermRule.prefixStem(.ukrainian)
-        XCTAssertEqual(rule.termSequence("п’яти"), ["пяти"])
-        XCTAssertEqual(rule.termSequence("п'яти"), ["пяти"])
-        XCTAssertEqual(rule.termSequence("пʼяти"), ["пяти"])
+        XCTAssertEqual(rule.termSequence("п’яти"), ["пят"])
+        XCTAssertEqual(rule.termSequence("п'яти"), ["пят"])
+        XCTAssertEqual(rule.termSequence("пʼяти"), ["пят"])
     }
 
     // MARK: - Arabic
@@ -133,7 +134,7 @@ final class TermRuleTests: XCTestCase {
         XCTAssertEqual(TermRule.bigram.termSequence("我们使用ResNet模型"), ["们使", "使用", "resnet", "模型"])
         // A Chinese term and a Cyrillic phrase in a German passage use bigrams and Cyrillic stems.
         XCTAssertEqual(TermRule.prefixStem(.german).termSequence("Der Fühler 温度传感器 und датчик температури"),
-                       ["fühler", "温度", "度传", "传感", "感器", "датчик", "темпер"])
+                       ["fühl", "温度", "度传", "传感", "感器", "датчик", "темпера"])
         // A Latin run in a Latin-language document uses that document's rule.
         XCTAssertEqual(TermRule.prefixStem(.german).termSequence("Vorlauftemperatur"), ["vorlau"])
         XCTAssertEqual(TermRule.runs(in: "温度ABC").map(\.script), [.han, .latin])
@@ -147,7 +148,7 @@ final class TermRuleTests: XCTestCase {
         for rule in TermRule.allCases {
             XCTAssertEqual(question.terms(for: rule), LexicalSupport.contentTerms(question.text, rule: rule))
         }
-        XCTAssertEqual(question.terms(for: .prefixStem(.ukrainian)), ["максим", "темпер", "подачі", "повітр"])
+        XCTAssertEqual(question.terms(for: .prefixStem(.ukrainian)), ["максима", "темпера", "подач", "повітр"])
         XCTAssertFalse(question.isEmpty)
         XCTAssertTrue(LexicalSupport.QueryTerms("is it on?").isEmpty)
     }

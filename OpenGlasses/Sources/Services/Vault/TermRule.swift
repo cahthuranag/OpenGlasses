@@ -103,11 +103,11 @@ enum TermRule: Hashable, Codable, Sendable {
         if let measured = RetrievalEvalTuning.prefixLength(group) { return measured }
         #endif
         switch group {
-        // Measured: 7 beat 6 once an ending is stripped (Bible + EU + Python, 389 questions).
+        // Measured: 7 beat 6 once an ending is stripped (baseline + two technical sets, 389 questions).
         case .latinLight: return 7
-        // Measured: 7 beat 6 and 5 once an ending is stripped (Bible, Python, KMU, UN; 163 questions).
+        // Measured: 7 beat 6 and 5 once an ending is stripped (baseline + three technical sets, 163 questions).
         case .cyrillic: return 7
-        // Measured: 4 beat 5 and 6 after the clitic and ending (Bible, 38 questions a language).
+        // Measured: 4 beat 5 and 6 after the clitic and ending (baseline, 38 questions a language).
         case .arabic, .urdu: return 4
         case .english, .latinHeavy, .cjk: return 6
         }
@@ -256,7 +256,7 @@ enum TermRule: Hashable, Codable, Sendable {
         case .cyrillic: return true
         // Measured: hit@4 95 → 107, in-scope refusals 47 → 35, two more out-of-scope answers (173 questions).
         case .latinHeavy: return true
-        // Measured on the Bible: Arabic hit@4 7 → 13, Urdu 15 → 17, refusals down in both.
+        // Measured on the baseline: Arabic hit@4 7 → 13, Urdu 15 → 17, refusals down in both.
         case .arabic, .urdu: return true
         case .english, .cjk: return false
         }
@@ -322,8 +322,10 @@ enum TermRule: Hashable, Codable, Sendable {
         if let words = RetrievalEvalTuning.cjkWords(foldedToSimplified(run)) { return words }
         #endif
         var characters = Array(foldedToSimplified(run))
+        // A particle is stripped only while two syllables are left: "온도" (temperature) ends in the
+        // syllable of the particle 도 and keeps it.
         if stripsKoreanParticles, let particle = TermRuleStopwords.koreanParticles.first(where: {
-            characters.count > $0.count && String(characters.suffix($0.count)) == $0
+            characters.count - $0.count >= 2 && String(characters.suffix($0.count)) == $0
         }) {
             characters.removeLast(particle.count)
         }
@@ -343,7 +345,7 @@ enum TermRule: Hashable, Codable, Sendable {
 
     /// Whether a pair of hiragana is left out (P3): in Japanese the grammar — particles, verb and
     /// polite endings — is written in hiragana, and content words mostly in kanji or katakana.
-    /// Measured: Japanese out-of-scope refusals 2 → 9 of 30 at the same hit@4 (Bible + Python).
+    /// Measured: Japanese out-of-scope refusals 2 → 9 of 30 at the same hit@4 (baseline + a tutorial).
     static var dropsHiraganaPairs: Bool {
         #if RETRIEVAL_EVAL
         if let measured = RetrievalEvalTuning.cjkVariant("kana") { return measured }
@@ -353,7 +355,7 @@ enum TermRule: Hashable, Codable, Sendable {
 
     /// Whether a Hangul word loses a trailing particle before its pieces are cut (P3): "온도를"
     /// and "온도는" both read as "온도".
-    /// Measured: Korean hit@4 55 → 56, out-of-scope refusals 7 → 12 of 30 (Bible + Python).
+    /// Measured: Korean out-of-scope refusals 7 → 12 of 30 at the same hit@4 (baseline + a tutorial).
     static var stripsKoreanParticles: Bool {
         #if RETRIEVAL_EVAL
         if let measured = RetrievalEvalTuning.cjkVariant("kopart") { return measured }

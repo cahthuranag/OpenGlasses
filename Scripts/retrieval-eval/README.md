@@ -104,6 +104,20 @@ Scripts/retrieval-eval/run.sh
   them, how many passages and characters went, and the refusals on that path.
   `RETRIEVAL_EVAL_PASSAGES=4` leaves the line out.
 
+- **Language groups (Plan JY P3).** Each document is indexed and searched with its own script's model
+  (`RETRIEVAL_EVAL_EMBEDDER=contextual` picks Cyrillic, Arabic, Urdu or CJK as the app does), and a
+  `documents:` line names each document's detected script, language and term rule. Candidate values for
+  a group (`latinLight`, `latinHeavy`, `cyrillic`, `arabic`, `urdu`, `cjk`; never English):
+  `RETRIEVAL_EVAL_PREFIX` (letters a prefix stem keeps), `RETRIEVAL_EVAL_MINLEN`, `RETRIEVAL_EVAL_ENDINGS`
+  (`1`/`0`: strip one ending), `RETRIEVAL_EVAL_FOLD=1` (Cyrillic ё/ї/ґ), `RETRIEVAL_EVAL_CJK`
+  (`kana`, `kopart`, joined with `+`, `none`, or `words` for `NLTokenizer` words),
+  `RETRIEVAL_EVAL_GATE_GROUP="cjk=3,0.6;arabic=3,0.5"` and `RETRIEVAL_EVAL_PENDING="0.15"` or
+  `"cyrillic=0.3"`. Each takes one value for every group or `group=value,…`. They are read by
+  `Tuning.swift` under `-D RETRIEVAL_EVAL`, which only `run.sh` defines, so the app never sees them.
+  `RETRIEVAL_EVAL_VECTORS=pending` measures documents in other scripts as searched while their model
+  is missing (the index keeps its vectors; no script model answers). `RETRIEVAL_EVAL_DETAIL=1` prints
+  each question's line number with the pages it expects and the pages it got — numbers only.
+
 Every run prints in-scope refusals beside the hits, because a gate that refuses more out-of-scope
 questions usually refuses some in-scope ones too, and both numbers decide a gate.
 

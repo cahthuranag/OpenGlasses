@@ -84,9 +84,9 @@ final class LanguageGroupCalibrationTests: XCTestCase {
     // MARK: - CJK
 
     func testJapaneseHiraganaPairsAreLeftOut() {
-        let terms = TermRule.bigram.termSequence("温度を確認しました")
+        let terms = TermRule.bigram.termSequence("温度を上げました")
         XCTAssertTrue(terms.contains("温度"))
-        XCTAssertTrue(terms.contains("確認"))
+        XCTAssertTrue(terms.contains("上げ"), "a kanji with its kana stays")
         XCTAssertFalse(terms.contains("しま"), "grammar, written in hiragana, is not a term")
         XCTAssertFalse(terms.contains("した"))
     }
@@ -122,9 +122,9 @@ final class LanguageGroupCalibrationTests: XCTestCase {
             XCTAssertEqual(RetrievalEvidencePolicy.default(for: model).groupCriteria,
                            RetrievalEvidencePolicy.measuredGroupCriteria, model)
         }
-        XCTAssertTrue(RetrievalEvidencePolicy.default(for: "none.en").groupCriteria.isEmpty)
         XCTAssertEqual(RetrievalEvidencePolicy().requiredSharedTerms(queryTermCount: 4, rule: .arabicStem), 0,
                        "no lexical criterion, no group criterion")
+        XCTAssertEqual(RetrievalEvidencePolicy().requiredSharedTermsWithoutVector(queryTermCount: 4, rule: .arabicStem), 0)
     }
 
     func testAPendingPassageAsksMoreOfItsGroup() {

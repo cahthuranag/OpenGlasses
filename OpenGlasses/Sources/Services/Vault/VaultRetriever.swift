@@ -747,9 +747,10 @@ struct RetrievalEvidencePolicy: Equatable {
         var sharedFraction: Double
     }
 
-    /// The criterion for each language group measured apart from English (Plan JY P3). A group
-    /// with no entry — English always — uses `minSharedTerms` and `sharedFraction` above.
-    var groupCriteria: [TermRule.Group: LexicalCriterion] = [:]
+    /// The criterion for each language group measured apart from English (Plan JY P3), the
+    /// measured ones unless a caller sets others. A group with no entry — English always — uses
+    /// `minSharedTerms` and `sharedFraction` above; with `minSharedTerms` 0 no group has one.
+    var groupCriteria: [TermRule.Group: LexicalCriterion] = RetrievalEvidencePolicy.measuredGroupCriteria
     /// How much stricter the criterion is for a passage awaiting its script model, per group
     /// (Plan JY P3); a group with no entry uses `pendingVectorFractionIncrease`.
     var pendingIncrease: [TermRule.Group: Double] = [:]
@@ -870,28 +871,25 @@ struct RetrievalEvidencePolicy: Equatable {
     ///   settings refuse 2–7. This model ranks the answering passage high enough that the stricter
     ///   rule only costs answers.
     static func `default`(for modelId: String) -> RetrievalEvidencePolicy {
-        var policy: RetrievalEvidencePolicy
         if modelId.hasPrefix("nl-word") || modelId.hasPrefix("nl-sentence") {
-            policy = RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.75)
-        } else if modelId.hasPrefix("nl-contextual") {
-            policy = RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.6)
-        } else {
-            return RetrievalEvidencePolicy()
+            return RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.75)
         }
-        policy.groupCriteria = measuredGroupCriteria
-        return policy
+        if modelId.hasPrefix("nl-contextual") {
+            return RetrievalEvidencePolicy(similarityFloor: 0.30, minSharedTerms: 3, sharedFraction: 0.6)
+        }
+        return RetrievalEvidencePolicy()
     }
 
     /// The language groups whose criterion Plan JY P3 measured apart from the backend's own
-    /// (Bible, EU 2023/1230, UN TDG, Python tutorial and KMU sets on each group's script model;
+    /// (the parallel baseline and technical sets on each group's script model, Mac runner;
     /// the plan's P3 tables). Every other group keeps the backend's values, which P3 measured as
     /// the best of those tried for it. A group's documents are searched with their own script's
     /// model whatever the Latin backend is, so the value does not depend on it.
     static let measuredGroupCriteria: [TermRule.Group: LexicalCriterion] = [
-        // Measured on the Bible: 0.5 over 0.6 — hit@4 15 → 18, in-scope refusals 20 → 15, one more
+        // Measured on the baseline: 0.5 over 0.6 — hit@4 15 → 18, in-scope refusals 20 → 15, one more
         // out-of-scope answer of 15.
         .arabic: LexicalCriterion(minSharedTerms: 3, sharedFraction: 0.5),
-        // Measured on the Bible and EU 2023/1230 in de, hu, pl: 0.75 over 0.6 — seven more
+        // Measured on the baseline and a regulation in de, hu, pl: 0.75 over 0.6 — seven more
         // out-of-scope refusals of 90 for three hit@4 and four in-scope refusals of 173.
         .latinHeavy: LexicalCriterion(minSharedTerms: 3, sharedFraction: 0.75),
     ]

@@ -582,7 +582,9 @@ enum TableExtractor {
             guard standsAlone(text) else { return nil }
         }
         guard let match = text.range(of: captionPattern, options: .regularExpression) else {
-            return nil
+            // Another interface language's caption word (Plan JY P4), after the English rule.
+            guard let other = CaptionWords.match(text), other.kind == .table else { return nil }
+            return Caption(label: other.label, title: other.title, continues: other.continues)
         }
         let head = String(text[match])
         let number = head.range(of: labelPattern + "$", options: .regularExpression).map { String(head[$0]) } ?? ""
@@ -1001,7 +1003,8 @@ enum TableExtractor {
             if Self.caption(of: line, pageHasBold: pageHasBold) != nil
                 || captionHead(of: line).map({ head in
                     (pageHasBold ? head.first.bold : standsAlone(head.text))
-                        && head.text.range(of: figurePattern, options: .regularExpression) != nil
+                        && (head.text.range(of: figurePattern, options: .regularExpression) != nil
+                            || CaptionWords.match(head.text)?.kind == .figure)
                 }) == true {
                 end = index
                 break

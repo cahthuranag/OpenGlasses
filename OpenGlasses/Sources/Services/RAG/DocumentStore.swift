@@ -111,7 +111,9 @@ final class DocumentStore: ObservableObject {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
 
-        let textChunks = chunker.chunk(cleaned)
+        // The document's language sizes its chunks (Plan JY P4) and its script picks its model.
+        let profile = DocumentLanguageProfile.detect(cleaned)
+        let textChunks = chunker.sized(for: profile, text: cleaned).chunk(cleaned)
         guard !textChunks.isEmpty else { return nil }
         // A table's rows follow the document's own text (Plan JJ P0), numbered after it, so the
         // text chunks are numbered exactly as they would be without any table.
@@ -121,7 +123,6 @@ final class DocumentStore: ObservableObject {
         // The document's script picks its model (Plan JY P1). A manual in a script whose model is
         // not on the phone asks for it and waits a bounded time for a download under way; then it
         // is indexed either way, by its words if the model has not come.
-        let profile = DocumentLanguageProfile.detect(cleaned)
         let script = EmbeddingScript(profile: profile)
         if script != .latin, Self.isVaultNamespace(namespace), scriptEmbedder(for: script) == nil,
            let scriptModelRequest {
@@ -705,12 +706,13 @@ final class DocumentStore: ObservableObject {
                      sourceType: String, namespace: String, tables: [ManualTable] = [],
                      stillAllowed: () -> Bool) async -> Bool {
         guard let db, stillAllowed(), !Task.isCancelled else { return false }
-        let textChunks = chunker.chunkPages(pages)
+        // A photographed manual in another script is sized for its language (Plan JY P4), asks for
+        // its model like an uploaded one, and is embedded with it or not at all (Plan JY P1).
+        let joined = pages.map(\.text).joined(separator: "\n")
+        let profile = DocumentLanguageProfile.detect(joined)
+        let textChunks = chunker.sized(for: profile, text: joined).chunkPages(pages)
         let rows = TableRowPassage.chunks(for: tables, startingAt: textChunks.count)
         let chunks = textChunks + rows.chunks
-        // A photographed manual in another script asks for its model like an uploaded one, and is
-        // embedded with it or not at all (Plan JY P1).
-        let profile = DocumentLanguageProfile.detect(pages.map(\.text).joined(separator: "\n"))
         let script = EmbeddingScript(profile: profile)
         if script != .latin, scriptEmbedder(for: script) == nil, let scriptModelRequest {
             await scriptModelRequest(script)
@@ -857,6 +859,18 @@ final class DocumentStore: ObservableObject {
         let value = DocumentChunker.isClauseNumbered(storedText(documentId: documentId))
         clauseNumberedCache[documentId] = (count, value)
         return value
+    }
+
+    /// Whether a retrieval whose best passage comes from this document carries the larger passage
+    /// budget (`ManualPassageLimit.clauseNumbered`): a clause-numbered document (Plan IV P6), or one
+    /// in a CJK or Arabic script (Plan JY P4). Measured on the P3 sets with P4's chunking, six
+    /// passages answered CJK 255 → 260 of its in-scope questions as sent and Arabic script 41 → 44
+    /// (five: 258 and 41), at 1,395 → 1,857 and 1,533 → 1,955 characters a question, still under
+    /// English's 2,200 with four. Latin and Cyrillic documents keep four.
+    func usesClausePassageBudget(documentId: String) -> Bool {
+        if isClauseNumbered(documentId: documentId) { return true }
+        let script = languageProfile(documentId: documentId).script
+        return script.isCJK || script == .arabic
     }
 
     // MARK: - A document's language (Plan JY P0)
@@ -1427,8 +1441,16 @@ final class DocumentStore: ObservableObject {
     /// are read from the page's recognition (Plan JN P1) — the tables only, the text untouched.
     /// 7: a caption with a revision mark in its margin, a "(Concluded)" page and a folio printed at
     /// the end of the footer line are read (Plan JW P0) — the tables again, and a PDF document's
-    /// printed page labels with them; the text untouched.
-    nonisolated static let locationVersion = 7
+    /// printed page labels with them; the text untouched. 8: the text is read again (Plan JY P4) —
+    /// a folio printed alone on a line no longer renumbers a page, and a book in another language
+    /// gets its captions, headings without case, collapsed fake bold, CJK splitting and chunk size.
+    /// A document whose text chunks the same row for row keeps its rows, its ids and its vectors,
+    /// and only has its page, section and figure rewritten (which is all an English document can
+    /// get: none of its rules changed); one whose text changed is re-chunked under its own id.
+    nonisolated static let locationVersion = 8
+    /// The location version at which a document's text was last read again, below which the
+    /// migration re-reads it rather than only its tables.
+    nonisolated static let textReadVersion = 8
 
     /// The oldest location version among a document's own text chunks (its table rows left out),
     /// or nil when it has none. A never-located row counts as 0.
@@ -1509,7 +1531,9 @@ final class DocumentStore: ObservableObject {
     /// Write freshly computed places onto a document's existing rows, matched by chunk index, in
     /// one transaction. Only when the re-chunked text is the stored text, row for row: then the
     /// document id, the text and the embedding stay exactly as they were, and everything keyed on
-    /// them — a ledger entry, a citation, an evidence label — is untouched. Returns false (and
+    /// them — a ledger entry, a citation, an evidence label — is untouched. The page, section and
+    /// figure are written too (Plan JY P4): a printed folio no longer moves a page, and a book in
+    /// another language gains its captions and headings, without its text changing. Returns false (and
     /// writes nothing) when the texts disagree, which is the caller's cue to re-chunk instead.
     /// A table's row passages are not the document's text and are left out of the comparison;
     /// `replaceTables(_:documentId:)` rewrites them.
@@ -1527,15 +1551,19 @@ final class DocumentStore: ObservableObject {
               zip(stored, chunks).allSatisfy({ $0.index == $1.index && $0.text == $1.text }) else { return false }
         guard exec("BEGIN IMMEDIATE") else { return false }
         let update = """
-        UPDATE doc_chunks SET page_start = ?, page_end = ?, sentences = ?, location_version = ?
+        UPDATE doc_chunks SET page_start = ?, page_end = ?, sentences = ?, location_version = ?,
+        page = ?, section = ?, figure = ?
         WHERE document_id = ? AND chunk_index = ?
         """
         for chunk in chunks {
             var row: OpaquePointer?
             guard sqlite3_prepare_v2(db, update, -1, &row, nil) == SQLITE_OK else { exec("ROLLBACK"); return false }
             bindLocation(chunk, to: row, from: 1)
-            sqlite3_bind_text(row, 5, documentId, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_int(row, 6, Int32(chunk.index))
+            if let page = chunk.page { sqlite3_bind_int(row, 5, Int32(page)) } else { sqlite3_bind_null(row, 5) }
+            if let section = chunk.section { sqlite3_bind_text(row, 6, section, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(row, 6) }
+            if let figure = chunk.figure { sqlite3_bind_text(row, 7, figure, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(row, 7) }
+            sqlite3_bind_text(row, 8, documentId, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(row, 9, Int32(chunk.index))
             let result = sqlite3_step(row)
             sqlite3_finalize(row)
             guard result == SQLITE_DONE else { exec("ROLLBACK"); return false }

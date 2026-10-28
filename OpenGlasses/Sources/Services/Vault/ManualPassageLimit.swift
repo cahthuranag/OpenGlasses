@@ -21,6 +21,9 @@ import Foundation
 /// one ranked first; the retriever is asked for six whenever a searched manual has table rows, and
 /// an outcome whose best manual passage is a row keeps six.
 ///
+/// **So does a CJK or Arabic-script document** (Plan JY P4): its passages are shorter, and six of
+/// them answered more of those sets' questions than four (`DocumentStore.usesClausePassageBudget`).
+///
 /// Pure: whether a document is clause-numbered is the caller's to say (the store reads it from the
 /// document's stored text, `DocumentStore.isClauseNumbered(documentId:)`).
 struct ManualPassageLimit: Equatable {

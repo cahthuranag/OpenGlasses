@@ -25,7 +25,7 @@ by reciprocal rank with each group's gate verdict kept; the vault prompt, My Man
 results name each manual's language, and a manual in another script that missed without a rewrite
 gets a hint to retry in its language (`ManualLanguageSearch`). Deferred: `equipment_lookup`'s manual
 fall-through and the nearest-headings search stay ungrouped, and whether each provider's model
-fills `queries` is a device check. **P3 built 2026-10-29 (PR pending):** calibrated on a parallel
+fills `queries` is a device check. **P3 merged 2026-10-29 (PR 880):** calibrated on a parallel
 baseline in 17 languages and technical documents in every language but Arabic and Urdu, English identical to `origin/main`: CJK drops
 Japanese hiragana pairs and Korean particles from its bigrams (bigrams kept over `NLTokenizer` words);
 Cyrillic, Latin and Arabic-script words lose one ending before their prefix (7 for Cyrillic and light
@@ -33,7 +33,17 @@ Latin, 6 heavy Latin, 4 Arabic script); heavy Latin's gate asks 0.75 of the ques
 0.5; question words added for eight languages. hit@4 holds for CJK (230 of 322, out-of-scope refusals
 52 → 64 of 135) and rises in every other group (Arabic 7 → 21 of 38, Cyrillic 79 → 92 of 163), with
 out-of-scope refusals held or raised except Arabic and Urdu (−2, −1 of 15). Arabic and Urdu stay "less tested". The pending-vector increase stays 0.15 by decision 6, though
-measured it only costs (decision owed). P4–P5 not started.
+measured it only costs (decision owed). **P4 built 2026-10-29 (PR pending):** a folio printed alone
+on a line no longer renumbers an extracted page (the transport regulation's ru and zh-Hans answer
+keys are back on the PDF's own pages); fake-bold doubled CJK characters are collapsed at extraction
+and the line read as bold; caption and carrying-on words for every interface language; a heading
+in a script without case may open with a caseless letter or be set larger than body, and a clause
+number followed by a caseless letter is a clause heading; CJK chunks are 0.6 of the targets (420
+characters) except in a clause-numbered document; an oversized CJK sentence breaks at its own
+punctuation; a CJK or Arabic-script manual takes the six-passage budget. CJK S 333 → 376
+(transport regulation zh-Hans hit@4 8 → 27 of 34 on true pages, en 24), Cyrillic 145 → 168, every
+other group and all four English sets identical. Stored documents heal at location version 8.
+P5a (every remaining defect, headless) and P5b (device and tester pass) not started.
 **Drafted:** 2026-10-28. A tester in China asked about using My Manuals
 with research papers. A check of build 581 found that a Chinese PDF indexes but can't be searched,
 and a check of the other interface languages found the same problem in different strengths. The
@@ -523,7 +533,201 @@ Measured against the P3 sets before anything changes:
   、，；.
 - **Passage budget.** `ManualPassageLimit` measured on CJK and Arabic text.
 
-### P5 — Device and tester pass
+**Built (2026-10-29).** Measured on the P3 sets with the P3 rule (S = hit@4 + 2 × out-of-scope
+refused − in-scope refused, one change at a time) on the Mac runner with every language's
+contextual model. Counts only.
+
+- **Footer folios.** In a document an extractor paginated (form feeds, or its own `Page N` lines), a
+  folio printed alone on a line ("- 397 -") is furniture and never turns or renumbers a page
+  (`DocumentChunker.isPrintedFolio`, `isExtractorPaginated`); a plain text paginated only by folios
+  still turns at them. A page or section that opens inside a sentence's leading whitespace (a form
+  feed after a line break) is now that sentence's, which the app's own form-feed path needed once
+  the folio line went. The transport regulation's ru and zh-Hans keys are back on the PDF's own pages
+  (checked against the PDFs: each question's first body page is in its key for 32 and 33 of 34; the
+  rest are a section heading laid out differently and a UN number listed twice). On true pages P3's
+  code answered ru 4 and zh-Hans 8 of 34; the fix alone gives 26 and 14. No English document in the
+  sets prints a folio on a line of its own; every English chunk, page, section and figure is
+  byte-identical.
+- **Fake bold.** `OverprintedText` collapses a run of doubled pairs whose letters are all CJK, when it
+  has at least three pairs over three different characters, or a doubled CJK punctuation mark beside
+  a doubled letter; a line mostly set that way is bold. In the zh-Hans regulation 105 runs of three or
+  more pairs and 31 of the 49 two-pair runs go; 18 two-pair runs are left as ambiguous. Latin,
+  Cyrillic and Arabic text is never touched (every other extraction is byte-identical). zh-Hans
+  hit@4 14 → 15.
+- **Captions.** `CaptionWords`, read after the unchanged English rule in `TableExtractor.caption`,
+  `ManualStructure.caption` and the Mac extractor: the table and figure words of every interface
+  language (Hungarian number-first), labelled canonically ("Table 7"), and the carrying-on words,
+  bracketed or ending the title, plus the prefix forms (续表, Продолжение таблицы, Fortsetzung
+  Tabelle). ru 0 → 18 marked captions (tables and figures), zh-Hans 0 → 2 (most of its captions are
+  not bold); ru hit@4 26 → 27, every other set unchanged.
+- **Headings without case.** `ManualStructure.isHeading` lets a line whose first letter has no case
+  open a heading, and lets it be one by size (1.2 × body) without bold, with CJK punctuation
+  screened. Alone it tied (CJK S 340 → 340); with clause chunking it pays (zh-Hans regulation 24 →
+  27), so it ships. The lexical patterns tried beside it (第3章, 一、, (一), 제1장, الفصل, a dotted number
+  run into CJK) tied too, cost the Korean tutorial a hit@1, and were dropped.
+- **Clause numbers without case.** `DocumentChunker.clauseHeadingLines` accepts a clause number
+  followed by a caseless letter (`\p{Lo}`), so a CJK or Arabic code book is chunked at its clauses
+  and sent six passages like an English one. Of every set only the zh-Hans regulation changes (0 →
+  489 clause lines); hit@4 15 → 27, S +12.
+- **Chunk size.** A CJK character carries 1.4–3.5 times an English one's content on these sets
+  (non-space characters of the same text). CJK targets scaled: 0.4 → S 364, 0.5 → 368, **0.6 → 369**,
+  0.75 → 359, per language (Chinese 0.3, Japanese and Korean 0.5) → 369, against 340 at 1; 0.6 ships
+  for the group (420 characters a chunk), except in a clause-numbered document, which keeps today's
+  targets (scaling it as well took the zh-Hans regulation 27 → 23). Cyrillic at 1.2 lost (168 → 161);
+  every other script stays at 1.
+- **Splitting.** `hardSplit` breaks an oversized CJK sentence after 。！？； (else ，、) in the second half
+  of the window, and slices raw only where a piece has none; a run without CJK punctuation is sliced
+  exactly as before. No sentence in any set reaches the limit (every chunk identical), so it is kept
+  untested by the sets and covered by unit tests.
+- **Passage budget.** With P4's chunking, a CJK manual's best passage taking six passages (the clause
+  budget) answered 255 → 260 of the CJK in-scope questions as sent (five: 258) and Arabic script 41 →
+  44 (five: 41), at 1,395 → 1,857 and 1,533 → 1,955 characters a question, under English's 2,200 with
+  four. `DocumentStore.usesClausePassageBudget` gives a CJK or Arabic-script manual the six; Latin
+  and Cyrillic keep four.
+
+**Before → after, per group** (before: P3 as merged, the transport regulation on true pages; after:
+P4; "as sent" with P4's budget):
+
+#### CJK
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | zh-Hans | 38 | 24 → 24 | 29 → 31 | 29 → 32 | 3 → 4 | 10 → 12 of 15 |
+| transport reg. | zh-Hans | 34 | 6 → 15 | 8 → 27 | 8 → 26 | 1 → 1 | 4 → 4 of 15 |
+| tutorial | zh-Hans | 34 | 11 → 14 | 23 → 25 | 23 → 25 | 3 → 3 | 9 → 10 of 15 |
+| baseline | zh-Hant | 38 | 24 → 23 | 29 → 30 | 29 → 30 | 2 → 3 | 10 → 12 of 15 |
+| tutorial | zh-Hant | 34 | 12 → 14 | 24 → 27 | 24 → 29 | 2 → 3 | 10 → 11 of 15 |
+| baseline | ja | 38 | 22 → 21 | 28 → 30 | 28 → 31 | 0 → 1 | 7 → 6 of 15 |
+| tutorial | ja | 34 | 13 → 15 | 24 → 28 | 24 → 28 | 0 → 0 | 2 → 2 of 15 |
+| baseline | ko | 38 | 23 → 24 | 31 → 32 | 31 → 33 | 3 → 3 | 8 → 8 of 15 |
+| tutorial | ko | 34 | 15 → 17 | 24 → 26 | 24 → 26 | 1 → 2 | 4 → 5 of 15 |
+
+**S** 333 → 376
+
+#### Cyrillic
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | ru | 38 | 23 → 23 | 27 → 27 | 27 → 27 | 8 → 8 | 13 → 13 of 15 |
+| transport reg. | ru | 34 | 1 → 17 | 4 → 27 | 4 → 29 | 1 → 1 | 6 → 6 of 15 |
+| baseline | uk | 38 | 9 → 9 | 11 → 11 | 11 → 11 | 24 → 24 | 13 → 13 of 15 |
+| tutorial | uk | 34 | 14 → 14 | 17 → 17 | 17 → 17 | 7 → 7 | 15 → 15 of 15 |
+| national reg. | uk | 19 | 8 → 8 | 11 → 11 | 11 → 11 | 3 → 3 | 12 → 12 of 15 |
+
+**S** 145 → 168
+
+#### Latin light
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | es | 38 | 17 → 17 | 22 → 22 | 22 → 22 | 14 → 14 | 13 → 13 of 15 |
+| machinery reg. | es | 33 | 16 → 16 | 23 → 23 | 23 → 23 | 2 → 2 | 12 → 12 of 15 |
+| baseline | fr | 38 | 23 → 23 | 28 → 28 | 28 → 28 | 6 → 6 | 11 → 11 of 15 |
+| machinery reg. | fr | 33 | 17 → 17 | 24 → 24 | 24 → 24 | 2 → 2 | 8 → 8 of 15 |
+| baseline | it | 38 | 22 → 22 | 25 → 25 | 25 → 25 | 10 → 10 | 11 → 11 of 15 |
+| machinery reg. | it | 33 | 20 → 20 | 25 → 25 | 25 → 25 | 0 → 0 | 12 → 12 of 15 |
+| baseline | nl | 38 | 22 → 22 | 25 → 25 | 25 → 25 | 10 → 10 | 11 → 11 of 15 |
+| machinery reg. | nl | 33 | 12 → 12 | 16 → 16 | 16 → 16 | 7 → 7 | 12 → 12 of 15 |
+| baseline | pt-BR | 38 | 26 → 26 | 33 → 33 | 33 → 33 | 2 → 2 | 13 → 13 of 15 |
+| tutorial | pt-BR | 34 | 17 → 17 | 24 → 24 | 24 → 24 | 0 → 0 | 15 → 15 of 15 |
+| machinery reg. | pt | 33 | 17 → 17 | 23 → 23 | 23 → 23 | 1 → 1 | 11 → 11 of 15 |
+
+**S** 472 → 472
+
+#### Latin heavy
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | de | 38 | 17 → 17 | 25 → 25 | 25 → 25 | 12 → 12 | 14 → 14 of 15 |
+| machinery reg. | de | 33 | 15 → 15 | 18 → 18 | 18 → 18 | 7 → 7 | 13 → 13 of 15 |
+| baseline | hu | 18 | 7 → 7 | 8 → 8 | 8 → 8 | 8 → 8 | 15 → 15 of 15 |
+| machinery reg. | hu | 33 | 15 → 15 | 16 → 16 | 16 → 16 | 4 → 4 | 11 → 11 of 15 |
+| baseline | pl | 18 | 10 → 10 | 11 → 11 | 11 → 11 | 4 → 4 | 13 → 13 of 15 |
+| machinery reg. | pl | 33 | 20 → 20 | 26 → 26 | 26 → 26 | 4 → 4 | 11 → 11 of 15 |
+
+**S** 219 → 219
+
+#### Arabic
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | ar | 38 | 17 → 17 | 21 → 21 | 21 → 21 | 12 → 12 | 11 → 11 of 15 |
+
+**S** 31 → 31
+
+#### Urdu
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | ur | 38 | 18 → 18 | 20 → 20 | 20 → 23 | 9 → 9 | 13 → 13 of 15 |
+
+**S** 37 → 37
+
+#### English
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | en | 38 | 20 → 20 | 25 → 25 | 25 → 25 | 9 → 9 | 11 → 11 of 15 |
+| machinery reg. | en | 33 | 12 → 12 | 18 → 18 | 18 → 18 | 7 → 7 | 12 → 12 of 15 |
+| transport reg. | en | 34 | 20 → 20 | 24 → 24 | 25 → 25 | 1 → 1 | 7 → 7 of 15 |
+| tutorial | en | 34 | 15 → 15 | 24 → 24 | 24 → 24 | 3 → 3 | 12 → 12 of 15 |
+
+**S** 155 → 155
+
+**Healing stored indexes.** `DocumentStore.locationVersion` is 8: `PassageLocationMigration` reads
+every vault document's text again once (it previously re-read only the tables from version 3 on).
+Where the text chunks as stored — every English document, since no English rule changed — the rows
+keep their ids, text and vectors, and `writeLocations` now also rewrites page, section and figure,
+which is how a folio-moved page comes back without a re-index. A document whose text changed (a CJK
+book: collapsed doubling, smaller chunks, clause chunks) is re-chunked under its own id and
+re-embedded with its script's model. A document read by recognition is skipped as before; the
+Documents library outside vaults is not migrated (both in P5a). No per-language version was needed:
+the text comparison is what keeps English rows untouched.
+
+### P5a — Every remaining defect (headless; after P4 merges)
+
+Each item: evidence (counts only), and the test that proves the fix.
+
+1. **An image-only edition is never recognised.** The transport regulation's Arabic edition has 488
+   pages, none empty, 251 with under 160 non-space characters (page furniture only); recognition
+   runs only on an empty page (`VaultDocumentExtractor.extract(from:reader:)`, and the Mac extractor
+   outside the office worker), so its body never reaches the index. Vision reads Arabic; Plan IF's
+   photographed-manual reading may live in another session's branch, so check before building.
+   Test: a fixture PDF whose page carries only a folio in its text layer is sent to the reader.
+2. **Navigation outweighs the body.** An HTML-derived Ukrainian tutorial whose contents and
+   navigation outweighed the body was detected as English (P3). Test: a profile of an invented page,
+   three quarters Latin navigation and one quarter Cyrillic body, names the body's language or none.
+3. **Ungrouped searches.** `equipment_lookup`'s manual fall-through and the nearest-headings search
+   are not grouped by language (P2 deferral). Test: a two-language vault answers each through its
+   own group's question.
+4. **A merged multi-language result is cut to four.** `retrieveByLanguage` merges the groups with
+   `limit: passageLimit.prose`, so a group whose best passage takes six (a clause-numbered or, since
+   P4, a CJK or Arabic-script manual) is cut to four once a second language is searched. Test: a
+   vault with a Chinese and an English manual sends six when the Chinese passage ranks first.
+5. **Dotted caption labels are cut.** A caption "Table 2.7.2.2.1" is labelled "Table 2" with the rest
+   as its title (`TableExtractor.labelPattern`): 12 of 12 table captions in the English regulation,
+   7 of 7 in the Russian; every such table shares one label. Test: two captions differing past the
+   first dot keep separate labels, and an English code book's labels do not move.
+6. **Full-width letters and digits are not folded** (finding 6: ＡＢＣ１２３). Test: a full-width model
+   number in a CJK passage meets the ASCII one in a question.
+7. **Two-pair fake bold.** 18 two-pair doubled runs stay in the zh-Hans regulation, where a
+   reduplicated word cannot be told from an overprinted one by the text; the type (two glyphs drawn
+   a hair apart) could. Test: an overprinted two-character heading collapses, 高高兴兴 does not.
+8. **Recognised and library documents keep pre-P4 structure.** The location migration skips a
+   document read by recognition and never sees the Documents library outside vaults, so a folio
+   there keeps its moved page until re-imported. Test: a recognised fixture with a folio line is
+   re-paginated without being recognised again.
+9. **A chunk cites its first sentence's page.** Of the zh-Hans regulation's misses before P4's
+   clause chunking, 10 of 19 returned a page within three of the answer's, many a chunk that crosses
+   into the answer's page; English shares the rule. Test: a chunk crossing a page break is credited
+   to (or split at) the page that holds most of it, English measured alongside.
+10. **Caseless headings found only from type.** The lexical caseless patterns tied and were dropped,
+    so a plain-text or recognised CJK, Arabic or Urdu book still gets no sections. Test: a recognised
+    page's 第3章 line sets the section, once a variant measures above a tie.
+11. **No Arabic or Urdu technical document with a text layer**, so their clause rule, captions and
+    budget are measured on the literary baseline only; both stay "less tested".
+
+### P5b — Device and tester pass
 
 - On a phone set to each group's language: asset download, indexing time, and voice questions in
   the phone's language and in English, against manuals in both.

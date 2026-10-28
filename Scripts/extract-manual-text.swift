@@ -166,16 +166,29 @@ func isParentheticalQualifier(_ line: TypedLine, bodySize: Int) -> Bool {
 /// Whether a line reads as a section heading: bold, at least body size, short enough to say, and
 /// none of the things an OEM manual sets in bold that are not places — a caption or safety label,
 /// a sentence, a bare callout number, the publisher's own page header.
+/// Whether a line opens in a script without case (the app's `ManualStructure.isCaseless`).
+func isCaseless(_ text: String) -> Bool {
+    guard let letter = text.first(where: \.isLetter) else { return false }
+    return !letter.isUppercase && !letter.isLowercase
+}
+
 func isStructuralHeading(_ line: TypedLine, bodySize: Int) -> Bool {
-    guard line.bold, bodySize > 0, line.size >= Double(bodySize) - 0.5 else { return false }
     let text = line.text
+    // A script without case (Plan JY P4): no capital to open with, and a heading may be set larger
+    // rather than bolder.
+    let caseless = isCaseless(text)
+    guard line.bold || (caseless && line.size >= Double(bodySize) * 1.2),
+          bodySize > 0, line.size >= Double(bodySize) - 0.5 else { return false }
     guard text.count >= 2, text.count <= 80 else { return false }
     guard text.contains(where: { $0.isLetter }) else { return false }          // "1", "2", "3 4"
     guard !text.hasPrefix("(") else { return false }   // a qualifier belongs to the heading above it
     // A heading opens; it does not continue. A line that starts lower case or ends on a broken
     // word or an unfinished clause is the middle of a paragraph that happens to be set in bold.
-    guard let first = text.first, first.isUppercase || first.isNumber else { return false }
+    guard let first = text.first, first.isUppercase || first.isNumber || caseless else { return false }
     guard let tail = text.last, !",;:-\u{2013}\u{2014}/&+".contains(tail) else { return false }
+    if caseless {
+        guard !"，、；：".contains(tail), !text.contains(where: { "。！？".contains($0) }) else { return false }
+    }
     guard text.range(of: "^(\(labelWords))\\b", options: [.regularExpression, .caseInsensitive]) == nil else { return false }
     // A numbered procedure step is a step whatever weight it is set in, and this class of manual
     // sets them in bold: "4 - Go to setup / system devices / thermostat".
@@ -192,7 +205,9 @@ func captionLabel(_ line: TypedLine) -> (label: String, inlineTitle: String)? {
     let text = droppingMarginMarks(line.text)
     // The label as printed, a letter beside the number included (the app's `TableExtractor.labelPattern`).
     let labelPattern = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:[A-Za-z](?![\p{L}\p{N}]))?"#
-    guard let match = text.range(of: #"^(?i:FIGURE|TABLE)\s+"# + labelPattern, options: .regularExpression) else { return nil }
+    guard let match = text.range(of: #"^(?i:FIGURE|TABLE)\s+"# + labelPattern, options: .regularExpression) else {
+        return CaptionWords.match(text).map { ($0.label, $0.title) }
+    }
     let head = String(text[match])
     let word = head.range(of: "^FIGURE", options: [.regularExpression, .caseInsensitive]) != nil ? "Figure" : "Table"
     let number = head.range(of: labelPattern + "$", options: .regularExpression).map { String(head[$0]) } ?? ""
@@ -347,6 +362,159 @@ func structuredPageText(_ page: TypedPage, bodySize: Int) -> (text: String, head
     return (out.joined(separator: "\n"), headings, diagram)
 }
 
+// MARK: - Caption words in other languages (a copy of the app's `CaptionWords`, Plan JY P4)
+
+enum CaptionWords {
+
+    enum Kind: Equatable { case table, figure }
+
+    struct Match: Equatable {
+        let kind: Kind
+        /// "Table 7", "Figure 3A": the canonical label.
+        let label: String
+        /// What follows the label on the line, continuation words removed, trimmed.
+        let title: String
+        /// Whether the caption carries on a table begun on an earlier page.
+        let continues: Bool
+    }
+
+    private static let label = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:[A-Za-z](?![\p{L}\p{N}]))?"#
+    /// After a CJK caption's label: not a Han, kana or Hangul letter.
+    private static let notIntoCJK = #"(?![\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}])"#
+
+    private static let tableWords = #"Tabelle|Tableau|Tabla|Tabella|Tabel|Tabela|Quadro|Таблица|Таблиця|(?:ال)?جدول(?:\s+رقم)?"#
+    private static let figureWords = #"Abbildung|Abb\.|Figura|Figuur|Afbeelding|Rysunek|Rys\.|Рисунок|Рис\.|(?:ال)?شكل|شکل"#
+    private static let carriedTableWords = #"Fortsetzung\s+(?:der\s+|von\s+)?Tabelle|Продолжение\s+таблицы|Окончание\s+таблицы|Продовження\s+таблиці|Закінчення\s+таблиці|تابع\s+(?:ال)?جدول"#
+
+    /// Each form: its regex (the label in group 1), its kind, and whether the form itself says the
+    /// table carries on.
+    private static let forms: [(pattern: String, kind: Kind, carried: Bool)] = [
+        (#"^(?:续表|續表)\s*("# + label + ")" + notIntoCJK, .table, true),
+        (#"^(?:表|표)\s*("# + label + ")" + notIntoCJK, .table, false),
+        (#"^(?:图|圖|図|그림)\s*("# + label + ")" + notIntoCJK, .figure, false),
+        (#"^(?i:"# + carriedTableWords + #")\s+("# + label + ")", .table, true),
+        (#"^(?i:"# + tableWords + #")\s+\(?("# + label + ")", .table, false),
+        (#"^(?i:"# + figureWords + #")\s*("# + label + ")", .figure, false),
+        (#"^("# + label + #")\.?\s+(?i:táblázat)"#, .table, false),
+        (#"^("# + label + #")\.?\s+(?i:ábra)"#, .figure, false)
+    ]
+
+    private static let carryingWords = #"Fortsetzung|suite|continuación|continuação|continua|segue|vervolg|ciąg dalszy|folytatás|продолжение|продовження|تابع|جاری|続き|계속|Schluss|fin|conclusión|окончание|закінчення|Forts|продолж|продовж|оконч"#
+    /// The words distinctive enough to say it unbracketed, at the end of the title.
+    private static let bareCarryingWords = #"Fortsetzung|continuación|continuação|ciąg dalszy|folytatás|продолжение|продовження|окончание|закінчення"#
+    /// A carrying-on word in brackets anywhere in the title, or ending it.
+    private static let carryingPatterns = [
+        #"[\(\[（]\s*(?i:"# + carryingWords + #")\.?\s*[\)\]）]"#,
+        #"(?:^|[\s,\u{2013}\u{2014}-])(?i:"# + bareCarryingWords + #")\.?\s*$"#
+    ]
+    private static let compiled: [(regex: NSRegularExpression, kind: Kind, carried: Bool)] = forms.compactMap { form in
+        (try? NSRegularExpression(pattern: form.pattern)).map { ($0, form.kind, form.carried) }
+    }
+
+    /// The caption a line starts with in a language other than English, else nil.
+    static func match(_ text: String) -> Match? {
+        for form in compiled {
+            guard let found = form.regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                  let whole = Range(found.range, in: text), let number = Range(found.range(at: 1), in: text) else { continue }
+            var title = String(text[whole.upperBound...])
+            var continues = form.carried
+            for pattern in carryingPatterns {
+                if let range = title.range(of: pattern, options: .regularExpression) {
+                    continues = true
+                    title.removeSubrange(range)
+                }
+            }
+            title = title.trimmingCharacters(in: CharacterSet(charactersIn: " \t.:\u{2014}\u{2013}-\u{FF1A}\u{3001})）"))
+            let word = form.kind == .table ? "Table" : "Figure"
+            return Match(kind: form.kind, label: "\(word) \(asciiDigits(String(text[number])))", title: title, continues: continues)
+        }
+        return nil
+    }
+
+    /// Any decimal digit (Arabic-Indic, Extended Arabic-Indic, full-width) read as its ASCII digit.
+    static func asciiDigits(_ text: String) -> String {
+        String(text.map { character -> Character in
+            guard let scalar = character.unicodeScalars.first, character.unicodeScalars.count == 1,
+                  scalar.properties.numericType == .decimal, let value = scalar.properties.numericValue,
+                  !(0x30...0x39).contains(scalar.value) else { return character }
+            return Character(String(Int(value)))
+        })
+    }
+}
+
+// MARK: - Fake bold (the app's `OverprintedText`, Plan JY P4)
+
+/// Whether a character is a Han, kana or Hangul letter (the app's `TextScript.isCJK`).
+func isCJKLetter(_ character: Character) -> Bool {
+    guard character.isLetter, let v = character.unicodeScalars.first?.value else { return false }
+    switch v {
+    case 0x3040...0x30FF, 0x31F0...0x31FF, 0xFF66...0xFF9F,                                  // kana
+         0x1100...0x11FF, 0x3130...0x318F, 0xA960...0xA97F, 0xAC00...0xD7FF, 0xFFA0...0xFFDC,  // Hangul
+         0x2E80...0x2FDF, 0x3005, 0x3007, 0x3021...0x3029, 0x3038...0x303B, 0x3400...0x4DBF,
+         0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x3FFFF:                                 // Han
+        return true
+    default: return false
+    }
+}
+
+/// Ideographic and full-width punctuation.
+func isCJKPunctuation(_ character: Character) -> Bool {
+    guard !character.isLetter, !character.isNumber, let v = character.unicodeScalars.first?.value else { return false }
+    switch v {
+    case 0x3001...0x303F, 0xFF01...0xFF0F, 0xFF1A...0xFF20, 0xFF3B...0xFF40, 0xFF5B...0xFF65: return true
+    default: return false
+    }
+}
+
+/// A CJK line printed twice over ("fake bold") reads each character twice. Collapse a run of doubled
+/// pairs whose letters are all CJK when it has at least three pairs over three different characters,
+/// or a doubled CJK punctuation mark beside a doubled letter. Returns the line and how many
+/// characters were overprinted; Latin, Cyrillic and Arabic text is never touched.
+func collapsingOverprint(_ line: String) -> (text: String, overprinted: Int) {
+    let c = Array(line)
+    guard c.count >= 4 else { return (line, 0) }
+    var out: [Character] = []
+    var overprinted = 0
+    var i = 0
+    func qualifies(_ pairs: [Character]) -> Bool {
+        guard pairs.count >= 2 else { return false }
+        var letters = 0
+        for ch in pairs where ch.isLetter {
+            guard isCJKLetter(ch) else { return false }
+            letters += 1
+        }
+        guard letters > 0 else { return false }
+        let distinct = Set(pairs).count
+        if pairs.count >= 3, distinct >= 3 { return true }
+        return distinct >= 2 && pairs.contains(where: isCJKPunctuation)
+    }
+    while i < c.count {
+        var end = i
+        while end + 1 < c.count, c[end] == c[end + 1], !c[end].isWhitespace { end += 2 }
+        if end > i {
+            let pairs = stride(from: i, to: end, by: 2).map { c[$0] }
+            if qualifies(pairs) { out.append(contentsOf: pairs); overprinted += pairs.count } else { out.append(contentsOf: c[i..<end]) }
+            i = end
+        } else {
+            out.append(c[i]); i += 1
+        }
+    }
+    return overprinted == 0 ? (line, 0) : (String(out), overprinted)
+}
+
+/// Whether most of a collapsed line's letters were overprinted: it was set in (fake) bold.
+func isMostlyOverprinted(_ collapsed: (text: String, overprinted: Int)) -> Bool {
+    let letters = collapsed.text.filter(\.isLetter).count
+    return collapsed.overprinted > 0 && letters > 0 && collapsed.overprinted * 2 >= letters
+}
+
+/// Every line of a page's text collapsed.
+func collapsingOverprintedLines(_ text: String) -> String {
+    guard text.contains(where: isCJKLetter) else { return text }
+    return text.split(separator: "\n", omittingEmptySubsequences: false).map { collapsingOverprint(String($0)).text }
+        .joined(separator: "\n")
+}
+
 // MARK: - Reading type off the page
 
 /// Whether a font is bold. The symbolic trait is the honest answer; a subset font embedded in a
@@ -397,10 +565,12 @@ func typedPage(from attributed: NSAttributedString) -> TypedPage {
             scan += 1
         }
         let dominant = weights.values.max { ($0.count, $0.size) < ($1.count, $1.size) }
-        lines.append(TypedLine(raw: raw,
-                               text: raw.trimmingCharacters(in: .whitespacesAndNewlines),
+        // Fake bold: collapse the doubling, and a line mostly set that way is bold.
+        let overprint = collapsingOverprint(raw)
+        lines.append(TypedLine(raw: overprint.text,
+                               text: overprint.text.trimmingCharacters(in: .whitespacesAndNewlines),
                                size: dominant?.size ?? 0,
-                               bold: dominant?.bold ?? false))
+                               bold: (dominant?.bold ?? false) || isMostlyOverprinted(overprint)))
     }
 
     while index < ns.length {
@@ -575,6 +745,29 @@ func runSelfCheck() -> Never {
 
     check("body size mode", "\(bodySize(of: [prose, diagram]))", "10")
 
+    // Fake bold (invented lines): a doubled CJK run collapses; reduplication and Latin stay.
+    check("overprint run", collapsingOverprint("1.2 \u{6E29}\u{6E29}\u{5EA6}\u{5EA6}\u{8BA1}\u{8BA1}").text, "1.2 \u{6E29}\u{5EA6}\u{8BA1}")
+    check("overprint punctuation", collapsingOverprint("\u{6CE8}\u{6CE8}\u{FF1A}\u{FF1A}x").text, "\u{6CE8}\u{FF1A}x")
+    check("reduplication stays", collapsingOverprint("\u{9AD8}\u{9AD8}\u{5174}\u{5174}").text, "\u{9AD8}\u{9AD8}\u{5174}\u{5174}")
+    check("latin stays", collapsingOverprint("committee bookkeeper").text, "committee bookkeeper")
+    check("leader stays", collapsingOverprint("............").text, "............")
+    check("overprinted is bold", isMostlyOverprinted(collapsingOverprint("\u{6E29}\u{6E29}\u{5EA6}\u{5EA6}\u{8BA1}\u{8BA1}")) ? "yes" : "no", "yes")
+
+    // Captions in other languages (invented titles), labelled as an English one is.
+    func otherCaption(_ text: String) -> String { captionLabel(line(text, 10, true)).map { "\($0.label)|\($0.inlineTitle)" } ?? "nil" }
+    check("German caption", otherCaption("Tabelle 4 Anzugsmomente"), "Table 4|Anzugsmomente")
+    check("Hungarian caption", otherCaption("3. t\u{E1}bl\u{E1}zat Nyomatek"), "Table 3|Nyomatek")
+    check("Chinese caption", otherCaption("\u{8868} 5 \u{53C2}\u{6570}"), "Table 5|\u{53C2}\u{6570}")
+    check("Chinese cross-reference", otherCaption("\u{8868}5\u{4E2D}\u{53C2}\u{6570}"), "nil")
+    check("Japanese figure", otherCaption("\u{56F3}2 \u{914D}\u{7DDA}"), "Figure 2|\u{914D}\u{7DDA}")
+
+    // Headings in a script without case (invented lines): bold, or larger than body.
+    check("caseless bold heading", isStructuralHeading(line("2.1 \u{6E29}\u{5EA6}\u{8303}\u{56F4}", 10, true), bodySize: 10) ? "yes" : "no", "yes")
+    check("caseless larger heading", isStructuralHeading(line("\u{7B2C}3\u{7AE0} \u{5B89}\u{88C5}", 13, false), bodySize: 10) ? "yes" : "no", "yes")
+    check("caseless body line", isStructuralHeading(line("\u{7B2C}3\u{7AE0} \u{5B89}\u{88C5}", 10, false), bodySize: 10) ? "yes" : "no", "no")
+    check("caseless sentence", isStructuralHeading(line("\u{5B89}\u{88C5}\u{524D}\u{65AD}\u{7535}\u{3002}", 10, true), bodySize: 10) ? "yes" : "no", "no")
+    check("latin larger not bold", isStructuralHeading(line("Installation", 13, false), bodySize: 10) ? "yes" : "no", "no")
+
     check("title hyphens", titleSuggestion(forFileName: "SLP99UHVK-service-manual"), "SLP99UHVK service manual")
     check("title underscores", titleSuggestion(forFileName: "RTU_500__wiring"), "RTU 500 wiring")
     check("title plain", titleSuggestion(forFileName: "Lennox SLP99 Service Manual"), "Lennox SLP99 Service Manual")
@@ -707,7 +900,7 @@ for index in 0..<document.pageCount {
         if officeWorker { fail("A PDF page could not be read. The original has been kept.") }
         continue
     }
-    let layer = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let layer = collapsingOverprintedLines(page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
     var text = layer
     var diagram = false
     let sparse = layer.filter { !$0.isWhitespace }.count < 160

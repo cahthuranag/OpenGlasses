@@ -22,6 +22,13 @@ import PDFKit
 /// on the phone — and adds their row passages beside the existing chunks, which are only located,
 /// never re-chunked, when their text is unchanged. A document with no PDF has no positions to read
 /// tables from; it is located as before and the log says its tables were skipped.
+///
+/// **Structure in other languages (Plan JY P4, location version 8).** Every document's text is read
+/// again once: a folio printed alone on a line no longer renumbers its page, and a book in another
+/// language gets its caption words, headings without case, collapsed fake bold, CJK splitting and
+/// chunk size. Where the text chunks as stored — every English document, whose rules did not
+/// change — the rows keep their ids, text and vectors and only their page, section and figure are
+/// rewritten; a document whose text changed is re-chunked, and re-embedded, under its own id.
 @MainActor
 enum PassageLocationMigration {
 
@@ -102,7 +109,9 @@ enum PassageLocationMigration {
         // document's text is left exactly as it is. A document that is itself a PDF has its
         // printed page labels read again with them (version 7): the tables' pages are named from
         // the same labels, and `manual_figure`'s printed page and `show_source` read them back.
-        if let floor = store.textLocationVersion(documentId: entry.documentId), floor >= 3 {
+        // Version 8 (Plan JY P4) reads the text again, so a document below it takes the full
+        // path below; the tables-only path is for a later bump that changes the tables alone.
+        if let floor = store.textLocationVersion(documentId: entry.documentId), floor >= DocumentStore.textReadVersion {
             if fileURL.pathExtension.lowercased() == "pdf" {
                 let labels = await Task.detached(priority: .utility) {
                     PDFDocument(url: fileURL).map(VaultDocumentExtractor.pageLabels(of:))
@@ -121,7 +130,7 @@ enum PassageLocationMigration {
         let text: (chunks: [DocumentChunker.Chunk], labels: [PageLabel])? = await Task.detached(priority: .utility) {
             guard let extracted = try? VaultDocumentExtractor.extract(from: fileURL) else { return nil }
             let text = extracted.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (DocumentChunker().chunk(text), extracted.pageLabels)
+            return (DocumentChunker().sized(for: DocumentLanguageProfile.detect(text), text: text).chunk(text), extracted.pageLabels)
         }.value
         guard let text, !text.chunks.isEmpty else { return .unreadable }
         let read = (chunks: text.chunks, labels: text.labels, tables: await readTables())

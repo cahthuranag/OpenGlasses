@@ -98,15 +98,23 @@ enum ManualStructure {
     /// Shape only. Whether it *stands alone* is `standsAlone(at:in:bodySize:)`, which needs its
     /// neighbours.
     static func isHeading(_ line: TypedLine, bodySize: Int) -> Bool {
-        guard line.bold, bodySize > 0, line.size >= Double(bodySize) - 0.5 else { return false }
         let text = line.text
+        // A script without case (Plan JY P4) has no capital to open a heading with, and its
+        // headings are often set larger rather than bolder: such a line may be one by its size.
+        let caseless = isCaseless(text)
+        guard line.bold || (caseless && line.size >= Double(bodySize) * largerHeadingRatio),
+              bodySize > 0, line.size >= Double(bodySize) - 0.5 else { return false }
         guard text.count >= 2, text.count <= 80 else { return false }
         guard text.contains(where: { $0.isLetter }) else { return false }       // "1", "2", "3 4"
         guard !text.hasPrefix("(") else { return false }    // a qualifier belongs to the line above
         // A heading opens; it does not continue. A line that starts lower case or ends on a broken
         // word or an unfinished clause is the middle of a paragraph that happens to be set in bold.
-        guard let first = text.first, first.isUppercase || first.isNumber else { return false }
+        guard let first = text.first, first.isUppercase || first.isNumber || caseless else { return false }
         guard let tail = text.last, !",;:-\u{2013}\u{2014}/&+".contains(tail) else { return false }
+        if caseless {
+            // The same screens in CJK punctuation, and a sentence's end anywhere on the line.
+            guard !"，、；：".contains(tail), !text.contains(where: { "。！？".contains($0) }) else { return false }
+        }
         guard text.range(of: "^(\(labelWords))\\b", options: [.regularExpression, .caseInsensitive]) == nil else {
             return false
         }
@@ -119,6 +127,18 @@ enum ManualStructure {
         guard let last = text.last, !".!?".contains(last) else { return false }
         guard DocumentChunker.pageNumber(in: text) == nil else { return false }
         return true
+    }
+
+    /// How much larger than body a line in a script without case must be set to be a heading
+    /// without bold (Plan JY P4).
+    static let largerHeadingRatio = 1.2
+
+    /// Whether a line opens in a script without case: its first letter (after any section number
+    /// and punctuation) is neither upper nor lower case — Han, kana, Hangul, Arabic. A Latin or
+    /// Cyrillic line never is, so their rules are untouched.
+    static func isCaseless(_ text: String) -> Bool {
+        guard let letter = text.first(where: \.isLetter) else { return false }
+        return !letter.isUppercase && !letter.isLowercase
     }
 
     /// A parenthetical qualifier set on its own line under a heading or a caption ("(shown in
@@ -141,7 +161,10 @@ enum ManualStructure {
         // the rule the table extractor reads captions by (Plan JJ P5), so a passage's figure and
         // its table carry the same label.
         guard let match = text.range(of: #"^(?i:FIGURE|TABLE)\s+"# + TableExtractor.labelPattern,
-                                     options: .regularExpression) else { return nil }
+                                     options: .regularExpression) else {
+            // Another interface language's caption word (Plan JY P4), after the English rule.
+            return CaptionWords.match(text).map { ($0.label, $0.title) }
+        }
         let head = String(text[match])
         let word = head.range(of: "^FIGURE", options: [.regularExpression, .caseInsensitive]) != nil ? "Figure" : "Table"
         let number = head.range(of: TableExtractor.labelPattern + "$", options: .regularExpression).map { String(head[$0]) } ?? ""
@@ -333,7 +356,12 @@ enum ManualStructure {
                 scan += 1
             }
             let dominant = weights.values.max { ($0.count, $0.size) < ($1.count, $1.size) }
-            lines.append(TypedLine(raw: raw, size: dominant?.size ?? 0, bold: dominant?.bold ?? false))
+            // Fake bold (Plan JY P4): a CJK line printed twice over reads each character twice and
+            // carries no bold font. The doubling is collapsed, and a line mostly set that way is
+            // bold, which is what the overprinting was for.
+            let overprint = OverprintedText.collapsed(raw)
+            let bold = (dominant?.bold ?? false) || OverprintedText.isMostlyOverprinted(raw, collapsed: overprint)
+            lines.append(TypedLine(raw: overprint.text, size: dominant?.size ?? 0, bold: bold))
         }
 
         var start = 0

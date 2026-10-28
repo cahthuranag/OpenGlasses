@@ -19,8 +19,8 @@ swiftc -O -parse-as-library -D RETRIEVAL_EVAL -target "$(uname -m)-apple-macos26
   "$src/RAG/PassageLocation.swift" "$src/RAG/EmbeddingScript.swift" \
   "$src/Vault/VaultRetriever.swift" "$src/Vault/ClauseReference.swift" "$src/Vault/CodeTokenizer.swift" \
   "$src/Vault/LexicalSupport.swift" "$src/Vault/TermRule.swift" "$src/Vault/TermRuleStopwords.swift" \
-  "$src/Vault/DocumentLanguageProfile.swift" "$src/Vault/PageReference.swift" "$src/Vault/DocumentEditions.swift" "$src/Vault/BackOfBookIndex.swift" "$src/Vault/ManualPassageLimit.swift" \
-  "$src/Vault/TableExtractor.swift" "$src/Vault/TableChecks.swift" "$src/Vault/TableRowPassage.swift" "$src/Vault/TableReference.swift" \
+  "$src/Vault/DocumentLanguageProfile.swift" "$src/Vault/ChunkSizing.swift" "$src/Vault/PageReference.swift" "$src/Vault/DocumentEditions.swift" "$src/Vault/BackOfBookIndex.swift" "$src/Vault/ManualPassageLimit.swift" \
+  "$src/Vault/TableExtractor.swift" "$src/Vault/CaptionWords.swift" "$src/Vault/TableChecks.swift" "$src/Vault/TableRowPassage.swift" "$src/Vault/TableReference.swift" \
   "$src/Vault/PDFTableReader.swift" \
   "$src/Vault/RecognisedTable.swift" "$src/Vault/CellCertainty.swift" "$src/Vault/PictureRegion.swift" \
   "$src/Vault/PictureTableReading.swift" "$src/Vault/VisionTableReader.swift"

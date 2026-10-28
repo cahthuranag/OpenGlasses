@@ -113,10 +113,13 @@ struct RetrievalEvalMain {
                                        gatedFor: { RetrievalEval.retriever(over: store, policy: policy, editions: editions, turn: $0) },
                                        openFor: { RetrievalEval.retriever(over: store, policy: open, editions: editions, turn: $0) },
                                        store: store,
-                                       passageLimit: env["RETRIEVAL_EVAL_PASSAGES"] == "4" ? nil : ManualPassageLimit())
+                                       passageLimit: env["RETRIEVAL_EVAL_PASSAGES"] == "4" ? nil
+                                           // Plan JY P4: RETRIEVAL_EVAL_PROSE_PASSAGES=5 measures a prose budget.
+                                           : ManualPassageLimit(prose: env["RETRIEVAL_EVAL_PROSE_PASSAGES"].flatMap(Int.init) ?? 4))
         let label = (env["RETRIEVAL_EVAL_LABEL"] ?? "local vault") + (env["RETRIEVAL_EVAL_GATE"].map { " gate=\($0)" } ?? "")
             + (env["RETRIEVAL_EVAL_VECTORS"].map { " vectors=\($0)" } ?? "")
-            + ["RETRIEVAL_EVAL_GATE_GROUP", "RETRIEVAL_EVAL_PENDING", "RETRIEVAL_EVAL_PREFIX", "RETRIEVAL_EVAL_MINLEN", "RETRIEVAL_EVAL_ENDINGS", "RETRIEVAL_EVAL_FOLD", "RETRIEVAL_EVAL_CJK"]
+            + ["RETRIEVAL_EVAL_GATE_GROUP", "RETRIEVAL_EVAL_PENDING", "RETRIEVAL_EVAL_PREFIX", "RETRIEVAL_EVAL_MINLEN", "RETRIEVAL_EVAL_ENDINGS", "RETRIEVAL_EVAL_FOLD", "RETRIEVAL_EVAL_CJK",
+               "RETRIEVAL_EVAL_CHUNK_SCALE", "RETRIEVAL_EVAL_P4_OFF", "RETRIEVAL_EVAL_PROSE_PASSAGES"]
                 .compactMap { name in env[name].map { " \(name.dropFirst(15).lowercased())=\($0)" } }.joined()
             + " table_rows=\(RetrievalEval.tableRows.rawValue)"
         for line in report.lines(label: label, embedder: embedder.modelId) {

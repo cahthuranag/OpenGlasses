@@ -258,12 +258,12 @@ enum RetrievalEval {
                     store: DocumentStore, classifyMisses: Bool = true, passageLimit: ManualPassageLimit? = nil) -> Report {
         var report = Report()
         report.sentMeasured = passageLimit != nil
-        let searchesClauseNumbered = store.documents.contains { store.isClauseNumbered(documentId: $0.id) }
+        let searchesClauseNumbered = store.documents.contains { store.usesClausePassageBudget(documentId: $0.id) }
         let searchesTableRows = tableRows != .none && store.hasTableRows(documentIds: store.documents.map(\.id))
         func sent(_ gated: VaultRetriever, _ q: Question) -> RetrievalOutcome? {
             passageLimit?.retrieve(.init(turn: q.q), with: gated, searchesClauseNumbered: searchesClauseNumbered,
                                    searchesTableRows: searchesTableRows,
-                                   isClauseNumbered: { store.isClauseNumbered(documentId: $0) })
+                                   isClauseNumbered: { store.usesClausePassageBudget(documentId: $0) })
         }
         for q in questions {
             let gated = gatedFor(q.q), open = openFor(q.q)

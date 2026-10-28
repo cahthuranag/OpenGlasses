@@ -118,6 +118,15 @@ Scripts/retrieval-eval/run.sh
   is missing (the index keeps its vectors; no script model answers). `RETRIEVAL_EVAL_DETAIL=1` prints
   each question's line number with the pages it expects and the pages it got — numbers only.
 
+- **Structure in other languages (Plan JY P4).** `RETRIEVAL_EVAL_CHUNK_SCALE` scales a document's
+  chunk targets by its language or group (`"zh-Hans=0.8,ja=1.3"`, `"cjk=0.6"`, `cyrillic`, `arabic`);
+  give each value its own `RETRIEVAL_EVAL_WORKDIR`, since it changes the index. `RETRIEVAL_EVAL_P4_OFF`
+  switches a P4 rule off to measure it (`captions`, `split`, `clauses`, joined with `,`);
+  the extraction-side rules (fake bold, caption words and caseless headings in
+  `extract-manual-text.swift`) are measured with a copy of the extractor named by
+  `RETRIEVAL_EVAL_EXTRACTOR`. `RETRIEVAL_EVAL_PROSE_PASSAGES` sets the prose passage budget the "as
+  sent" line uses (4 as shipped).
+
 Every run prints in-scope refusals beside the hits, because a gate that refuses more out-of-scope
 questions usually refuses some in-scope ones too, and both numbers decide a gate.
 

@@ -269,7 +269,11 @@ struct DocumentChunker {
         tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
             offset += text.distance(from: cursor, to: range.lowerBound)
             cursor = range.lowerBound
-            while bpIdx < breaks.count && breaks[bpIdx].offset <= offset {
+            let raw = text[range]
+            let leading = raw.prefix(while: { $0.isWhitespace || $0.isNewline })
+            // A page or section that opens inside the whitespace the sentence starts with (a form
+            // feed after a line break) is the sentence's own: it is where its text begins.
+            while bpIdx < breaks.count && breaks[bpIdx].offset <= offset + leading.count {
                 page = breaks[bpIdx].page
                 section = breaks[bpIdx].section
                 kind = breaks[bpIdx].kind
@@ -277,9 +281,7 @@ struct DocumentChunker {
                 pageOrigin = breaks[bpIdx].pageOrigin
                 bpIdx += 1
             }
-            let raw = text[range]
             let s = String(raw).trimmingCharacters(in: .whitespacesAndNewlines)
-            let leading = raw.prefix(while: { $0.isWhitespace || $0.isNewline })
             if !s.isEmpty {
                 let lead = leading.count
                 result.append(Sentence(text: s, page: scanned.paginated ? page : nil, section: section,
@@ -337,10 +339,18 @@ struct DocumentChunker {
     /// marker is a genuine page break — which is the only way a plain-text document paginates.
     /// A grammar line (a comment, a `##` or `###` marker) is an annotation on the page, not content
     /// on it, so an extractor may write one above the publisher's header without losing that rule.
+    ///
+    /// **Printed folios (Plan JY P4).** In a document an extractor paginated — form feeds, or its
+    /// own `Page N` lines — a folio printed alone on a line ("- 397 -") is the publisher's number,
+    /// usually at the foot of the page, and never turns or renumbers a page. Read as a page turn,
+    /// a footer folio opened the next page under its own number and the extractor's marker after
+    /// it was taken for a running header, so every later page was cited by the printed numbering.
+    /// A plain-text document paginated only by such folios still turns its pages at them.
     private static func scanLines(in raw: String) -> ScannedText {
         // The grammar is always read; what the presence of a `## ` heading switches off is the
         // lexical guessing beside it.
         let lexical = !hasStructuredHeadings(raw)
+        let extractorPaginated = isExtractorPaginated(raw)
         var cleaned = ""
         cleaned.reserveCapacity(raw.count)
         var length = 0                  // cleaned.count, tracked as we go
@@ -366,7 +376,9 @@ struct DocumentChunker {
             if let marker = pageNumber(in: trimmed) {
                 emitted = nil           // marker lines are furniture; they never reach a chunk
                 paginated = true
-                if pageOpen && !contentSincePageOpen {
+                if extractorPaginated && isPrintedFolio(trimmed) {
+                    // The publisher's folio on a page the extractor numbered: page unchanged.
+                } else if pageOpen && !contentSincePageOpen {
                     // A printed running header on a page already opened: page unchanged.
                 } else {
                     page = marker
@@ -572,6 +584,19 @@ struct DocumentChunker {
         return n
     }
 
+    /// A folio printed alone on a line, "- 42 -": the publisher's page number, not an extractor's.
+    static func isPrintedFolio(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespacesAndNewlines)
+            .range(of: #"^-\s*\d{1,4}\s*-$"#, options: .regularExpression) != nil
+    }
+
+    /// Whether an extractor numbered the document's pages itself: a form feed between pages (the
+    /// app's PDF extractor) or a `Page N` line (the Mac extractor's).
+    static func isExtractorPaginated(_ raw: String) -> Bool {
+        raw.contains("\u{0C}")
+            || raw.range(of: #"(?mi)^[ \t]*page[ \t]+\d{1,4}[ \t]*$"#, options: .regularExpression) != nil
+    }
+
     private static func firstInt(in s: String) -> Int? {
         guard let r = s.range(of: #"\d+"#, options: .regularExpression) else { return nil }
         return Int(s[r])
@@ -599,6 +624,10 @@ struct DocumentChunker {
     /// The lines that read as a clause heading: a number with at least two parts ("12-345",
     /// "3.9.4", "110.26"), then a capitalised word, on a short line of its own. Distinct numbers
     /// only — a heading repeated as a running header counts once.
+    ///
+    /// A script without case (Plan JY P4) has no capital to start the word with, so there the
+    /// number is followed by a letter of that script (`\p{Lo}`: Han, kana, Hangul, Arabic), with
+    /// or without a space. A Latin or Cyrillic letter is never `\p{Lo}`, so their rule is as it was.
     static func clauseHeadingLines(in text: String) -> [String] {
         var seen = Set<String>()
         var lines: [String] = []
@@ -606,11 +635,18 @@ struct DocumentChunker {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let body = trimmed.hasPrefix("## ") ? String(trimmed.dropFirst(3)) : trimmed
             guard body.count <= 90,
-                  let number = body.range(of: #"^\d{1,3}(?:[.\-]\d{1,4}){1,4}(?=\s+\p{Lu}\p{Ll})"#,
-                                          options: .regularExpression) else { continue }
+                  let number = body.range(of: clauseNumberPattern, options: .regularExpression) else { continue }
             if seen.insert(String(body[number])).inserted { lines.append(trimmed) }
         }
         return lines
+    }
+
+    /// A clause heading's number, as `clauseHeadingLines` reads it.
+    static var clauseNumberPattern: String {
+        #if RETRIEVAL_EVAL
+        if RetrievalEvalTuning.p4Off.contains("clauses") { return #"^\d{1,3}(?:[.\-]\d{1,4}){1,4}(?=\s+\p{Lu}\p{Ll})"# }
+        #endif
+        return #"^\d{1,3}(?:[.\-]\d{1,4}){1,4}(?=\s+\p{Lu}\p{Ll}|\s*\p{Lo})"#
     }
 
     /// The text with each clause heading line set as a section heading (`## `), which the
@@ -643,14 +679,24 @@ struct DocumentChunker {
 
     /// Split an oversized sentence on word boundaries into pieces no larger than `maxChars`,
     /// falling back to raw character slicing for a single word that is itself too long.
-    private static func hardSplit(_ sentence: String, maxChars: Int) -> [String] {
+    ///
+    /// A CJK run has no spaces, so the whole sentence is one "word"; it is broken after its own
+    /// punctuation instead (Plan JY P4) — 。！？； first, then ，、 — and sliced raw only where a
+    /// piece has none. A run with no CJK punctuation is sliced exactly as before.
+    static func hardSplit(_ sentence: String, maxChars: Int) -> [String] {
         var pieces: [String] = []
         var buffer = ""
         for word in sentence.split(separator: " ", omittingEmptySubsequences: true) {
             let w = String(word)
             if w.count > maxChars {
                 if !buffer.isEmpty { pieces.append(buffer); buffer = "" }
-                pieces.append(contentsOf: w.chunkedByCharacters(maxChars))
+                #if RETRIEVAL_EVAL
+                if RetrievalEvalTuning.p4Off.contains("split") {
+                    pieces.append(contentsOf: w.chunkedByCharacters(maxChars))
+                    continue
+                }
+                #endif
+                pieces.append(contentsOf: w.chunkedAtCJKPunctuation(maxChars))
                 continue
             }
             if buffer.isEmpty {
@@ -668,6 +714,37 @@ struct DocumentChunker {
 }
 
 private extension String {
+    /// CJK punctuation a piece may end after, strongest first (Plan JY P4).
+    static let cjkClauseEnds: [Set<Character>] = [["。", "！", "？", "；"], ["，", "、"]]
+
+    /// Pieces of at most `size` characters, each ending after the last CJK sentence or clause
+    /// mark that fits (a sentence end preferred), else sliced raw. With no such mark in the text
+    /// this is `chunkedByCharacters(size)` exactly.
+    func chunkedAtCJKPunctuation(_ size: Int) -> [String] {
+        guard size > 0, count > size else { return [self] }
+        let all = Self.cjkClauseEnds.reduce(Set<Character>()) { $0.union($1) }
+        guard contains(where: { all.contains($0) }) else { return chunkedByCharacters(size) }
+        let characters = Array(self)
+        var result: [String] = []
+        var start = 0
+        while characters.count - start > size {
+            let window = characters[start..<(start + size)]
+            var cut: Int?
+            for marks in Self.cjkClauseEnds {
+                // A mark in the window's second half, so a piece is never cut to a sliver.
+                if let last = window.lastIndex(where: { marks.contains($0) }), last - start >= size / 2 {
+                    cut = last + 1
+                    break
+                }
+            }
+            let end = cut ?? (start + size)
+            result.append(String(characters[start..<end]))
+            start = end
+        }
+        if start < characters.count { result.append(String(characters[start...])) }
+        return result
+    }
+
     /// Slice into fixed-size character pieces (used only for pathological single words).
     func chunkedByCharacters(_ size: Int) -> [String] {
         guard size > 0, count > size else { return [self] }

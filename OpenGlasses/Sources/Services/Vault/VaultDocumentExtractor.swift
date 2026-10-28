@@ -315,7 +315,9 @@ enum VaultDocumentExtractor {
         for index in 0..<document.pageCount {
             guard let page = document.page(at: index) else { pages.append(""); continue }
             guard body > 0, let typedPage = typed[index] else {
-                pages.append(autoreleasepool { page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" })
+                pages.append(autoreleasepool {
+                    OverprintedText.collapsedLines(page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                })
                 continue
             }
             let rendered = ManualStructure.render(typedPage, bodySize: body)

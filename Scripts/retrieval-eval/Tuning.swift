@@ -63,6 +63,34 @@ enum RetrievalEvalTuning {
         return out
     }()
 
+    // MARK: - Plan JY P4: chunk sizes and the structure rules, measured one at a time
+
+    /// RETRIEVAL_EVAL_CHUNK_SCALE="cjk=0.6" or "zh-Hans=0.8,ja=1.3,cyrillic=1.5": a document's
+    /// character targets scaled, keyed by its language or by "cjk", "cyrillic", "arabic".
+    private static let chunkScales: [String: Double] = {
+        guard let raw = env["RETRIEVAL_EVAL_CHUNK_SCALE"], !raw.isEmpty else { return [:] }
+        var out: [String: Double] = [:]
+        for part in raw.split(separator: ",") {
+            let pair = part.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            guard pair.count == 2, let value = Double(pair[1]) else { fatalError("RETRIEVAL_EVAL_CHUNK_SCALE: can't read \(part)") }
+            out[pair[0]] = value
+        }
+        return out
+    }()
+
+    static func chunkScale(script: TextScript, language: String?) -> Double? {
+        if let language, let value = chunkScales[language] { return value }
+        switch script {
+        case .han, .kana, .hangul: return chunkScales["cjk"]
+        case .cyrillic: return chunkScales["cyrillic"]
+        case .arabic: return chunkScales["arabic"]
+        default: return nil
+        }
+    }
+
+    /// RETRIEVAL_EVAL_P4_OFF="captions,split,clauses": a P4 rule switched off, to measure it.
+    static let p4Off = Set((env["RETRIEVAL_EVAL_P4_OFF"] ?? "").split(separator: ",").map(String.init))
+
     // MARK: - CJK words (decision 2's alternative, measured, not shipped)
 
     private static let wordsWanted = env["RETRIEVAL_EVAL_CJK"] == "words"

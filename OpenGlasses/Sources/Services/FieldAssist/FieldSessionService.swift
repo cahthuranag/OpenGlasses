@@ -1758,7 +1758,8 @@ final class FieldSessionService: ObservableObject {
         return .default(for: documentStore.servingModelId(namespace: DocumentStore.vaultNamespace(vaultId)))
     }
     /// How many manual passages a turn or a lookup carries: four, or six when the best passage is
-    /// from a clause-numbered document (Plan IV P6) or is a table row (Plan JJ P1).
+    /// from a clause-numbered document (Plan IV P6), a CJK or Arabic-script one (Plan JY P4), or is
+    /// a table row (Plan JJ P1).
     var passageLimit = ManualPassageLimit()
 
     /// Retrieve manual passages with the shape-dependent limit (Plan IV P6). The larger number is
@@ -1769,10 +1770,11 @@ final class FieldSessionService: ObservableObject {
         guard let documentStore else { return retriever.retrieve(request) }
         let searched = documentStore.list(namespace: DocumentStore.vaultNamespace(store.manifest.id))
             .filter { documentIds?.contains($0.id) ?? true }
-        let searchesClauseNumbered = searched.contains { documentStore.isClauseNumbered(documentId: $0.id) }
+        // A CJK or Arabic-script manual takes the clause budget too (Plan JY P4).
+        let searchesClauseNumbered = searched.contains { documentStore.usesClausePassageBudget(documentId: $0.id) }
         return passageLimit.retrieve(request, with: retriever, searchesClauseNumbered: searchesClauseNumbered,
                                      searchesTableRows: documentStore.hasTableRows(documentIds: searched.map(\.id)),
-                                     isClauseNumbered: { documentStore.isClauseNumbered(documentId: $0) })
+                                     isClauseNumbered: { documentStore.usesClausePassageBudget(documentId: $0) })
     }
 
     /// System-prompt addendum for the active session, or nil when no session is active.

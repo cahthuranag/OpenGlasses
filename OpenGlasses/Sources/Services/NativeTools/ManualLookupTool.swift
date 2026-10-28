@@ -21,7 +21,11 @@ final class ManualLookupTool: NativeTool {
     knowledge. Write the query in the manual's own words — the part, procedure, table or rule as \
     the book would name it — rather than repeating the technician's phrasing; when a result offers \
     the book's index references or its nearest section headings, those are the words to search \
-    with. Uses your loaded manuals, or the active Field Assist session. In a personal library, searches the manuals selected for this chat together. Omit document to search that set; name a manual to narrow it. If none are selected and the request is ambiguous, ask which manuals. Cite each book separately and explain any conflicting values. Camera lookup requires Field Assist.
+    with. Uses your loaded manuals, or the active Field Assist session. In a personal library, searches the manuals selected for this chat together. Omit document to search that set; name a manual to narrow it. If none are selected and the request is ambiguous, ask which manuals. Cite each book separately and explain any conflicting values. Camera lookup requires Field Assist. \
+    Manuals may be in other languages, named in the manual list and the results. If a manual's \
+    language differs from the question's, write query in that language; if the manuals searched \
+    span more than one language, also pass queries with the question rewritten for each of them. \
+    Answer in the wearer's language, citing the original page.
     """
     let parametersSchema: [String: Any] = [
         "type": "object",
@@ -37,6 +41,24 @@ final class ManualLookupTool: NativeTool {
             "use_camera": [
                 "type": "boolean",
                 "description": "Read the nameplate or fault display via the camera and search on it."
+            ],
+            "queries": [
+                "type": "array",
+                "description": "Optional: the question rewritten for manuals in other languages, one item per manual language.",
+                "items": [
+                    "type": "object",
+                    "properties": [
+                        "language": [
+                            "type": "string",
+                            "description": "The manual's language code as listed, e.g. zh-Hans, uk, ja."
+                        ],
+                        "query": [
+                            "type": "string",
+                            "description": "The question written in that language."
+                        ]
+                    ],
+                    "required": ["language", "query"]
+                ]
             ]
         ],
         "required": [] as [String]
@@ -139,8 +161,13 @@ final class ManualLookupTool: NativeTool {
                                                   editions: session.documentEditions(of: store))
         let retriever = session.makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds,
                                               editionRequest: editionRequest)
-        let outcome = session.retrieveManualPassages(.init(turn: query, ocrText: ocrText, procedureStep: nil),
-                                                     with: retriever, store: store, documentIds: documentIds)
+        // Manuals in more than one language: once per language, each with the model's rewrite for
+        // it (Plan JY P2). One language: today's search, with its rewrite when one was passed.
+        let rewrites = ManualLanguageSearch.Rewrites(args["queries"])
+        let search = session.retrieveByLanguage(.init(turn: query, ocrText: ocrText, procedureStep: nil),
+                                                with: retriever, store: store, documentIds: documentIds,
+                                                editionRequest: editionRequest, rewrites: rewrites)
+        let outcome = search.outcome
         let disclosure = session.noteRetrieval(outcome)
         // What "show me the page" opens next, until an answer that cites replaces it (Plan IN P2).
         if outcome.answers {
@@ -151,21 +178,36 @@ final class ManualLookupTool: NativeTool {
         // The book's way in (Plan IV P5): what its own index names for these words, when a manual
         // has one and the passages don't already carry it; and on a first miss, the headings of
         // the nearest sections, so the one retry #763 allows is in the book's terms.
-        let lookupWords = [query, ocrText].compactMap { $0 }.joined(separator: " ")
+        // The rewrites for the languages searched are the book's words too (Plan JY P2).
+        let rewritten = search.groups.compactMap { rewrites.query(for: $0.language) }
+        let lookupWords = ([query, ocrText].compactMap { $0 } + rewritten).joined(separator: " ")
         let references = session.indexReferences(for: lookupWords, store: store, documentIds: documentIds)
             .filter { ref in !outcome.passages.contains { ClauseReference.match(ref, in: $0.text) != nil || $0.figure == ref } }
         if !references.isEmpty {
             result += "\n\n" + Self.indexHint(references)
         }
+        // A manual in another script that found nothing for want of its language's words (Plan JY
+        // P2): the one retry is worth spending in that language.
+        let languageHint = ManualLanguageSearch.missHint(ManualLanguageSearch.missedForLanguage(search, query: query))
         if !outcome.answers {
             let misses = session.noteManualLookupMiss()
-            result += "\n\n" + Self.missGuidance(misses: misses)
+            if misses == 1, let languageHint {
+                result += "\n\n" + languageHint
+            } else {
+                result += "\n\n" + Self.missGuidance(misses: misses)
+            }
             let sections = misses > 1 ? [] : session.closestSections(for: lookupWords, store: store,
                                                                      documentIds: documentIds, editionRequest: editionRequest)
             if !sections.isEmpty { result += "\n\n" + Self.sectionsHint(sections) }
         }
+        if outcome.answers, let languageHint {
+            result += "\n\n" + languageHint
+        }
         if documentIds == nil, let note = session.editionNote(for: editionRequest, store: store) {
             result += "\n\n" + note
+        }
+        if let languages = ManualLanguageSearch.languagesLine(search) {
+            result = languages + "\n\n" + result
         }
         if let ocrText {
             result = "Read from the label: \(ocrText.replacingOccurrences(of: "\n", with: " "))\n\n" + result

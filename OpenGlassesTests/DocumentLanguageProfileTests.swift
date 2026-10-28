@@ -44,9 +44,20 @@ final class DocumentLanguageProfileTests: XCTestCase {
          .hangul, "ko", .bigram),
     ]
 
+    /// A Latin sample as a document long enough to be named a language other than English (Plan
+    /// JY P2: `minimumLatinLettersForOther`), the sentence repeated; any other sample as given.
+    static func document(_ text: String, script: TextScript) -> String {
+        guard script == .latin else { return text }
+        var document = text
+        while document.filter({ $0.isLetter }).count < DocumentLanguageProfile.minimumLatinLettersForOther {
+            document += " " + text
+        }
+        return document
+    }
+
     func testEveryInterfaceLanguageIsDetected() {
         for sample in Self.sentences {
-            let profile = DocumentLanguageProfile.detect(sample.text)
+            let profile = DocumentLanguageProfile.detect(Self.document(sample.text, script: sample.script))
             XCTAssertEqual(profile.script, sample.script, sample.text)
             XCTAssertEqual(profile.language, sample.language, sample.text)
             XCTAssertEqual(profile.termRule, sample.rule, sample.text)
@@ -113,6 +124,50 @@ final class DocumentLanguageProfileTests: XCTestCase {
         let cyrillic = DocumentLanguageProfile.detect("Привіт")
         XCTAssertNil(cyrillic.language)
         XCTAssertEqual(cyrillic.termRule, .prefixStem(.cyrillic))
+    }
+
+    // MARK: - Latin needs more to be named other than English (Plan JY P2)
+
+    /// A team learning is a sentence or two: English, so an English vault stays one group.
+    func testAShortEnglishLearningIsEnglish() {
+        let profile = DocumentLanguageProfile.detect(
+            "Crew note: the condensate pump on this model trips when its float sticks. Clean the float chamber before replacing the pump.")
+        XCTAssertEqual(profile.script, .latin)
+        XCTAssertTrue(profile.language == nil || profile.language == "en", "\(profile)")
+        XCTAssertEqual(profile.termRule, .english)
+        XCTAssertEqual(ManualLanguageSearch.code(for: profile), "en")
+    }
+
+    /// The accepted cost of keeping English vaults byte-identical: a short German document is
+    /// read with the English rule and searched with the English group until it is longer.
+    func testAShortGermanSentenceIsReadAsEnglish() {
+        let profile = DocumentLanguageProfile.detect(Self.sentences[1].text)
+        XCTAssertNil(profile.language, "under \(DocumentLanguageProfile.minimumLatinLettersForOther) Latin letters")
+        XCTAssertEqual(profile.termRule, .english)
+        XCTAssertEqual(ManualLanguageSearch.code(for: profile), "en")
+    }
+
+    func testALongerGermanPassageIsGerman() {
+        let passage = """
+        Die maximale Vorlauftemperatur der Heizung beträgt fünfundsiebzig Grad und wird am Regler eingestellt. \
+        Vor jeder Wartung muss die Anlage spannungsfrei geschaltet und gegen Wiedereinschalten gesichert werden. \
+        Der Filter im Rücklauf sollte einmal im Jahr gereinigt werden, damit der Durchfluss nicht sinkt. \
+        Wenn die Störungsleuchte blinkt, prüfen Sie zuerst den Wasserdruck im System und füllen Sie bei Bedarf Wasser nach. \
+        Die Umwälzpumpe läuft nach dem Abschalten des Brenners noch drei Minuten weiter, um die Wärme aus dem Kessel abzuführen. \
+        Die Abgasleitung ist einmal jährlich auf Dichtheit zu prüfen.
+        """
+        XCTAssertGreaterThanOrEqual(passage.filter(\.isLetter).count, 500)
+        let profile = DocumentLanguageProfile.detect(passage)
+        XCTAssertEqual(profile.language, "de")
+        XCTAssertGreaterThanOrEqual(profile.confidence, DocumentLanguageProfile.minimumLatinConfidenceForOther)
+        XCTAssertEqual(profile.termRule, .prefixStem(.german))
+        XCTAssertEqual(ManualLanguageSearch.code(for: profile), "de")
+    }
+
+    /// Other scripts keep the old thresholds: a single Ukrainian sentence is still Ukrainian.
+    func testNonLatinScriptsKeepTheirThresholds() {
+        XCTAssertEqual(DocumentLanguageProfile.detect(Self.sentences[9].text).language, "uk")
+        XCTAssertEqual(DocumentLanguageProfile.detect(Self.sentences[13].text).language, "zh-Hans")
     }
 
     func testTextWithoutLettersIsUnknown() {

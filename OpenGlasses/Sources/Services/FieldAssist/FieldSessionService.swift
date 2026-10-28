@@ -1804,7 +1804,8 @@ final class FieldSessionService: ObservableObject {
             referenceByteLimit: VaultPromptBuilder.referenceByteLimit(
                 for: model?.llmProvider, requestContext: Self.chatGPTRequestContext(for: model)),
             turn: turn,
-            teamLearningsPublished: retrievableCorpus(store: store, documentStore: documentStore).learnings)
+            teamLearningsPublished: retrievableCorpus(store: store, documentStore: documentStore).learnings,
+            manualLanguages: manualLanguagesPromptLine(store: store))
         if let equipment = activeEquipment {
             context = (context.map { $0 + "\n\n" } ?? "") + equipment.promptBlock
         }
@@ -1869,8 +1870,10 @@ final class FieldSessionService: ObservableObject {
         }
         let editionRequest = EditionRequest.parse(searchTurn, editions: documentEditions(of: store))
         let retriever = manualRetriever(store: store, editionRequest: editionRequest)
-        let outcome = retrieveManualPassages(.init(turn: searchTurn, procedureStep: runner?.currentStep?.title),
-                                             with: retriever, store: store)
+        // Manuals in more than one language are searched once per language and merged by rank
+        // (Plan JY P2); a library in one language is searched exactly as before.
+        let outcome = retrieveByLanguage(.init(turn: searchTurn, procedureStep: runner?.currentStep?.title),
+                                         with: retriever, store: store, editionRequest: editionRequest).outcome
         // Support trace: which pages went to the model, by citation — or that the gate refused.
         TurnRecorder.noteManualPassages(outcome.passages.map(\.citation), refused: !outcome.answers)
         let disclosure = noteRetrieval(outcome)
@@ -2051,6 +2054,92 @@ final class FieldSessionService: ObservableObject {
         return withheld
     }
 
+    /// The documents of a namespace a retrieval searches, or nil for all of them: the manuals a
+    /// lookup named, else the edition's; photographed manuals the named ones; learnings all.
+    static func searchedIds(for space: RetrievalNamespace, documentIds: [String]?, editionIds: [String]?) -> [String]? {
+        if space.source == .manual { return documentIds ?? editionIds }
+        return space.source.isReference ? documentIds : nil
+    }
+
+    /// Editions (Plan IV P2): the vault manuals a request may search, or nil for all of them. The
+    /// filter is on the vault's manual namespace only; learnings and photographed manuals are
+    /// searched as before.
+    func editionDocumentIds(store: VaultStore, documentStore: DocumentStore?, editionRequest: EditionRequest) -> [String]? {
+        guard let documentStore,
+              let titles = documentEditions(of: store).searchableTitles(for: editionRequest,
+                                                                         among: store.manifest.documents.map(\.title))
+        else { return nil }
+        return documentStore.list(namespace: DocumentStore.vaultNamespace(store.manifest.id))
+            .filter { titles.contains($0.name) }.map(\.id)
+    }
+
+    // MARK: - Manuals in more than one language (Plan JY P2)
+
+    /// The documents a lookup searches, by language group (`ManualLanguageSearch.groups`): the
+    /// same namespaces and filters as `makeRetriever`, each document grouped by its stored
+    /// language profile.
+    func manualLanguageGroups(store: VaultStore, documentIds: [String]? = nil,
+                              editionRequest: EditionRequest = .newest) -> [ManualLanguageSearch.Group] {
+        guard let documentStore else { return [] }
+        let editionIds = documentIds == nil ? editionDocumentIds(store: store, documentStore: documentStore,
+                                                                 editionRequest: editionRequest) : nil
+        let all = retrievalNamespaces(vaultId: store.manifest.id)
+        let searched = documentIds == nil ? all : all.filter { $0.source.isReference }
+        // A team learning joins its reference manuals' group, never one of its own.
+        let documents = searched.flatMap { space -> [(id: String, profile: DocumentLanguageProfile, isReference: Bool)] in
+            let ids = documentStore.list(namespace: space.namespace).map(\.id)
+            let kept = Self.searchedIds(for: space, documentIds: documentIds, editionIds: editionIds)
+                .map { wanted in ids.filter(wanted.contains) } ?? ids
+            return kept.map { (id: $0, profile: documentStore.languageProfile(documentId: $0),
+                               isReference: space.source.isReference) }
+        }
+        return ManualLanguageSearch.groups(documents)
+    }
+
+    /// Retrieve manual passages for a turn or a lookup, once per language group when the searched
+    /// manuals are in more than one (Plan JY P2): each group with its own question — the model's
+    /// rewrite for it, else `request.turn` — through a retriever scoped to it, the results merged
+    /// by rank. A library in one language is `retrieveManualPassages` with `retriever`, exactly as
+    /// before (with the rewrite for that language, when the model passed one).
+    func retrieveByLanguage(_ request: VaultRetriever.Request, with retriever: VaultRetriever, store: VaultStore,
+                            documentIds: [String]? = nil, editionRequest: EditionRequest = .newest,
+                            rewrites: ManualLanguageSearch.Rewrites = .none) -> ManualLanguageSearch.Result {
+        let groups = manualLanguageGroups(store: store, documentIds: documentIds, editionRequest: editionRequest)
+        let result = ManualLanguageSearch.search(
+            groups: groups, query: request.turn, rewrites: rewrites, limit: passageLimit.prose,
+            whole: { query in
+                var asked = request
+                asked.turn = query
+                return retrieveManualPassages(asked, with: retriever, store: store, documentIds: documentIds)
+            },
+            scoped: { group, query in
+                var asked = request
+                asked.turn = query
+                let scoped = makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds,
+                                           editionRequest: editionRequest, policy: retriever.policy,
+                                           scope: Set(group.documentIds))
+                return retrieveManualPassages(asked, with: scoped, store: store, documentIds: group.documentIds)
+            })
+        if result.searchedByLanguage {
+            // Counts only: how many languages, how many rewrites, whether anything answered.
+            PrivacyLog.store(.ragDocuments, .searchedByLanguage, count: result.groups.count, total: rewrites.count,
+                             detail: PrivacyToken(result.outcome.answers ? "answers" : "insufficient"))
+        }
+        return result
+    }
+
+    /// The vault's manuals with their languages, for the prompt (`ManualLanguageSearch.promptLine`):
+    /// nil when every one is English.
+    func manualLanguagesPromptLine(store: VaultStore) -> String? {
+        guard let documentStore else { return nil }
+        let spaces = retrievalNamespaces(vaultId: store.manifest.id).filter { $0.source.isReference }
+        let manuals = spaces.flatMap { documentStore.list(namespace: $0.namespace) }.map { document in
+            (title: document.name,
+             language: ManualLanguageSearch.code(for: documentStore.languageProfile(documentId: document.id)))
+        }
+        return ManualLanguageSearch.promptLine(manuals)
+    }
+
     /// The one way a `VaultRetriever` is built (Plan FP P2): the per-turn block, `manual_lookup`
     /// and `equipment_lookup`'s manual fall-through all come here, so every route sees the same
     /// corpus with the same tags.
@@ -2061,25 +2150,32 @@ final class FieldSessionService: ObservableObject {
     /// filtered search reads the manuals alone. The availability check is the manual removal's for
     /// a manual, and "still in its namespace" for a learning — a learning retracted mid-turn is not
     /// quoted — and the removal journal is never consulted for a learning.
+    ///
+    /// `scope` (Plan JY P2) narrows every namespace to the documents of one language group, so a
+    /// lookup over manuals in two languages searches each with its own question and never ranks
+    /// two script models' cosines in one list. Nil searches everything, as before.
     func makeRetriever(store: VaultStore, documentStore: DocumentStore?, documentIds: [String]? = nil,
                        namespaces: [RetrievalNamespace]? = nil,
                        editionRequest: EditionRequest = .newest,
-                       policy: RetrievalEvidencePolicy? = nil) -> VaultRetriever {
+                       policy: RetrievalEvidencePolicy? = nil,
+                       scope: Set<String>? = nil) -> VaultRetriever {
         let vaultId = store.manifest.id
-        // Editions (Plan IV P2): the manuals a request may search, unless the caller named its own.
-        // The filter is on the vault's manual namespace only; learnings and photographed manuals
-        // are searched as before.
         let editions = documentEditions(of: store)
-        let editionIds: [String]? = {
-            guard documentIds == nil, let documentStore,
-                  let titles = editions.searchableTitles(for: editionRequest, among: store.manifest.documents.map(\.title))
-            else { return nil }
-            return documentStore.list(namespace: DocumentStore.vaultNamespace(vaultId))
-                .filter { titles.contains($0.name) }.map(\.id)
-        }()
+        let editionIds = documentIds == nil ? editionDocumentIds(store: store, documentStore: documentStore,
+                                                                 editionRequest: editionRequest) : nil
         let labelsEditions = editionRequest.reachesOlderEditions && !editions.isEmpty
         let all = namespaces ?? retrievalNamespaces(vaultId: vaultId)
-        let searched = documentIds == nil ? all : all.filter { $0.source.isReference }
+        let unscoped = documentIds == nil ? all : all.filter { $0.source.isReference }
+        // A language group's documents in each namespace; a namespace with none of them is not
+        // searched at all (an empty id list is not "no filter").
+        let scopedIds: [String: [String]] = scope.map { scope in
+            Dictionary(unscoped.map { space -> (String, [String]) in
+                let base = Self.searchedIds(for: space, documentIds: documentIds, editionIds: editionIds)
+                    ?? (documentStore?.list(namespace: space.namespace).map(\.id) ?? [])
+                return (space.namespace, base.filter(scope.contains))
+            }, uniquingKeysWith: { first, _ in first })
+        } ?? [:]
+        let searched = scope == nil ? unscoped : unscoped.filter { !(scopedIds[$0.namespace] ?? []).isEmpty }
         let manualNamespaces = searched.filter { $0.source == .manual }.map(\.namespace)
         let learningNamespaces = searched.filter { $0.source == .teamLearning }.map(\.namespace)
         let entries = learningEntries
@@ -2111,8 +2207,8 @@ final class FieldSessionService: ObservableObject {
             }
         }
         func ids(for space: RetrievalNamespace) -> [String]? {
-            if space.source == .manual { return documentIds ?? editionIds }
-            return space.source.isReference ? documentIds : nil
+            if scope != nil { return scopedIds[space.namespace] ?? [] }
+            return Self.searchedIds(for: space, documentIds: documentIds, editionIds: editionIds)
         }
 
         let manualAvailable = VaultManualRemoval.availabilityCheck(forVault: vaultId, documentStore: documentStore, capturedCatalog:capturedManuals)

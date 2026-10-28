@@ -1918,6 +1918,10 @@ enum PrivacyLog {
         /// A script's embedding model asked for from Apple, and whether it landed (Plan JY P1):
         /// which script, how long. Never a document or a question.
         case modelRequested, modelArrived, modelUnavailable
+        /// A manual lookup over manuals in more than one language, searched once per language
+        /// (Plan JY P2): how many languages, how many rewrites, whether it answered. Never a
+        /// question or a passage.
+        case searchedByLanguage
         /// A distillation pass over the knowledge graph: how many rows it changed, of how many
         /// considered. Counts only — which fact was promoted or retired is the wearer's content.
         case distilled

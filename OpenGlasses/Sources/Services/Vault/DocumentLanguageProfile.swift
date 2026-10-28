@@ -71,7 +71,9 @@ enum TextScript: String, Codable, Equatable, Hashable, Sendable {
 /// when the document is re-indexed or when `currentVersion` moves; shown in no interface in P0.
 struct DocumentLanguageProfile: Codable, Equatable, Sendable {
     /// Bumped when detection changes, so a stored profile is recomputed from the document's text.
-    static let currentVersion = 1
+    /// 2 (Plan JY P2): a Latin language other than English needs `minimumLatinLettersForOther`
+    /// letters and `minimumLatinConfidenceForOther`.
+    static let currentVersion = 2
 
     var version: Int
     /// The script most of the document's letters are in. Han for Chinese and Japanese (kana counts
@@ -124,6 +126,14 @@ struct DocumentLanguageProfile: Codable, Equatable, Sendable {
     static let minimumScriptShare = 0.5
     /// Below this recogniser probability no language is named (provisional until Plan JY P3).
     static let minimumConfidence = 0.8
+    /// A Latin document is named a language other than English only with at least this many Latin
+    /// letters and at least this recogniser probability (Plan JY P2); otherwise it keeps today's
+    /// English rule. An English vault must stay byte-identical, and a team learning or a short
+    /// note is a sentence or two that the recogniser can call Dutch or Italian. The accepted cost:
+    /// a short German or French document is read as English until it is longer. Non-Latin scripts
+    /// keep `minimumLetters` and `minimumConfidence` — no English rule is at stake there.
+    static let minimumLatinLettersForOther = 400
+    static let minimumLatinConfidenceForOther = 0.9
     /// How much of the main script's text the recogniser reads: evenly spaced windows, so a
     /// bilingual cover page does not decide a whole manual.
     static let sampleWindows = 8
@@ -172,7 +182,12 @@ struct DocumentLanguageProfile: Codable, Equatable, Sendable {
             }
             return recognised(text, script: .han, among: chineseLanguages, share: share, settled: settled)
         case .latin:
-            return recognised(text, script: .latin, among: latinLanguages, share: share, settled: settled)
+            let profile = recognised(text, script: .latin, among: latinLanguages, share: share, settled: settled)
+            guard let language = profile.language, language != NLLanguage.english.rawValue else { return profile }
+            guard main.1 >= minimumLatinLettersForOther, profile.confidence >= minimumLatinConfidenceForOther else {
+                return DocumentLanguageProfile(script: .latin, language: nil, confidence: 0, scriptShare: share)
+            }
+            return profile
         case .cyrillic:
             return recognised(text, script: .cyrillic, among: cyrillicLanguages, share: share, settled: settled)
         case .arabic:

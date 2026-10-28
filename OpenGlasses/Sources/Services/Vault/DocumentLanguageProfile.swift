@@ -199,26 +199,37 @@ struct DocumentLanguageProfile: Codable, Equatable, Sendable {
         return DocumentLanguageProfile(script: script, language: best.0.rawValue, confidence: best.1, scriptShare: share)
     }
 
-    /// The text with every letter not of `script` (kana counting as Han) turned into a space, cut
-    /// to `sampleWindows` evenly spaced windows when it is long.
+    /// The words of `script` in `text` (kana counting as Han), joined by spaces, so the recogniser
+    /// reads only the main script's own language; cut, when long, to `sampleWindows` evenly
+    /// spaced windows of whole words, so a cover page in another language does not decide a
+    /// manual.
     static func sample(of text: String, script: TextScript) -> String {
-        var kept = String()
-        kept.reserveCapacity(min(text.utf8.count, sampleWindows * sampleWindowLength * 4))
+        var words: [String] = []
+        var current = String()
         for character in text {
-            if let letter = TextScript.of(character) {
-                let same = letter == script || (script == .han && letter == .kana)
-                kept.append(same ? character : " ")
-            } else {
-                kept.append(character)
+            if let letter = TextScript.of(character), letter == script || (script == .han && letter == .kana) {
+                current.append(character)
+            } else if !current.isEmpty {
+                words.append(current)
+                current = String()
             }
         }
-        let characters = Array(kept)
-        let budget = sampleWindows * sampleWindowLength
-        guard characters.count > budget else { return kept }
-        let stride = characters.count / sampleWindows
-        return (0..<sampleWindows).map { window in
-            let start = window * stride
-            return String(characters[start..<min(start + sampleWindowLength, characters.count)])
-        }.joined(separator: "\n")
+        if !current.isEmpty { words.append(current) }
+        let joined = words.joined(separator: " ")
+        guard joined.count > sampleWindows * sampleWindowLength else { return joined }
+        let stride = max(1, words.count / sampleWindows)
+        var windows: [String] = []
+        for window in 0..<sampleWindows {
+            var piece: [String] = []
+            var length = 0
+            var index = window * stride
+            while index < words.count, length < sampleWindowLength {
+                piece.append(words[index])
+                length += words[index].count + 1
+                index += 1
+            }
+            if !piece.isEmpty { windows.append(piece.joined(separator: " ")) }
+        }
+        return windows.joined(separator: "\n")
     }
 }

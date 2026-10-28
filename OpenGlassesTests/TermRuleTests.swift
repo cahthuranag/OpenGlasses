@@ -24,7 +24,7 @@ final class TermRuleTests: XCTestCase {
             XCTAssertEqual(LexicalSupport.termCounts(text, rule: .english).length, LexicalSupport.termCounts(text).length, text)
             XCTAssertEqual(TermRule.english.termSequence(text), LexicalSupport.englishTermSequence(text), text)
         }
-        XCTAssertEqual(LexicalSupport.contentTerms("pressures gases clocking"), ["pressure", "gas", "clock"])
+        XCTAssertEqual(LexicalSupport.contentTerms("pressures matches clocking"), ["pressure", "match", "clock"])
     }
 
     func testTheEnglishStatisticsAreTodays() {

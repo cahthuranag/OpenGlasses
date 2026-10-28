@@ -136,8 +136,10 @@ final class DocumentLanguageProfileTests: XCTestCase {
         XCTAssertEqual(profile.script, .cyrillic)
         XCTAssertEqual(profile.language, "uk")
         let sample = DocumentLanguageProfile.sample(of: cover + body, script: .cyrillic)
+        // Whole words, so a window may run past its length by the last word.
         XCTAssertLessThanOrEqual(sample.count,
-                                 DocumentLanguageProfile.sampleWindows * DocumentLanguageProfile.sampleWindowLength + DocumentLanguageProfile.sampleWindows)
+                                 DocumentLanguageProfile.sampleWindows * (DocumentLanguageProfile.sampleWindowLength + 64))
+        XCTAssertFalse(sample.contains("Installation"), "only the main script's words are read")
     }
 
     func testTheProfileRoundTripsThroughJSON() throws {

@@ -1,14 +1,14 @@
 # Plan JY — Manuals in Every Interface Language (search keyed on the document's script)
 
-**Status:** 🚧 P0 built 2026-10-29 (PR pending): `DocumentLanguageProfile` (script by a weighted
+**Status:** 🚧 P0 merged 2026-10-29 (PR 877): `DocumentLanguageProfile` (script by a weighted
 letter count, then language by a constrained recogniser) is recorded per document in a nullable
 `documents.language_profile` column and backfilled from stored text on first use, and `TermRule`
 (`.english` unchanged, `.prefixStem` with per-language stopwords, `.arabicStem`, `.bigram`) now
 cuts both the question and each passage under that document's rule in the term search, BM25F
 statistics, the evidence gate, the back-of-book index and the table directory; `CodeTokenizer`
 splits codes off Han, kana, Hangul, Cyrillic and Arabic letters. The gate's fractions for the
-non-English rules are the English ones, provisional until P3. **P1 built 2026-10-29 (PR
-pending):** each document is embedded with its own script's model (`EmbeddingScript`: Latin
+non-English rules are the English ones, provisional until P3. **P1 merged 2026-10-29 (PR
+878):** each document is embedded with its own script's model (`EmbeddingScript`: Latin
 unchanged, Cyrillic, Arabic, CJK, and Urdu on the model Apple maps `ur` to — measured below) or
 with none, never another script's; a document whose model is missing is stored without vectors
 and healed when it lands (`VaultEmbeddingUpgrade` per vault and script, lazily for the Documents
@@ -18,8 +18,8 @@ the phone's languages' script models ahead (`ScriptModelAssets`), and indexing w
 for a download under way. Each manual's language and "searching by words" state show in My Manuals
 and Custom Vaults; every document's profile and model in the Developer panel and support report.
 Semantic memory and voice skills stay on today's model (P1 item 5 deferred: one ranked list can't
-mix two models' cosine scales, and a memory is too short to settle a script). **P2 built 2026-10-29
-(PR pending):** `manual_lookup` takes optional `queries` (the question rewritten per manual language)
+mix two models' cosine scales, and a memory is too short to settle a script). **P2 merged 2026-10-29
+(PR 879):** `manual_lookup` takes optional `queries` (the question rewritten per manual language)
 and the searched manuals are searched once per language group, each with its own question, merged
 by reciprocal rank with each group's gate verdict kept; the vault prompt, My Manuals and lookup
 results name each manual's language, and a manual in another script that missed without a rewrite

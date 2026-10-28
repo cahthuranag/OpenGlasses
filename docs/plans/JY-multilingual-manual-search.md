@@ -18,7 +18,14 @@ the phone's languages' script models ahead (`ScriptModelAssets`), and indexing w
 for a download under way. Each manual's language and "searching by words" state show in My Manuals
 and Custom Vaults; every document's profile and model in the Developer panel and support report.
 Semantic memory and voice skills stay on today's model (P1 item 5 deferred: one ranked list can't
-mix two models' cosine scales, and a memory is too short to settle a script). P2–P5 not started.
+mix two models' cosine scales, and a memory is too short to settle a script). **P2 built 2026-10-29
+(PR pending):** `manual_lookup` takes optional `queries` (the question rewritten per manual language)
+and the searched manuals are searched once per language group, each with its own question, merged
+by reciprocal rank with each group's gate verdict kept; the vault prompt, My Manuals and lookup
+results name each manual's language, and a manual in another script that missed without a rewrite
+gets a hint to retry in its language (`ManualLanguageSearch`). Deferred: `equipment_lookup`'s manual
+fall-through and the nearest-headings search stay ungrouped, and whether each provider's model
+fills `queries` is a device check. P3–P5 not started.
 **Drafted:** 2026-10-28. A tester in China asked about using My Manuals
 with research papers. A check of build 581 found that a Chinese PDF indexes but can't be searched,
 and a check of the other interface languages found the same problem in different strengths. The
@@ -278,6 +285,32 @@ the vault prompt list each manual's language, and the tool description tells the
 `query` in the manual's language. When a lookup spans manuals in more than one language, it
 searches once per language and merges the results. The answer is spoken in the wearer's language
 and cites the original page (owner decision 2). No translation service is added.
+
+**Built (2026-10-29).** `ManualLanguageSearch` (pure) and its callers:
+
+- **Groups.** Each searched document's group is its profile's language (`en`, `de` … `zh-Hans`,
+  `ja`, `ko`). An unsure Latin document and one in no interface script search with English, so a
+  library of English manuals stays one group; an unsure Cyrillic document is its own group.
+- **`queries`.** A list of `{language, query}` items beside `query` (a list, not a free-keyed
+  object: every provider's schema form and the on-device bridge take a list of fixed-key objects).
+  Read defensively: a `{code: query}` object is accepted too, a code in any case or with a region
+  (`pt-BR`, `zh_TW`) or an English name is canonicalised, anything else is ignored, one rewrite per
+  language, each cut to 400 characters. Simplified and Traditional stand in for each other.
+- **Search.** One group: today's single retrieval, with that language's rewrite if one was passed.
+  Several: a retriever scoped to each group's documents (`makeRetriever(scope:)`) searches with its
+  rewrite or `query`, and the outcomes merge by reciprocal rank (k = 60), never by score, so a
+  Latin passage at 0.95 doesn't bury a CJK group's best at 0.55. Only passages that cleared their
+  group's gate merge; the lookup is insufficient only when every group is, and a sufficient merge
+  keeps a manual passage. The per-turn prompt searches the same way, so a mixed vault no longer
+  ranks two script models' cosines in one list. My Manuals already searched each selected manual on
+  its own and interleaved them; each now gets its language's rewrite.
+- **What the model reads.** The vault prompt (`MANUAL LANGUAGES`) and My Manuals' selection line
+  list each manual's title (JSON, untrusted) with its language, and a lookup's result opens with
+  the languages searched and their counts, all only when a manual isn't English. A group in
+  another script than the question that found nothing without a rewrite gets one hint to retry in
+  its language (it replaces the first miss's "don't rephrase" line; the second miss still says stop).
+  The tool description asks for `query` in the manual's language and for `queries` when the manuals
+  span languages, and to answer in the wearer's language citing the original page.
 
 ### P3 — Calibration by language group
 

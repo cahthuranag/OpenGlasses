@@ -180,7 +180,7 @@ a Chinese passage is still read as Latin.
 
 - **Never another script's model.** "Lexical only" means the passages are stored without a vector
   and tagged so the existing `EmbeddingVersion` self-heal embeds them once the asset lands. Until
-  then the gate judges them under the stricter lexical rule (decision 5).
+  then the gate judges them under the stricter lexical rule (decision 6).
 - **Mixed libraries already work.** `DocumentStore.QueryVectors` already embeds the question once
   per stored version tag, so each passage is compared with a question vector from its own model.
 
@@ -210,10 +210,18 @@ P0 is shippable on its own. Every language gets keyword answers before any embed
 
 1. At ingest, the profile chooses the model (the table above), and other-script models are never
    used. Passages are stored lexical-only and healed once the asset lands.
-2. **Assets:** a document's script asset is requested when the document is added, and the phone's
-   preferred languages' assets at launch. The download needs a network connection and is never a
-   prerequisite for adding a manual. Until it lands, the upload screen's indexing note says search
-   will improve once the language model has downloaded.
+2. **Assets (decision 6): download the model so it's there when it's needed.**
+   - When My Manuals or Field Assist is in use, the models for the phone's preferred languages'
+     scripts are fetched ahead of time: when the feature is turned on or its plan starts, and
+     again at launch if one is missing.
+   - Adding a manual requests its own script's model too, if that one isn't already on the phone.
+   - Indexing waits briefly for a download already under way, then finishes, and the self-heal
+     adds the vectors when the model lands.
+   - The download needs a network connection and is never a prerequisite for adding a manual.
+     While a model is missing, the upload screen's indexing note says search will improve once
+     the language model has downloaded.
+   - Other surfaces (Documents, memory) use a model if it's already on the phone. They don't
+     trigger downloads by themselves.
 3. **Urdu:** measure whether the model Apple maps `ur` to reads Arabic-script Urdu. If it doesn't,
    Urdu stays lexical only.
 4. **Mixed-library test:** a test pins per-tag query vectors with Latin, Cyrillic and CJK
@@ -231,9 +239,24 @@ and cites the original page (owner decision 2). No translation service is added.
 
 ### P3 — Calibration by language group
 
-Run `Scripts/retrieval-eval` for each group, in the order of decision 5. Use in-scope and
-out-of-scope questions and measure recall@4, hit@1 and refusals, as EJ and IV did. Each run sets
-that group's prefix length, stopwords and shared fraction, and its table is recorded in this plan.
+Run `Scripts/retrieval-eval` for each group, in the order of decision 5: CJK, Cyrillic, the Latin
+groups, then Arabic script. Use in-scope and out-of-scope questions and measure recall@4, hit@1 and
+refusals, as EJ and IV did. Each run sets that group's prefix length, stopwords and shared
+fraction, and its table is recorded in this plan.
+
+**The sets (decision 7).**
+- **Baseline: parallel texts.** The baseline is widely available literature published in many
+  languages: openly licensed or public-domain texts in as many of the 19 interface languages as
+  can be found. One question set with one answer key (the passage that answers each question) is
+  written once and carried into each language, with a native-speaker check for the priority
+  groups. Because the documents say the same thing in every language, one group can be compared
+  with another directly.
+- **What the baseline can't show.** Literature isn't laid out like a manual: it has no tables,
+  model numbers or numbered sections. Each group's baseline is therefore followed by at least one
+  real technical document in that language, held off-repo like the partner books, before the
+  group drops its "less tested" mark.
+- **Gaps.** Where no parallel text exists for a language, that group's measurement uses its own
+  documents, and the table says so.
 
 | Group | Languages | Rule |
 |---|---|---|
@@ -265,7 +288,7 @@ Measured against the P3 sets before anything changes:
   the phone's language and in English, against manuals in both.
 - The tester who raised this checks with their own papers. Their documents never enter the repo.
 
-## Decisions owed
+## Decisions (5–7 taken 2026-10-28; 1–4 owed, defaults proceed unless revisited)
 
 1. **Prefix length:** 6 to start. Recommended: one length per group, set by P3.
 2. **Bigrams or `NLTokenizer` words for CJK.** Recommended: bigrams. They need no dictionary, give
@@ -276,14 +299,17 @@ Measured against the P3 sets before anything changes:
 4. **German compounds.** Recommended: accept the loss for now (prefixes catch the first part of a
    compound, and vectors catch some of the rest) and measure in P3 before considering
    decompounding.
-5. **Order of the P3 groups.** This is a market call. Suggested: CJK first (a tester is waiting),
-   then Cyrillic, then the other Latin groups, then Arabic script.
-6. **Gate rule while a document has no vectors.** Recommended: a stricter lexical rule, a higher
-   shared fraction, until the vectors exist. The alternative is not answering at all until the
-   asset arrives.
-7. **Measurement sets.** Documents for each group in P3, kept off-repo like the partner books:
-   openly licensed texts, or the owner's own. Test fixtures in the repo are invented sentences
-   only.
+5. ✅ **Order of the P3 groups** (decided 2026-10-28): CJK first (a tester is waiting), then
+   Cyrillic, then the Latin groups, then Arabic script.
+6. ✅ **Documents without vectors** (decided 2026-10-28): download the model rather than live
+   without it. My Manuals and Field Assist fetch the script model ahead of time (P1, item 2), so
+   a document is rarely without vectors. When it is anyway (no network, or the download failed),
+   the gate uses a stricter lexical rule (a higher shared fraction) until the vectors arrive.
+7. ✅ **Measurement sets** (decided 2026-10-28): the baseline is widely available literature
+   published in many languages (P3). Parallel texts let one question set and one answer key
+   serve every language, so differences between groups come from the language, not from the
+   documents. Kept off-repo like the partner books. Test fixtures in the repo are invented
+   sentences only.
 
 ## Out of scope
 

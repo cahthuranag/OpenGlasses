@@ -112,7 +112,9 @@ final class TableLookupTool: NativeTool {
         // checks of them, keyed by each captured revision's identity. Not an edition of a vault
         // manual, so never filtered by one.
         stored += capturedTables(vaultId: vaultId, session: session, documentStore: documentStore)
-        return stored.map { TableLookup.Source(documentId: $0.documentId, documentName: $0.documentName, table: $0.table) }
+        return stored.map {
+            TableLookup.Source(documentId: $0.documentId, documentName: $0.documentName, table: $0.table, termRule: $0.termRule)
+        }
     }
 
     /// The stored tables of the photographed manuals eligible for the active job (Plan JN P4) — the

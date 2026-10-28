@@ -13,6 +13,10 @@ import Foundation
 /// Sibling of [[CodeTokenizer]], and deliberately as dumb: lowercase, letters only, four or more
 /// characters, a short stopword list, one pass of suffix trimming. No stemmer, no language model —
 /// the point is that the same query gives the same answer on every device and in every test.
+///
+/// Those are English rules. A document in another language is read under its own [[TermRule]]
+/// (Plan JY P0), chosen by its [[DocumentLanguageProfile]]: the `rule:` forms below. The forms
+/// without a rule are the English rule, unchanged, and what `TermRule.english` is.
 enum LexicalSupport {
 
     /// Function words long enough to survive the four-letter cut. Everything shorter ("the", "for",
@@ -38,18 +42,19 @@ enum LexicalSupport {
     /// counts as evidence on its own, so counting it twice here would let a bare model number carry
     /// a question the manual does not answer.
     static func contentTerms(_ text: String) -> Set<String> {
-        Set(termSequence(text))
+        Set(englishTermSequence(text))
     }
 
     /// Each content term's count in `text`, and how many there were in all — `contentTerms`
     /// counted rather than collected, for [[TermStatistics]].
     static func termCounts(_ text: String) -> (counts: [String: Int], length: Int) {
-        let sequence = termSequence(text)
+        let sequence = englishTermSequence(text)
         return (sequence.reduce(into: [:]) { $0[$1, default: 0] += 1 }, sequence.count)
     }
 
-    /// The content terms of `text` in reading order, repeats kept.
-    private static func termSequence(_ text: String) -> [String] {
+    /// The content terms of `text` in reading order, repeats kept, under the English rule — today's
+    /// rule, which [[TermRule]] `.english` is.
+    static func englishTermSequence(_ text: String) -> [String] {
         text.lowercased().components(separatedBy: CharacterSet.letters.inverted).compactMap { run in
             guard run.count >= minimumLength, !stopwords.contains(run) else { return nil }
             let stem = trimSuffix(run)
@@ -62,6 +67,54 @@ enum LexicalSupport {
     static func sharedTermCount(text: String, queryTerms: Set<String>) -> Int {
         guard !queryTerms.isEmpty else { return 0 }
         return queryTerms.intersection(contentTerms(text)).count
+    }
+
+    // MARK: - By rule (Plan JY P0)
+
+    /// `contentTerms` under `rule`. `.english` is exactly `contentTerms(_:)`.
+    static func contentTerms(_ text: String, rule: TermRule) -> Set<String> {
+        Set(rule.termSequence(text))
+    }
+
+    /// `termCounts` under `rule`. `.english` is exactly `termCounts(_:)`.
+    static func termCounts(_ text: String, rule: TermRule) -> (counts: [String: Int], length: Int) {
+        let sequence = rule.termSequence(text)
+        return (sequence.reduce(into: [:]) { $0[$1, default: 0] += 1 }, sequence.count)
+    }
+
+    /// How many of `queryTerms` — the question's terms under the same `rule` — appear in `text`
+    /// read under `rule`.
+    static func sharedTermCount(text: String, queryTerms: Set<String>, rule: TermRule) -> Int {
+        guard !queryTerms.isEmpty else { return 0 }
+        return queryTerms.intersection(contentTerms(text, rule: rule)).count
+    }
+
+    /// How many of the question's terms under `rule` appear in `text` read under `rule` — the
+    /// comparison a passage of a document read with `rule` gets.
+    static func sharedTermCount(text: String, question: QueryTerms, rule: TermRule) -> Int {
+        sharedTermCount(text: text, queryTerms: question.terms(for: rule), rule: rule)
+    }
+
+    /// A question's content terms under every [[TermRule]], made once (Plan JY P0), so each
+    /// passage is compared with the question cut the way the passage's own document is. A question
+    /// is a few words, so making all of them costs nothing next to reading one passage.
+    struct QueryTerms: Equatable, Sendable {
+        let text: String
+        private let byRule: [TermRule: Set<String>]
+
+        init(_ text: String) {
+            self.text = text
+            byRule = Dictionary(uniqueKeysWithValues: TermRule.allCases.map { ($0, LexicalSupport.contentTerms(text, rule: $0)) })
+        }
+
+        /// The question's terms under `rule`.
+        func terms(for rule: TermRule) -> Set<String> { byRule[rule] ?? LexicalSupport.contentTerms(text, rule: rule) }
+
+        /// The question's terms under today's English rule — `contentTerms(text)`.
+        var english: Set<String> { terms(for: .english) }
+
+        /// The question has no content term under any rule.
+        var isEmpty: Bool { byRule.values.allSatisfy(\.isEmpty) }
     }
 
     /// One pass of suffix trimming. Approximate by design: "clocking" → "clock" and "pressures" →
@@ -97,7 +150,14 @@ extension LexicalSupport {
         init() {}
 
         mutating func add(text: String, heading: String?) {
-            let body = LexicalSupport.termCounts(text), head = LexicalSupport.termCounts(heading ?? "")
+            add(text: text, heading: heading, rule: .english)
+        }
+
+        /// A chunk read under its document's rule (Plan JY P0). A corpus of documents in several
+        /// languages keeps one table: each rule's terms are its own strings, so they count apart.
+        mutating func add(text: String, heading: String?, rule: TermRule) {
+            let body = LexicalSupport.termCounts(text, rule: rule)
+            let head = LexicalSupport.termCounts(heading ?? "", rule: rule)
             for term in Set(body.counts.keys).union(head.counts.keys) { documentFrequency[term, default: 0] += 1 }
             chunkCount += 1
             bodyLength += body.length
@@ -123,11 +183,19 @@ extension LexicalSupport {
         /// whole corpus prints counts for little; one printed in a section's heading counts most.
         func score(queryTerms: Set<String>, text: String, heading: String?,
                    headingWeight: Double = Self.headingWeight) -> Double {
+            score(queryTerms: queryTerms, text: text, heading: heading, rule: .english, headingWeight: headingWeight)
+        }
+
+        /// `score` with the chunk read under its document's rule, against the question's terms
+        /// under the same rule (Plan JY P0).
+        func score(queryTerms: Set<String>, text: String, heading: String?, rule: TermRule,
+                   headingWeight: Double = Self.headingWeight) -> Double {
             guard !queryTerms.isEmpty else { return 0 }
             let k1 = 1.2, b = 0.75
             let n = Double(max(chunkCount, 1))
             let averageBody = max(1, Double(bodyLength) / n), averageHeading = max(1, Double(headingLength) / n)
-            let body = LexicalSupport.termCounts(text), head = LexicalSupport.termCounts(heading ?? "")
+            let body = LexicalSupport.termCounts(text, rule: rule)
+            let head = LexicalSupport.termCounts(heading ?? "", rule: rule)
             let bodyNorm = 1 - b + b * Double(body.length) / averageBody
             let headNorm = 1 - b + b * Double(head.length) / averageHeading
             var score = 0.0

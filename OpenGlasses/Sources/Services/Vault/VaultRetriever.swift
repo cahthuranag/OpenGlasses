@@ -80,6 +80,9 @@ struct VaultRetriever {
         /// passage of the page it is printed on. Ranks ahead of everything else, the clause's own
         /// text included.
         var tableMatch = false
+        /// The rule the passage's document is read with (Plan JY P0); the question is compared
+        /// with it under the same rule. A passage built without one is read with today's.
+        var termRule: TermRule = .english
 
         typealias Source = RetrievalSource
 
@@ -283,8 +286,9 @@ struct VaultRetriever {
 
         // The lexical criterion compares a passage against everything that was searched, not just
         // the spoken turn: a nameplate's words and the running procedure step are as much a part of
-        // what was asked as the sentence is.
-        let queryTerms = LexicalSupport.contentTerms(parts.joined(separator: " "))
+        // what was asked as the sentence is. The question is cut into terms under every rule, and
+        // each passage compared under its own document's (Plan JY P0).
+        let question = LexicalSupport.QueryTerms(parts.joined(separator: " "))
 
         // The exact-token search runs first, because what it finds decides which tokens count.
         // Its hits come back in document order, so for a token printed in more passages than the
@@ -307,7 +311,7 @@ struct VaultRetriever {
                 var hits = tokenSearch(token, searchLimit + 1)
                 if hits.count > searchLimit {
                     if CodeTokenizer.isNumber(token) { continue }
-                    hits = Self.sharingMostWords(tokenSearch(token, Int.max), queryTerms: queryTerms,
+                    hits = Self.sharingMostWords(tokenSearch(token, Int.max), question: question,
                                                  limit: searchLimit)
                 }
                 tokenHits[token] = hits
@@ -389,7 +393,7 @@ struct VaultRetriever {
         // page of a long table it is on.
         if let tableSearch {
             for label in tables {
-                Self.sharingMostWords(tableSearch(label), queryTerms: queryTerms, limit: searchLimit)
+                Self.sharingMostWords(tableSearch(label), question: question, limit: searchLimit)
                     .forEach { consider($0, foundForTable: label) }
             }
         }
@@ -399,7 +403,7 @@ struct VaultRetriever {
         // sentence embedder ranked that passage 159th of 708, below a page of diagnostic-code
         // table rows that merely mention a flame. An embedder that cannot see a passage leaves it
         // unreachable unless something else proposes it; the question's own words do.
-        if let termSearch, !queryTerms.isEmpty {
+        if let termSearch, !question.isEmpty {
             for q in queries {
                 termSearch(q, searchLimit).forEach { consider($0) }
             }
@@ -452,11 +456,12 @@ struct VaultRetriever {
         // from one that mentions it in passing. Measured at the shipped candidate depth with the
         // device models: the answering passage first 0.35 → 0.39 of a code book's local answer key
         // (contextual model) and 0.67 → 0.83 of the field manual pair's, with no question lost.
-        let statistics = candidates.isEmpty || queryTerms.isEmpty ? nil : termStatistics?()
+        let statistics = candidates.isEmpty || question.isEmpty ? nil : termStatistics?()
         let lexical = Dictionary(candidates.map { passage in
             (Self.key(passage), statistics.map {
-                $0.score(queryTerms: queryTerms, text: passage.text, heading: passage.section)
-            } ?? Double(LexicalSupport.sharedTermCount(text: passage.text, queryTerms: queryTerms)))
+                $0.score(queryTerms: question.terms(for: passage.termRule), text: passage.text,
+                         heading: passage.section, rule: passage.termRule)
+            } ?? Double(LexicalSupport.sharedTermCount(text: passage.text, question: question, rule: passage.termRule)))
         }, uniquingKeysWith: max)
         let ranked = candidates.sorted { a, b in
             if group(a) != group(b) { return group(a) > group(b) }
@@ -473,7 +478,7 @@ struct VaultRetriever {
             let words = (lexical[Self.key(a)] ?? 0, lexical[Self.key(b)] ?? 0)
             return words.0 != words.1 ? words.0 > words.1 : precedes(a, b)
         }
-        return policy.decide(ranked, limit: request.limit, queryTerms: queryTerms)
+        return policy.decide(ranked, limit: request.limit, question: question)
     }
 
     private static func key(_ p: Passage) -> String { "\(p.documentId)#\(p.chunkIndex)" }
@@ -488,13 +493,30 @@ struct VaultRetriever {
     }
 
     /// The `limit` passages sharing the most of the question's content terms, ties in the order
-    /// given (document order, from the token search).
+    /// given (document order, from the token search). `queryTerms` are compared under today's
+    /// English rule whatever the passages' documents are; `sharingMostWords(_:question:limit:)`
+    /// compares each passage under its own.
     static func sharingMostWords(_ passages: [DocumentStore.Passage], queryTerms: Set<String>,
                                  limit: Int) -> [DocumentStore.Passage] {
+        sharingMostWords(passages, limit: limit) {
+            LexicalSupport.sharedTermCount(text: $0.text, queryTerms: queryTerms)
+        }
+    }
+
+    /// The `limit` passages sharing the most of the question's content terms, each passage
+    /// compared under its own document's rule (Plan JY P0).
+    static func sharingMostWords(_ passages: [DocumentStore.Passage], question: LexicalSupport.QueryTerms,
+                                 limit: Int) -> [DocumentStore.Passage] {
+        sharingMostWords(passages, limit: limit) {
+            LexicalSupport.sharedTermCount(text: $0.text, question: question, rule: $0.termRule)
+        }
+    }
+
+    private static func sharingMostWords(_ passages: [DocumentStore.Passage], limit: Int,
+                                         shared count: (DocumentStore.Passage) -> Int) -> [DocumentStore.Passage] {
         // Typed step by step: as one chain this took seconds to type-check (Plan JW P1a).
         let counted: [(offset: Int, passage: DocumentStore.Passage, shared: Int)] = passages.enumerated().map { item in
-            (offset: item.offset, passage: item.element,
-             shared: LexicalSupport.sharedTermCount(text: item.element.text, queryTerms: queryTerms))
+            (offset: item.offset, passage: item.element, shared: count(item.element))
         }
         let ranked = counted.sorted { (a, b) -> Bool in a.shared != b.shared ? a.shared > b.shared : a.offset < b.offset }
         return ranked.prefix(limit).map { $0.passage }
@@ -513,7 +535,7 @@ struct VaultRetriever {
                        modelPenalty: penalty,
                        recognisedFromScan: raw.source.isReference && (provenance?(raw.documentId) ?? false),
                        kind: raw.kind, figure: raw.figure, source: raw.source, printedPage:raw.printedPage,
-                       editionLabel: raw.editionLabel)
+                       editionLabel: raw.editionLabel, termRule: raw.termRule)
     }
 
     // MARK: - Rendering
@@ -740,6 +762,24 @@ struct RetrievalEvidencePolicy: Equatable {
         return min(minSharedTerms, max(1, Int(ceil(sharedFraction * Double(queryTermCount)))))
     }
 
+    /// The shared-term count a question of `queryTermCount` terms under `rule` has to meet (Plan
+    /// JY P0), the terms counted under that rule.
+    ///
+    /// `.english` is `requiredSharedTerms(queryTermCount:)`, with the measured counts and
+    /// per-backend fractions below. **The other rules are provisional:** they use the same
+    /// formula and the same numbers until Plan JY P3 measures each language group. The numbers
+    /// already fit their terms in the cases P0 pins: a prefix-stemmed Ukrainian question of four
+    /// terms needs three, and a Chinese question cut into twelve bigrams needs the full three —
+    /// the question-word pieces are dropped, but the pieces across word boundaries ("用了",
+    /// "法来") are not, so a fraction of the bigram count would ask too much and the flat
+    /// `minSharedTerms` is what binds.
+    func requiredSharedTerms(queryTermCount: Int, rule: TermRule) -> Int {
+        switch rule {
+        case .english, .prefixStem, .arabicStem, .bigram:
+            return requiredSharedTerms(queryTermCount: queryTermCount)
+        }
+    }
+
     /// The defaults measured for an embedding backend, chosen by [[Embedder]] `modelId` prefix.
     ///
     /// - `nl-word` — **measured** on the Lennox pair (see the type's doc comment). The floor stays
@@ -790,6 +830,9 @@ struct RetrievalEvidencePolicy: Equatable {
     /// Whether a passage is evidence. `bestSimilarity` and `queryTerms` are what the relative and
     /// lexical criteria need; omitting either switches that criterion off, so the two-argument form
     /// is exactly the original floor-or-token gate.
+    ///
+    /// `queryTerms` are compared under today's English rule, whatever the passage's document is;
+    /// `isEvidence(_:bestSimilarity:question:)` compares under the passage's own rule.
     func isEvidence(_ passage: VaultRetriever.Passage,
                     bestSimilarity: Float? = nil,
                     queryTerms: Set<String>? = nil) -> Bool {
@@ -805,12 +848,41 @@ struct RetrievalEvidencePolicy: Equatable {
         return true
     }
 
+    /// Whether a passage is evidence, its lexical criterion read under the passage's own rule
+    /// (Plan JY P0): the question's terms under that rule, counted against the passage cut the
+    /// same way, and the count required of a question of that many such terms. For a passage of
+    /// an English document this is `isEvidence(_:bestSimilarity:queryTerms:)` with the question's
+    /// English terms.
+    func isEvidence(_ passage: VaultRetriever.Passage, bestSimilarity: Float? = nil,
+                    question: LexicalSupport.QueryTerms) -> Bool {
+        if !passage.matchedTokens.isEmpty { return true }
+        guard passage.similarity >= similarityFloor else { return false }
+        if let bestSimilarity, margin.isFinite, passage.similarity < bestSimilarity - margin { return false }
+        if minSharedTerms > 0 {
+            let terms = question.terms(for: passage.termRule)
+            let required = requiredSharedTerms(queryTermCount: terms.count, rule: passage.termRule)
+            guard LexicalSupport.sharedTermCount(text: passage.text, queryTerms: terms, rule: passage.termRule) >= required
+            else { return false }
+        }
+        return true
+    }
+
     /// The gate. **A team learning is never sufficient alone** (Plan FP §5): `.sufficient` needs a
     /// manual passage among the evidence, and then learnings that also cleared ride beside it;
     /// when only learnings clear, the outcome is the named `.teamLearningOnly`.
     func decide(_ ranked: [VaultRetriever.Passage], limit: Int, queryTerms: Set<String>? = nil) -> RetrievalOutcome {
         let best = ranked.map(\.similarity).max()
-        let evidence = ranked.filter { isEvidence($0, bestSimilarity: best, queryTerms: queryTerms) }
+        return decide(limit: limit, evidence: ranked.filter { isEvidence($0, bestSimilarity: best, queryTerms: queryTerms) })
+    }
+
+    /// The gate with each passage's lexical criterion read under its own document's rule (Plan JY
+    /// P0) — what retrieval runs.
+    func decide(_ ranked: [VaultRetriever.Passage], limit: Int, question: LexicalSupport.QueryTerms) -> RetrievalOutcome {
+        let best = ranked.map(\.similarity).max()
+        return decide(limit: limit, evidence: ranked.filter { isEvidence($0, bestSimilarity: best, question: question) })
+    }
+
+    private func decide(limit: Int, evidence: [VaultRetriever.Passage]) -> RetrievalOutcome {
         guard !evidence.isEmpty else { return .insufficient(reason: Self.insufficientSentence) }
         let take = max(limit, 1)
         guard let bestManual = evidence.first(where: { $0.source.isReference }) else {

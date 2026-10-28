@@ -225,7 +225,7 @@ final class ManualFigureTool: NativeTool {
         VaultRetriever.Passage(documentId: p.documentId, documentName: p.documentName,
                                chunkIndex: p.chunkIndex, text: p.text, page: p.page, section: p.section,
                                similarity: p.similarity, score: p.similarity, matchedTokens: [],
-                               kind: p.kind, figure: p.figure)
+                               kind: p.kind, figure: p.figure, termRule: p.termRule)
     }
 }
 

@@ -74,8 +74,10 @@ enum EmbeddingBenchmark {
                                     limit: Int = 4) -> Double {
         guard !results.isEmpty else { return 0 }
         let refused = results.reduce(0) { acc, r in
-            let terms = LexicalSupport.contentTerms(r.query)
-            return policy.decide(r.ranked, limit: limit, queryTerms: terms).isSufficient ? acc : acc + 1
+            // Each passage under its own document's rule (Plan JY P0); the built-in corpus is
+            // English, so every passage here is read with the English rule.
+            return policy.decide(r.ranked, limit: limit, question: LexicalSupport.QueryTerms(r.query)).isSufficient
+                ? acc : acc + 1
         }
         return Double(refused) / Double(results.count)
     }

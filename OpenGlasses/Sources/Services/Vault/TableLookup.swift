@@ -19,11 +19,14 @@ enum TableLookup {
         let documentId: String
         let documentName: String
         let table: ManualTable
+        /// The rule the table's document is read with (Plan JY P0).
+        var termRule: TermRule
 
-        init(documentId: String, documentName: String, table: ManualTable) {
+        init(documentId: String, documentName: String, table: ManualTable, termRule: TermRule = .english) {
             self.documentId = documentId
             self.documentName = documentName
             self.table = table
+            self.termRule = termRule
         }
     }
 
@@ -225,7 +228,7 @@ enum TableLookup {
     /// the table the hint named. Words it cannot weigh (a short word, a bare number) fall back to
     /// counting the title words shared, as before.
     private static func byTitle(_ words: String, in pool: [Source]) -> [Source] {
-        let entries = pool.map { TableReference.Entry(table: $0.table, documentName: $0.documentId) }
+        let entries = pool.map { TableReference.Entry(table: $0.table, documentName: $0.documentId, termRule: $0.termRule) }
         let ranked = TableDirectory.ranked(words, in: entries)
         if let best = ranked.first {
             let close = ranked.filter { $0.score >= best.score * titleTieShare }

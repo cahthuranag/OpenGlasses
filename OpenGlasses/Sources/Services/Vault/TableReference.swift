@@ -28,19 +28,24 @@ enum TableReference {
         var documentName: String?
         /// Column heading paths, row-key headings and units, as printed.
         var headings: [String]
+        /// The rule the table's document is read with (Plan JY P0): its title and headings, and a
+        /// question compared with them, are cut this way.
+        var termRule: TermRule
 
-        init(label: String, title: String, documentName: String? = nil, headings: [String] = []) {
+        init(label: String, title: String, documentName: String? = nil, headings: [String] = [],
+             termRule: TermRule = .english) {
             self.label = label
             self.title = title
             self.documentName = documentName
             self.headings = headings
+            self.termRule = termRule
         }
 
         /// A stored table as the directory reads it.
-        init(table: ManualTable, documentName: String? = nil) {
+        init(table: ManualTable, documentName: String? = nil, termRule: TermRule = .english) {
             let columns = table.columns.flatMap { $0.path + ($0.unit.map { [$0] } ?? []) }
             self.init(label: table.label, title: table.title, documentName: documentName,
-                      headings: table.rowHeaders + columns)
+                      headings: table.rowHeaders + columns, termRule: termRule)
         }
     }
 
@@ -108,11 +113,20 @@ enum TableReference {
     static func titled(in text: String, catalogue: [Entry]) -> String? {
         let words = text.lowercased().split { !$0.isLetter }.map(String.init)
         guard words.contains(where: { $0 == "table" || $0 == "tables" }) else { return nil }
-        let asked = LexicalSupport.contentTerms(text).subtracting(LexicalSupport.contentTerms("table tables"))
-        guard !asked.isEmpty else { return nil }
+        // The question's words under each table's document's rule (Plan JY P0).
+        var askedByRule: [TermRule: Set<String>] = [:]
+        func askedTerms(_ rule: TermRule) -> Set<String> {
+            if let known = askedByRule[rule] { return known }
+            let terms = LexicalSupport.contentTerms(text, rule: rule)
+                .subtracting(LexicalSupport.contentTerms("table tables", rule: rule))
+            askedByRule[rule] = terms
+            return terms
+        }
+        guard Set(catalogue.map(\.termRule)).union([.english]).contains(where: { !askedTerms($0).isEmpty }) else { return nil }
         var best: (score: Int, labels: Set<String>) = (0, [])
         for entry in catalogue {
-            let title = LexicalSupport.contentTerms(entry.title)
+            let asked = askedTerms(entry.termRule)
+            let title = LexicalSupport.contentTerms(entry.title, rule: entry.termRule)
             guard !title.isEmpty else { continue }
             let shared = asked.intersection(title).count
             guard shared >= 2, shared == title.count else { continue }

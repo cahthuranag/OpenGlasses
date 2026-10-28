@@ -11,14 +11,15 @@ src="$root/OpenGlasses/Sources/Services"
 build="${RETRIEVAL_EVAL_BUILD_DIR:-${TMPDIR:-/tmp}/retrieval-eval-build}"
 mkdir -p "$build"
 
-swiftc -O -parse-as-library -target "$(uname -m)-apple-macos26.0" -o "$build/retrieval-eval" \
-  "$here/main.swift" "$here/Stubs.swift" \
+swiftc -O -parse-as-library -D RETRIEVAL_EVAL -target "$(uname -m)-apple-macos26.0" -o "$build/retrieval-eval" \
+  "$here/main.swift" "$here/Stubs.swift" "$here/Tuning.swift" \
   "$root/OpenGlassesTests/RetrievalEval/RetrievalEvalCore.swift" \
   "$src/RAG/DocumentStore.swift" "$src/RAG/DocumentReconstructor.swift" "$src/RAG/DocumentChunker.swift" \
   "$src/RAG/Embedder.swift" "$src/RAG/EmbeddingBackend.swift" "$src/RAG/EmbeddingVersion.swift" \
-  "$src/RAG/PassageLocation.swift" \
+  "$src/RAG/PassageLocation.swift" "$src/RAG/EmbeddingScript.swift" \
   "$src/Vault/VaultRetriever.swift" "$src/Vault/ClauseReference.swift" "$src/Vault/CodeTokenizer.swift" \
-  "$src/Vault/LexicalSupport.swift" "$src/Vault/PageReference.swift" "$src/Vault/DocumentEditions.swift" "$src/Vault/BackOfBookIndex.swift" "$src/Vault/ManualPassageLimit.swift" \
+  "$src/Vault/LexicalSupport.swift" "$src/Vault/TermRule.swift" "$src/Vault/TermRuleStopwords.swift" \
+  "$src/Vault/DocumentLanguageProfile.swift" "$src/Vault/PageReference.swift" "$src/Vault/DocumentEditions.swift" "$src/Vault/BackOfBookIndex.swift" "$src/Vault/ManualPassageLimit.swift" \
   "$src/Vault/TableExtractor.swift" "$src/Vault/TableChecks.swift" "$src/Vault/TableRowPassage.swift" "$src/Vault/TableReference.swift" \
   "$src/Vault/PDFTableReader.swift" \
   "$src/Vault/RecognisedTable.swift" "$src/Vault/CellCertainty.swift" "$src/Vault/PictureRegion.swift" \

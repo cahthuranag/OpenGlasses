@@ -1,14 +1,14 @@
 # Plan JY — Manuals in Every Interface Language (search keyed on the document's script)
 
-**Status:** 🚧 P0 built 2026-10-29 (PR pending): `DocumentLanguageProfile` (script by a weighted
+**Status:** 🚧 P0 merged 2026-10-29 (PR 877): `DocumentLanguageProfile` (script by a weighted
 letter count, then language by a constrained recogniser) is recorded per document in a nullable
 `documents.language_profile` column and backfilled from stored text on first use, and `TermRule`
 (`.english` unchanged, `.prefixStem` with per-language stopwords, `.arabicStem`, `.bigram`) now
 cuts both the question and each passage under that document's rule in the term search, BM25F
 statistics, the evidence gate, the back-of-book index and the table directory; `CodeTokenizer`
 splits codes off Han, kana, Hangul, Cyrillic and Arabic letters. The gate's fractions for the
-non-English rules are the English ones, provisional until P3. **P1 built 2026-10-29 (PR
-pending):** each document is embedded with its own script's model (`EmbeddingScript`: Latin
+non-English rules are the English ones, provisional until P3. **P1 merged 2026-10-29 (PR
+878):** each document is embedded with its own script's model (`EmbeddingScript`: Latin
 unchanged, Cyrillic, Arabic, CJK, and Urdu on the model Apple maps `ur` to — measured below) or
 with none, never another script's; a document whose model is missing is stored without vectors
 and healed when it lands (`VaultEmbeddingUpgrade` per vault and script, lazily for the Documents
@@ -18,14 +18,22 @@ the phone's languages' script models ahead (`ScriptModelAssets`), and indexing w
 for a download under way. Each manual's language and "searching by words" state show in My Manuals
 and Custom Vaults; every document's profile and model in the Developer panel and support report.
 Semantic memory and voice skills stay on today's model (P1 item 5 deferred: one ranked list can't
-mix two models' cosine scales, and a memory is too short to settle a script). **P2 built 2026-10-29
-(PR pending):** `manual_lookup` takes optional `queries` (the question rewritten per manual language)
+mix two models' cosine scales, and a memory is too short to settle a script). **P2 merged 2026-10-29
+(PR 879):** `manual_lookup` takes optional `queries` (the question rewritten per manual language)
 and the searched manuals are searched once per language group, each with its own question, merged
 by reciprocal rank with each group's gate verdict kept; the vault prompt, My Manuals and lookup
 results name each manual's language, and a manual in another script that missed without a rewrite
 gets a hint to retry in its language (`ManualLanguageSearch`). Deferred: `equipment_lookup`'s manual
 fall-through and the nearest-headings search stay ungrouped, and whether each provider's model
-fills `queries` is a device check. P3–P5 not started.
+fills `queries` is a device check. **P3 built 2026-10-29 (PR pending):** calibrated on a parallel
+baseline in 17 languages and technical documents in every language but Arabic and Urdu, English identical to `origin/main`: CJK drops
+Japanese hiragana pairs and Korean particles from its bigrams (bigrams kept over `NLTokenizer` words);
+Cyrillic, Latin and Arabic-script words lose one ending before their prefix (7 for Cyrillic and light
+Latin, 6 heavy Latin, 4 Arabic script); heavy Latin's gate asks 0.75 of the question's terms, Arabic's
+0.5; question words added for eight languages. hit@4 holds for CJK (230 of 322, out-of-scope refusals
+52 → 64 of 135) and rises in every other group (Arabic 7 → 21 of 38, Cyrillic 79 → 92 of 163), with
+out-of-scope refusals held or raised except Arabic and Urdu (−2, −1 of 15). Arabic and Urdu stay "less tested". The pending-vector increase stays 0.15 by decision 6, though
+measured it only costs (decision owed). P4–P5 not started.
 **Drafted:** 2026-10-28. A tester in China asked about using My Manuals
 with research papers. A check of build 581 found that a Chinese PDF indexes but can't be searched,
 and a check of the other interface languages found the same problem in different strengths. The
@@ -349,8 +357,158 @@ fraction, and its table is recorded in this plan.
 | Arabic script | ar, ur | `.arabicStem` (ar), `.prefixStem` (ur) |
 | CJK | ja, ko, zh-Hans, zh-Hant | `.bigram` |
 
-A group ships marked "less tested" (Developer panel and support report) until its set has been
-run.
+A group ships marked "less tested" (Developer panel and support report) until its set has been run.
+
+**Built (2026-10-29).** Measured on the Mac runner (`Scripts/retrieval-eval`, now compiling the P0–P2
+sources and each document's own script model) with every interface language's contextual model. Sets,
+off-repo: a parallel baseline of five books of widely published literature in 17 languages (one chapter
+a page; hu and pl have two books), and technical documents — a machinery regulation in nine Latin
+languages (page-aligned), a transport-of-dangerous-goods regulation in en, ru and zh-Hans, a programming
+tutorial in seven languages, and a national machinery regulation in uk. One English question set per
+source (30–38 in scope, 15 out of scope, near misses among them), carried into each language with the
+same pages; the translations are machine-written and owe a native-speaker check. Counts only below.
+
+- **Rule for choosing.** A change is kept when S = hit@4 + 2 × out-of-scope refused − in-scope refused
+  rises over the group's sets: the EJ/IV rule, a confident answer from the wrong manual weighing twice a
+  missed one. One change at a time; a group stops after two changes in a row gain nothing.
+- **English control.** Every English set gives identical numbers on `origin/main`'s code and on P3's
+  (four sets, 139 in-scope and 60 out-of-scope questions): the English rule did not move.
+- **Runner.** `RETRIEVAL_EVAL_PREFIX`, `_MINLEN`, `_ENDINGS`, `_FOLD`, `_CJK`, `_GATE_GROUP` and
+  `_PENDING` set a group's candidate values (`Tuning.swift`, read only under `-D RETRIEVAL_EVAL`, which
+  the app never defines); `RETRIEVAL_EVAL_VECTORS=pending` measures documents as searched while their
+  script model is missing; `RETRIEVAL_EVAL_DETAIL=1` lists each question's expected and returned page
+  numbers; the summary names each document's detected script, language and rule.
+
+**Before → after, per group** (shipped values before P3 → after; English is the control):
+
+#### CJK
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | zh-Hans | 38 | 24 → 24 | 29 → 29 | 29 → 29 | 3 → 3 | 10 → 10 of 15 |
+| transport reg. | zh-Hans | 34 | 12 → 12 | 18 → 18 | 18 → 18 | 1 → 1 | 4 → 4 of 15 |
+| tutorial | zh-Hans | 34 | 11 → 11 | 23 → 23 | 23 → 23 | 3 → 3 | 9 → 9 of 15 |
+| baseline | zh-Hant | 38 | 24 → 24 | 29 → 29 | 29 → 29 | 2 → 2 | 10 → 10 of 15 |
+| tutorial | zh-Hant | 34 | 12 → 12 | 24 → 24 | 24 → 24 | 2 → 2 | 10 → 10 of 15 |
+| baseline | ja | 38 | 20 → 22 | 26 → 28 | 26 → 28 | 0 → 0 | 2 → 7 of 15 |
+| tutorial | ja | 34 | 12 → 13 | 26 → 24 | 26 → 24 | 0 → 0 | 0 → 2 of 15 |
+| baseline | ko | 38 | 22 → 23 | 30 → 31 | 30 → 31 | 1 → 3 | 5 → 8 of 15 |
+| tutorial | ko | 34 | 16 → 15 | 25 → 24 | 25 → 24 | 1 → 1 | 2 → 4 of 15 |
+
+#### Cyrillic
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | ru | 38 | 21 → 23 | 23 → 27 | 23 → 27 | 13 → 8 | 14 → 13 of 15 |
+| transport reg. | ru | 34 | 18 → 17 | 25 → 26 | 27 → 29 | 1 → 1 | 7 → 6 of 15 |
+| baseline | uk | 38 | 5 → 9 | 7 → 11 | 7 → 11 | 28 → 24 | 13 → 13 of 15 |
+| tutorial | uk | 34 | 10 → 14 | 14 → 17 | 14 → 17 | 11 → 7 | 15 → 15 of 15 |
+| national reg. | uk | 19 | 9 → 8 | 10 → 11 | 10 → 11 | 4 → 3 | 10 → 12 of 15 |
+
+#### Latin light
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | es | 38 | 16 → 17 | 21 → 22 | 21 → 22 | 15 → 14 | 13 → 13 of 15 |
+| machinery reg. | es | 33 | 16 → 16 | 25 → 23 | 25 → 23 | 3 → 2 | 10 → 12 of 15 |
+| baseline | fr | 38 | 22 → 23 | 27 → 28 | 27 → 28 | 6 → 6 | 11 → 11 of 15 |
+| machinery reg. | fr | 33 | 19 → 17 | 24 → 24 | 24 → 24 | 3 → 2 | 9 → 8 of 15 |
+| baseline | it | 38 | 23 → 22 | 25 → 25 | 25 → 25 | 11 → 10 | 11 → 11 of 15 |
+| machinery reg. | it | 33 | 19 → 20 | 25 → 25 | 25 → 25 | 0 → 0 | 11 → 12 of 15 |
+| baseline | nl | 38 | 21 → 22 | 24 → 25 | 24 → 25 | 11 → 10 | 10 → 11 of 15 |
+| machinery reg. | nl | 33 | 13 → 12 | 15 → 16 | 15 → 16 | 7 → 7 | 10 → 12 of 15 |
+| baseline | pt-BR | 38 | 27 → 26 | 31 → 33 | 31 → 33 | 3 → 2 | 13 → 13 of 15 |
+| tutorial | pt-BR | 34 | 18 → 17 | 25 → 24 | 25 → 24 | 0 → 0 | 15 → 15 of 15 |
+| machinery reg. | pt | 33 | 19 → 17 | 25 → 23 | 25 → 23 | 1 → 1 | 10 → 11 of 15 |
+
+#### Latin heavy
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | de | 38 | 16 → 17 | 22 → 25 | 22 → 25 | 14 → 12 | 12 → 14 of 15 |
+| machinery reg. | de | 33 | 15 → 15 | 19 → 18 | 19 → 18 | 6 → 7 | 13 → 13 of 15 |
+| baseline | hu | 18 | 6 → 7 | 8 → 8 | 8 → 8 | 9 → 8 | 12 → 15 of 15 |
+| machinery reg. | hu | 33 | 12 → 15 | 14 → 16 | 14 → 16 | 5 → 4 | 10 → 11 of 15 |
+| baseline | pl | 18 | 7 → 10 | 7 → 11 | 7 → 11 | 9 → 4 | 14 → 13 of 15 |
+| machinery reg. | pl | 33 | 18 → 20 | 25 → 26 | 25 → 26 | 4 → 4 | 11 → 11 of 15 |
+
+#### Arabic
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | ar | 38 | 7 → 17 | 7 → 21 | 7 → 21 | 27 → 12 | 13 → 11 of 15 |
+
+#### Urdu
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | ur | 38 | 14 → 18 | 15 → 20 | 15 → 20 | 14 → 9 | 14 → 13 of 15 |
+
+#### English
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | en | 38 | 20 → 20 | 25 → 25 | 25 → 25 | 9 → 9 | 11 → 11 of 15 |
+| machinery reg. | en | 33 | 12 → 12 | 18 → 18 | 18 → 18 | 7 → 7 | 12 → 12 of 15 |
+| transport reg. | en | 34 | 20 → 20 | 24 → 24 | 25 → 25 | 1 → 1 | 7 → 7 of 15 |
+| tutorial | en | 34 | 15 → 15 | 24 → 24 | 24 → 24 | 3 → 3 | 12 → 12 of 15 |
+
+**Chosen values** (each in code with its measured basis):
+
+| Group | Prefix | Ending stripped | Gate (min, fraction) | Other |
+|---|---|---|---|---|
+| CJK | — | — | 3, 0.6 (backend's) | Japanese hiragana pairs and a Korean word's trailing particle leave the bigrams |
+| Cyrillic | 7 | yes | 3, 0.6 | "when"/"what happened" question words added to the ru and uk stopwords |
+| Latin light (es fr it nl pt) | 7 | yes | 3, 0.6 | question words added |
+| Latin heavy (de hu pl) | 6 | yes | 3, 0.75 | — |
+| Arabic | 4 | yes (one-letter proclitic and pronoun or plural ending) | 3, 0.5 | question words added |
+| Urdu | 4 | yes (plural and oblique endings) | 3, 0.6 | — |
+
+A Korean particle is stripped only while two syllables are left ("온도" keeps its 도; the first cut
+stripped it, measured slightly higher, and was a defect). One ending (the longest of the group's list)
+is stripped only while three letters are left (four for an
+Arabic proclitic), so a word shorter than the prefix meets its other forms ("жінка" and "жінкою").
+
+**What didn't help.** CJK: `NLTokenizer` words instead of bigrams (decision 2's alternative: Chinese
+hit@4 within ±4 a set but out-of-scope refusals 39 → 23 of 60; Korean collapsed, words keep their
+particles), minimum shared terms 2 (+16 hit@4, out-of-scope refusals 64 → 30 of 135) or 4, fraction 0.4,
+dropping kanji–hiragana pairs too. Cyrillic: prefix 5, fraction 0.5 or 0.75, folding ё/ї/ґ (no change).
+Latin light: prefix 5, fraction 0.5 or 0.75. Latin heavy: prefix 5 or 7, the question words (S −3).
+Arabic script: prefix 5 or 6, dropping the one-letter pronoun endings; for Urdu, fraction 0.5 (tie) and
+its question words (in-scope refusals 9 → 14). **Pending vectors** (`RETRIEVAL_EVAL_VECTORS=pending`):
+for every group the words alone at increase 0 score the same as with the script model's vectors (CJK
+and Cyrillic exactly), and the stricter rule only costs: 0.15 takes Cyrillic hit@4 90 → 82 for three more
+out-of-scope refusals of 75, Arabic 4 hit@4 for one more out-of-scope refusal of 15, Urdu 1 for none; 0.3 is no better. CJK's
+bigram questions are held by the minimum of 3, so the increase changes nothing there.
+`pendingVectorFractionIncrease` stays 0.15 under owner decision 6; **the measurement argues for
+revisiting it** (decision owed). The same runs say the non-Latin script models add almost nothing to
+hit@4 on these sets beyond the words, which P1 suspected of the Cyrillic model.
+
+**Defects found.** Fixed in the eval keys, not the app, and noted for P4:
+- A footer folio printed alone on a line ("- 397 -") at the bottom of a page renumbers the next page and
+  the extractor's own `Page N` marker after it is swallowed (`DocumentChunker`: a marker on a page
+  opened with no content since is read as a running header). In the transport regulation's ru and zh
+  editions 33 and 29 of 34 questions' answer pages are cited under other numbers (ru 5–7 pages early); English is unaffected only because its
+  folios are not on lines of their own. A chunker fix moves English citations too, so it is P4's (or its
+  own) change.
+- Fake-bold text doubles every character in some Chinese headings (an invented example: "温温度度" for 温度), which breaks their
+  bigrams (extraction; P4).
+- The transport regulation's Arabic edition is image pages with only page furniture in its text layer,
+  so Arabic has no technical document here (it needs Vision OCR, which supports Arabic).
+- An HTML-derived Ukrainian tutorial whose table of contents and navigation outweighed the body was
+  first detected as English (the body was then extracted properly); detection itself was right on every
+  real document, including mixed Latin-and-CJK technical text.
+
+**Where the numbers stay low.** zh-Hans answers 18 of 34 on the transport regulation against en 24 and
+ru 26: its misses are ranking, close to the answer's page, which is P4's ground (headings without case,
+chunk size, the doubled characters). Ukrainian's baseline is a 19th-century translation in an older
+orthography, the only public-domain one (11 of 38); its technical sets read 17 of 34 and 11 of 19.
+Arabic's baseline translation (21 of 38) is likewise old and has no technical set.
+
+**Less tested.** Groups measured on a baseline and a technical document clear the mark: CJK, Cyrillic,
+both Latin groups. Arabic (baseline only) and Urdu (no Urdu technical document has a text layer) stay
+marked: the Developer panel's and support report's document lines end "· less tested", and a
+`Less tested:` line counts them by group. No new interface strings.
 
 ### P4 — Structure in other-language books
 
@@ -373,15 +531,17 @@ Measured against the P3 sets before anything changes:
 
 ## Decisions (5–7 taken 2026-10-28; 1–4 owed, defaults proceed unless revisited)
 
-1. **Prefix length:** 6 to start. Recommended: one length per group, set by P3.
+1. **Prefix length:** 6 to start. Recommended: one length per group, set by P3. **Measured (P3):** 7
+   for Cyrillic and light Latin, 6 for heavy Latin, 4 for Arabic script, each with one ending stripped.
 2. **Bigrams or `NLTokenizer` words for CJK.** Recommended: bigrams. They need no dictionary, give
    the same result on every OS version, and need no language label. P3 measures words as the
-   alternative.
+   alternative. **Measured (P3):** words lose; bigrams kept.
 3. **Fold Traditional into Simplified** for matching. Recommended: yes. Citations and answers keep
    the book's own characters.
 4. **German compounds.** Recommended: accept the loss for now (prefixes catch the first part of a
    compound, and vectors catch some of the rest) and measure in P3 before considering
-   decompounding.
+   decompounding. **Measured (P3):** German hit@4 41 → 43 of 71 with ending stripping and no
+   decompounding; decompounding not tried.
 5. ✅ **Order of the P3 groups** (decided 2026-10-28): CJK first (a tester is waiting), then
    Cyrillic, then the Latin groups, then Arabic script.
 6. ✅ **Documents without vectors** (decided 2026-10-28): download the model rather than live

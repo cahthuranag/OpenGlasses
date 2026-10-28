@@ -33,8 +33,10 @@ enum VaultPromptBuilder {
     /// pack could leave out.
     static let teamLearningRule = "Team learnings are your organisation's crew's approved findings, not the manufacturer's manual. Whenever you use one, name it as your crew's finding and repeat its Source line. A team learning never overrides a safety note: where one differs from the safety notes, give the safety note and say the crew's finding departs from it."
 
+    /// `manualLanguages` is the line naming each manual's language (Plan JY P2,
+    /// `ManualLanguageSearch.promptLine`), nil when every manual is English.
     static func promptContext(for store: VaultStore, referenceByteLimit: Int? = nil, turn: String? = nil,
-                              teamLearningsPublished: Bool = false) -> String? {
+                              teamLearningsPublished: Bool = false, manualLanguages: String? = nil) -> String? {
         // A vault's chains.md is steps for the rule-chain runner, not reference text: the session
         // offers its chains by name (Plan JJ P2), so it does not ride along on every turn.
         // Nor are a vault's table checks (Plan JN P3), should a manifest list them.
@@ -63,6 +65,11 @@ enum VaultPromptBuilder {
                 ? "REQUIRED: every factual claim drawn from the vault must end with a source line in the form: \(format)"
                 : "When drawing from the vault, cite the source like: \(format)"
             lines.append(requirement)
+            lines.append("")
+        }
+
+        if let manualLanguages {
+            lines.append(manualLanguages)
             lines.append("")
         }
 

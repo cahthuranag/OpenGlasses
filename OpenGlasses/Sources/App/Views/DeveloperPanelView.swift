@@ -138,6 +138,22 @@ struct DeveloperPanelView: View {
                 if !keep { appState.transcriptionService.forgetKeptUtterance() }
             }
 
+            // Plan JY P1: documents' languages and their search models — labels and counts only.
+            OGSection(
+                header: "Manual Languages",
+                footer: "Each document's detected language and the model its passages are searched with."
+            ) {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(ManualLanguageReport.current(store: appState.documentStore), id: \.self) { line in
+                        Text(verbatim: line)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(12)
+            }
+
             OGSection(header: "Turn Latency") {
                 NavigationLink {
                     TurnTimelineDebugView(ledger: appState.turnLedger)

@@ -7,8 +7,18 @@ letter count, then language by a constrained recogniser) is recorded per documen
 cuts both the question and each passage under that document's rule in the term search, BM25F
 statistics, the evidence gate, the back-of-book index and the table directory; `CodeTokenizer`
 splits codes off Han, kana, Hangul, Cyrillic and Arabic letters. The gate's fractions for the
-non-English rules are the English ones, provisional until P3; the profile is not yet shown in the
-support report or Developer panel. P1–P5 not started.
+non-English rules are the English ones, provisional until P3. **P1 built 2026-10-29 (PR
+pending):** each document is embedded with its own script's model (`EmbeddingScript`: Latin
+unchanged, Cyrillic, Arabic, CJK, and Urdu on the model Apple maps `ur` to — measured below) or
+with none, never another script's; a document whose model is missing is stored without vectors
+and healed when it lands (`VaultEmbeddingUpgrade` per vault and script, lazily for the Documents
+library); a vault keeps one index per (namespace, script); a passage awaiting its model is judged by
+its words at the backend's shared fraction + 0.15 (provisional); My Manuals and Field Assist fetch
+the phone's languages' script models ahead (`ScriptModelAssets`), and indexing waits at most 20 s
+for a download under way. Each manual's language and "searching by words" state show in My Manuals
+and Custom Vaults; every document's profile and model in the Developer panel and support report.
+Semantic memory and voice skills stay on today's model (P1 item 5 deferred: one ranked list can't
+mix two models' cosine scales, and a memory is too short to settle a script). P2–P5 not started.
 **Drafted:** 2026-10-28. A tester in China asked about using My Manuals
 with research papers. A check of build 581 found that a Chinese PDF indexes but can't be searched,
 and a check of the other interface languages found the same problem in different strengths. The
@@ -232,7 +242,30 @@ P0 is shippable on its own. Every language gets keyword answers before any embed
    - Other surfaces (Documents, memory) use a model if it's already on the phone. They don't
      trigger downloads by themselves.
 3. **Urdu:** measure whether the model Apple maps `ur` to reads Arabic-script Urdu. If it doesn't,
-   Urdu stays lexical only.
+   Urdu stays lexical only. **Measured (2026-10-29): it does**, so Urdu uses it (`EmbeddingScript.urdu`).
+
+   Measured on the Mac (2026-10-29), Apple's framework models with every asset requested, each
+   question compared with an invented answer and an invented unrelated sentence, token vectors
+   mean-pooled as `NLContextualBackend.embed` does. All models are 512-dimensional.
+
+   | Model | Text | cos(q, answer) | cos(q, unrelated) | Margin |
+   |---|---|---|---|---|
+   | Cyrillic | Ukrainian, two pairs | 0.982, 0.893 | 0.911, 0.901 | +0.071, −0.008 |
+   | Cyrillic | Russian, two pairs | 0.976, 0.937 | 0.953, 0.951 | +0.023, −0.014 |
+   | Arabic | Arabic, two pairs | 0.871, 0.840 | 0.598, 0.689 | +0.273, +0.151 |
+   | `ur` (Indic) | Urdu in Arabic script, three pairs | 0.895, 0.879, 0.875 | 0.709, 0.681, 0.688 | +0.186, +0.198, +0.187 |
+   | Arabic | the same Urdu, two pairs | 0.959, 0.968 | 0.945, 0.939 | +0.014, +0.030 |
+   | `ur` (Indic) | Hindi in Devanagari (control) | 0.884 | 0.671 | +0.212 |
+   | CJK | Chinese, two pairs | 0.692, 0.862 | 0.583, 0.484 | +0.110, +0.378 |
+   | CJK | Japanese / Korean | 0.765 / 0.777 | 0.588 / 0.607 | +0.178 / +0.170 |
+   | Latin | English (control) | 0.926 | 0.808 | +0.118 |
+   | Latin | Chinese (control) | 0.984 | 1.000 | −0.016 |
+
+   The `ur` model reads Arabic-script Urdu as well as it reads Hindi, and the Arabic model reads
+   the same Urdu as noise. **The Cyrillic model separates poorly**: its cosines sit between 0.89
+   and 0.98 and two of four pairs score the unrelated sentence higher. It is still the only model
+   that reads Cyrillic, so P1 uses it, but Cyrillic ranking leans on the term route and P3 should
+   measure whether its vectors earn their place.
 4. **Mixed-library test:** a test pins per-tag query vectors with Latin, Cyrillic and CJK
    documents in one store.
 5. Documents, semantic memory and voice skills choose their model the same way, so a note or

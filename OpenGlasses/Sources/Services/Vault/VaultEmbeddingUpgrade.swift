@@ -10,6 +10,13 @@ import Foundation
 /// (`DocumentStore.upgradeVaultEmbeddings`). The index that answers is untouched until the new one
 /// is complete, a run the app leaves behind carries on from where it stopped, and progress shows
 /// where every other index's does (`VaultIndexingMonitor`).
+///
+/// **Per script (Plan JY P1).** A vault's manuals in another script — Cyrillic, Arabic, Urdu, CJK
+/// — are on that script's own model instead, and each script is its own index: an English and a
+/// Chinese manual in one library each keep the index that answers for them until their own new
+/// one is complete. A manual whose script's model is not on the phone has no vectors and is
+/// searched by its words; when the model lands (`ScriptModelAssets.onArrival` calls `start`),
+/// the next pass embeds it. The script models come from the store (`scriptEmbedder(for:)`).
 @MainActor
 enum VaultEmbeddingUpgrade {
 
@@ -40,7 +47,8 @@ enum VaultEmbeddingUpgrade {
         }
     }
 
-    /// One pass over the vaults. Returns each vault's outcome, for the tests.
+    /// One pass over the vaults. Returns each vault's outcome, for the tests: the Latin index's
+    /// under the vault's id, and another script's under `outcomeKey(vaultId:script:)`.
     @discardableResult
     static func run(store: DocumentStore, manifests: [VaultManifest], monitor: VaultIndexingMonitor,
                     shouldContinue: @escaping () -> Bool = { true }) async -> [String: DocumentStore.UpgradeOutcome] {
@@ -50,26 +58,44 @@ enum VaultEmbeddingUpgrade {
         for manifest in manifests where manifest.hasDocuments {
             let namespace = DocumentStore.vaultNamespace(manifest.id)
             guard store.documentCount(namespace: namespace) > 0, shouldContinue() else { continue }
-            let progress = store.upgradeProgress(namespace: namespace, targetTag: model.version.tag)
-            guard progress.done < progress.total || store.servingVersionTag(namespace: namespace) != model.version.tag else {
-                outcomes[manifest.id] = .current
-                continue
+            let scripts = store.embeddingScripts(namespace: namespace)
+            // Latin first, exactly as before; then each other script whose model is here. A
+            // script whose model is not is left by its words until the model lands.
+            var targets: [(script: EmbeddingScript, model: Embedder)] = scripts.contains(.latin) ? [(.latin, model)] : []
+            for script in scripts where script != .latin {
+                if let scriptModel = store.scriptEmbedder(for: script) { targets.append((script, scriptModel)) }
             }
-            await VaultOperationLock.withLock(manifest.id) {
-                monitor.begin(vaultId: manifest.id, titles: manifest.documents.map(\.title))
-                let background = monitor.backgroundTasks.begin(name: "Indexing manuals")
-                defer {
-                    monitor.backgroundTasks.end(background)
-                    monitor.end(vaultId: manifest.id)
+            for (script, target) in targets {
+                guard shouldContinue() else { break }
+                let key = outcomeKey(vaultId: manifest.id, script: script)
+                let progress = store.upgradeProgress(namespace: namespace, script: script, targetTag: target.version.tag)
+                guard progress.done < progress.total
+                        || store.servingVersionTag(namespace: namespace, script: script) != target.version.tag else {
+                    outcomes[key] = .current
+                    continue
                 }
-                outcomes[manifest.id] = await store.upgradeVaultEmbeddings(
-                    namespace: namespace, to: model,
-                    progress: { title, done, total in
-                        monitor.progress(vaultId: manifest.id, title: title, completed: done, total: total)
-                    },
-                    shouldContinue: shouldContinue)
+                await VaultOperationLock.withLock(manifest.id) {
+                    monitor.begin(vaultId: manifest.id, titles: manifest.documents.map(\.title))
+                    let background = monitor.backgroundTasks.begin(name: "Indexing manuals")
+                    defer {
+                        monitor.backgroundTasks.end(background)
+                        monitor.end(vaultId: manifest.id)
+                    }
+                    outcomes[key] = await store.upgradeVaultEmbeddings(
+                        namespace: namespace, script: script, to: target,
+                        progress: { title, done, total in
+                            monitor.progress(vaultId: manifest.id, title: title, completed: done, total: total)
+                        },
+                        shouldContinue: shouldContinue)
+                }
             }
         }
         return outcomes
+    }
+
+    /// The key a run's outcome for one vault's index under `script` is returned by: the vault's
+    /// id for Latin, as before, and `id#script` for any other.
+    nonisolated static func outcomeKey(vaultId: String, script: EmbeddingScript) -> String {
+        script == .latin ? vaultId : "\(vaultId)#\(script.rawValue)"
     }
 }

@@ -384,6 +384,11 @@ struct VaultManagerView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(verbatim: row.accessibilityLabel))
 
+            // The manual's language, and whether it is searched by its words for now (Plan JY P1).
+            if let entry, !row.isPendingRemoval {
+                ManualLanguageLine(diagnostic: appState.documentStore.languageDiagnostic(documentId: entry.documentId))
+            }
+
             // Tables read from a picture, each with where its check stands (Plan JN P3). Checking is
             // for whoever may import vaults on this phone, the same gate as the import button.
             if let entry, !row.isPendingRemoval {

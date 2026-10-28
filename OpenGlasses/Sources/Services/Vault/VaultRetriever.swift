@@ -83,6 +83,9 @@ struct VaultRetriever {
         /// The rule the passage's document is read with (Plan JY P0); the question is compared
         /// with it under the same rule. A passage built without one is read with today's.
         var termRule: TermRule = .english
+        /// The passage has no vector because its document's script model is not on the phone
+        /// yet (Plan JY P1): the gate judges it by its words, under the stricter rule.
+        var vectorPending = false
 
         typealias Source = RetrievalSource
 
@@ -372,6 +375,8 @@ struct VaultRetriever {
                 kept.matchedTokens = Array(Set(existing.matchedTokens + candidate.matchedTokens)).sorted()
                 kept.clauseMatch = [existing.clauseMatch, candidate.clauseMatch].compactMap { $0 }.max()
                 kept.tableMatch = existing.tableMatch || candidate.tableMatch
+                // The chunk's own state, whichever route reported it.
+                kept.vectorPending = existing.vectorPending || candidate.vectorPending
                 merged[key] = kept
                 return
             }
@@ -535,7 +540,7 @@ struct VaultRetriever {
                        modelPenalty: penalty,
                        recognisedFromScan: raw.source.isReference && (provenance?(raw.documentId) ?? false),
                        kind: raw.kind, figure: raw.figure, source: raw.source, printedPage:raw.printedPage,
-                       editionLabel: raw.editionLabel, termRule: raw.termRule)
+                       editionLabel: raw.editionLabel, termRule: raw.termRule, vectorPending: raw.vectorPending)
     }
 
     // MARK: - Rendering
@@ -780,6 +785,28 @@ struct RetrievalEvidencePolicy: Equatable {
         }
     }
 
+    /// How much stricter the lexical criterion is for a passage with no vector yet (Plan JY P1,
+    /// owner decision 6): its share of the question's terms is raised by this much, capped at 1.
+    /// **Provisional** — Plan JY P3 calibrates it per language group.
+    static let pendingVectorFractionIncrease = 0.15
+
+    /// The shared-term count a passage whose script model is pending (`vectorPending`) has to
+    /// meet: the same formula with `sharedFraction` raised by `pendingVectorFractionIncrease`
+    /// (capped at 1), still never more than `minSharedTerms` and never fewer than 1. A policy with
+    /// no fraction asks the flat `minSharedTerms`, already its strictest. 0 when the lexical
+    /// criterion is off.
+    ///
+    /// Such a passage has no similarity to clear the floor with, so it is judged on its words
+    /// alone; asking a little more of them stands in for the missing second criterion. With the
+    /// shipped fractions it binds for a three-term question under the contextual rule (2 → 3
+    /// terms), and for a one- or two-term question nothing is looser than today.
+    func requiredSharedTermsWithoutVector(queryTermCount: Int, rule: TermRule) -> Int {
+        guard minSharedTerms > 0 else { return 0 }
+        guard sharedFraction > 0, queryTermCount > 0 else { return minSharedTerms }
+        let fraction = min(1, sharedFraction + Self.pendingVectorFractionIncrease)
+        return min(minSharedTerms, max(1, Int(ceil(fraction * Double(queryTermCount)))))
+    }
+
     /// The defaults measured for an embedding backend, chosen by [[Embedder]] `modelId` prefix.
     ///
     /// - `nl-word` — **measured** on the Lennox pair (see the type's doc comment). The floor stays
@@ -837,6 +864,11 @@ struct RetrievalEvidencePolicy: Equatable {
                     bestSimilarity: Float? = nil,
                     queryTerms: Set<String>? = nil) -> Bool {
         if !passage.matchedTokens.isEmpty { return true }
+        // No vector yet (Plan JY P1): its words decide, under the stricter count.
+        if passage.vectorPending, minSharedTerms > 0, let queryTerms {
+            let required = requiredSharedTermsWithoutVector(queryTermCount: queryTerms.count, rule: .english)
+            return LexicalSupport.sharedTermCount(text: passage.text, queryTerms: queryTerms) >= required
+        }
         guard passage.similarity >= similarityFloor else { return false }
         if let bestSimilarity, margin.isFinite, passage.similarity < bestSimilarity - margin { return false }
         if minSharedTerms > 0, let queryTerms {
@@ -856,6 +888,13 @@ struct RetrievalEvidencePolicy: Equatable {
     func isEvidence(_ passage: VaultRetriever.Passage, bestSimilarity: Float? = nil,
                     question: LexicalSupport.QueryTerms) -> Bool {
         if !passage.matchedTokens.isEmpty { return true }
+        // A passage whose script model is pending has no similarity to clear the floor or the
+        // margin with (Plan JY P1, decision 6): its words decide, under the stricter count.
+        if passage.vectorPending, minSharedTerms > 0 {
+            let terms = question.terms(for: passage.termRule)
+            let required = requiredSharedTermsWithoutVector(queryTermCount: terms.count, rule: passage.termRule)
+            return LexicalSupport.sharedTermCount(text: passage.text, queryTerms: terms, rule: passage.termRule) >= required
+        }
         guard passage.similarity >= similarityFloor else { return false }
         if let bestSimilarity, margin.isFinite, passage.similarity < bestSimilarity - margin { return false }
         if minSharedTerms > 0 {

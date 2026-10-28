@@ -195,7 +195,8 @@ final class PersonalManualLibrary: ObservableObject {
         rows.map { row in
             DocumentStore.Passage(documentId: row.documentId, documentName: manual.label, chunkIndex: row.chunkIndex,
                 text: row.text, similarity: row.similarity, page: row.page, section: row.section,
-                kind: row.kind, figure: row.figure, source: .manual, termRule: row.termRule)
+                kind: row.kind, figure: row.figure, source: .manual, termRule: row.termRule,
+                vectorPending: row.vectorPending)
         }
     }
 

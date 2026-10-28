@@ -60,6 +60,9 @@ struct MyManualsView: View {
                             Text(manual.document.personalCapture == true ? "Photographed pages" : (manual.manifest.id == "my-manuals" ? "\(manual.document.file.split(separator: ".").last?.uppercased() ?? "FILE") file" : "Received manual"))
                                 .font(.caption).foregroundStyle(.secondary)
                             Text(library.isIndexed(manual) ? "Ready · page-cited answers" : "Saved · needs indexing").font(.caption)
+                            if library.isIndexed(manual), let id = manual.entry?.documentId {
+                                ManualLanguageLine(diagnostic: appState.documentStore.languageDiagnostic(documentId: id))
+                            }
                             if manual.document.personalReadingCopy == true {
                                 Text("Citations refer to the text reading copy. Original file retained.")
                                     .font(.caption).foregroundStyle(.secondary)
@@ -107,12 +110,19 @@ struct MyManualsView: View {
                 if let message { Text(message).font(.caption) }
                 Section("What the assistant can read") {
                     Toggle("Use my manuals in answers", isOn: $answersEnabled)
+                        // The search models for the phone's languages, fetched ahead (Plan JY P1).
+                        .onChange(of: answersEnabled) { _, on in
+                            if on { ScriptModelAssets.shared.prepareForManualsIfInUse() }
+                        }
                     Text(MyManualsPaywallCopy.disclosure).font(.footnote)
                 }
             }
         }
         .navigationTitle("My Manuals")
         .task { if store.myManualsProducts.isEmpty { await store.loadProducts() } }
+        // A plan that has just started, or a model missing since launch (Plan JY P1). A no-op when
+        // the models are here or on their way.
+        .task(id: store.myManualsSubscription == nil) { ScriptModelAssets.shared.prepareForManualsIfInUse() }
         .sheet(isPresented: $showingPurchase, onDismiss: resumePendingAction) {
             MyManualsPurchaseView(store: store, dismissOnAccess: pendingAction != nil)
         }

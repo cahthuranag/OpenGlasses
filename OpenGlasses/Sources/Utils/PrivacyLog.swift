@@ -1915,6 +1915,9 @@ enum PrivacyLog {
         /// A vault manual indexed, and a question embedded for a vault search (Plan IV P4): how
         /// many chunks, which model family, how long. Never a title or a question.
         case indexed, queryEmbedded
+        /// A script's embedding model asked for from Apple, and whether it landed (Plan JY P1):
+        /// which script, how long. Never a document or a question.
+        case modelRequested, modelArrived, modelUnavailable
         /// A distillation pass over the knowledge graph: how many rows it changed, of how many
         /// considered. Counts only — which fact was promoted or retired is the wearer's content.
         case distilled

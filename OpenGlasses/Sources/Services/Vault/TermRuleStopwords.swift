@@ -44,6 +44,8 @@ enum TermRuleStopwords {
         "tiene", "tienen", "debe", "deben", "puede", "pueden", "este", "esta", "estos", "estas",
         "ese", "esa", "eso", "esos", "esas", "muy", "más", "menos", "también", "pero", "porque",
         "cuando", "donde", "sus", "nos", "les", "todo", "todos", "toda", "todas", "cada", "otro",
+        // P3: question words the misses showed ("when", "what happened"); measured gain in this group.
+        "pasó", "pasa", "ocurrió", "sucedió",
     ]
 
     static let french: Set<String> = [
@@ -53,6 +55,8 @@ enum TermRuleStopwords {
         "ont", "avoir", "être", "était", "sera", "fait", "faut", "peut", "doit", "doivent",
         "cette", "ces", "cet", "aux", "mais", "donc", "car", "pas", "plus", "moins", "très",
         "aussi", "tout", "tous", "toute", "toutes", "elle", "elles", "ils", "nous", "vous",
+        // P3: question words the misses showed ("when", "what happened"); measured gain in this group.
+        "été", "arrivé", "arrivée",
     ]
 
     static let hungarian: Set<String> = [
@@ -70,6 +74,8 @@ enum TermRuleStopwords {
         "alle", "non", "più", "meno", "molto", "anche", "sono", "essere", "stato", "deve",
         "devono", "può", "possono", "questo", "questa", "questi", "queste", "quello", "quella",
         "suo", "sua", "loro", "tutto", "tutti",
+        // P3: question words the misses showed ("when", "what happened"); measured gain in this group.
+        "accadde", "successo", "accaduto",
     ]
 
     static let dutch: Set<String> = [
@@ -78,6 +84,8 @@ enum TermRuleStopwords {
         "hoeveel", "welke", "welk", "zijn", "was", "waren", "wordt", "worden", "werd", "heeft",
         "hebben", "had", "kan", "kunnen", "moet", "moeten", "mag", "niet", "geen", "ook", "maar",
         "dan", "nog", "wel", "zeer", "meer", "alle", "hun", "zich", "ons", "onze",
+        // P3: question words the misses showed ("when", "what happened"); measured gain in this group.
+        "toen", "gebeurde", "gebeurt",
     ]
 
     static let polish: Set<String> = [
@@ -95,6 +103,8 @@ enum TermRuleStopwords {
         "podem", "este", "esta", "estes", "estas", "esse", "essa", "isso", "muito", "mais",
         "menos", "também", "mas", "porque", "seu", "sua", "seus", "suas", "todo", "todos",
         "toda", "todas", "cada", "outro", "nos", "nas", "pelo", "pela",
+        // P3: question words the misses showed ("when", "what happened"); measured gain in this group.
+        "aconteceu", "acontece",
     ]
 
     static let ukrainian: Set<String> = [
@@ -103,6 +113,8 @@ enum TermRuleStopwords {
         "також", "тільки", "його", "її", "їх", "цей", "ця", "це", "ці", "той", "та", "те", "ті",
         "бути", "був", "була", "було", "були", "має", "мають", "може", "можна", "треба", "слід",
         "потрібно", "якщо", "вже", "ще", "дуже", "так", "про", "щоб", "чи",
+        // P3: question words the misses showed ("when", "what happened"); measured gain in this group.
+        "сталося", "трапилося", "повинні", "повинен",
     ]
 
     static let russian: Set<String> = [
@@ -111,6 +123,8 @@ enum TermRuleStopwords {
         "только", "его", "её", "их", "этот", "эта", "это", "эти", "тот", "быть", "был", "была",
         "было", "были", "есть", "имеет", "может", "можно", "нужно", "надо", "следует", "если",
         "уже", "ещё", "очень", "так", "как", "чтобы", "про",
+        // P3: question words the misses showed ("when", "what happened"); measured gain in this group.
+        "случилось", "произошло", "должны", "должен", "должна",
     ]
 
     /// Cyrillic text whose language was not settled.
@@ -127,6 +141,8 @@ enum TermRuleStopwords {
         "بعد", "قبل", "عند", "حتى", "أو", "ثم", "لم", "لن", "هل", "كيف", "متى", "أين", "لماذا",
         "كم", "أي", "كان", "كانت", "يكون", "تكون", "يجب", "يمكن", "ليس", "بين", "كل", "بعض",
         "غير", "أن", "إن", "ألا", "إلا", "ماذا", "فيه", "فيها", "منه", "منها",
+        // P3: question words the misses showed ("when", "what happened"); measured gain in this group.
+        "عندما", "حدث",
     ].map(TermRule.normalisedArabic))
 
     // MARK: - Endings (Plan JY P3)

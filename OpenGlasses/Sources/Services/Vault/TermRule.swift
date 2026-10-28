@@ -254,9 +254,11 @@ enum TermRule: Hashable, Codable, Sendable {
         case .latinLight: return true
         // Measured: hit@4 79 → 92, in-scope refusals 57 → 40 (163 questions).
         case .cyrillic: return true
+        // Measured: hit@4 95 → 107, in-scope refusals 47 → 35, two more out-of-scope answers (173 questions).
+        case .latinHeavy: return true
         // Measured on the Bible: Arabic hit@4 7 → 13, Urdu 15 → 17, refusals down in both.
         case .arabic, .urdu: return true
-        case .english, .latinHeavy, .cjk: return false
+        case .english, .cjk: return false
         }
     }
 

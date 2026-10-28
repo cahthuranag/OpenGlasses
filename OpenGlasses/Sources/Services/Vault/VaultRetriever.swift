@@ -891,6 +891,9 @@ struct RetrievalEvidencePolicy: Equatable {
         // Measured on the Bible: 0.5 over 0.6 — hit@4 15 → 18, in-scope refusals 20 → 15, one more
         // out-of-scope answer of 15.
         .arabic: LexicalCriterion(minSharedTerms: 3, sharedFraction: 0.5),
+        // Measured on the Bible and EU 2023/1230 in de, hu, pl: 0.75 over 0.6 — seven more
+        // out-of-scope refusals of 90 for three hit@4 and four in-scope refusals of 173.
+        .latinHeavy: LexicalCriterion(minSharedTerms: 3, sharedFraction: 0.75),
     ]
 
     /// Whether a passage is evidence. `bestSimilarity` and `queryTerms` are what the relative and

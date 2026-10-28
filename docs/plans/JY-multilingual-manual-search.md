@@ -170,6 +170,12 @@ When a document is added, `DocumentLanguageProfile` (pure) records three things:
    `languageConstraints` limited to that script's languages. For Han text, kana means Japanese.
 3. **A confidence.** When it's low, or no single language dominates, the document gets its
    script's default rule.
+   **Latin needs more (P2, 2026-10-29):** a Latin document is named a language other than
+   English only with at least 400 Latin letters and a recogniser confidence of at least 0.9;
+   otherwise it keeps the English rule and searches with the English group, so an English vault
+   stays byte-identical (a short crew note can read as Dutch or Italian). The accepted cost: a
+   short German or French document is read as English. Other scripts keep 20 letters and 0.8.
+   Stored profiles are recomputed (`currentVersion` 2).
 
 The profile is stored with the document and shown nowhere except the support report and Developer
 panel. It is recomputed when the document is re-indexed.
@@ -290,7 +296,9 @@ and cites the original page (owner decision 2). No translation service is added.
 
 - **Groups.** Each searched document's group is its profile's language (`en`, `de` … `zh-Hans`,
   `ja`, `ko`). An unsure Latin document and one in no interface script search with English, so a
-  library of English manuals stays one group; an unsure Cyrillic document is its own group.
+  library of English manuals stays one group; an unsure Cyrillic document is its own group. A team
+  learning never forms a group: it joins the reference group of its own language, else the
+  largest (learnings alone are one group).
 - **`queries`.** A list of `{language, query}` items beside `query` (a list, not a free-keyed
   object: every provider's schema form and the on-device bridge take a list of fixed-key objects).
   Read defensively: a `{code: query}` object is accepted too, a code in any case or with a region

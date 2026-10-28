@@ -108,6 +108,11 @@ final class NLContextualBackend: EmbeddingBackend {
 
     private static let lock = NSLock()
     private static var cache: [String: NLContextualBackend] = [:]
+    /// When a load last failed with the asset present, per language. A search asks for a script's
+    /// model once per call (Plan JY P1), so a model that cannot load is not retried — at a tenth
+    /// of a second each — more than once a minute.
+    private static var failedLoads: [String: Date] = [:]
+    private static let loadRetryInterval: TimeInterval = 60
 
     /// A ready-to-use backend for the language, or nil if assets aren't on-device yet (caller falls
     /// back). Loads the model once and caches it; never blocks on a network download.
@@ -115,11 +120,25 @@ final class NLContextualBackend: EmbeddingBackend {
         lock.lock()
         defer { lock.unlock() }
         if let cached = cache[language.rawValue] { return cached }
+        if let failed = failedLoads[language.rawValue], Date().timeIntervalSince(failed) < loadRetryInterval { return nil }
         guard let model = NLContextualEmbedding(language: language), model.hasAvailableAssets else { return nil }
-        do { try model.load() } catch { return nil }
+        do { try model.load() } catch {
+            failedLoads[language.rawValue] = Date()
+            return nil
+        }
+        failedLoads[language.rawValue] = nil
         let backend = NLContextualBackend(model: model)
         cache[language.rawValue] = backend
         return backend
+    }
+
+    /// Whether the language's asset is on the device, without loading the model — for a check
+    /// that only reports or decides whether to download (Plan JY P1). Loading is `ready(for:)`'s.
+    static func hasAssets(for language: NLLanguage) -> Bool {
+        lock.lock()
+        let cached = cache[language.rawValue] != nil
+        lock.unlock()
+        return cached || (NLContextualEmbedding(language: language)?.hasAvailableAssets ?? false)
     }
 
     /// Trigger an OTA asset download for the language if it isn't present. Best-effort; call at launch

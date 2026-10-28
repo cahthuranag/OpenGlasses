@@ -137,6 +137,10 @@ struct FieldAssistSettingsView: View {
                     Toggle("Enable Field Assist", isOn: $enabled)
                         .tint(AppAccent.color)
                         .disabled(!Config.fieldAssistUnlocked || !fieldAssistSwitch.isEditable)
+                        // The search models for the phone's languages, fetched ahead (Plan JY P1).
+                        .onChange(of: enabled) { _, on in
+                            if on { ScriptModelAssets.shared.prepareForManualsIfInUse() }
+                        }
                     if fieldAssistSwitch == .readOnly {
                         ManagedLockNote(organization: ManagedLockReason.organization)
                     }
@@ -580,6 +584,7 @@ struct FieldAssistSettingsView: View {
         }
         .onChange(of: store.isFieldAssistPurchased) { _, _ in
             if store.hasCheckedEntitlements && enabled && !Config.fieldAssistUnlocked { enabled = false }
+            ScriptModelAssets.shared.prepareForManualsIfInUse()
         }
         .onChange(of: sessionService.lastDeliveryCancelled) { _, _ in refreshUnsentCount() }
         .onChange(of: sessionService.activeSession?.id) { _, _ in refreshUnsentCount() }

@@ -56,6 +56,11 @@ final class DocumentStore: ObservableObject {
         /// [[DocumentLanguageProfile]]: a question is compared with this passage under the same
         /// rule. Set by the store; a passage made anywhere else is read with today's rule.
         var termRule: TermRule = .english
+        /// The passage has no vector its question can be compared with because its document's
+        /// script model is not on the phone yet, or has not re-indexed it (Plan JY P1). The gate
+        /// judges it by its words alone, under a stricter rule (`RetrievalEvidencePolicy`). Never
+        /// set for a Latin document's passage.
+        var vectorPending = false
     }
 
     // MARK: - Published
@@ -113,21 +118,32 @@ final class DocumentStore: ObservableObject {
         let rows = TableRowPassage.chunks(for: tables, startingAt: textChunks.count)
         let chunks = textChunks + rows.chunks
 
+        // The document's script picks its model (Plan JY P1). A manual in a script whose model is
+        // not on the phone asks for it and waits a bounded time for a download under way; then it
+        // is indexed either way, by its words if the model has not come.
+        let profile = DocumentLanguageProfile.detect(cleaned)
+        let script = EmbeddingScript(profile: profile)
+        if script != .latin, Self.isVaultNamespace(namespace), scriptEmbedder(for: script) == nil,
+           let scriptModelRequest {
+            await scriptModelRequest(script)
+        }
+
         let docId = UUID().uuidString
         let now = Date().timeIntervalSince1970
         let safeName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : name
 
         insertDocument(id: docId, name: safeName, sourceType: sourceType, namespace: namespace,
                        createdAt: now, chunkCount: chunks.count, charCount: cleaned.count)
-        recordLanguageProfile(of: cleaned, documentId: docId)
+        recordLanguageProfile(profile, documentId: docId)
 
         // A vault manual is embedded with the model its vault is served by (Plan IV P4), so it
         // never joins an index another model built; everything else keeps the store's embedder.
-        let chunkEmbedder = ingestEmbedder(namespace: namespace)
-        let versionTag = chunkEmbedder.version.tag
+        // A document in another script uses its script's model, or none (Plan JY P1).
+        let chunkEmbedder = ingestEmbedder(namespace: namespace, script: script)
+        let versionTag = chunkEmbedder?.version.tag
         let started = Date()
         for chunk in chunks {
-            let embedding = chunkEmbedder.embed(chunk.text)
+            let embedding = chunkEmbedder?.embed(chunk.text)
             insertChunk(documentId: docId, index: chunk.index, text: chunk.text,
                         embedding: embedding.map(vecToData), page: chunk.page, section: chunk.section,
                         kind: chunk.kind, figure: chunk.figure,
@@ -147,7 +163,7 @@ final class DocumentStore: ObservableObject {
                          characters: cleaned.count, detail: PrivacyToken(sourceType))
         if Self.isVaultNamespace(namespace) {
             PrivacyLog.store(.ragDocuments, .indexed, count: chunks.count,
-                             detail: PrivacyToken(Self.modelClass(chunkEmbedder.modelId)),
+                             detail: PrivacyToken(Self.indexDetail(modelId: chunkEmbedder?.modelId, script: script)),
                              durationMs: Int(Date().timeIntervalSince(started) * 1000))
         }
         return documents.first { $0.id == docId }
@@ -169,16 +185,48 @@ final class DocumentStore: ObservableObject {
         guard !trimmed.isEmpty else { return [] }
         let rows = fetchChunks(namespace: namespace, documentIds: documentIds).filter { kinds.contains($0.kind) }
         let vaultQuery = QueryVectors(text: trimmed, store: self)
-        let qv = rows.contains { !Self.isVaultNamespace($0.namespace) } ? embedder.embed(trimmed) : nil
+        let qv = rows.contains { !Self.isVaultNamespace($0.namespace) && $0.embeddingScript == .latin }
+            ? embedder.embed(trimmed) : nil
+        var scriptModels: [EmbeddingScript: Embedder?] = [:]
 
         let current = embedder.version
         let scored = rows.compactMap { row -> Passage? in
             // A vault manual's chunk is compared with the question embedded by the model that
             // embedded the chunk (Plan IV P4) and is never re-embedded here: its re-index runs in
-            // the background into a separate column and swaps in whole.
+            // the background into a separate column and swaps in whole. The model must be one of
+            // the chunk's own script (Plan JY P1).
             if Self.isVaultNamespace(row.namespace) {
-                guard let emb = row.embedding, let q = vaultQuery.vector(forVersionTag: row.embeddingVersion) else { return nil }
+                guard let emb = row.embedding,
+                      let q = vaultQuery.vector(forVersionTag: row.embeddingVersion, script: row.embeddingScript) else { return nil }
                 let sim = Embedder.cosineSimilarity(q, emb)
+                guard sim > minSimilarity else { return nil }
+                return Passage(documentId: row.documentId, documentName: row.documentName,
+                               chunkIndex: row.chunkIndex, text: row.text, similarity: sim,
+                               page: row.page, section: row.section, kind: row.kind, figure: row.figure,
+                               termRule: row.termRule)
+            }
+            // Any other document in another script (Plan JY P1): its script's model when it is on
+            // the phone — healed lazily from the text, like the store's own — and no similarity
+            // otherwise. Its words still reach it.
+            if row.embeddingScript != .latin {
+                let model: Embedder?
+                if let known = scriptModels[row.embeddingScript] { model = known } else {
+                    model = scriptEmbedder(for: row.embeddingScript)
+                    scriptModels[row.embeddingScript] = .some(model)
+                }
+                guard let model else { return nil }
+                let tag = model.version.tag
+                let vector: [Float]?
+                if let stored = row.embedding, row.embeddingVersion == tag {
+                    vector = stored
+                } else if let fresh = model.embed(row.text) {
+                    writeBackEmbedding(chunkId: row.id, vector: fresh, versionTag: tag)
+                    vector = fresh
+                } else {
+                    vector = nil
+                }
+                guard let vector, let q = vaultQuery.vector(forVersionTag: tag, script: row.embeddingScript) else { return nil }
+                let sim = Embedder.cosineSimilarity(q, vector)
                 guard sim > minSimilarity else { return nil }
                 return Passage(documentId: row.documentId, documentName: row.documentName,
                                chunkIndex: row.chunkIndex, text: row.text, similarity: sim,
@@ -227,7 +275,7 @@ final class DocumentStore: ObservableObject {
         return rows.prefix(max(limit, 1)).map {
             Passage(documentId: $0.documentId, documentName: $0.documentName, chunkIndex: $0.chunkIndex,
                     text: $0.text, similarity: 0, page: $0.page, section: $0.section,
-                    kind: $0.kind, figure: $0.figure, termRule: $0.termRule)
+                    kind: $0.kind, figure: $0.figure, termRule: $0.termRule, vectorPending: $0.vectorPending)
         }
     }
 
@@ -251,14 +299,18 @@ final class DocumentStore: ObservableObject {
         let current = embedder.version
         let rows = fetchChunks(namespace: namespace, documentIds: documentIds).filter { kinds.contains($0.kind) }
         let vaultQuery = QueryVectors(text: text, store: self)
-        let qv = rows.contains { !Self.isVaultNamespace($0.namespace) } ? embedder.embed(text) : nil
+        let qv = rows.contains { !Self.isVaultNamespace($0.namespace) && $0.embeddingScript == .latin }
+            ? embedder.embed(text) : nil
         let scored = rows
             .compactMap { row -> (row: ChunkRow, shared: Int, similarity: Float)? in
                 let shared = LexicalSupport.sharedTermCount(text: row.text, question: question, rule: row.termRule)
                 guard shared > 0 else { return nil }
                 var similarity: Float = 0
-                if Self.isVaultNamespace(row.namespace) {
-                    if let vector = row.embedding, let q = vaultQuery.vector(forVersionTag: row.embeddingVersion) {
+                if Self.isVaultNamespace(row.namespace) || row.embeddingScript != .latin {
+                    // Compared only with a question vector from the chunk's own script's model
+                    // (Plan JY P1); a chunk awaiting that model scores 0 and is `vectorPending`.
+                    if !row.vectorPending, let vector = row.embedding,
+                       let q = vaultQuery.vector(forVersionTag: row.embeddingVersion, script: row.embeddingScript) {
                         similarity = Embedder.cosineSimilarity(q, vector)
                     }
                 } else if let qv, let vector = row.embedding,
@@ -273,7 +325,7 @@ final class DocumentStore: ObservableObject {
             Passage(documentId: $0.row.documentId, documentName: $0.row.documentName,
                     chunkIndex: $0.row.chunkIndex, text: $0.row.text, similarity: $0.similarity,
                     page: $0.row.page, section: $0.row.section, kind: $0.row.kind, figure: $0.row.figure,
-                    termRule: $0.row.termRule)
+                    termRule: $0.row.termRule, vectorPending: $0.row.vectorPending)
         }
     }
 
@@ -316,7 +368,7 @@ final class DocumentStore: ObservableObject {
                 Passage(documentId: $0.row.documentId, documentName: $0.row.documentName,
                         chunkIndex: $0.row.chunkIndex, text: $0.row.text, similarity: 0, page: $0.row.page,
                         section: $0.row.section, kind: $0.row.kind, figure: $0.row.figure,
-                        clauseMatch: $0.match, termRule: $0.row.termRule)
+                        clauseMatch: $0.match, termRule: $0.row.termRule, vectorPending: $0.row.vectorPending)
             }
     }
 
@@ -349,7 +401,7 @@ final class DocumentStore: ObservableObject {
         .prefix(max(limit, 1)).map {
             Passage(documentId: $0.documentId, documentName: $0.documentName, chunkIndex: $0.chunkIndex,
                     text: $0.text, similarity: 0, page: $0.page, section: $0.section,
-                    kind: $0.kind, figure: $0.figure, termRule: $0.termRule)
+                    kind: $0.kind, figure: $0.figure, termRule: $0.termRule, vectorPending: $0.vectorPending)
         }
     }
 
@@ -628,12 +680,15 @@ final class DocumentStore: ObservableObject {
         let now = Date().timeIntervalSince1970
         insertDocument(id: documentId, name: name, sourceType: sourceType, namespace: namespace,
                        createdAt: now, chunkCount: 1, charCount: cleaned.count)
-        recordLanguageProfile(of: cleaned, documentId: documentId)
-        let embedding = embedder.embed(cleaned)
+        let profile = DocumentLanguageProfile.detect(cleaned)
+        recordLanguageProfile(profile, documentId: documentId)
+        // Another script's text is embedded with its own model if it is here, else not at all.
+        let model = ingestEmbedder(namespace: namespace, script: EmbeddingScript(profile: profile))
+        let embedding = model?.embed(cleaned)
         insertChunk(documentId: documentId, index: 0, text: cleaned,
                     embedding: embedding.map(vecToData), page: nil, section: nil,
                     kind: .prose, figure: nil,
-                    createdAt: now, version: embedding != nil ? embedder.version.tag : nil)
+                    createdAt: now, version: embedding != nil ? model?.version.tag : nil)
         refresh()
         PrivacyLog.store(.ragDocuments, .ingested, count: 1, characters: cleaned.count,
                          detail: PrivacyToken(sourceType))
@@ -653,10 +708,19 @@ final class DocumentStore: ObservableObject {
         let textChunks = chunker.chunkPages(pages)
         let rows = TableRowPassage.chunks(for: tables, startingAt: textChunks.count)
         let chunks = textChunks + rows.chunks
+        // A photographed manual in another script asks for its model like an uploaded one, and is
+        // embedded with it or not at all (Plan JY P1).
+        let profile = DocumentLanguageProfile.detect(pages.map(\.text).joined(separator: "\n"))
+        let script = EmbeddingScript(profile: profile)
+        if script != .latin, scriptEmbedder(for: script) == nil, let scriptModelRequest {
+            await scriptModelRequest(script)
+            guard stillAllowed(), !Task.isCancelled else { return false }
+        }
+        let model = script == .latin ? embedder : scriptEmbedder(for: script)
         var vectors: [Data?] = []
         for chunk in chunks {
             guard stillAllowed(), !Task.isCancelled else { return false }
-            vectors.append(embedder.embed(chunk.text).map(vecToData))
+            vectors.append(model?.embed(chunk.text).map(vecToData))
             await Task.yield()
         }
         guard stillAllowed(), !Task.isCancelled,
@@ -668,11 +732,11 @@ final class DocumentStore: ObservableObject {
         insertDocument(id: documentId, name: name, sourceType: sourceType, namespace: namespace,
                        createdAt: now, chunkCount: chunks.count, charCount: pages.reduce(0) { $0 + $1.text.count })
         guard sqlite3_errcode(db) == SQLITE_OK || sqlite3_errcode(db) == SQLITE_DONE else { return false }
-        recordLanguageProfile(of: pages.map(\.text).joined(separator: "\n"), documentId: documentId)
+        recordLanguageProfile(profile, documentId: documentId)
         for (index, chunk) in chunks.enumerated() {
             insertChunk(documentId: documentId, index: index, text: chunk.text, embedding: vectors[index],
                         page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
-                        createdAt: now, version: vectors[index] == nil ? nil : embedder.version.tag,
+                        createdAt: now, version: vectors[index] == nil ? nil : model?.version.tag,
                         location: chunk)
             guard sqlite3_errcode(db) == SQLITE_OK || sqlite3_errcode(db) == SQLITE_DONE else { return false }
         }
@@ -697,10 +761,14 @@ final class DocumentStore: ObservableObject {
 
     /// How many stored chunks were embedded by a model other than the active one (or are unstamped).
     /// Drives a "re-index now" affordance and lets tests assert migration progress.
+    /// A document in another script (Plan JY P1) counts when its script's model is here and the
+    /// chunk is not on it — never against the store's own model, which cannot read it.
     var outdatedChunkCount: Int {
         let current = embedder.version
         return fetchChunks(namespace: nil, documentIds: nil).reduce(0) { acc, row in
-            row.embedding == nil || Self.isVaultNamespace(row.namespace) ? acc
+            if Self.isVaultNamespace(row.namespace) { return acc }
+            if row.embeddingScript != .latin { return row.vectorPending && scriptEmbedder(for: row.embeddingScript) != nil ? acc + 1 : acc }
+            return row.embedding == nil ? acc
                 : EmbeddingMigrationPolicy.action(stored: EmbeddingVersion(tag: row.embeddingVersion),
                                                   current: current) == .reembed ? acc + 1 : acc
         }
@@ -713,14 +781,22 @@ final class DocumentStore: ObservableObject {
     func reindexOutdated(progress: ((Int, Int) -> Void)? = nil) async -> Int {
         let current = embedder.version
         // A vault's manuals have their own model and their own re-index (`upgradeVaultEmbeddings`).
-        let rows = fetchChunks(namespace: nil, documentIds: nil)
-            .filter { $0.embedding != nil && !Self.isVaultNamespace($0.namespace) &&
-                EmbeddingMigrationPolicy.action(stored: EmbeddingVersion(tag: $0.embeddingVersion),
-                                                current: current) == .reembed }
+        // A document in another script is re-embedded only with its own script's model, when it
+        // is here (Plan JY P1).
+        let all = fetchChunks(namespace: nil, documentIds: nil).filter { !Self.isVaultNamespace($0.namespace) }
+        let scriptModels = Dictionary(uniqueKeysWithValues: Set(all.map(\.embeddingScript)).subtracting([.latin])
+            .compactMap { script in scriptEmbedder(for: script).map { (script, $0) } })
+        let rows = all.filter { row in
+            row.embeddingScript == .latin
+                ? row.embedding != nil && EmbeddingMigrationPolicy.action(stored: EmbeddingVersion(tag: row.embeddingVersion),
+                                                                           current: current) == .reembed
+                : row.vectorPending && scriptModels[row.embeddingScript] != nil
+        }
         var done = 0
         for row in rows {
-            if let fresh = embedder.embed(row.text) {
-                writeBackEmbedding(chunkId: row.id, vector: fresh, versionTag: current.tag)
+            let model = row.embeddingScript == .latin ? embedder : scriptModels[row.embeddingScript]
+            if let model, let fresh = model.embed(row.text) {
+                writeBackEmbedding(chunkId: row.id, vector: fresh, versionTag: model.version.tag)
             }
             done += 1
             progress?(done, rows.count)
@@ -813,10 +889,19 @@ final class DocumentStore: ObservableObject {
         languageProfile(documentId: documentId).termRule
     }
 
+    /// The model family the document's passages are embedded with (Plan JY P1).
+    func embeddingScript(documentId: String) -> EmbeddingScript {
+        EmbeddingScript(profile: languageProfile(documentId: documentId))
+    }
+
     /// Detect and record the profile of a document's text at ingest or re-index. The cache is
     /// left to the next read: a write that rolls back must not leave its profile behind.
     private func recordLanguageProfile(of text: String, documentId: String) {
-        writeLanguageProfile(DocumentLanguageProfile.detect(text), documentId: documentId)
+        recordLanguageProfile(DocumentLanguageProfile.detect(text), documentId: documentId)
+    }
+
+    private func recordLanguageProfile(_ profile: DocumentLanguageProfile, documentId: String) {
+        writeLanguageProfile(profile, documentId: documentId)
         languageProfileCache[documentId] = nil
     }
 
@@ -914,35 +999,167 @@ final class DocumentStore: ObservableObject {
 
     private lazy var standardEmbedder = Embedder(preference: .standard)
 
+    // MARK: Models by script (Plan JY P1)
+
+    /// A script's contextual model when its asset is on the phone. A seam: the tests stand in a
+    /// model per script, and make one "arrive" by starting to return it.
+    var scriptEmbedderProvider: (EmbeddingScript) -> Embedder? = { Embedder.contextual(for: $0) }
+
+    /// Asks for a script's model and waits briefly for it, before a manual in that script is
+    /// indexed. Set at launch to `ScriptModelAssets.requestAndWait`; nil — the default, and the
+    /// tests' — indexes at once. Only manuals ask (vault and photographed ones): the Documents
+    /// library, team learnings and every other namespace use a model only if it is already here.
+    var scriptModelRequest: ((EmbeddingScript) async -> Void)?
+
+    /// The model that reads `script`'s text, when it is on the phone; nil for `.latin`, whose
+    /// models are the ones above.
+    func scriptEmbedder(for script: EmbeddingScript) -> Embedder? {
+        guard script != .latin, let model = scriptEmbedderProvider(script), model.isAvailable,
+              model.script == script else { return nil }
+        return model
+    }
+
     /// An embedder that produces `tag`, or nil when none of the known models does — a chunk the
     /// question cannot be compared with, which is left out of the similarity search (the exact-
-    /// token and lexical routes still reach it).
+    /// token and lexical routes still reach it). The Latin models first, then each script's model
+    /// that is on the phone (Plan JY P1).
     func embedderProducing(versionTag tag: String?) -> Embedder? {
         guard let tag else { return nil }
-        return knownEmbedders.first { $0.isAvailable && $0.version.tag == tag }
+        if let latin = embedderProducing(versionTag: tag, script: .latin) { return latin }
+        for script in EmbeddingScript.allCases where script != .latin {
+            if let model = embedderProducing(versionTag: tag, script: script) { return model }
+        }
+        return nil
     }
 
-    /// The version most of a namespace's chunks carry: the index that answers for it now.
+    /// An embedder of `script` that produces `tag`: one of the Latin models for a Latin document,
+    /// that script's own model for any other. A chunk is never compared with a question embedded
+    /// by another script's model — including a chunk an older build embedded with the Latin model,
+    /// which reads as having no vector until its own model re-indexes it.
+    func embedderProducing(versionTag tag: String?, script: EmbeddingScript) -> Embedder? {
+        guard let tag else { return nil }
+        guard script != .latin else { return knownEmbedders.first { $0.isAvailable && $0.version.tag == tag } }
+        guard let model = scriptEmbedder(for: script), model.version.tag == tag else { return nil }
+        return model
+    }
+
+    /// The documents of `namespace` whose passages `script`'s model embeds.
+    func documentIds(namespace: String, script: EmbeddingScript) -> [String] {
+        rows("SELECT id FROM documents WHERE namespace = '\(escapedSQL(namespace))' ORDER BY id") { stmt in
+            sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+        }.filter { !$0.isEmpty && embeddingScript(documentId: $0) == script }
+    }
+
+    /// The scripts a namespace's documents are embedded under, in `EmbeddingScript` order.
+    func embeddingScripts(namespace: String) -> [EmbeddingScript] {
+        let ids = rows("SELECT id FROM documents WHERE namespace = '\(escapedSQL(namespace))'") { stmt in
+            sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+        }
+        let present = Set(ids.filter { !$0.isEmpty }.map { embeddingScript(documentId: $0) })
+        return EmbeddingScript.allCases.filter(present.contains)
+    }
+
+    /// A document's language and how its passages are searched, for My Manuals, the Developer
+    /// panel and the support report (Plan JY P1). Counts and labels only, never its text.
+    struct LanguageDiagnostic: Equatable {
+        let documentId: String
+        /// A vault or photographed manual, rather than a document of the Documents library.
+        let isManual: Bool
+        let profile: DocumentLanguageProfile
+        let script: EmbeddingScript
+        /// The family of the model whose vectors answer ("contextual", "sentence", "word"), or
+        /// "none" when no chunk has a vector the question can be compared with.
+        let modelClass: String
+        let chunksWithVectors: Int
+        let chunks: Int
+
+        /// A document in another script that is searched, at least in part, by its words alone
+        /// until its script's model downloads and re-indexes it.
+        var searchesByWords: Bool { script != .latin && chunksWithVectors < chunks }
+
+        /// "manual · han zh-Hans 0.97 · CJK model contextual · vectors 0/42 · words only".
+        var line: String {
+            let language = profile.language.map { "\($0) \(String(format: "%.2f", profile.confidence))" } ?? "language unsure"
+            var parts = [isManual ? "manual" : "document", "\(profile.script.rawValue) \(language)",
+                         "\(script.diagnosticLabel) model \(modelClass)", "vectors \(chunksWithVectors)/\(chunks)"]
+            if searchesByWords { parts.append("words only") }
+            return parts.joined(separator: " · ")
+        }
+    }
+
+    /// One document's diagnostic, or nil when it is not stored.
+    func languageDiagnostic(documentId: String) -> LanguageDiagnostic? {
+        let found = rows("SELECT namespace FROM documents WHERE id = '\(escapedSQL(documentId))'") { stmt in
+            sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+        }
+        guard let namespace = found.first else { return nil }
+        let script = embeddingScript(documentId: documentId)
+        let counts = rows("""
+            SELECT embedding_version, COUNT(*), SUM(CASE WHEN embedding IS NULL THEN 0 ELSE 1 END)
+            FROM doc_chunks WHERE document_id = '\(escapedSQL(documentId))' GROUP BY embedding_version
+            """) { stmt -> (tag: String?, chunks: Int, vectors: Int) in
+            (sqlite3_column_text(stmt, 0).map { String(cString: $0) },
+             Int(sqlite3_column_int(stmt, 1)), Int(sqlite3_column_int(stmt, 2)))
+        }
+        let total = counts.reduce(0) { $0 + $1.chunks }
+        let usable: [(tag: String?, chunks: Int, vectors: Int)]
+        if script == .latin {
+            usable = counts.filter { $0.vectors > 0 }
+        } else {
+            let tag = scriptEmbedder(for: script)?.version.tag
+            usable = counts.filter { tag != nil && $0.tag == tag && $0.vectors > 0 }
+        }
+        let withVectors = usable.reduce(0) { $0 + $1.vectors }
+        let majority = usable.max { $0.vectors < $1.vectors }?.tag
+        let family = withVectors > 0 ? Self.modelClass(EmbeddingVersion(tag: majority)?.modelId ?? "") : "none"
+        return LanguageDiagnostic(documentId: documentId,
+                                  isManual: Self.isVaultNamespace(namespace) || namespace.hasPrefix("captured:"),
+                                  profile: languageProfile(documentId: documentId), script: script,
+                                  modelClass: family, chunksWithVectors: withVectors, chunks: total)
+    }
+
+    /// Every document's diagnostic but a team learning's (the organisation's, and many tiny
+    /// entries), newest first.
+    func languageDiagnostics() -> [LanguageDiagnostic] {
+        documents.filter { !Self.isLearningNamespace($0.namespace) }.compactMap { languageDiagnostic(documentId: $0.id) }
+    }
+
+    /// `c.document_id IN (…)` for a list of ids.
+    private func documentIdClause(_ ids: [String]) -> String {
+        "c.document_id IN (" + ids.map { "'\(escapedSQL($0))'" }.joined(separator: ", ") + ")"
+    }
+
+    /// The version most of a namespace's Latin chunks carry: the index that answers for them now.
     func servingVersionTag(namespace: String, excluding documentId: String? = nil) -> String? {
-        var sql = """
-        SELECT c.embedding_version, COUNT(*) AS n FROM doc_chunks c JOIN documents d ON c.document_id = d.id
-        WHERE d.namespace = '\(escapedSQL(namespace))' AND c.embedding IS NOT NULL AND c.embedding_version IS NOT NULL
-        """
-        if let documentId { sql += " AND c.document_id != '\(escapedSQL(documentId))'" }
-        sql += " GROUP BY c.embedding_version ORDER BY n DESC LIMIT 1"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
-        defer { sqlite3_finalize(stmt) }
-        guard sqlite3_step(stmt) == SQLITE_ROW, let raw = sqlite3_column_text(stmt, 0) else { return nil }
-        return String(cString: raw)
+        servingVersionTag(namespace: namespace, script: .latin, excluding: documentId)
     }
 
-    /// The model id that answers for a namespace now — what the evidence gate is chosen by.
+    /// The version most of a namespace's chunks under `script` carry (Plan JY P1). A vault keeps
+    /// one model per index **per script**: a library holding an English and a Chinese manual is
+    /// served by the Latin model for the one and the CJK model for the other.
+    func servingVersionTag(namespace: String, script: EmbeddingScript, excluding documentId: String? = nil) -> String? {
+        let ids = documentIds(namespace: namespace, script: script).filter { $0 != documentId }
+        guard !ids.isEmpty else { return nil }
+        let sql = """
+        SELECT c.embedding_version, COUNT(*) AS n FROM doc_chunks c
+        WHERE \(documentIdClause(ids)) AND c.embedding IS NOT NULL AND c.embedding_version IS NOT NULL
+        GROUP BY c.embedding_version ORDER BY n DESC LIMIT 1
+        """
+        return rows(sql) { stmt in sqlite3_column_text(stmt, 0).map { String(cString: $0) } }.first ?? nil
+    }
+
+    /// The model id that answers for a namespace now — what the evidence gate is chosen by. Read
+    /// over all of the namespace's chunks, whatever their script: the gate's defaults are chosen
+    /// by model family, and every script model is contextual (Plan JY P3 calibrates per group).
     func servingModelId(namespace: String) -> String {
         guard Self.isVaultNamespace(namespace) else { return embedder.modelId }
-        if let tag = servingVersionTag(namespace: namespace), let version = EmbeddingVersion(tag: tag) {
-            return version.modelId
-        }
+        let sql = """
+        SELECT c.embedding_version, COUNT(*) AS n FROM doc_chunks c JOIN documents d ON c.document_id = d.id
+        WHERE d.namespace = '\(escapedSQL(namespace))' AND c.embedding IS NOT NULL AND c.embedding_version IS NOT NULL
+        GROUP BY c.embedding_version ORDER BY n DESC LIMIT 1
+        """
+        let tag = rows(sql) { stmt in sqlite3_column_text(stmt, 0).map { String(cString: $0) } }.first ?? nil
+        if let version = EmbeddingVersion(tag: tag) { return version.modelId }
         return vaultTargetEmbedder.modelId
     }
 
@@ -952,17 +1169,35 @@ final class DocumentStore: ObservableObject {
     func ingestEmbedder(namespace: String, excluding documentId: String? = nil) -> Embedder {
         guard Self.isVaultNamespace(namespace) else { return embedder }
         if let tag = servingVersionTag(namespace: namespace, excluding: documentId),
-           let serving = embedderProducing(versionTag: tag) {
+           let serving = embedderProducing(versionTag: tag, script: .latin) {
             return serving
         }
         return vaultTargetEmbedder
+    }
+
+    /// The embedder a document in `script` joining `namespace` is embedded with (Plan JY P1): the
+    /// one above for a Latin document; for any other, the vault's serving model for that script
+    /// while it is here, else that script's model, else nil — the document is stored with no
+    /// vectors and searched by its words until the model lands and the self-heal embeds it.
+    func ingestEmbedder(namespace: String, script: EmbeddingScript, excluding documentId: String? = nil) -> Embedder? {
+        guard script != .latin else { return ingestEmbedder(namespace: namespace, excluding: documentId) }
+        if Self.isVaultNamespace(namespace),
+           let tag = servingVersionTag(namespace: namespace, script: script, excluding: documentId),
+           let serving = embedderProducing(versionTag: tag, script: script) {
+            return serving
+        }
+        return scriptEmbedder(for: script)
     }
 
     /// The question embedded once per model a vault's chunks use, for one search.
     struct QueryVectors {
         let text: String
         let store: DocumentStore
-        private final class Cache { var vectors: [String: [Float]?] = [:]; var milliseconds: [String: Int] = [:] }
+        private final class Cache {
+            var vectors: [String: [Float]?] = [:]
+            var byTag: [String: [Float]?] = [:]
+            var milliseconds: [String: Int] = [:]
+        }
         private let cache = Cache()
 
         init(text: String, store: DocumentStore) {
@@ -970,19 +1205,32 @@ final class DocumentStore: ObservableObject {
             self.store = store
         }
 
-        @MainActor func vector(forVersionTag tag: String?) -> [Float]? {
+        /// The question embedded by the model that produced `tag`, when that model reads
+        /// `script`'s text (Plan JY P1) — once per model for the whole search, so a library mixing
+        /// English, Cyrillic and Chinese manuals compares each passage with a question vector from
+        /// its own model.
+        @MainActor func vector(forVersionTag tag: String?, script: EmbeddingScript = .latin) -> [Float]? {
             guard let tag else { return nil }
-            if let known = cache.vectors[tag] { return known }
-            guard let embedder = store.embedderProducing(versionTag: tag) else {
-                cache.vectors[tag] = .some(nil)
+            let key = "\(script.rawValue) \(tag)"
+            if let known = cache.vectors[key] { return known }
+            guard let embedder = store.embedderProducing(versionTag: tag, script: script) else {
+                cache.vectors[key] = .some(nil)
                 return nil
+            }
+            if let same = cache.byTag[tag] {
+                cache.vectors[key] = same
+                return same
             }
             let started = Date()
             let vector = embedder.embed(text)
-            cache.vectors[tag] = vector
+            cache.vectors[key] = vector
+            cache.byTag[tag] = vector
             cache.milliseconds[tag] = Int(Date().timeIntervalSince(started) * 1000)
             return vector
         }
+
+        /// How many times the question was embedded: one per model. For the tests.
+        var embeddedModelCount: Int { cache.byTag.count }
 
         /// One line per model used: how long embedding the question took. Never the question.
         @MainActor func logTimings() {
@@ -996,10 +1244,18 @@ final class DocumentStore: ObservableObject {
 
     /// The model family for a log line — a closed set, never the full identifier.
     nonisolated static func modelClass(_ modelId: String) -> String {
+        if modelId.hasPrefix("none") { return "none" }
         if modelId.hasPrefix("nl-contextual") { return "contextual" }
         if modelId.hasPrefix("nl-sentence") { return "sentence" }
         if modelId.hasPrefix("nl-word") { return "word" }
         return "other"
+    }
+
+    /// An index log line's model detail: the family alone for a Latin document, as before; the
+    /// family and the script for any other ("contextual.cjk", "none.cyrillic").
+    nonisolated static func indexDetail(modelId: String?, script: EmbeddingScript) -> String {
+        let family = modelClass(modelId ?? "none")
+        return script == .latin ? family : "\(family).\(script.rawValue)"
     }
 
     /// How a vault re-index went.
@@ -1019,18 +1275,25 @@ final class DocumentStore: ObservableObject {
     /// until every chunk of the vault has its new vector, and then all of them swap in one
     /// transaction. A run that stops part-way keeps what it built, and the next run embeds only
     /// what is still missing. `progress` reports (manual title, chunks done, chunks to do).
-    func upgradeVaultEmbeddings(namespace: String, to target: Embedder,
+    ///
+    /// Per script (Plan JY P1): only the manuals `script`'s model embeds are re-indexed, and only
+    /// theirs swap, so a library's English and Chinese manuals each keep the index that answers
+    /// for them until their own new one is complete. `target` must read `script`'s text.
+    func upgradeVaultEmbeddings(namespace: String, script: EmbeddingScript = .latin, to target: Embedder,
                                 progress: ((String, Int, Int) -> Void)? = nil,
                                 shouldContinue: () -> Bool = { true }) async -> UpgradeOutcome {
-        guard Self.isVaultNamespace(namespace), target.isAvailable else { return .current }
+        guard Self.isVaultNamespace(namespace), target.isAvailable, target.script == script else { return .current }
         let tag = target.version.tag
         let started = Date()
         var embedded = 0
         for _ in 0..<3 {
-            let todo = pendingWork(namespace: namespace, targetTag: tag)
+            let todo = pendingWork(namespace: namespace, script: script, targetTag: tag)
             if todo.total == 0 {
-                exec("UPDATE doc_chunks SET pending_embedding = NULL, pending_version = NULL WHERE document_id IN "
-                     + "(SELECT id FROM documents WHERE namespace = '\(escapedSQL(namespace))')")
+                let ids = documentIds(namespace: namespace, script: script)
+                if !ids.isEmpty {
+                    exec("UPDATE doc_chunks SET pending_embedding = NULL, pending_version = NULL WHERE "
+                         + documentIdClause(ids).replacingOccurrences(of: "c.document_id", with: "document_id"))
+                }
                 return embedded > 0 ? .completed(chunks: embedded) : .current
             }
             var done = todo.total - todo.missing.count
@@ -1044,11 +1307,13 @@ final class DocumentStore: ObservableObject {
             }
             guard shouldContinue(), !Task.isCancelled else { return .interrupted(done: done, total: todo.total) }
             // Swap only if nothing joined the vault meanwhile; otherwise go round and embed it too.
-            if pendingWork(namespace: namespace, targetTag: tag).missing.isEmpty {
-                guard swapPending(namespace: namespace, targetTag: tag) else { return .interrupted(done: done, total: todo.total) }
+            if pendingWork(namespace: namespace, script: script, targetTag: tag).missing.isEmpty {
+                guard swapPending(namespace: namespace, script: script, targetTag: tag) else {
+                    return .interrupted(done: done, total: todo.total)
+                }
                 refresh()
                 PrivacyLog.store(.ragDocuments, .reembedded, count: embedded, total: todo.total,
-                                 detail: PrivacyToken(Self.modelClass(target.modelId)),
+                                 detail: PrivacyToken(Self.indexDetail(modelId: target.modelId, script: script)),
                                  durationMs: Int(Date().timeIntervalSince(started) * 1000))
                 return .completed(chunks: embedded)
             }
@@ -1056,11 +1321,15 @@ final class DocumentStore: ObservableObject {
         return .interrupted(done: embedded, total: embedded)
     }
 
-    /// The vault's chunks not yet on `targetTag`, and of those, the ones with no pending vector.
-    private func pendingWork(namespace: String, targetTag: String) -> (total: Int, missing: [(id: String, title: String, text: String)]) {
+    /// The vault's chunks under `script` not yet on `targetTag`, and of those, the ones with no
+    /// pending vector.
+    private func pendingWork(namespace: String, script: EmbeddingScript,
+                             targetTag: String) -> (total: Int, missing: [(id: String, title: String, text: String)]) {
+        let ids = documentIds(namespace: namespace, script: script)
+        guard !ids.isEmpty else { return (0, []) }
         let sql = """
         SELECT c.id, d.name, c.text, c.pending_version FROM doc_chunks c JOIN documents d ON c.document_id = d.id
-        WHERE d.namespace = ? AND (c.embedding_version IS NULL OR c.embedding_version != ?)
+        WHERE d.namespace = ? AND (c.embedding_version IS NULL OR c.embedding_version != ?) AND \(documentIdClause(ids))
         ORDER BY d.name, c.chunk_index
         """
         var stmt: OpaquePointer?
@@ -1096,10 +1365,13 @@ final class DocumentStore: ObservableObject {
         _ = sqlite3_step(stmt)
     }
 
-    /// Every pending vector of the vault becomes its index, in one transaction.
-    private func swapPending(namespace: String, targetTag: String) -> Bool {
-        guard exec("BEGIN IMMEDIATE") else { return false }
-        let inVault = "document_id IN (SELECT id FROM documents WHERE namespace = '\(escapedSQL(namespace))')"
+    /// Every pending vector of the vault's manuals under `script` becomes their index, in one
+    /// transaction.
+    private func swapPending(namespace: String, script: EmbeddingScript, targetTag: String) -> Bool {
+        let ids = documentIds(namespace: namespace, script: script)
+        guard !ids.isEmpty, exec("BEGIN IMMEDIATE") else { return false }
+        let inVault = "document_id IN (SELECT id FROM documents WHERE namespace = '\(escapedSQL(namespace))') AND "
+            + documentIdClause(ids).replacingOccurrences(of: "c.document_id", with: "document_id")
         let tag = escapedSQL(targetTag)
         let ok = exec("""
             UPDATE doc_chunks SET embedding = pending_embedding,
@@ -1113,15 +1385,18 @@ final class DocumentStore: ObservableObject {
 
     /// How far a vault's re-index has got: chunks on the target model or with a pending vector
     /// for it, of all its chunks. For the indexing screen and the tests.
-    func upgradeProgress(namespace: String, targetTag: String) -> (done: Int, total: Int) {
-        let work = pendingWork(namespace: namespace, targetTag: targetTag)
-        let all = documentChunkCount(namespace: namespace)
+    /// For the manuals under `script` (Plan JY P1); Latin by default.
+    func upgradeProgress(namespace: String, script: EmbeddingScript = .latin, targetTag: String) -> (done: Int, total: Int) {
+        let work = pendingWork(namespace: namespace, script: script, targetTag: targetTag)
+        let all = documentChunkCount(namespace: namespace, script: script)
         return (all - work.missing.count, all)
     }
 
-    private func documentChunkCount(namespace: String) -> Int {
+    private func documentChunkCount(namespace: String, script: EmbeddingScript) -> Int {
+        let ids = documentIds(namespace: namespace, script: script)
+        guard !ids.isEmpty else { return 0 }
         let sql = """
-        SELECT COUNT(*) FROM doc_chunks c JOIN documents d ON c.document_id = d.id WHERE d.namespace = ?
+        SELECT COUNT(*) FROM doc_chunks c JOIN documents d ON c.document_id = d.id WHERE d.namespace = ? AND \(documentIdClause(ids))
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
@@ -1269,10 +1544,11 @@ final class DocumentStore: ObservableObject {
     @discardableResult
     func rechunk(documentId: String, chunks: [DocumentChunker.Chunk]) async -> Bool {
         guard !chunks.isEmpty, let namespace = storedNamespace(documentId: documentId) else { return false }
-        let chunkEmbedder = ingestEmbedder(namespace: namespace, excluding: documentId)
+        let profile = DocumentLanguageProfile.detect(chunks.filter { $0.kind != .tableRow }.map(\.text).joined(separator: "\n"))
+        let chunkEmbedder = ingestEmbedder(namespace: namespace, script: EmbeddingScript(profile: profile), excluding: documentId)
         var vectors: [Data?] = []
         for chunk in chunks {
-            vectors.append(chunkEmbedder.embed(chunk.text).map(vecToData))
+            vectors.append(chunkEmbedder?.embed(chunk.text).map(vecToData))
             await Task.yield()
         }
         guard exec("BEGIN IMMEDIATE") else { return false }
@@ -1281,12 +1557,11 @@ final class DocumentStore: ObservableObject {
         for (index, chunk) in chunks.enumerated() {
             insertChunk(documentId: documentId, index: chunk.index, text: chunk.text, embedding: vectors[index],
                         page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
-                        createdAt: now, version: vectors[index] == nil ? nil : chunkEmbedder.version.tag,
+                        createdAt: now, version: vectors[index] == nil ? nil : chunkEmbedder?.version.tag,
                         location: chunk)
         }
         exec("UPDATE documents SET chunk_count = \(chunks.count) WHERE id = '\(escapedSQL(documentId))'")
-        recordLanguageProfile(of: chunks.filter { $0.kind != .tableRow }.map(\.text).joined(separator: "\n"),
-                              documentId: documentId)
+        recordLanguageProfile(profile, documentId: documentId)
         guard exec("COMMIT") else { exec("ROLLBACK"); return false }
         refresh()
         return true
@@ -1467,10 +1742,10 @@ final class DocumentStore: ObservableObject {
         sqlite3_finalize(stmt)
 
         let rows = TableRowPassage.chunks(for: tables, startingAt: next)
-        let chunkEmbedder = ingestEmbedder(namespace: namespace)
+        let chunkEmbedder = ingestEmbedder(namespace: namespace, script: embeddingScript(documentId: documentId))
         var vectors: [Data?] = []
         for chunk in rows.chunks {
-            vectors.append(chunkEmbedder.embed(chunk.text).map(vecToData))
+            vectors.append(chunkEmbedder?.embed(chunk.text).map(vecToData))
             await Task.yield()
         }
         // The document may have been removed while the rows were embedded.
@@ -1481,7 +1756,7 @@ final class DocumentStore: ObservableObject {
         for (index, chunk) in rows.chunks.enumerated() {
             insertChunk(documentId: documentId, index: chunk.index, text: chunk.text, embedding: vectors[index],
                         page: chunk.page, section: chunk.section, kind: chunk.kind, figure: chunk.figure,
-                        createdAt: now, version: vectors[index] == nil ? nil : chunkEmbedder.version.tag,
+                        createdAt: now, version: vectors[index] == nil ? nil : chunkEmbedder?.version.tag,
                         location: chunk)
         }
         setTables(tables, documentId: documentId)
@@ -1666,6 +1941,11 @@ final class DocumentStore: ObservableObject {
         let figure: String?
         /// The document's rule (Plan JY P0), set once the rows are read.
         var termRule: TermRule = .english
+        /// The model family that embeds the document (Plan JY P1), set once the rows are read.
+        var embeddingScript: EmbeddingScript = .latin
+        /// A chunk of a document in another script with no vector from that script's model —
+        /// the model is not on the phone, or has not re-indexed it yet. Never set for Latin.
+        var vectorPending = false
     }
 
     private func fetchChunks(namespace: String?, documentIds: [String]?) -> [ChunkRow] {
@@ -1711,12 +1991,23 @@ final class DocumentStore: ObservableObject {
                                  kind: kindTag.flatMap(DocumentChunker.Kind.init(rawValue:)) ?? .prose,
                                  figure: figure))
         }
-        var rules: [String: TermRule] = [:]
+        var profiles: [String: DocumentLanguageProfile] = [:]
+        var scriptTags: [EmbeddingScript: String?] = [:]
         for index in rows.indices {
             let documentId = rows[index].documentId
-            let rule = rules[documentId] ?? termRule(documentId: documentId)
-            rules[documentId] = rule
-            rows[index].termRule = rule
+            let profile = profiles[documentId] ?? languageProfile(documentId: documentId)
+            profiles[documentId] = profile
+            rows[index].termRule = profile.termRule
+            let script = EmbeddingScript(profile: profile)
+            rows[index].embeddingScript = script
+            guard script != .latin else { continue }
+            // Whether the chunk has a vector its own script's model made, the model being here.
+            let tag: String?
+            if let known = scriptTags[script] { tag = known } else {
+                tag = scriptEmbedder(for: script)?.version.tag
+                scriptTags[script] = .some(tag)
+            }
+            rows[index].vectorPending = rows[index].embedding == nil || tag == nil || rows[index].embeddingVersion != tag
         }
         return rows
     }

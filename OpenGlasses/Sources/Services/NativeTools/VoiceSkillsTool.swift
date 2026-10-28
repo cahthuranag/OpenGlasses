@@ -131,6 +131,9 @@ class VoiceSkillStore {
         guard Config.skillRetrievalEnabled,
               let turn, !turn.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return skills }
+        // Today's model for every script (Plan JY P1, deliberately): a turn is compared with every
+        // skill's text in one ranking, and no stored vector carries a model tag to keep two
+        // models apart. A skill set written in another script keeps the keyword route.
         let embedder = Embedder()
         guard embedder.isAvailable, let turnVec = embedder.embed(turn) else { return skills }
 

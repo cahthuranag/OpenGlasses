@@ -3397,6 +3397,16 @@ class AppState: ObservableObject, AppStateProtocol {
         // Vault manuals are indexed and searched with Field Assist's own model (Plan IV P4), set
         // before anything is imported; the re-index onto it runs after the location migration.
         documentStore.fieldAssistEmbedder = Embedder.fieldAssist()
+        // A manual in another script is embedded with its own script's model (Plan JY P1): adding
+        // one asks for that model and waits briefly for it, the models of the phone's languages
+        // are fetched ahead while My Manuals or Field Assist is in use, and a model that lands
+        // re-indexes the vaults onto it.
+        documentStore.scriptModelRequest = { script in await ScriptModelAssets.shared.requestAndWait(script) }
+        ScriptModelAssets.shared.onArrival = { [weak documentStore] _ in
+            guard let documentStore else { return }
+            VaultEmbeddingUpgrade.start(store: documentStore)
+        }
+        ScriptModelAssets.shared.prepareForManualsIfInUse()
         Task { [documentStore] in
             await PassageLocationMigration.run(store: documentStore)
             VaultEmbeddingUpgrade.start(store: documentStore)

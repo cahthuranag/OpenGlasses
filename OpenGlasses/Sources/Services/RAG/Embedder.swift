@@ -12,10 +12,15 @@ import NaturalLanguage
 struct Embedder {
 
     let language: NLLanguage
+    /// The script whose text this instance reads (Plan JY P1). Every embedder is Latin except a
+    /// script model's (`contextual(for:)`); a passage is compared only with a question vector from
+    /// an embedder of its own document's script.
+    let script: EmbeddingScript
     private let backend: EmbeddingBackend?
 
     init(language: NLLanguage = .english) {
         self.language = language
+        self.script = .latin
         self.backend = Embedder.selectBackend(language: language)
     }
 
@@ -29,6 +34,7 @@ struct Embedder {
 
     init(language: NLLanguage = .english, preference: Preference) {
         self.language = language
+        self.script = .latin
         switch preference {
         case .standard:
             self.backend = NLEmbeddingBackend(language: language)
@@ -40,7 +46,36 @@ struct Embedder {
     /// A given backend — the seam tests use to stand in two models with distinct versions.
     init(language: NLLanguage = .english, backend: EmbeddingBackend?) {
         self.language = language
+        self.script = .latin
         self.backend = backend
+    }
+
+    /// A given backend standing in for `script`'s model — the seam tests use for a script model.
+    init(script: EmbeddingScript, backend: EmbeddingBackend?) {
+        self.language = script.contextualLanguage
+        self.script = script
+        self.backend = backend
+    }
+
+    /// The contextual model for a script other than Latin, when its asset is on the phone; nil
+    /// otherwise, and for `.latin`, whose choice is the caller's (Plan JY P1). Never another
+    /// script's model: a document with no model of its own is searched by its words.
+    ///
+    /// Not gated by "Smarter manual search" or `contextualEmbeddingEnabled`: those choose between
+    /// two Latin models, and a script with no model of its own has no second one to fall back to
+    /// (`NLEmbedding` has sentence models for en, fr, es and pt only).
+    static func contextual(for script: EmbeddingScript) -> Embedder? {
+        guard script != .latin, let backend = NLContextualBackend.ready(for: script.contextualLanguage) else { return nil }
+        return Embedder(script: script, backend: backend)
+    }
+
+    /// Ask Apple for a script model's asset; true when it is on the phone afterwards. A failed or
+    /// offline request returns false. Latin's asset is `prepareFieldAssistAssets`'.
+    static func prepareAssets(for script: EmbeddingScript) async -> Bool {
+        guard script != .latin else { return false }
+        if NLContextualBackend.ready(for: script.contextualLanguage) != nil { return true }
+        await NLContextualBackend.prepareAssets(for: script.contextualLanguage)
+        return NLContextualBackend.ready(for: script.contextualLanguage) != nil
     }
 
     /// The embedder Field Assist indexes and searches a vault's manuals with: the contextual model

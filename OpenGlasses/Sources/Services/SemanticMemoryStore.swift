@@ -101,6 +101,14 @@ class SemanticMemoryStore: ObservableObject {
     /// Routed through the shared [[Embedder]] seam (sentence model preferred over the old word-average,
     /// and the transformer `NLContextualEmbedding` when enabled) instead of a raw `NLEmbedding`. Stored
     /// vectors carry a version stamp ([[EmbeddingVersion]]) so a model change re-embeds on access.
+    ///
+    /// **Stays on the Latin model for every script (Plan JY P1, deliberately).** Memories don't take
+    /// a script model the way documents do: a memory is a sentence or two, too short for
+    /// `DocumentLanguageProfile` to settle a script (it wants 20 weighted letters); one search ranks
+    /// every memory in a single list, and two models' cosines live on different scales (measured:
+    /// Latin 0.81–0.93, CJK 0.48–0.86), so a list mixing them would rank by model, not by meaning;
+    /// and the lazy re-embed path re-stamps a mismatched vector with this one embedder. Per-row
+    /// models would need all three changed together. Lexical recall is unaffected.
     private let embedder = Embedder()
 
     /// Clock for write stamps. Injectable so eviction-order tests control recency without sleeping.

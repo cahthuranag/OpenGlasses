@@ -1,8 +1,10 @@
 # Plan KC — OpenAI Realtime on the Current Protocol (the beta was removed on 2026-05-12)
 
-**Status:** 📝 Drafted 2026-10-29 — nothing built. Not checked live yet: no OpenAI key was available
-to this session. `Scripts/openai-realtime-probe.mjs` (in this PR) answers the open question in one
-run (P0 step 1). Five owner decisions below, each with a default.
+**Status:** 🚧 P0 built 2026-10-29 (PR pending) — the current protocol, checked live with the owner's
+key the same day (see "What the probe found"). Decisions 1, 3, 4 and 5 taken at their defaults
+("let's fix that then"); decision 2 (saved model IDs) stays with P1. P1 (model IDs before
+2027-01-20), P2 (dictation before 2027-02-26) and the P3 device pass not started. Drafted
+2026-10-29 (PR 890).
 **Origin:** found while drafting Plan KB (the OpenAI voice after 2027-01-06, PR 889), which puts it
 out of scope as its decision 6. This is that plan.
 **Deadlines:** the protocol is **already past its date**, so P0 is a fix, not a migration. After
@@ -101,7 +103,26 @@ transcribing recorded speech in its original language"). Its default JSON has `t
   typed or migrated. The legacy `Config.openAIRealtimeModelConfig` takes the first saved OpenAI
   model whose ID contains "realtime", which can be a `gpt-4o-realtime-preview` removed in May.
 
-## What happens today (reasoned, not yet observed)
+## What the probe found (2026-10-29, the owner's key, `Scripts/openai-realtime-probe.mjs`)
+
+**Outcome 1, below.** The request the app sent got an `error` at once —
+`invalid_request_error` / `beta_api_shape_disabled`, "The Realtime Beta API is no longer supported.
+Please use /v1/realtime for the GA API." — and the socket closed with code 4000. The header alone is
+enough: the GA session shape with the beta header was refused the same way. The beta session shape
+without the header got `session.created`, then `missing_required_parameter` for `session.type`.
+Wearers saw "Realtime authentication or configuration was rejected. Check the saved model settings."
+The OpenAI live mode has not worked since 2026-05-12.
+
+The current protocol worked on `gpt-realtime`, and on `gpt-realtime-2.1` with both
+`gpt-live-transcribe` and `gpt-transcribe` in the session (decision 4: `gpt-live-transcribe`).
+A whole turn as P0's adapter sends it — tools in the session, a photo as an `image_url` data URI,
+synthesised speech appended to the buffer — produced `input_audio_buffer.speech_started` /
+`speech_stopped`, a live transcription of the speech, a `get_torque({"bolt":"A"})` call, and after
+the `function_call_output` a spoken answer. Only the event types listed in "What OpenAI has said" were
+needed; `response.content_part.*`, `response.output_audio.done`, `output_audio_buffer.*`,
+`conversation.item.added` / `.done` and `rate_limits.updated` also arrive and are ignored.
+
+## What happens today (reasoned before the probe; outcome 1 is what happened)
 
 The beta was removed on 2026-05-12, and every connection to `api.openai.com` from the OpenAI
 template still asks for it. What wearers see depends on how OpenAI treats the leftover header and
@@ -157,9 +178,23 @@ is the case that design was for:
 
 ## Phases
 
-### P0 — The current protocol (headless core + one live probe; ship as soon as it's green)
+### P0 — The current protocol (headless core + one live probe; ship as soon as it's green) — 🚧 built 2026-10-29
 
-1. **Probe first, ten minutes, the owner's key.** `node Scripts/openai-realtime-probe.mjs` (lands with
+**As built:** `RealtimeProtocolProfile.openAIRealtimeV1` and `OpenAIRealtimeGAAdapter` beside the
+beta adapter, which now shares `OpenAIRealtimeCallTracker` (duplicate-call guard) and
+`OpenAIRealtimeEvents` (shared events and error wording) with it; Qwen's subclasses untouched.
+`LiveInjectionEnvelope.realtimeImageDataURI` for the image. Errors split into four terminal kinds
+(key, model, protocol, other configuration) plus the retryable rest, classified on the codes the
+probe saw (`beta_api_shape_disabled`, `missing_required_parameter` naming `session.type`). The
+protocol wording names "the other OpenAI Realtime protocol" only on a compatible model
+(`offersProtocolChoice`, set by `RealtimeAdapterRegistry`). Migration `realtimeModelsMigrated_v2`
+(`RealtimeModelConfig.movingOpenAIOffBeta`, pure). Tests: `OpenAIRealtimeCurrentProtocolTests`
+(fixture `openai-realtime-v1.json`) and `OpenAIRealtimeProtocolMigrationTests`; the beta golden in
+`OpenAIRealtimeJobToolsTests` and the Qwen tests unchanged. Owed: the catalog sync for the five new
+strings, and P3.
+
+
+1. ✅ **Probe first, ten minutes, the owner's key.** `node Scripts/openai-realtime-probe.mjs` (lands with
    this plan, so it can be run before P0 is scheduled; Node 22+). It reads the key from `OPENAI_API_KEY` only, and prints event *types* and
    error codes, never content or the key. It runs six cases: the app's request today, the GA shape
    with the beta header, the beta shape without it, GA on `gpt-realtime`, and GA on

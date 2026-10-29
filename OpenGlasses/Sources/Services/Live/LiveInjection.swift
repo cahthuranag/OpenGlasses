@@ -82,6 +82,24 @@ enum LiveInjectionEnvelope {
         ]
     }
 
+    /// The current OpenAI protocol's image item: `image_url` holds a data URI, where the beta (and
+    /// ``realtimeImage(base64JPEG:prompt:)``, which beta-compatible servers still read) sent bare
+    /// base64 as `image`.
+    static func realtimeImageDataURI(base64JPEG: String, prompt: String?) -> [String: Any] {
+        var content: [[String: Any]] = [["type": "input_image", "image_url": "data:image/jpeg;base64,\(base64JPEG)"]]
+        if let prompt {
+            content.insert(["type": "input_text", "text": prompt], at: 0)
+        }
+        return [
+            "type": "conversation.item.create",
+            "item": [
+                "type": "message",
+                "role": "user",
+                "content": content,
+            ],
+        ]
+    }
+
     /// The generation trigger the Realtime wire requires after `conversation.item.create`.
     /// Omitting this is the Realtime spelling of the append-only trap.
     ///

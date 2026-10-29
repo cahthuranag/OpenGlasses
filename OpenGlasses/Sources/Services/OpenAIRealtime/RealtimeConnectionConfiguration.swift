@@ -60,8 +60,9 @@ struct RealtimeConnectionConfiguration: Codable, Equatable {
         components.percentEncodedQueryItems = query
         guard let url = components.url else { throw ValidationError.invalidEndpoint }
         var request = URLRequest(url: url)
+        // No `OpenAI-Beta` header: OpenAI removed the beta on 2026-05-12, and compatible servers
+        // never received it.
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        if !isCustom { request.setValue("realtime=v1", forHTTPHeaderField: "OpenAI-Beta") }
         return request
     }
 

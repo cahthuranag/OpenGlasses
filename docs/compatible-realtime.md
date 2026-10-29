@@ -28,7 +28,8 @@ once; their original launch identities remain available to existing shortcuts.
 
 | Provider/profile | Input / output audio | Images | App context updates | Generated text turns | Speak supplied text |
 |---|---|---|---|---|---|
-| OpenAI Realtime beta v1 | PCM16 mono 24 / 24 kHz | Yes | Yes | Yes | Local speech fallback |
+| OpenAI Realtime (current protocol) | PCM16 mono 24 / 24 kHz | Yes | Yes | Yes | Local speech fallback |
+| OpenAI Realtime beta v1 (older compatible servers) | PCM16 mono 24 / 24 kHz | Yes | Yes | Yes | Local speech fallback |
 | Gemini Live v1 | PCM16 mono 16 / 24 kHz | Yes | Yes | Yes | Local speech fallback |
 | Qwen Omni v1 | PCM16 mono 16 / 24 kHz | Bounded image buffer | Yes | Unavailable | Local speech fallback |
 | Qwen Audio v1 | PCM16 mono 16 / 24 kHz | Unavailable | Yes | Yes | Local speech fallback |
@@ -133,10 +134,14 @@ setting blocks live network sessions, including LAN connections. The processing
 summary shows the selected destination host without exposing URL paths, query
 parameters or credentials.
 
-For the OpenAI profile, authentication is Bearer and the configured model replaces
-any existing `model` query parameter. Other query parameters are retained. The
-OpenAI beta header is sent only for the built-in OpenAI provider. Its existing
-session-update payload and tool envelopes are covered by golden tests.
+For both OpenAI profiles, authentication is Bearer and the configured model replaces
+any existing `model` query parameter. Other query parameters are retained. No
+profile sends the `OpenAI-Beta` header: OpenAI removed the beta on 2026-05-12 and
+refuses the header. The OpenAI provider always uses the current protocol, and saved
+OpenAI live models were moved to it once. A custom/compatible model keeps the
+protocol it was saved with (new ones start on the beta) and can choose either; pick
+"OpenAI Realtime" for a server that follows OpenAI's current protocol. Both
+session-update payloads and the tool envelopes are covered by golden tests.
 
 ## Verification status
 

@@ -12,7 +12,7 @@ final class CompatibleRealtimeTests: XCTestCase {
         let request = try config.request(build: .release)
         XCTAssertEqual(request.url?.absoluteString, "wss://api.openai.com/v1/realtime?model=gpt-realtime")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer openai-key")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "OpenAI-Beta"), "realtime=v1")
+        XCTAssertNil(request.value(forHTTPHeaderField: "OpenAI-Beta"), "OpenAI removed the beta on 2026-05-12")
     }
 
     func testCustomRequestPreservesPathAndQueriesAndReplacesModel() throws {

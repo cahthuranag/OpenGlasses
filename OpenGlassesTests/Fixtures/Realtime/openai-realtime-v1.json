@@ -1,0 +1,86 @@
+[
+  {
+    "type": "session.created",
+    "event_id": "fixture-event-1",
+    "session": { "type": "realtime", "model": "gpt-realtime-2.1" }
+  },
+  {
+    "type": "session.updated",
+    "event_id": "fixture-event-2",
+    "session": { "type": "realtime", "output_modalities": ["audio"] }
+  },
+  {
+    "type": "input_audio_buffer.speech_started",
+    "audio_start_ms": 120,
+    "item_id": "fixture-user-item"
+  },
+  {
+    "type": "input_audio_buffer.speech_stopped",
+    "audio_end_ms": 1480,
+    "item_id": "fixture-user-item"
+  },
+  {
+    "type": "conversation.item.added",
+    "previous_item_id": null,
+    "item": { "id": "fixture-user-item", "type": "message", "role": "user", "status": "completed", "content": [] }
+  },
+  {
+    "type": "conversation.item.input_audio_transcription.completed",
+    "item_id": "fixture-user-item",
+    "content_index": 0,
+    "transcript": "What's the torque for this bolt?"
+  },
+  {
+    "type": "response.created",
+    "response": { "id": "fixture-response", "status": "in_progress" }
+  },
+  {
+    "type": "output_audio_buffer.started",
+    "response_id": "fixture-response"
+  },
+  {
+    "type": "response.output_audio.delta",
+    "response_id": "fixture-response",
+    "item_id": "fixture-reply",
+    "output_index": 0,
+    "content_index": 0,
+    "delta": "AAABAA=="
+  },
+  {
+    "type": "response.output_audio_transcript.delta",
+    "response_id": "fixture-response",
+    "item_id": "fixture-reply",
+    "output_index": 0,
+    "content_index": 0,
+    "delta": "Let me check the manual."
+  },
+  {
+    "type": "response.output_item.added",
+    "response_id": "fixture-response",
+    "output_index": 1,
+    "item": { "id": "fixture-call-item", "type": "function_call", "status": "in_progress", "call_id": "fixture-call", "name": "fixture_tool", "arguments": "" }
+  },
+  {
+    "type": "response.function_call_arguments.done",
+    "response_id": "fixture-response",
+    "item_id": "fixture-call-item",
+    "output_index": 1,
+    "call_id": "fixture-call",
+    "name": "fixture_tool",
+    "arguments": "{\"question\":\"fixture\"}"
+  },
+  {
+    "type": "response.output_item.done",
+    "response_id": "fixture-response",
+    "output_index": 1,
+    "item": { "id": "fixture-call-item", "type": "function_call", "status": "completed", "call_id": "fixture-call", "name": "fixture_tool", "arguments": "{\"question\":\"fixture\"}" }
+  },
+  {
+    "type": "rate_limits.updated",
+    "rate_limits": [{ "name": "tokens", "limit": 1000, "remaining": 990, "reset_seconds": 1 }]
+  },
+  {
+    "type": "response.done",
+    "response": { "id": "fixture-response", "status": "completed", "usage": { "total_tokens": 12, "input_tokens": 5, "output_tokens": 7 } }
+  }
+]

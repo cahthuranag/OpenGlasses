@@ -56,7 +56,14 @@ enum RealtimeAdapterRegistry {
     static func make(for model: RealtimeModelConfig) throws -> RealtimeProtocolAdapter {
         guard let profile = model.profile else { throw RealtimeModelConfig.ConfigurationError.unknownProtocol }
         switch profile {
-        case .openAIBetaV1: return OpenAIRealtimeAdapter()
+        case .openAIRealtimeV1:
+            let adapter = OpenAIRealtimeGAAdapter()
+            adapter.offersProtocolChoice = model.providerID == "compatible"
+            return adapter
+        case .openAIBetaV1:
+            let adapter = OpenAIRealtimeAdapter()
+            adapter.offersProtocolChoice = model.providerID == "compatible"
+            return adapter
         case .qwenOmniV1: return QwenRealtimeAdapter(voice: model.voice)
         case .qwenAudioV1: return QwenAudioRealtimeAdapter(voice: model.voice)
         case .doubaoDuplexV3: return DoubaoRealtimeAdapter(model: model.model, voice: model.voice)

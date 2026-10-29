@@ -8,6 +8,9 @@ values are synthetic.
 - Qwen: https://www.alibabacloud.com/help/en/model-studio/server-events
   and https://www.alibabacloud.com/help/en/model-studio/client-events
 - Doubao: https://docs.volcengine.com/docs/DoubaoVoice/endtoend-realtime-voice-full-duplex-version?lang=zh
+- OpenAI Realtime (current protocol, `openai-realtime-v1.json`, checked 2026-10-29):
+  https://developers.openai.com/api/reference/resources/realtime/server-events
+  and https://developers.openai.com/api/reference/resources/realtime/client-events
 
 `RealtimeProviderTests` checks decoding, tools and capability restrictions.
 `RealtimeSessionEngineTests` uses a fake transport and clock for setup readiness,

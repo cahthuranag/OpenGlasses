@@ -423,11 +423,18 @@ final class MetaCameraBackend: GlassesCameraBackend {
 
     // MARK: - Persistent Session
 
-    /// Last device id seen on the SDK's devices stream — lets the session bind to THE known
+    /// Last device list seen on the SDK's devices stream — lets the session bind to a known
     /// device (`SpecificDeviceSelector`) instead of asking `AutoDeviceSelector` for any
     /// "eligible" device, which throws `noEligibleDevice` during the discovery/wake window.
-    private var knownDeviceId: String?
+    private var knownDeviceIds: [String] = []
     private var devicesListenerToken: Any?
+    /// The listed device whose link is connected, from the app's connection owner. Which of the
+    /// known devices to bind is `CameraDeviceBinding`'s call: the list's order is not the link's.
+    private var connectedDeviceId: () -> String? = { nil }
+
+    func readConnectedDevice(from read: @escaping () -> String?) {
+        connectedDeviceId = read
+    }
 
     /// True while `startStreaming()`'s continuous mode owns the stream (live voice modes
     /// put the mic on the glasses concurrently) — drives the low-res contention floor in
@@ -469,7 +476,7 @@ final class MetaCameraBackend: GlassesCameraBackend {
         // deliver the current snapshot before we pick a selector.
         if devicesListenerToken == nil {
             devicesListenerToken = Wearables.shared.addDevicesListener { [weak self] deviceIds in
-                Task { @MainActor in self?.knownDeviceId = deviceIds.first }
+                Task { @MainActor in self?.knownDeviceIds = deviceIds }
             }
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
@@ -488,9 +495,14 @@ final class MetaCameraBackend: GlassesCameraBackend {
 
         if deviceSession == nil {
             // Bind to the specific discovered device when we know it — field-proven more
-            // reliable than AutoDeviceSelector for a device whose link is mid-wake.
-            if let id = knownDeviceId {
-                PrivacyLog.camera(.glasses, .sessionBound, device: PrivateIdentifier(id))
+            // reliable than AutoDeviceSelector for a device whose link is mid-wake — and, of
+            // several, to the one whose link is connected.
+            let binding = CameraDeviceBinding.choose(listed: knownDeviceIds,
+                                                     connected: connectedDeviceId())
+            if let id = binding.deviceId {
+                PrivacyLog.camera(.glasses, .sessionBound, device: PrivateIdentifier(id),
+                                  detail: PrivacyToken.caseName(of: binding),
+                                  count: knownDeviceIds.count)
                 deviceSession = try Wearables.shared.createSession(
                     deviceSelector: SpecificDeviceSelector(device: id))
             } else {

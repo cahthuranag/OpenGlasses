@@ -4118,6 +4118,10 @@ class AppState: ObservableObject, AppStateProtocol {
         // registered pair with no link would otherwise be tried, and fail, instead of falling back.
         // Stood down counts as away too: the wearer disconnected, so a capture uses the phone.
         cameraService.isGlassesLinkUp = { [weak self] in self?.isConnected ?? false }
+        // And binds to the pair that is connected: with two pairs listed, the first may be away.
+        cameraService.connectedGlassesDeviceId = { [weak self] in
+            self?.glassesService.snapshot.connectedDeviceId
+        }
         wirePhonePhotos()
         // Worn or not drives the automatic stand-down (`GlassesSleepPolicy`). `$isWorn` fires in willSet, so the
         // value is handed over rather than read back; the hop lets the service finish publishing.

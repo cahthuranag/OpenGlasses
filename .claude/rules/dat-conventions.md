@@ -92,7 +92,8 @@ import MWDATMockDevice  // MockDeviceKit, MockGlasses, MockCameraKit; pairGlasse
   stale reading) derive from it. `AppState.isConnected`/`glassesPhase` mirror `phase` in
   `applyGlassesPhase(_:)`, their only writer — never set the flag from registration, the device
   list, a permission result or an audio-route event. `CameraService.isGlassesLinkUp` gates glasses
-  capture on the same truth. `donState` (`.unknown`/`.doffed`/`.donned`, stable API) is mapped to
+  capture on the same truth, and the camera session binds to the connected device
+  (`GlassesConnectionSnapshot.connectedDeviceId` via `CameraDeviceBinding`), never just the first listed. `donState` (`.unknown`/`.doffed`/`.donned`, stable API) is mapped to
   `GlassesDeviceState.worn` (`Bool?`) and published as `GlassesConnectionService.isWorn` (only while
   connected); `GlassesSleepPolicy` uses it for the automatic stand-down (taken off → 30 s grace →
   stand down → put on → resume), only while the always-on wake word runs. `thermalLevel` and

@@ -76,12 +76,21 @@ protocol GlassesCameraBackend: AnyObject {
     ///
     /// Defaulted to nothing, because a backend with no recovery ladder has nothing to feed.
     func notePresence(_ presence: StreamEndRecoveryPolicy.Presence)
+
+    /// Where to read the listed device whose link is connected, from the app's connection owner
+    /// (`GlassesConnectionSnapshot.connectedDeviceId`). A backend that binds its session to one of
+    /// several listed devices asks this at bind time (`CameraDeviceBinding`).
+    ///
+    /// Defaulted to nothing, because a backend with no device choice to make has nothing to read.
+    func readConnectedDevice(from read: @escaping () -> String?)
 }
 
 extension GlassesCameraBackend {
     var scheduledWorkCount: Int { 0 }
 
     func notePresence(_ presence: StreamEndRecoveryPolicy.Presence) {}
+
+    func readConnectedDevice(from read: @escaping () -> String?) {}
 
     func cameraPermission(asking: Bool) async -> GlassesCameraPermission {
         permissionGranted ? .granted : .notChecked

@@ -167,6 +167,29 @@ final class GlassesConnectionPhaseTests: XCTestCase {
         XCTAssertEqual(s.activeDeviceId, "b")
     }
 
+    func testConnectedDeviceIsTheConnectedPairEvenWhenListedSecond() {
+        let s = snapshot(devices: ["away", "worn"],
+                         states: ["away": linked(.disconnected), "worn": linked(.connected)])
+        XCTAssertEqual(s.connectedDeviceId, "worn")
+    }
+
+    func testConnectedDeviceIsNeverAPairThatIsAway() {
+        let none = snapshot(devices: ["a", "b"],
+                            states: ["a": linked(.disconnected), "b": linked(.connecting)])
+        XCTAssertNil(none.connectedDeviceId, "connecting is not connected; first listed is not either")
+        XCTAssertNil(snapshot(devices: ["a"]).connectedDeviceId, "unreported is disconnected")
+        XCTAssertNil(snapshot().connectedDeviceId)
+    }
+
+    func testConnectedDeviceFollowsTheLink() {
+        var s = snapshot(devices: ["a", "b"],
+                         states: ["a": linked(.connected), "b": linked(.disconnected)])
+        XCTAssertEqual(s.connectedDeviceId, "a")
+        s.apply(.deviceState(id: "a", linked(.disconnected)))
+        s.apply(.deviceState(id: "b", linked(.connected)))
+        XCTAssertEqual(s.connectedDeviceId, "b")
+    }
+
     func testDuplicateIdsInTheDeviceListCollapse() {
         var s = snapshot(devices: ["a", "a", "b"])
         XCTAssertEqual(s.deviceIds, ["a", "b"])

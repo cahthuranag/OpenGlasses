@@ -80,6 +80,10 @@ final class MockCameraBackend: GlassesCameraBackend {
     /// Plan HJ P1: every presence the coordinator forwarded, in order.
     private(set) var presences: [StreamEndRecoveryPolicy.Presence] = []
     func notePresence(_ presence: StreamEndRecoveryPolicy.Presence) { presences.append(presence) }
+
+    /// The connected-device reader the coordinator handed over, if any.
+    private(set) var connectedDeviceReader: (() -> String?)?
+    func readConnectedDevice(from read: @escaping () -> String?) { connectedDeviceReader = read }
 }
 
 /// The iPhone-camera fallback, faked.

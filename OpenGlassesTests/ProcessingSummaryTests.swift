@@ -57,7 +57,8 @@ final class ProcessingSummaryTests: XCTestCase {
 
     /// Plan ID item 5: the spoken-voice row names whichever cloud voice will speak.
     func testTheOpenAIAndXAIVoicesAreNamedAsTheirVendor() {
-        for (engine, vendor) in [(TTSEngine.openAI, "OpenAI"), (.xai, "xAI"), (.elevenLabs, "ElevenLabs")] {
+        for (engine, vendor) in [(TTSEngine.openAI, "OpenAI"), (.xai, "xAI"), (.gemini, "Gemini"),
+                                 (.elevenLabs, "ElevenLabs")] {
             let facts = ProcessingFacts(voiceEngine: engine, modelKind: .onDevice,
                                         modelProviderName: "Local (On-Device MLX)",
                                         modelAssetName: "Gemma 3n E2B", modelAssetPresent: true,

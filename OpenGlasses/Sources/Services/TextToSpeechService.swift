@@ -211,6 +211,21 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         return try CloudVoiceRequests.parseXAIVoices(data)
     }
 
+    /// Fetch the speech models the Gemini key may use, for the picker (Plan JZ). Only speech
+    /// models come back: the key's list also holds chat, image, embedding and Live models.
+    static func fetchGeminiSpeechModels(apiKey: String) async throws -> [CloudVoiceRequests.GeminiSpeechModel] {
+        try MedicalEgressGuard.check(.geminiSpeechModelCatalog)
+        let request = CloudVoiceRequests.geminiSpeechModelCatalog(apiKey: apiKey)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            PrivacyLog.tts(.voicesRequestFailed, engine: PrivacyToken(TTSEngine.gemini.rawValue),
+                           bytes: data.count, status: code)
+            throw TTSError.apiError(statusCode: code)
+        }
+        return try CloudVoiceRequests.parseGeminiSpeechModels(data)
+    }
+
     init(synthesizerFactory: @escaping @MainActor () -> any SpeechSynthesizing = { AVSpeechSynthesizer() }) {
         self.synthesizerFactory = synthesizerFactory
         self.synthesizer = synthesizerFactory()
@@ -550,6 +565,9 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
                 case .xai:
                     pendingCloudVoiceRejection = nil
                     try await speakWithXAI(text: text, credential: await xaiSpeechCredential())
+                case .gemini:
+                    pendingCloudVoiceRejection = nil
+                    try await speakWithGemini(text: text, apiKey: geminiSpeechKey())
                 case .kokoro:
                     try await speakWithKokoro(text: text)
                 case .system:
@@ -621,7 +639,9 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
             openAIReady: ready(.openAI, hasCredential: !CloudVoiceCredentials.openAIKey(
                 savedModels: savedModels, legacyKey: Config.openAIAPIKey).isEmpty),
             xaiReady: ready(.xai, hasCredential: CloudVoiceCredentials.xaiSource(
-                savedModels: savedModels, accountConnected: XAIOAuthService.shared.isConnected) != .none)
+                savedModels: savedModels, accountConnected: XAIOAuthService.shared.isConnected) != .none),
+            geminiReady: ready(.gemini, hasCredential: !CloudVoiceCredentials.geminiKey(
+                savedModels: savedModels).isEmpty)
         )
         return TTSEngineSelector.chain(
             preference: Config.ttsEnginePreference,
@@ -1178,6 +1198,41 @@ class TextToSpeechService: NSObject, ObservableObject, AVSpeechSynthesizerDelega
         return try cloudVoiceAudio(engine: .xai, data: data, response: response, startedAt: startTime)
     }
 
+    // MARK: - Gemini TTS (Plan JZ)
+
+    func speakWithGemini(text: String, apiKey: String) async throws {
+        try await speakCloudAudio { try await self.fetchGeminiAudio(text: text, apiKey: apiKey) }
+    }
+
+    /// One utterance's audio from the Gemini speech model, as WAV, with the key saved on the Gemini
+    /// model. Always Google's own address, the key in a header. Throws `CloudVoiceRequestRejected`
+    /// for a non-200, and a `GeminiSpeechAudio.Failure` for a 200 that carries no playable audio.
+    func fetchGeminiAudio(text: String, apiKey: String) async throws -> Data {
+        try MedicalEgressGuard.check(.geminiSpeechSynthesis)
+        guard !apiKey.isEmpty else {
+            throw CloudVoiceRequestRejected(engine: .gemini, statusCode: 0, rejection: nil)
+        }
+        let request = try CloudVoiceRequests.geminiSpeech(text: text, apiKey: apiKey,
+                                                          model: Config.geminiTTSModel,
+                                                          voice: Config.geminiTTSVoice)
+        PrivacyLog.tts(.requested, engine: PrivacyToken(TTSEngine.gemini.rawValue), characters: text.count)
+        let startTime = Date()
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let answer = try cloudVoiceAudio(engine: .gemini, data: data, response: response, startedAt: startTime)
+        do {
+            return try GeminiSpeechAudio.playableAudio(from: answer)
+        } catch {
+            PrivacyLog.tts(.engineFailed, engine: PrivacyToken(TTSEngine.gemini.rawValue),
+                           error: SafeErrorSummary(error))
+            throw error
+        }
+    }
+
+    /// The Gemini key the voice uses (`CloudVoiceCredentials.geminiKey`).
+    private func geminiSpeechKey() -> String {
+        CloudVoiceCredentials.geminiKey(savedModels: Config.savedModels)
+    }
+
     /// The OpenAI key the voice uses (`CloudVoiceCredentials.openAIKey`).
     private func openAISpeechKey() -> String {
         CloudVoiceCredentials.openAIKey(savedModels: Config.savedModels, legacyKey: Config.openAIAPIKey)
@@ -1595,7 +1650,7 @@ extension TextToSpeechService: StreamedSpeechBackend, StreamedReplySpeaking {
         let spoken = SpokenSymbolExpander.spokenForm(of: text)
         guard !spoken.isEmpty else { throw TTSError.audioPlaybackFailed }
         switch engine {
-        case .elevenLabs, .openAI, .xai:
+        case .elevenLabs, .openAI, .xai, .gemini:
             do {
                 return .audio(try await fetchCloudAudio(spoken, engine: engine))
             } catch let rejected as CloudVoiceRequestRejected {
@@ -1624,6 +1679,7 @@ extension TextToSpeechService: StreamedSpeechBackend, StreamedReplySpeaking {
         case .elevenLabs: return try await fetchElevenLabsAudio(text: text, apiKey: Config.elevenLabsAPIKey)
         case .openAI: return try await fetchOpenAIAudio(text: text, apiKey: openAISpeechKey())
         case .xai: return try await fetchXAIAudio(text: text, credential: await xaiSpeechCredential())
+        case .gemini: return try await fetchGeminiAudio(text: text, apiKey: geminiSpeechKey())
         case .kokoro, .system: throw TTSError.audioPlaybackFailed   // not a cloud voice
         }
     }

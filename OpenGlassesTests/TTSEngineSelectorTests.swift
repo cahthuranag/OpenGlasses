@@ -127,8 +127,9 @@ final class TTSEngineSelectorTests: XCTestCase {
     // MARK: - OpenAI and xAI voices (Plan ID item 5)
 
     private func ready(eleven: Bool = false, openAI: Bool = false, xai: Bool = false,
-                       kokoro: Bool = false) -> Availability {
-        Availability(elevenLabsReady: eleven, kokoroReady: kokoro, openAIReady: openAI, xaiReady: xai)
+                       gemini: Bool = false, kokoro: Bool = false) -> Availability {
+        Availability(elevenLabsReady: eleven, kokoroReady: kokoro, openAIReady: openAI, xaiReady: xai,
+                     geminiReady: gemini)
     }
 
     /// Auto tries every cloud voice that is ready, ElevenLabs then OpenAI then xAI, then the phone.
@@ -167,6 +168,32 @@ final class TTSEngineSelectorTests: XCTestCase {
         XCTAssertEqual(chain(.openAI, ready(eleven: true, xai: true)), [.system])
     }
 
+    // MARK: - The Gemini voice (Plan JZ)
+
+    /// Chosen, it is tried first and falls back to the phone, never to another paid cloud.
+    func testAChosenGeminiVoiceFallsBackToKokoroThenSystemOnly() {
+        let everything = ready(eleven: true, openAI: true, xai: true, gemini: true, kokoro: true)
+        XCTAssertEqual(chain(.gemini, everything), [.gemini, .kokoro, .system])
+        XCTAssertEqual(chain(.gemini, ready(eleven: true, openAI: true, xai: true, kokoro: true)),
+                       [.kokoro, .system], "no Gemini key: the phone, not another cloud")
+        XCTAssertEqual(chain(.gemini, everything, .high), [.kokoro, .gemini, .system])
+    }
+
+    /// Auto tries Gemini last of the cloud voices, and only with a Gemini key saved.
+    func testAutoTriesGeminiLastOfTheCloudVoicesWhenItsKeyIsSaved() {
+        XCTAssertEqual(chain(.auto, ready(gemini: true, kokoro: true)), [.gemini, .kokoro, .system])
+        XCTAssertEqual(chain(.auto, ready(eleven: true, openAI: true, xai: true, gemini: true, kokoro: true)),
+                       [.elevenLabs, .openAI, .xai, .gemini, .kokoro, .system])
+        XCTAssertEqual(chain(.auto, ready(xai: true, gemini: true)), [.xai, .gemini, .system])
+        XCTAssertEqual(chain(.auto, ready(eleven: true, openAI: true, xai: true, kokoro: true)),
+                       [.elevenLabs, .openAI, .xai, .kokoro, .system], "no Gemini key: never tried")
+        XCTAssertEqual(chain(.auto, ready(gemini: true, kokoro: true), .high), [.kokoro, .gemini, .system])
+        for preference in TTSEnginePreference.allCases where ![.gemini, .auto].contains(preference) {
+            XCTAssertFalse(chain(preference, ready(eleven: true, openAI: true, xai: true, gemini: true,
+                                                   kokoro: true)).contains(.gemini), "\(preference)")
+        }
+    }
+
     func testKokoroAndSystemPreferencesNeverReachTheNewCloudVoices() {
         let everything = ready(eleven: true, openAI: true, xai: true, kokoro: true)
         XCTAssertEqual(chain(.kokoro, everything), [.kokoro, .system])
@@ -187,9 +214,10 @@ final class TTSEngineSelectorTests: XCTestCase {
 
     func testEveryPreferenceStillEndsInSystemWithTheNewVoices() {
         for preference in TTSEnginePreference.allCases {
-            for bits in 0..<16 {
+            for bits in 0..<32 {
                 let availability = ready(eleven: bits & 1 != 0, openAI: bits & 2 != 0,
-                                         xai: bits & 4 != 0, kokoro: bits & 8 != 0)
+                                         xai: bits & 4 != 0, gemini: bits & 16 != 0,
+                                         kokoro: bits & 8 != 0)
                 let result = chain(preference, availability)
                 XCTAssertEqual(result.last, .system, "\(preference) \(bits)")
                 XCTAssertEqual(result.filter { $0 == .system }.count, 1)
@@ -222,7 +250,7 @@ final class TTSEngineSelectorTests: XCTestCase {
 
     /// Medical local-only takes every cloud voice out of the chain; Medical Compliance without
     /// local-only does not.
-    func testMedicalLocalOnlyRemovesAllThreeCloudVoices() {
+    func testMedicalLocalOnlyRemovesEveryCloudVoice() {
         for engine in TTSEngine.cloudVoices {
             XCTAssertFalse(cloudReady(engine, medical: .localOnly), "\(engine)")
             XCTAssertTrue(cloudReady(engine, medical: .init(hipaaMode: true, localOnly: false)), "\(engine)")
@@ -231,14 +259,21 @@ final class TTSEngineSelectorTests: XCTestCase {
             elevenLabsReady: cloudReady(.elevenLabs, medical: .localOnly),
             kokoroReady: true,
             openAIReady: cloudReady(.openAI, medical: .localOnly),
-            xaiReady: cloudReady(.xai, medical: .localOnly))
+            xaiReady: cloudReady(.xai, medical: .localOnly),
+            geminiReady: cloudReady(.gemini, medical: .localOnly))
         XCTAssertEqual(chain(.auto, medical), [.kokoro, .system])
         XCTAssertEqual(chain(.openAI, medical), [.kokoro, .system])
         XCTAssertEqual(chain(.xai, medical), [.kokoro, .system])
+        XCTAssertEqual(chain(.gemini, medical), [.kokoro, .system])
     }
 
     func testEachCloudVoiceNamesItsVendorAndRoute() {
-        XCTAssertEqual(TTSEngine.cloudVoices, [.elevenLabs, .openAI, .xai])
+        XCTAssertEqual(TTSEngine.cloudVoices, [.elevenLabs, .openAI, .xai, .gemini])
+        XCTAssertEqual(TTSEngine.gemini.speechRoute, .geminiSpeechSynthesis)
+        XCTAssertEqual(TTSEngine.gemini.vendorName, "Gemini")
+        XCTAssertTrue(TTSEngine.gemini.isCloud)
+        XCTAssertEqual(TTSEnginePreference.gemini.displayName, "Cloud (Gemini)")
+        XCTAssertEqual(TTSEnginePreference.gemini.cloudEngine, .gemini)
         XCTAssertEqual(TTSEngine.openAI.speechRoute, .openAISpeechSynthesis)
         XCTAssertEqual(TTSEngine.xai.speechRoute, .xaiSpeechSynthesis)
         XCTAssertEqual(TTSEngine.elevenLabs.speechRoute, .elevenLabsSpeechSynthesis)

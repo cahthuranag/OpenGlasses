@@ -218,6 +218,27 @@ final class MedicalEgressCanaryTests: XCTestCase {
         XCTAssertEqual(EgressCanaryURLProtocol.seen.first?.host, "api.x.ai")
     }
 
+    func testGeminiSynthesisNeverReachesTheTransportInLocalOnly() async {
+        let service = TextToSpeechService()
+
+        setMode(.localOnly)
+        do {
+            try await service.speakWithGemini(text: "vitals are stable", apiKey: "canary-key")
+            XCTFail("the Gemini synthesis request was allowed in local-only mode")
+        } catch let refusal as MedicalEgressRefusal {
+            XCTAssertEqual(refusal.route, .geminiSpeechSynthesis)
+        } catch {
+            XCTFail("expected a MedicalEgressRefusal, got \(error)")
+        }
+        XCTAssertEqual(EgressCanaryURLProtocol.seen, [], "reply text reached the transport")
+
+        setMode(.off)
+        try? await service.speakWithGemini(text: "vitals are stable", apiKey: "canary-key")
+        XCTAssertEqual(EgressCanaryURLProtocol.seen.count, 1,
+                       "with the guard off the same drive must reach the transport")
+        XCTAssertEqual(EgressCanaryURLProtocol.seen.first?.host, "generativelanguage.googleapis.com")
+    }
+
     func testXAIVoiceCatalogNeverReachesTheTransportInLocalOnly() async {
         setMode(.localOnly)
         do {
@@ -232,6 +253,23 @@ final class MedicalEgressCanaryTests: XCTestCase {
 
         setMode(.off)
         _ = try? await TextToSpeechService.fetchXAIVoices(credential: "canary-key")
+        XCTAssertEqual(EgressCanaryURLProtocol.seen.count, 1)
+    }
+
+    func testGeminiSpeechModelListNeverReachesTheTransportInLocalOnly() async {
+        setMode(.localOnly)
+        do {
+            _ = try await TextToSpeechService.fetchGeminiSpeechModels(apiKey: "canary-key")
+            XCTFail("the Gemini speech-model list was requested in local-only mode")
+        } catch let refusal as MedicalEgressRefusal {
+            XCTAssertEqual(refusal.route, .geminiSpeechModelCatalog)
+        } catch {
+            XCTFail("expected a MedicalEgressRefusal, got \(error)")
+        }
+        XCTAssertEqual(EgressCanaryURLProtocol.seen, [])
+
+        setMode(.off)
+        _ = try? await TextToSpeechService.fetchGeminiSpeechModels(apiKey: "canary-key")
         XCTAssertEqual(EgressCanaryURLProtocol.seen.count, 1)
     }
 

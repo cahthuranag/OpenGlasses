@@ -23,9 +23,16 @@ enum CloudVoiceRejection: String, Equatable, CaseIterable {
         "spending limit"               // xAI
     ]
 
+    /// What a refused-key body says, lower-cased, when the status alone does not: Gemini refuses a
+    /// bad key with a 400, the status every malformed request gets.
+    static let refusedMarkers = [
+        "api_key_invalid"              // Gemini
+    ]
+
     static func classify(statusCode: Int, body: String) -> CloudVoiceRejection? {
         let lowered = body.lowercased()
         if outOfCreditMarkers.contains(where: { lowered.contains($0) }) { return .outOfCredit }
+        if refusedMarkers.contains(where: { lowered.contains($0) }) { return .refused }
         switch statusCode {
         case 401, 402, 403: return .refused
         default: return nil

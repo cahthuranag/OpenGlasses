@@ -1,6 +1,6 @@
 import Foundation
 
-/// One of the TTS engines OpenGlasses can speak through: three cloud voices, the on-device neural
+/// One of the TTS engines OpenGlasses can speak through: four cloud voices, the on-device neural
 /// Kokoro, and the built-in AVSpeechSynthesizer.
 enum TTSEngine: String, CaseIterable, Equatable {
     /// ElevenLabs cloud TTS — best quality, paid, needs a key + network.
@@ -9,13 +9,17 @@ enum TTSEngine: String, CaseIterable, Equatable {
     case openAI
     /// xAI's speech endpoint — the saved xAI key, or the connected xAI account.
     case xai
+    /// Google's Gemini speech model — the key saved with the Gemini model, spending its quota
+    /// (Plan JZ).
+    case gemini
     /// Kokoro on-device neural TTS (sherpa-onnx / ONNX-CPU) — free, offline, runs backgrounded.
     case kokoro
     /// iOS `AVSpeechSynthesizer` — robotic but always available (no key, no model, no network).
     case system
 
-    /// The cloud voices, in the order `.auto` tries them.
-    static let cloudVoices: [TTSEngine] = [.elevenLabs, .openAI, .xai]
+    /// The cloud voices, in the order `.auto` tries them. Gemini comes last (Plan JZ): each is
+    /// tried only with its key saved, so a Gemini key turns the Gemini voice on.
+    static let cloudVoices: [TTSEngine] = [.elevenLabs, .openAI, .xai, .gemini]
 
     /// Whether this engine sends the reply text off the phone.
     var isCloud: Bool { Self.cloudVoices.contains(self) }
@@ -26,6 +30,7 @@ enum TTSEngine: String, CaseIterable, Equatable {
         case .elevenLabs: return "ElevenLabs"
         case .openAI: return "OpenAI"
         case .xai: return "xAI"
+        case .gemini: return "Gemini"
         case .kokoro, .system: return nil
         }
     }
@@ -36,6 +41,7 @@ enum TTSEngine: String, CaseIterable, Equatable {
         case .elevenLabs: return .elevenLabsSpeechSynthesis
         case .openAI: return .openAISpeechSynthesis
         case .xai: return .xaiSpeechSynthesis
+        case .gemini: return .geminiSpeechSynthesis
         case .kokoro, .system: return nil
         }
     }
@@ -53,6 +59,8 @@ enum TTSEnginePreference: String, CaseIterable, Identifiable, Codable {
     case openAI
     /// Prefer the xAI cloud voice (graceful fallback to Kokoro then system).
     case xai
+    /// Prefer the Gemini cloud voice (graceful fallback to Kokoro then system).
+    case gemini
     /// Prefer the on-device Kokoro voice; never silently fall back to the *paid* cloud.
     case kokoro
     /// Always use the built-in iOS voice.
@@ -66,6 +74,7 @@ enum TTSEnginePreference: String, CaseIterable, Identifiable, Codable {
         case .elevenLabs: return String(localized: "Cloud (ElevenLabs)")
         case .openAI: return String(localized: "Cloud (OpenAI)")
         case .xai: return String(localized: "Cloud (xAI)")
+        case .gemini: return String(localized: "Cloud (Gemini)")
         case .kokoro: return String(localized: "On-Device (Kokoro)")
         case .system: return String(localized: "System (iOS)")
         }
@@ -74,10 +83,11 @@ enum TTSEnginePreference: String, CaseIterable, Identifiable, Codable {
     /// One-line description for the Settings picker footer.
     var detail: String {
         switch self {
-        case .auto: return String(localized: "Use the best voice available: a cloud voice if one is set up (ElevenLabs, then OpenAI, then xAI), then on-device Kokoro, then the iOS voice.")
+        case .auto: return String(localized: "Use the best voice available: a cloud voice if one is set up (ElevenLabs, then OpenAI, then xAI, then Gemini), then on-device Kokoro, then the iOS voice.")
         case .elevenLabs: return String(localized: "Prefer ElevenLabs cloud voices. Falls back to on-device or the iOS voice when unavailable.")
         case .openAI: return String(localized: "Prefer the OpenAI cloud voice, paid from your OpenAI API credit. Falls back to on-device or the iOS voice when unavailable — never another paid cloud.")
         case .xai: return String(localized: "Prefer the xAI cloud voice, using your xAI key or sign-in. Falls back to on-device or the iOS voice when unavailable — never another paid cloud.")
+        case .gemini: return String(localized: "Prefer the Gemini cloud voice, using the API key saved with your Gemini model. Spoken replies use that key's quota, separately from chat. Falls back to on-device or the iOS voice when unavailable — never another paid cloud.")
         case .kokoro: return String(localized: "Prefer the offline, free on-device neural voice. Falls back to the iOS voice — never the paid cloud.")
         case .system: return String(localized: "Always use the built-in iOS voice.")
         }
@@ -89,6 +99,7 @@ enum TTSEnginePreference: String, CaseIterable, Identifiable, Codable {
         case .elevenLabs: return .elevenLabs
         case .openAI: return .openAI
         case .xai: return .xai
+        case .gemini: return .gemini
         case .auto, .kokoro, .system: return nil
         }
     }
@@ -97,7 +108,7 @@ enum TTSEnginePreference: String, CaseIterable, Identifiable, Codable {
 /// Pure engine-selection policy for `TextToSpeechService` (Additional Capabilities #1 — the headline
 /// Kokoro tier). Given what's *available* (each cloud voice's credential + online, Kokoro model
 /// present), the user's preference, and the utterance urgency, it produces the ordered fallback chain
-/// the service walks (`ElevenLabs → OpenAI → xAI → Kokoro → AVSpeech` at most), trying each engine
+/// the service walks (`ElevenLabs → OpenAI → xAI → Gemini → Kokoro → AVSpeech` at most), trying each engine
 /// until one succeeds.
 ///
 /// No `TextToSpeechService` / SDK / audio state is touched here — it's a value computation, so the
@@ -116,13 +127,16 @@ enum TTSEngineSelector {
         var openAIReady: Bool
         /// xAI key or signed-in account present **and** online **and** not quota-exhausted.
         var xaiReady: Bool
+        /// A Gemini key on Google's own host present **and** online **and** not quota-exhausted.
+        var geminiReady: Bool
 
         init(elevenLabsReady: Bool, kokoroReady: Bool,
-             openAIReady: Bool = false, xaiReady: Bool = false) {
+             openAIReady: Bool = false, xaiReady: Bool = false, geminiReady: Bool = false) {
             self.elevenLabsReady = elevenLabsReady
             self.kokoroReady = kokoroReady
             self.openAIReady = openAIReady
             self.xaiReady = xaiReady
+            self.geminiReady = geminiReady
         }
 
         func isReady(_ engine: TTSEngine) -> Bool {
@@ -130,6 +144,7 @@ enum TTSEngineSelector {
             case .elevenLabs: return elevenLabsReady
             case .openAI: return openAIReady
             case .xai: return xaiReady
+            case .gemini: return geminiReady
             case .kokoro: return kokoroReady
             case .system: return true
             }
@@ -138,7 +153,7 @@ enum TTSEngineSelector {
 
     /// Whether a cloud voice may be tried for one utterance: a credential on file, not latched out
     /// of credit, online, not an utterance the app promised to keep on the phone, and a route the
-    /// medical local-only rule lets out. One rule for every cloud voice, so the three cannot drift.
+    /// medical local-only rule lets out. One rule for every cloud voice, so they cannot drift.
     static func cloudVoiceReady(_ engine: TTSEngine, hasCredential: Bool, quotaExhausted: Bool,
                                 onDeviceOnly: Bool, online: Bool,
                                 medicalMode: MedicalEgressGuard.Mode) -> Bool {
@@ -162,7 +177,7 @@ enum TTSEngineSelector {
         switch preference {
         case .auto:
             order = TTSEngine.cloudVoices + [.kokoro, .system]
-        case .elevenLabs, .openAI, .xai:
+        case .elevenLabs, .openAI, .xai, .gemini:
             // A chosen cloud voice falls back to the phone, never to a different paid cloud: the
             // wearer picked whose account pays for the voice.
             order = [preference.cloudEngine ?? .elevenLabs, .kokoro, .system]

@@ -130,7 +130,7 @@ final class RealtimeProviderTests: XCTestCase {
     }
     func testProtocolProfilesDriveActualAudioEngineRates() {
         for profile in RealtimeProtocolProfile.allCases {
-            XCTAssertEqual(profile.audioConfiguration.inputSampleRate, profile == .openAIBetaV1 ? 24000 : 16000)
+            XCTAssertEqual(profile.audioConfiguration.inputSampleRate, profile.isOpenAIShape ? 24000 : 16000)
             XCTAssertEqual(profile.audioConfiguration.outputSampleRate, 24000)
             XCTAssertEqual(profile.audioConfiguration.bitsPerSample, 16)
         }

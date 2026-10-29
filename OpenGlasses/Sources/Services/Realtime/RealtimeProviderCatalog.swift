@@ -2,6 +2,9 @@ import Foundation
 
 /// A saved protocol version is independent of a provider's changing model aliases.
 enum RealtimeProtocolProfile: String, Codable, CaseIterable, Identifiable {
+    /// OpenAI's current protocol. The beta below was removed by OpenAI on 2026-05-12 and stays for
+    /// compatible servers that still speak it.
+    case openAIRealtimeV1 = "openai.realtime.v1"
     case openAIBetaV1 = "openai.beta.v1"
     case geminiLiveV1 = "gemini.live.v1"
     case qwenOmniV1 = "qwen.omni.v1"
@@ -10,7 +13,8 @@ enum RealtimeProtocolProfile: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .openAIBetaV1: return String(localized: "OpenAI Realtime")
+        case .openAIRealtimeV1: return String(localized: "OpenAI Realtime")
+        case .openAIBetaV1: return String(localized: "OpenAI Realtime beta (older compatible servers)")
         case .geminiLiveV1: return String(localized: "Gemini Live")
         case .qwenOmniV1: return String(localized: "Qwen Omni")
         case .qwenAudioV1: return String(localized: "Qwen Audio")
@@ -19,7 +23,7 @@ enum RealtimeProtocolProfile: String, Codable, CaseIterable, Identifiable {
     }
     var capabilities: RealtimeCapabilities {
         switch self {
-        case .openAIBetaV1: return .init(vision: true, contextUpdate: true, textTurn: true, suppliedSpeech: false, truncation: true, resumption: false)
+        case .openAIRealtimeV1, .openAIBetaV1: return .init(vision: true, contextUpdate: true, textTurn: true, suppliedSpeech: false, truncation: true, resumption: false)
         case .geminiLiveV1: return .init(vision: true, contextUpdate: true, textTurn: true, suppliedSpeech: false, truncation: false, resumption: true)
         case .qwenOmniV1: return .init(vision: true, contextUpdate: true, textTurn: false, suppliedSpeech: false, truncation: false, resumption: false)
         case .qwenAudioV1: return .init(vision: false, contextUpdate: true, textTurn: true, suppliedSpeech: false, truncation: false, resumption: false)
@@ -36,15 +40,17 @@ enum RealtimeProtocolProfile: String, Codable, CaseIterable, Identifiable {
             return .init(audioPacketBytes: 640, audioPacketInterval: 0.02,
                          closeGracePeriod: 0.5, usesVoiceSetting: true)
         case .qwenAudioV1: return .init(usesVoiceSetting: true)
-        case .openAIBetaV1, .geminiLiveV1: return .init()
+        case .openAIRealtimeV1, .openAIBetaV1, .geminiLiveV1: return .init()
         }
     }
     var inputSampleRate: Double {
         switch self {
-        case .openAIBetaV1: return 24000
+        case .openAIRealtimeV1, .openAIBetaV1: return 24000
         case .geminiLiveV1, .qwenOmniV1, .qwenAudioV1, .doubaoDuplexV3: return 16000
         }
     }
+    /// Both OpenAI protocols: the same tools, audio rates and capabilities on a different wire.
+    var isOpenAIShape: Bool { self == .openAIRealtimeV1 || self == .openAIBetaV1 }
     var audioConfiguration: RealtimeAudioEngineConfig {
         let gemini = self == .geminiLiveV1
         return .init(owner: gemini ? .geminiLive : .openAIRealtime,
@@ -142,7 +148,7 @@ struct ModelStudioRegionDrafts: Equatable {
 /// Both editors read this catalog. Templates contain defaults, never credentials.
 enum RealtimeProviderCatalog {
     static let templates: [RealtimeProviderTemplate] = [
-        .init(id: "openai", name: "OpenAI", profile: .openAIBetaV1,
+        .init(id: "openai", name: "OpenAI", profile: .openAIRealtimeV1,
               endpoint: RealtimeConnectionConfiguration.openAIEndpoint, model: "gpt-realtime", voice: "",
               help: String(localized: "Use an OpenAI API key. Realtime is separate from a ChatGPT subscription.")),
         .init(id: "gemini", name: "Gemini", profile: .geminiLiveV1,
@@ -168,6 +174,8 @@ enum RealtimeProviderCatalog {
     static func template(_ id: String) -> RealtimeProviderTemplate? { templates.first { $0.id == id } }
     static func profiles(for providerID: String) -> [RealtimeProtocolProfile] {
         if providerID == "compatible" { return RealtimeProtocolProfile.allCases }
+        // OpenAI itself no longer serves the beta.
+        if providerID == "openai" { return [.openAIRealtimeV1] }
         if providerID == "qwen-audio" { return [.qwenAudioV1] }
         if providerID == "qwen" { return [.qwenOmniV1] }
         return RealtimeProtocolProfile.allCases.filter { $0.rawValue.hasPrefix(providerID + ".") }
@@ -245,12 +253,22 @@ struct RealtimeModelConfig: Codable, Equatable, Identifiable {
             components.percentEncodedQueryItems = query.isEmpty ? nil : query
             request.url = components.url
             request.setValue(nil, forHTTPHeaderField: "Authorization")
-            request.setValue(nil, forHTTPHeaderField: "OpenAI-Beta")
             if profile == .doubaoDuplexV3 { request.setValue(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "X-Api-Key") }
         }
         return request
     }
     var isConfigured: Bool { (try? request()) != nil }
+    /// The models with every OpenAI-provider beta profile moved to the current protocol, or nil when
+    /// none needs moving.
+    static func movingOpenAIOffBeta(_ models: [RealtimeModelConfig]) -> [RealtimeModelConfig]? {
+        guard models.contains(where: { $0.providerID == "openai" && $0.profile == .openAIBetaV1 }) else { return nil }
+        return models.map { model in
+            guard model.providerID == "openai", model.profile == .openAIBetaV1 else { return model }
+            var moved = model
+            moved.profileID = RealtimeProtocolProfile.openAIRealtimeV1.rawValue
+            return moved
+        }
+    }
 }
 
 extension Config {
@@ -281,7 +299,7 @@ extension Config {
                          model: source.model, voice: "")
         case .openaiRealtime:
             guard let source = openAIRealtimeModelConfig else { return nil }
-            return .init(id: "legacy-openai", name: source.name, providerID: "openai", profileID: RealtimeProtocolProfile.openAIBetaV1.rawValue,
+            return .init(id: "legacy-openai", name: source.name, providerID: "openai", profileID: RealtimeProtocolProfile.openAIRealtimeV1.rawValue,
                          endpoint: RealtimeConnectionConfiguration.openAIEndpoint, apiKey: source.apiKey, model: source.model, voice: "")
         case .openaiCompatibleRealtime:
             if let activeRealtimeModel { return activeRealtimeModel }
@@ -291,8 +309,25 @@ extension Config {
                          endpoint: legacy.endpoint, apiKey: legacy.apiKey, model: legacy.model, voice: "")
         }
     }
-    /// Copy the old independent live endpoint once; leave it intact if Keychain rejects the write.
+    /// Every saved-model migration, in order. Each runs once and retries on a later call if Keychain
+    /// rejected its write.
     @discardableResult static func migrateRealtimeModelsIfNeeded() -> Bool {
+        let copied = migrateLegacyRealtimeModelsIfNeeded()
+        let moved = migrateOpenAIRealtimeProtocolIfNeeded()
+        return copied && moved
+    }
+    /// Move saved OpenAI live models off the beta protocol OpenAI removed on 2026-05-12. Compatible
+    /// models keep the protocol they were saved with.
+    @discardableResult static func migrateOpenAIRealtimeProtocolIfNeeded() -> Bool {
+        guard !UserDefaults.standard.bool(forKey: "realtimeModelsMigrated_v2") else { return true }
+        if let models = RealtimeModelConfig.movingOpenAIOffBeta(savedRealtimeModels) {
+            guard setSavedRealtimeModels(models) else { return false }
+        }
+        UserDefaults.standard.set(true, forKey: "realtimeModelsMigrated_v2")
+        return true
+    }
+    /// Copy the old independent live endpoint once; leave it intact if Keychain rejects the write.
+    @discardableResult static func migrateLegacyRealtimeModelsIfNeeded() -> Bool {
         guard !UserDefaults.standard.bool(forKey: "realtimeModelsMigrated_v1") else { return true }
         var models = savedRealtimeModels
         let legacy = compatibleRealtimeConfiguration

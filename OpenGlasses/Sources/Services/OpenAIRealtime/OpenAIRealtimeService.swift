@@ -15,7 +15,8 @@ class OpenAIRealtimeService: RealtimeJSONSessionService {
                    toolDeclarations: [[String: Any]] = []) {
         super.configure(model: .init(id: "legacy", name: "OpenAI Realtime",
                                     providerID: connection.isCustom ? "compatible" : "openai",
-                                    profileID: RealtimeProtocolProfile.openAIBetaV1.rawValue,
+                                    profileID: (connection.isCustom ? RealtimeProtocolProfile.openAIBetaV1
+                                                 : .openAIRealtimeV1).rawValue,
                                     endpoint: connection.endpoint, apiKey: connection.apiKey,
                                     model: connection.model, voice: ""),
                         systemInstruction: systemInstruction, toolDeclarations: toolDeclarations)

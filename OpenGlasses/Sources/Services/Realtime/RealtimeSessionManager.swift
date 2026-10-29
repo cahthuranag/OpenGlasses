@@ -783,7 +783,7 @@ class RealtimeSessionManager: ObservableObject {
     }
 
     private func sessionToolDeclarations(includeOpenClaw: Bool) -> [[String: Any]] {
-        if sessionModel?.profile == .openAIBetaV1 {
+        if sessionModel?.profile?.isOpenAIShape == true {
             return ToolDeclarations.declarations(registry: nativeToolRouter?.registry, names: LiveJobContract.jobToolNames)
         }
         return ToolDeclarations.allDeclarations(registry: nativeToolRouter?.registry, includeOpenClaw: includeOpenClaw)

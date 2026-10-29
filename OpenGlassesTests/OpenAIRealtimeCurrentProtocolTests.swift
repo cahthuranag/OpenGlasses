@@ -40,7 +40,7 @@ final class OpenAIRealtimeCurrentProtocolTests: XCTestCase {
 
     func testNoProfileSendsTheBetaHeader() throws {
         let openAI = try openAIModel().request(build: .release)
-        XCTAssertEqual(openAI.url?.absoluteString, "wss://api.openai.com/v1/realtime?model=gpt-realtime")
+        XCTAssertEqual(openAI.url?.absoluteString, "wss://api.openai.com/v1/realtime?model=gpt-realtime-2.1")
         XCTAssertEqual(openAI.value(forHTTPHeaderField: "Authorization"), "Bearer fixture-key")
         XCTAssertNil(openAI.value(forHTTPHeaderField: "OpenAI-Beta"))
         for profile in [RealtimeProtocolProfile.openAIRealtimeV1, .openAIBetaV1] {
@@ -265,7 +265,8 @@ final class OpenAIRealtimeProtocolMigrationTests: XCTestCase {
     private var saved: Data??
     private var flags: [String: Any] = [:]
     private var savedChatModels: Data??
-    private let flagKeys = ["realtimeModelsMigrated_v1", "realtimeModelsMigrated_v2", "activeModelId"]
+    private let flagKeys = ["realtimeModelsMigrated_v1", "realtimeModelsMigrated_v2", "realtimeModelsMigrated_v3",
+                                  "pendingRealtimeModelNotice", "activeModelId"]
     override func setUp() {
         saved = .some(KeychainService.data(for: "savedRealtimeModels"))
         savedChatModels = .some(KeychainService.data(for: "savedModelConfigs"))
@@ -295,7 +296,7 @@ final class OpenAIRealtimeProtocolMigrationTests: XCTestCase {
     }
     func testTheLegacyOpenAIShortcutResolvesToTheCurrentProtocol() throws {
         var chat = ModelConfig.defaultConfig(for: .openai)
-        chat.apiKey = "fixture-key"; chat.model = "gpt-realtime"
+        chat.apiKey = "fixture-key"; chat.model = "gpt-realtime-2.1"
         Config.setSavedModels([chat])
         let model = try XCTUnwrap(Config.realtimeModel(for: .openaiRealtime))
         XCTAssertEqual(model.profile, .openAIRealtimeV1)

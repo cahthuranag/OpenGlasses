@@ -237,6 +237,7 @@ struct OpenGlassesApp: App {
         // Keychain. Must run before anything reads a secret (AppState, LLM, TTS…).
         Config.migrateSecretsToKeychainIfNeeded()
         Config.migrateRealtimeModelsIfNeeded()
+        Config.postPendingRealtimeModelNotice()
         // Same move for the FHIR blob, which carried a bearer token, a client secret, and the
         // patient/practitioner identifiers in one preferences value. Forward-only: the legacy key
         // is removed only after the protected copies read back identical, and a locked device

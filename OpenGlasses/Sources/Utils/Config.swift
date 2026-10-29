@@ -2846,15 +2846,21 @@ struct Config {
     // MARK: - OpenAI Realtime Configuration
 
     /// Find the best OpenAI model config for Realtime mode.
-    /// Prefers a model with "realtime" in the name, falls back to any OpenAI model.
-    static var openAIRealtimeModelConfig: ModelConfig? {
-        let openAIModels = savedModels.filter { $0.provider == LLMProvider.openai.rawValue }
+    /// Prefers a model with "realtime" in the name, falls back to any OpenAI model. Never one whose
+    /// ID OpenAI has already removed (`OpenAIRealtimeModelRetirement`), which can only fail.
+    static var openAIRealtimeModelConfig: ModelConfig? { openAIRealtimeModelConfig(on: Date()) }
+
+    static func openAIRealtimeModelConfig(on date: Date) -> ModelConfig? {
+        let openAIModels = savedModels.filter {
+            $0.provider == LLMProvider.openai.rawValue && !OpenAIRealtimeModelRetirement.isRemoved($0.model, on: date)
+        }
         // Prefer a model explicitly named for realtime
         if let realtime = openAIModels.first(where: { $0.model.lowercased().contains("realtime") }) {
             return realtime
         }
         // Fall back to active model if it's OpenAI
-        if let active = activeModel, active.llmProvider == .openai {
+        if let active = activeModel, active.llmProvider == .openai,
+           !OpenAIRealtimeModelRetirement.isRemoved(active.model, on: date) {
             return active
         }
         // Fall back to any OpenAI model

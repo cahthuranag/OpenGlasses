@@ -5,7 +5,8 @@ final class RealtimeModelPersistenceTests: XCTestCase {
     private var saved: [String: Data?] = [:]
     private var defaults: [String: Any] = [:]
     private let keys = ["savedRealtimeModels", "compatibleRealtimeConfiguration", "savedModelConfigs"]
-    private let preferenceKeys = ["activeRealtimeModelID", "realtimeModelsMigrated_v1", "activeModelId"]
+    private let preferenceKeys = ["activeRealtimeModelID", "realtimeModelsMigrated_v1", "realtimeModelsMigrated_v2",
+                                        "realtimeModelsMigrated_v3", "pendingRealtimeModelNotice", "activeModelId"]
     override func setUp() {
         for key in keys { saved[key] = .some(KeychainService.data(for: key)); KeychainService.delete(key) }
         for key in preferenceKeys {

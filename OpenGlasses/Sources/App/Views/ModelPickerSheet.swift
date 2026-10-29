@@ -41,6 +41,7 @@ struct ModelPickerSheet: View {
         .presentationDetents([.medium, .large])
         .onAppear {
             Config.migrateRealtimeModelsIfNeeded()
+            Config.postPendingRealtimeModelNotice()
             realtimeModels = Config.savedRealtimeModels
         }
     }

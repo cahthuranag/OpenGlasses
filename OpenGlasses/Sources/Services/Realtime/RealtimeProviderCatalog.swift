@@ -149,7 +149,7 @@ struct ModelStudioRegionDrafts: Equatable {
 enum RealtimeProviderCatalog {
     static let templates: [RealtimeProviderTemplate] = [
         .init(id: "openai", name: "OpenAI", profile: .openAIRealtimeV1,
-              endpoint: RealtimeConnectionConfiguration.openAIEndpoint, model: "gpt-realtime", voice: "",
+              endpoint: RealtimeConnectionConfiguration.openAIEndpoint, model: OpenAIRealtimeModelRetirement.full, voice: "",
               help: String(localized: "Use an OpenAI API key. Realtime is separate from a ChatGPT subscription.")),
         .init(id: "gemini", name: "Gemini", profile: .geminiLiveV1,
               endpoint: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
@@ -314,7 +314,39 @@ extension Config {
     @discardableResult static func migrateRealtimeModelsIfNeeded() -> Bool {
         let copied = migrateLegacyRealtimeModelsIfNeeded()
         let moved = migrateOpenAIRealtimeProtocolIfNeeded()
-        return copied && moved
+        let renamed = migrateOpenAIRealtimeModelIDsIfNeeded()
+        return copied && moved && renamed
+    }
+    /// Move saved OpenAI live models off the model IDs OpenAI has removed or is retiring
+    /// (`OpenAIRealtimeModelRetirement`), and leave one notice naming the old and new IDs for
+    /// `postPendingRealtimeModelNotice()`. Compatible models are untouched. `save` is the Keychain
+    /// write, a parameter so a rejected write can be tested.
+    @discardableResult static func migrateOpenAIRealtimeModelIDsIfNeeded(
+        on date: Date = Date(), save: ([RealtimeModelConfig]) -> Bool = { setSavedRealtimeModels($0) }
+    ) -> Bool {
+        guard !UserDefaults.standard.bool(forKey: "realtimeModelsMigrated_v3") else { return true }
+        if let rewrite = OpenAIRealtimeModelRetirement.rewriting(savedRealtimeModels) {
+            guard save(rewrite.models) else { return false }
+            if let notice = OpenAIRealtimeModelRetirement.notice(for: rewrite.renames, on: date) {
+                UserDefaults.standard.set(notice, forKey: pendingRealtimeModelNoticeKey)
+            }
+        }
+        UserDefaults.standard.set(true, forKey: "realtimeModelsMigrated_v3")
+        return true
+    }
+    static let pendingRealtimeModelNoticeKey = "pendingRealtimeModelNotice"
+    /// The rewrite notice, once: it is removed as it is read.
+    static func takePendingRealtimeModelNotice() -> String? {
+        let notice = UserDefaults.standard.string(forKey: pendingRealtimeModelNoticeKey)
+        UserDefaults.standard.removeObject(forKey: pendingRealtimeModelNoticeKey)
+        return notice
+    }
+    /// Show the rewrite notice, if one is waiting, until the wearer dismisses it.
+    /// `center` defaults to the shared one inside the body: a `.shared` default argument would be
+    /// read off the main actor.
+    @MainActor static func postPendingRealtimeModelNotice(to center: NoticeCenter? = nil) {
+        guard let notice = takePendingRealtimeModelNotice() else { return }
+        (center ?? .shared).post(notice, severity: .warning, source: .app)
     }
     /// Move saved OpenAI live models off the beta protocol OpenAI removed on 2026-05-12. Compatible
     /// models keep the protocol they were saved with.

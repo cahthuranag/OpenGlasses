@@ -2,9 +2,9 @@
 
 **Status:** 🚧 P0 built 2026-10-29 (PR 892) — the current protocol, checked live with the owner's
 key the same day (see "What the probe found"). Decisions 1, 3, 4 and 5 taken at their defaults
-("let's fix that then"); decision 2 (saved model IDs) stays with P1. P1 (model IDs before
-2027-01-20), P2 (dictation before 2027-02-26) and the P3 device pass not started. Drafted
-2026-10-29 (PR 890).
+("let's fix that then"). P1 built 2026-10-29 (PR 894) — model IDs before 2027-01-20; decision 2
+taken at its default after the price check (rewrite once, with one notice). P2 (dictation before
+2027-02-26) and the P3 device pass not started. Drafted 2026-10-29 (PR 890).
 **Origin:** found while drafting Plan KB (the OpenAI voice after 2027-01-06, PR 889), which puts it
 out of scope as its decision 6. This is that plan.
 **Deadlines:** the protocol is **already past its date**, so P0 is a fix, not a migration. After
@@ -250,7 +250,31 @@ strings, and P3.
 
 Done when: the full suite and a Release build are green, and the probe's output is in the PR.
 
-### P1 — Model IDs before 2027-01-20 (headless)
+### P1 — Model IDs before 2027-01-20 (headless) — 🚧 built 2026-10-29
+
+**As built:** `OpenAIRealtimeModelRetirement` (pure) holds the seven entries below with their
+removal dates and 2.1-family replacements; the preview and `gpt-realtime-mini` entries cover their
+dated snapshots, `gpt-realtime` itself matches exactly so `gpt-realtime-2.1` is never caught. The
+OpenAI template defaults to `gpt-realtime-2.1`. Migration `realtimeModelsMigrated_v3`
+(`Config.migrateOpenAIRealtimeModelIDsIfNeeded`, after v1 and v2) rewrites OpenAI-provider saved
+live models once, leaves compatible models alone, keeps the flag unset when the Keychain write is
+rejected, and leaves one notice naming each old and new ID ("is retiring … on <date>" before the
+removal date, "no longer offers" after it). The notice is held in preferences until it is posted,
+once, to the notice centre as a warning that stays until dismissed: at launch, and from the two
+screens that also run the migration. `Config.openAIRealtimeModelConfig(on:)` skips IDs the table
+marks removed on that day, in every fallback, so after 2027-01-20 a saved `gpt-realtime` chat entry
+is no longer offered to the live mode. The transcription model was already `gpt-live-transcribe`
+(P0); unchanged. Tests: `OpenAIRealtimeModelRetirementTests` (table, dates, rewrite, idempotence,
+notice wording, template default) and `OpenAIRealtimeModelIDMigrationTests` (the stored migration,
+the rejected write, the one-time notice, the legacy shortcut). Owed: the catalog sync for the three
+notice strings, a live probe of the rewritten IDs (the probe already confirmed `gpt-realtime-2.1`
+on P0's day; `gpt-realtime-2.1-mini` has not been probed), and P3.
+
+**Price check for decision 2** (OpenAI's pricing page, 2026-10-29, per 1M tokens):
+`gpt-realtime-2.1` matches `gpt-realtime` on audio (32 in, 64 out, 0.40 cached), text input (4)
+and image input (5); only text output rises, 16 → 24. The live mode answers in audio, so text
+output is mostly the spoken reply's transcript. `gpt-realtime-2.1-mini` matches
+`gpt-realtime-mini` on every line. The owner chose the default: rewrite once.
 
 - The OpenAI template's default becomes `gpt-realtime-2.1`.
 - Removed and retiring IDs on saved **OpenAI** live models (`gpt-4o-realtime-preview*`,
@@ -282,7 +306,7 @@ turn on a compatible model set to the beta profile, if a beta-speaking server is
 
 1. **Schedule P0 now, as a fix ahead of other work**, since the mode has probably been dead since
    May. Or: wait until after the current queue.
-2. **Saved model IDs (P1): rewrite OpenAI-provider IDs to OpenAI's named replacement in the 2.1
+2. **Taken 2026-10-29: the default, after the price check in P1.** **Saved model IDs (P1): rewrite OpenAI-provider IDs to OpenAI's named replacement in the 2.1
    family (`gpt-realtime-2.1`, or `gpt-realtime-2.1-mini` for the minis), once, with one notice
    naming the old and new ID.** This includes `gpt-4o-realtime-preview*`, even though OpenAI named
    `gpt-realtime-1.5` for those in 2025: one target family avoids a second move. Or: leave saved

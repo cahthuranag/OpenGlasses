@@ -184,7 +184,10 @@ struct RealtimeModelsView: View {
         }
         .navigationTitle("Realtime Models")
         .ogFormStyle()
-        .onAppear { Config.migrateRealtimeModelsIfNeeded(); models = Config.savedRealtimeModels }
+        .onAppear {
+            Config.migrateRealtimeModelsIfNeeded(); Config.postPendingRealtimeModelNotice()
+            models = Config.savedRealtimeModels
+        }
         .sheet(item: $editingModel) { model in
             RealtimeModelEditorView(model: model) { saved in
                 var updated = models

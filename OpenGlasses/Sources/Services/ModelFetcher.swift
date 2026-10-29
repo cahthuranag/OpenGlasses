@@ -438,12 +438,24 @@ enum ModelFetcher {
                 let displayName = (dict["displayName"] as? String) ?? id
                 // Filter to generateContent-capable models only
                 let methods = dict["supportedGenerationMethods"] as? [String] ?? []
-                guard methods.contains("generateContent") else { return nil }
+                guard methods.contains("generateContent"), isGeminiChatModel(id) else { return nil }
                 return RemoteModel(id: id, name: displayName)
             }
             .sorted { $0.id < $1.id }
         } catch {
             return []
         }
+    }
+
+    /// Whether a Gemini id that answers `generateContent` is a model a conversation can use.
+    /// The method alone is not enough: speech, image and embedding models list it too, and a
+    /// wearer who picked `gemini-3.8-flash-tts` as their assistant had every turn refused
+    /// (support report, 2026-10-29). Those families are named by their ids, so they are left out
+    /// of the picker by name.
+    static func isGeminiChatModel(_ id: String) -> Bool {
+        let lowered = id.lowercased()
+        let excluded = ["tts", "image", "imagen", "embedding", "native-audio", "aqa", "veo",
+                        "computer-use", "robotics"]
+        return !excluded.contains { lowered.contains($0) }
     }
 }

@@ -54,4 +54,18 @@ final class ModelFormValidationTests: XCTestCase {
         XCTAssertTrue(canAdd(.custom, url: "https://inference.example/v1"))
         XCTAssertTrue(canAdd(.appleOnDevice, url: ""))
     }
+
+    /// Edit Model's Save: a blank id is refused whatever the credentials (support report,
+    /// 2026-10-29: a cleared Groq id was saved and every turn after failed).
+    func testAnEditedModelNeedsAModelIdButNotAFreshSignIn() {
+        for provider in LLMProvider.allCases {
+            XCTAssertFalse(ModelFormValidation.canSave(provider: provider, model: " \n",
+                                                       baseURL: provider.defaultBaseURL), provider.rawValue)
+        }
+        XCTAssertTrue(ModelFormValidation.canSave(provider: .groq, model: "qwen/qwen3.8-27b", baseURL: ""))
+        // Signed out of ChatGPT: Add is refused, but an existing model can still be saved.
+        XCTAssertTrue(ModelFormValidation.canSave(provider: .chatgpt, model: "gpt-5", baseURL: ""))
+        XCTAssertFalse(ModelFormValidation.canSave(provider: .custom, model: "m", baseURL: "mac.local:11434"))
+        XCTAssertTrue(ModelFormValidation.canSave(provider: .custom, model: "m", baseURL: "https://inference.example/v1"))
+    }
 }

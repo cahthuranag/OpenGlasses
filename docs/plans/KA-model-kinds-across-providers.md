@@ -1,6 +1,8 @@
 # Plan KA — Model Kinds Across Providers (one rule for what a listed model is for)
 
-**Status:** 📝 Drafted 2026-10-29 — nothing built.
+**Status:** 📝 Drafted 2026-10-29 — nothing built. Owner decision the same day: chat pickers
+**label** non-chat models rather than hide them; PR 885 stays as it is (hiding Gemini's by name)
+until P0 replaces it.
 **Origin:** the 2026-10-29 support report on build 581. A speech-only Gemini model was chosen as the
 chat assistant, so every turn was refused. PR 885 fixes it for Gemini by name. The owner asked for
 one approach across every provider, because the same thing can happen elsewhere, and Plan
@@ -60,46 +62,65 @@ Gemini's methods come close. For the rest, the id is all there is.
       `moderation`, `guard`, `safeguard` → moderation; `ocr`.
    3. **A short per-provider table** for families the shared words miss (MiniMax `speech-*`, Qwen
       `qwen3-tts-*`, `wan*`).
-2. **Unknown means chat, never hidden.** A custom server's or a new provider's id that matches
-   nothing stays in the chat picker. The classifier only removes what it recognises as something
-   else. A wrong removal hides the wearer's own model, which is worse than offering an odd one.
-3. **Every chat picker reads it.** `ModelFetcher` keeps `.chat` for every provider. The xAI and
-   Gemini name lists become the classifier's rows, with their tests carried over.
+2. **Unknown means chat.** A custom server's or a new provider's id that matches nothing is shown
+   as an ordinary chat model. The classifier only labels what it recognises as something else; a
+   wrong label on the wearer's own model is worse than an odd model offered as chat.
+3. **Every chat picker labels, never hides (owner decision, 2026-10-29).** For every provider,
+   the chat picker shows chat models as today. Below them, non-chat models sit in a dimmed "Can't
+   be your assistant" section, where they can't be selected. Each one carries a label naming where
+   it can be used: live voice mode, speech output (a voice), transcription, images, embeddings,
+   safety filters. Once Plan JZ's Gemini voice lands, the speech-output label points to the voice
+   picker. The xAI and Gemini name lists (`XAIOAuth.isChatModel`, PR 885's
+   `ModelFetcher.isGeminiChatModel`) become the classifier's rows, with their tests carried over.
+   PR 885 hides Gemini's non-chat models until P0 replaces that with the label.
 4. **Every voice picker reads it.** A cloud voice's model picker offers its provider's `.speech`
    models. Plan JZ's Gemini picker is the first. OpenAI's voice can do the same if it keeps a
    speech-endpoint model.
-5. **A typed id is checked the same way.** The model form uses the classifier, so a speech or
-   image id typed by hand is refused as the assistant with the reason ("this is a speech model;
-   it can be your voice in Settings › Connections › Services & Integrations"). PR 885's Gemini check
-   becomes the general rule. No plan letters appear in the wording.
-6. **Pure and fixture-tested.** Each provider gets a list fixture built from its documented
+5. **A typed id gets the same warning.** The model form uses the classifier, so a speech or image
+   id typed by hand gets the label's warning: what the model is for, and where it can be used.
+   PR 885's Gemini check becomes the general rule. No plan letters appear in the wording.
+6. **A saved model that can't answer is flagged.** A model already saved as the assistant whose id
+   the classifier calls non-chat shows a warning in Settings, with the same label. That reaches a
+   wearer who saved one before any filter existed, such as the report's saved `gemini-3.8-flash-tts`.
+7. **Pure and fixture-tested.** Each provider gets a list fixture built from its documented
    shape, with invented ids where real ones aren't needed. Each family above gets its expected
    kind, plus one test that unknown ids stay chat.
 
 ## Phases
 
-- **P0 — the classifier and the chat pickers (one PR, after PR 885 merges).** The classifier, the
-  shared words, the per-provider rows, and `ModelFetcher` filtering every provider. The xAI and
-  Gemini filters fold in, and the model form check is generalised. Full unit suite and Release
-  build.
+- **P0 — the classifier and labelled chat pickers (one PR, after PR 885 merges).** This is the
+  labelling PR the owner asked for after PR 885. It is built from `main` by the session that owns PR
+  885. It covers:
+  - the classifier, the shared words and the per-provider rows;
+  - every provider's chat picker with the "Can't be your assistant" section and its labels;
+  - the typed-id warning and the saved-model warning in Settings;
+  - folding in the xAI and Gemini name lists.
+
+  **Cleanup:** PR 887's `GeminiThinkingStyle.none` marker list (tts, native-audio, embedding,
+  imagen, veo, aqa ids get no `thinkingConfig`) comes from the classifier instead of being a second
+  list. Full unit suite and Release build.
 - **P1 — voice pickers.** Plan JZ's Gemini speech-model picker reads `.speech`, replacing its own
   filter; its URL-safety check on the id stays. The OpenAI voice's model follows from decision 3.
 - **P2 — live lists.** Fetch the real list with a key for every provider, above all Z.ai, Qwen and
   MiniMax, whose list shapes are undocumented. Correct the rows, and record each provider's shape
   in this plan.
 
-## Decisions for the owner
+## Decisions
 
-1. **Order.** *Default: KA P0 lands before Plan JZ's code PR*, so the Gemini speech picker uses the
-   shared classifier from the start, and KA P0 waits for PR 885. *Alternative:* JZ P0 ships now
-   with its own Gemini filter, and KA P1 replaces it.
-2. **A typed non-chat id.** *Default: refused as the assistant, with the reason and where it can be
-   used.* *Alternative:* allowed with a warning, since a custom server's naming may be its own.
-3. **The OpenAI voice after 2027-01-06.** OpenAI removes every model its speech endpoint takes, and
+Taken (owner, 2026-10-29): chat pickers label non-chat models, don't hide them; a typed non-chat id
+gets the same warning; a saved one that can't answer is flagged in Settings; PR 885 stays as it is
+and the labelling is P0, a separate PR after it.
+
+Open:
+
+1. **Order against Plan JZ.** *Default: Plan JZ's code PR ships with its own Gemini speech filter*,
+   and P1 switches it to the classifier once P0 is in. That way neither waits on the other.
+   *Alternative:* JZ's code waits for P0.
+2. **The OpenAI voice after 2027-01-06.** OpenAI removes every model its speech endpoint takes, and
    names a realtime model as the replacement. That is a different transport (a session, not a POST
    per sentence). *Options:* move the OpenAI voice to the realtime model; or retire it, saying so
    to anyone who chose it, and offer OpenRouter's or another provider's voice instead. This needs
    its own plan before the end of 2026.
-4. **More voices.** Mistral (Voxtral, multilingual, a voice list), MiniMax, Qwen and OpenRouter (one
+3. **More voices.** Mistral (Voxtral, multilingual, a voice list), MiniMax, Qwen and OpenRouter (one
    key for several vendors' voices) all have speech. Groq's is English and Saudi Arabic only.
    *Default: none scheduled;* each would be its own plan in the shape of Plan JZ.

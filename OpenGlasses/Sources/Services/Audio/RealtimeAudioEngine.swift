@@ -228,6 +228,16 @@ final class RealtimeAudioEngine {
         // path to cancel, so the risk of the IO swap buys nothing.
         prepareEngineOnQueue(wantVoiceProcessing: Config.duplexAudioEnabled && useIPhoneMode)
 
+        // A graph reset re-activates the session under the long-lived engine, whose input node can
+        // keep the rate it negotiated before the route moved. Voice processing already starts on a
+        // fresh engine above; half-duplex gets one here, before any wiring, when the node and the
+        // hardware disagree. A fresh engine reads the route as it is now.
+        if duplexCapability == .halfDuplex, !inputFormatMatchesHardwareOnQueue() {
+            PrivacyLog.audio(.realtime, .engineRebuilt, owner: PrivacyToken(config.owner.rawValue),
+                             detail: PrivacyToken("staleInputFormat"))
+            replaceEngineOnQueue()
+        }
+
         // Idempotent setup: clear any stale tap, attach the player exactly once.
         if isInputTapInstalled {
             audioEngine.inputNode.removeTap(onBus: 0)
@@ -260,6 +270,16 @@ final class RealtimeAudioEngine {
         // degraded ending, a graph reset logs `resetFailed`.
         guard AudioFormatFactory.isUsableTapFormat(inputNativeFormat) else {
             PrivacyLog.audio(.realtime, .formatInvalid, owner: PrivacyToken(config.owner.rawValue),
+                             hertz: Int(inputNativeFormat.sampleRate),
+                             channels: Int(inputNativeFormat.channelCount))
+            throw AudioSessionError.invalidFormat(context: "microphone input")
+        }
+        // Still stale on a fresh engine: the tap would raise the same uncatchable exception, so
+        // refuse it here instead. Only the plain IO node is checked — voice processing's IO unit
+        // is not, and it is rebuilt on every start anyway.
+        if duplexCapability == .halfDuplex, !inputFormatMatchesHardwareOnQueue() {
+            PrivacyLog.audio(.realtime, .formatInvalid, owner: PrivacyToken(config.owner.rawValue),
+                             detail: PrivacyToken("staleInputFormat"),
                              hertz: Int(inputNativeFormat.sampleRate),
                              channels: Int(inputNativeFormat.channelCount))
             throw AudioSessionError.invalidFormat(context: "microphone input")
@@ -403,6 +423,14 @@ final class RealtimeAudioEngine {
             PrivacyLog.audio(.realtime, .voiceProcessingDead, owner: PrivacyToken(config.owner.rawValue))
             replaceEngineOnQueue()
         }
+    }
+
+    /// Whether the input node's output format still matches its hardware input. Lifecycle queue.
+    private func inputFormatMatchesHardwareOnQueue() -> Bool {
+        let input = audioEngine.inputNode
+        return AudioFormatFactory.tapFormatMatchesHardware(
+            tapSampleRate: input.outputFormat(forBus: 0).sampleRate,
+            hardwareSampleRate: input.inputFormat(forBus: 0).sampleRate)
     }
 
     /// Swap in a fresh engine container. Lifecycle-queue only, capture-start only — child nodes are

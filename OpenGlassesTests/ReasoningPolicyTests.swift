@@ -253,6 +253,25 @@ final class ReasoningPolicyTests: XCTestCase {
         XCTAssertNil(body(high)["reasoning_effort"])
     }
 
+    /// A model that takes no thinking control is sent none on any turn: no level, no explicit
+    /// budget and not the tool turn's shipped budget either.
+    func testGeminiModelWithNoThinkingControlIsSentNone() {
+        for tools in [true, false] {
+            for saved: ReasoningEffort? in [nil, .high, ReasoningEffort.none] {
+                let r = resolve(.gemini, "gemini-3.8-flash-tts", tools: tools, saved)
+                XCTAssertEqual(r.wire, .omit)
+                XCTAssertEqual(r.effective, .notApplicable)
+                XCTAssertEqual(r.reason, .noEffortSetting)
+                let config = r.geminiGenerationConfig(includesTools: tools, configuredMaxTokens: 500)
+                XCTAssertNil(config["thinkingConfig"], "tools: \(tools), saved: \(String(describing: saved))")
+                XCTAssertEqual(config["maxOutputTokens"] as? Int, 500)
+            }
+        }
+        var config = ModelConfig.defaultConfig(for: .gemini)
+        config.model = "gemini-3.8-flash-tts"
+        XCTAssertNil(config.oneShotReasoningResolution().geminiOneShotGenerationConfig(maxTokens: 512)["thinkingConfig"])
+    }
+
     func testGeminiProCannotSwitchThinkingOff() {
         let r = resolve(.gemini, "gemini-2.5-pro", tools: false, ReasoningEffort.none)
         XCTAssertEqual(r.wire, .geminiThinkingBudget(128))

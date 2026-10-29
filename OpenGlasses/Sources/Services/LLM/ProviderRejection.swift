@@ -189,6 +189,13 @@ struct ProviderRejection: Equatable, Sendable {
 
     private static let samplingParameters: Set<String> = ["temperature", "top_p", "top_k"]
 
+    /// How Gemini names its thinking controls in a refusal, in words or as a field.
+    private static let geminiThinkingFields = [
+        "thinking level", "thinking_level", "thinkinglevel",
+        "thinking budget", "thinking_budget", "thinkingbudget",
+        "thinking_config", "thinkingconfig", "thinking is not supported",
+    ]
+
     /// The words a provider uses when it refuses a parameter rather than describing it.
     private static let refusalWords = [
         "not supported", "unsupported", "does not support", "may only be set", "must be unset",
@@ -212,7 +219,12 @@ struct ProviderRejection: Equatable, Sendable {
         Row(reason: .toolChoiceUnsupported,
             allOf: refusalWords.map { ["tool_choice", $0] }
                 + [["tool_choice", "thinking may not be enabled"]]),
-        Row(reason: .thinkingConfigUnsupported, allOf: [["thinking.type"], ["budget_tokens"]]),
+        // Anthropic names its field paths; Gemini says it in words — "Thinking level is not
+        // supported for this model." — which had read as `other` and ended the turn rather than
+        // the candidate (support report, 2026-10-29).
+        Row(reason: .thinkingConfigUnsupported,
+            allOf: [["thinking.type"], ["budget_tokens"]]
+                + geminiThinkingFields.flatMap { field in refusalWords.map { [field, $0] } }),
         Row(reason: .samplingUnsupported,
             allOf: samplingParameters.sorted().flatMap { name in refusalWords.map { [name, $0] } }),
         Row(reason: .toolDefinitionInvalid,

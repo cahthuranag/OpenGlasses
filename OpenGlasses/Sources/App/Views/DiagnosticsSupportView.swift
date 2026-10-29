@@ -310,6 +310,7 @@ struct DiagnosticsSupportView: View {
             glassesBatteryPercent: appState.glassesService.batteryLevel,
             hasDisplayCapability: appState.glassesDisplay.hasDisplayCapability,
             activeModelName: Config.activeModel?.name,
+            activeModelID: Config.activeModel?.model,
             logTail: appState.debugEvents,
             selfTestSummary: SubsystemProbes.summary(of: runner)
         )

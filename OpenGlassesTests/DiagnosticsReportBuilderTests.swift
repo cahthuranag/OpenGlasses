@@ -34,6 +34,21 @@ final class DiagnosticsReportBuilderTests: XCTestCase {
 
     // MARK: - Context
 
+    /// The model row names the id it sends: "Google (Gemini)" alone could not tell a speech model
+    /// from a chat model (support report, 2026-10-29).
+    func testTheModelRowNamesTheIdItSends() {
+        var s = snapshot()
+        s.activeModelName = "Google (Gemini)"
+        s.activeModelID = "gemini-3.8-flash-tts"
+        XCTAssertTrue(DiagnosticsReportBuilder.build(s).body.contains("| Model | Google (Gemini) · `gemini-3.8-flash-tts` |"))
+        s.activeModelID = " "
+        XCTAssertTrue(DiagnosticsReportBuilder.build(s).body.contains("| Model | Google (Gemini) · no model id |"))
+        s.activeModelID = "Google (Gemini)"
+        XCTAssertTrue(DiagnosticsReportBuilder.build(s).body.contains("| Model | Google (Gemini) |"))
+        s.activeModelName = nil
+        XCTAssertTrue(DiagnosticsReportBuilder.build(s).body.contains("| Model | None configured |"))
+    }
+
     func testBodyCarriesDeviceAndAppContext() {
         let report = DiagnosticsReportBuilder.build(snapshot())
 

@@ -278,6 +278,26 @@ final class ProviderRejectionTests: XCTestCase {
         XCTAssertEqual(limited.summary.description, "rateLimited(RESOURCE_EXHAUSTED)#429")
     }
 
+    // MARK: - Gemini refusing a thinking control
+
+    /// Gemini refuses a thinking control in words, not a field path. Read as `other`, the 400
+    /// ended the turn; as a model-contract refusal it ends only the candidate (support report,
+    /// 2026-10-29).
+    func testGeminiRefusingAThinkingControlIsAModelContractRefusal() {
+        for message in ["Thinking level is not supported for this model.",
+                        "thinking_budget is not supported for this model.",
+                        "Thinking is not supported for this model."] {
+            let rejection = ProviderRejection(status: 400, body: Self.geminiBody("INVALID_ARGUMENT", message),
+                                              provider: .gemini)
+            XCTAssertEqual(rejection.reason, .thinkingConfigUnsupported, message)
+            XCTAssertTrue(rejection.reason.endsOnlyThisCandidate, message)
+        }
+        // Naming thinking without refusing it is not this reason.
+        XCTAssertEqual(ProviderRejection(status: 400, body: Self.geminiBody("INVALID_ARGUMENT",
+                                                                            "The thinking level must be one of low, high."),
+                                         provider: .gemini).reason, .other)
+    }
+
     // MARK: - A model the service does not offer
 
     func testEveryFamilyNamesAModelItDoesNotOffer() {

@@ -19,6 +19,9 @@ struct DiagnosticsSnapshot: Equatable {
     var glassesBatteryPercent: Int?
     var hasDisplayCapability: Bool
     var activeModelName: String?
+    /// The id the active model sends, e.g. `gemini-3.8-flash-tts`. The name alone ("Google
+    /// (Gemini)") could not tell a speech model from a chat model (support report, 2026-10-29).
+    var activeModelID: String?
     /// Debug-log tail, oldest first. Trimmed to `maxLogLines` by the builder.
     var logTail: [String]
     /// One line per completed self-test probe, if the wearer ran them. Empty is fine.
@@ -36,6 +39,7 @@ struct DiagnosticsSnapshot: Equatable {
         glassesBatteryPercent: Int? = nil,
         hasDisplayCapability: Bool = false,
         activeModelName: String? = nil,
+        activeModelID: String? = nil,
         logTail: [String] = [],
         selfTestSummary: [String] = []
     ) {
@@ -50,6 +54,7 @@ struct DiagnosticsSnapshot: Equatable {
         self.glassesBatteryPercent = glassesBatteryPercent
         self.hasDisplayCapability = hasDisplayCapability
         self.activeModelName = activeModelName
+        self.activeModelID = activeModelID
         self.logTail = logTail
         self.selfTestSummary = selfTestSummary
     }
@@ -155,8 +160,18 @@ enum DiagnosticsReportBuilder {
             row("Locale", snapshot.localeIdentifier),
             row("Glasses", glasses),
             row("Display", snapshot.hasDisplayCapability ? "Available" : "None"),
-            row("Model", snapshot.activeModelName.map(clean) ?? "None configured"),
+            row("Model", modelCell(snapshot, clean: clean)),
         ]
+    }
+
+    /// "Google (Gemini) · `gemini-3.8-flash-tts`": the name the wearer gave it, and the id it sends
+    /// when that says more.
+    private static func modelCell(_ snapshot: DiagnosticsSnapshot, clean: (String) -> String) -> String {
+        guard let name = snapshot.activeModelName.map(clean) else { return "None configured" }
+        let id = snapshot.activeModelID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !id.isEmpty else { return name + " · no model id" }
+        guard id != name else { return name }
+        return "\(name) · `\(clean(id))`"
     }
 
     private static func row(_ label: String, _ value: String) -> String {

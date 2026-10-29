@@ -20,8 +20,9 @@ synthesise sentence by sentence), Plan [AI](provider-auth-and-fallbacks.md) (Ver
 - A Gemini key is the one most wearers outside the English-speaking markets bring, often on its
   own. With it they get chat today, but replies are spoken by Kokoro (English-first) or the iOS
   voice, unless they also pay for ElevenLabs, OpenAI or xAI.
-- The speech models PR 885 keeps out of the chat picker then have a real place to go. If the
-  owner chooses to label them rather than hide them, the label can point at the voice setting.
+- The speech models PR 885 keeps out of the chat picker then have a real place to go. Plan
+  [KA](KA-model-kinds-across-providers.md) P0 (owner decision 2026-10-29) shows them in the chat
+  picker as "Can't be your assistant", labelled as speech output; that label points to this voice.
 
 ## The wire (checked against Google's docs, 2026-10-29)
 
@@ -108,7 +109,9 @@ The OpenAI and xAI voices set the pattern, and every rule they follow applies he
    carries chat, image (`…-image`, Imagen), embedding and Live (`native-audio`) models, so an entry
    is offered only when its id names `tts` as a word of its own and it answers `generateContent`. A
    saved id is also checked before it goes into the request's URL path (letters, digits, `.`, `-`,
-   `_`, and it must name `tts`), and anything else reads as the default. This is where the speech
+   `_`, and it must name `tts`), and anything else reads as the default. This filter is the voice's own
+   until Plan KA's shared classifier lands; KA P1 then switches the picker to it, and the URL-safety
+   check stays. This is where the speech
    models PR 885 keeps out of the chat picker can be chosen.
 2. **Voices: the 30 prebuilt names, default `Kore`**, names only. The descriptions wait for a
    catalog pass. The larger voice library stays later work.

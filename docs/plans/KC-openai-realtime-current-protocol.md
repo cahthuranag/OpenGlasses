@@ -2,9 +2,10 @@
 
 **Status:** 🚧 P0 built 2026-10-29 (PR 892) — the current protocol, checked live with the owner's
 key the same day (see "What the probe found"). Decisions 1, 3, 4 and 5 taken at their defaults
-("let's fix that then"). P1 built 2026-10-29 (PR 894) — model IDs before 2027-01-20; decision 2
-taken at its default after the price check (rewrite once, with one notice). P2 (dictation before
-2027-02-26) and the P3 device pass not started. Drafted 2026-10-29 (PR 890).
+("let's fix that then"). P1 built 2026-10-29 (PR 894; live check and catalog sync PR 895) — model
+IDs before 2027-01-20; decision 2 taken at its default after the price check (rewrite once, with
+one notice). P2 (dictation before 2027-02-26) and the P3 device pass not started. Drafted
+2026-10-29 (PR 890).
 **Origin:** found while drafting Plan KB (the OpenAI voice after 2027-01-06, PR 889), which puts it
 out of scope as its decision 6. This is that plan.
 **Deadlines:** the protocol is **already past its date**, so P0 is a fix, not a migration. After
@@ -190,8 +191,8 @@ protocol wording names "the other OpenAI Realtime protocol" only on a compatible
 (`offersProtocolChoice`, set by `RealtimeAdapterRegistry`). Migration `realtimeModelsMigrated_v2`
 (`RealtimeModelConfig.movingOpenAIOffBeta`, pure). Tests: `OpenAIRealtimeCurrentProtocolTests`
 (fixture `openai-realtime-v1.json`) and `OpenAIRealtimeProtocolMigrationTests`; the beta golden in
-`OpenAIRealtimeJobToolsTests` and the Qwen tests unchanged. Owed: the catalog sync for the five new
-strings, and P3.
+`OpenAIRealtimeJobToolsTests` and the Qwen tests unchanged. Owed: P3. (The five new
+strings were synced into the catalog with P1's, below.)
 
 
 1. ✅ **Probe first, ten minutes, the owner's key.** `node Scripts/openai-realtime-probe.mjs` (lands with
@@ -266,9 +267,23 @@ marks removed on that day, in every fallback, so after 2027-01-20 a saved `gpt-r
 is no longer offered to the live mode. The transcription model was already `gpt-live-transcribe`
 (P0); unchanged. Tests: `OpenAIRealtimeModelRetirementTests` (table, dates, rewrite, idempotence,
 notice wording, template default) and `OpenAIRealtimeModelIDMigrationTests` (the stored migration,
-the rejected write, the one-time notice, the legacy shortcut). Owed: the catalog sync for the three
-notice strings, a live probe of the rewritten IDs (the probe already confirmed `gpt-realtime-2.1`
-on P0's day; `gpt-realtime-2.1-mini` has not been probed), and P3.
+the rejected write, the one-time notice, the legacy shortcut). Owed: P3.
+
+**Catalog sync** (2026-10-29, with the live check below): the eight strings P0 and P1 added (P0's
+three error messages, its session-settings message and the beta profile's title; P1's three
+notices) are in `Localizable.xcstrings`, translated into the 13 complete languages (ar, es-MX,
+fr-CA, hu, it, ja, ko, nl, pt-BR, ru, ur, zh-Hans, zh-Hant) with the catalog's existing wording for
+the realtime service, the model editor and the live mode. Add-only, in Xcode's order;
+`LocalizationCatalogGuardTests` and `BrandNameGuardTests` pass.
+
+**Live check of the rewrite targets** (2026-10-29, after the merge, the owner's single-use key,
+`Scripts/openai-realtime-probe.mjs`, which gained a `gpt-realtime-2.1-mini` session case and runs
+the whole turn on both models): both `gpt-realtime-2.1` and `gpt-realtime-2.1-mini` accepted the
+current-protocol session with `gpt-live-transcribe`, and on each a whole turn — tools in the
+session, a photo as an `image_url` data URI, synthesised speech — produced a live transcription, a
+`get_torque({"bolt":"A"})` call and, after its result, a spoken answer. P0's six cases repeated
+unchanged (the beta still refused with `beta_api_shape_disabled`, `gpt-realtime` still answering
+until its date).
 
 **Price check for decision 2** (OpenAI's pricing page, 2026-10-29, per 1M tokens):
 `gpt-realtime-2.1` matches `gpt-realtime` on audio (32 in, 64 out, 0.40 cached), text input (4)

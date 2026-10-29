@@ -41,6 +41,8 @@ const cases = [
   { name: "GA, gpt-realtime", model: "gpt-realtime", beta: false, session: gaSession("gpt-4o-mini-transcribe") },
   { name: "GA, gpt-realtime-2.1 + gpt-live-transcribe", model: "gpt-realtime-2.1", beta: false, session: gaSession("gpt-live-transcribe") },
   { name: "GA, gpt-realtime-2.1 + gpt-transcribe", model: "gpt-realtime-2.1", beta: false, session: gaSession("gpt-transcribe") },
+  // P1's rewrite target for the mini models.
+  { name: "GA, gpt-realtime-2.1-mini + gpt-live-transcribe", model: "gpt-realtime-2.1-mini", beta: false, session: gaSession("gpt-live-transcribe") },
 ];
 
 function run(c) {
@@ -75,7 +77,7 @@ const print = (name, r) => {
   for (const f of r.findings ?? []) console.log("found:", f);
   if (r.closeInfo) console.log(r.closeInfo);
 };
-// PROBE_TURN_ONLY=1 skips the six protocol cases.
+// PROBE_TURN_ONLY=1 skips the protocol cases.
 if (!process.env.PROBE_TURN_ONLY) for (const c of cases) print(c.name, await run(c));
 
 // A whole turn the way the app's current-protocol adapter sends it: a photo as an `image_url` data
@@ -142,4 +144,6 @@ function turn(model) {
     ws.onerror = () => {};
   });
 }
-if (process.platform === "darwin") print("GA turn: photo, speech, tool, gpt-realtime-2.1 + gpt-live-transcribe", await turn("gpt-realtime-2.1"));
+if (process.platform === "darwin") for (const model of ["gpt-realtime-2.1", "gpt-realtime-2.1-mini"]) {
+  print(`GA turn: photo, speech, tool, ${model} + gpt-live-transcribe`, await turn(model));
+}

@@ -1,6 +1,6 @@
 # Plan JZ — Gemini as a Cloud Voice (spoken replies through the Gemini key)
 
-**Status:** 📝 Drafted 2026-10-29 — nothing built.
+**Status:** 📝 Drafted 2026-10-29 — nothing built. Owner decisions 1–3 taken the same day (below); 4 keeps its default.
 **Origin:** the 2026-10-29 support report on build 581. A tester had picked `gemini-3.8-flash-tts`,
 a speech-only Gemini model, as their chat assistant, so every turn was refused. The model-setup fix
 (PR 885) keeps such models away from the chat picker. That leaves them with no use anywhere in the
@@ -82,7 +82,8 @@ The OpenAI and xAI voices set the pattern, and every rule they follow applies he
    `x-goog-api-key`. The Gemini chat and model-list calls put `?key=` in the URL; the voice does
    not, so the key cannot reach a logged URL.
 4. **A chosen cloud voice falls back to the phone, never to another paid cloud.** It works as the
-   three existing voices do: the chain is Gemini → Kokoro → iOS voice.
+   three existing voices do: the chain is Gemini → Kokoro → iOS voice. On Auto it comes last of
+   the cloud voices (decision 3).
 5. **Rejections.** A 401/403 is "refused" under the shared rule. Gemini also refuses a bad key with
    a 400 whose body names `API_KEY_INVALID`, so that marker counts as refused. A 429
    (`RESOURCE_EXHAUSTED`) is not latched in P0, because Google uses it both for a per-minute rate
@@ -98,57 +99,59 @@ The OpenAI and xAI voices set the pattern, and every rule they follow applies he
    (the cloud-voice row and the Google entry), the in-app processing summary (`vendorName`
    "Gemini"), the system prompt's settings path, and the voice-engine footer.
 
-## Decisions for the owner (P0 builds the default; each is one constant or one list to change)
+## Owner decisions (2026-10-29)
 
-1. **Which speech model.** *Default: one fixed model, `gemini-3.8-flash-lite-tts`*, mirroring
-   OpenAI's fixed `gpt-4o-mini-tts`. It is the lighter of the two current models, and a spoken reply
-   values speed over studio fidelity. *Alternatives:* fixed `gemini-3.8-flash-tts` (more expressive,
-   more languages); or a "Speech model" picker filled from the key's own model list, filtered to
-   the speech models. That picker would make the models PR 885 filters out choosable here. Their
-   label would then read something like "speech only — used for the Gemini voice", with no plan
-   letter.
-2. **Which voices.** *Default: the 30 prebuilt names as a fixed list, default `Kore`*, names only.
-   The descriptions ("Firm", "Warm") are left out until a catalog pass can translate them.
-   *Alternative:* load the larger library from `GET /v1beta/voices` filtered by the phone's
-   language, as the xAI voice loads its catalog. That needs a second route
-   (`geminiVoiceCatalog`) and is a later phase if wanted.
-3. **Does Auto use it?** *Default: no, the Gemini voice is used only when chosen.* On Auto, a wearer
-   with only a Gemini key hears Kokoro or the iOS voice today, at no cost. Putting Gemini into Auto
-   would start spending their key's quota on every reply without their asking. It would also add a
-   network round trip per sentence, and a 429 is not yet latched. *Alternative:* add it to Auto
-   after xAI (`autoCloudVoices` gains `.gemini`, and the Auto footer names it).
-4. **Cost wording.** *Default footer:* "Prefer the Gemini cloud voice, using the API key saved with
-   your Gemini model. Spoken replies use that key's quota, separately from chat. Falls back to
-   on-device or the iOS voice when unavailable — never another paid cloud." No prices, no free-tier
-   figures (they change, and are not ours to state). The same footer says when no Gemini key is
-   saved.
+1. **Speech model: a picker, filled from the key's own model list.** A fixed default
+   (`gemini-3.8-flash-lite-tts`) is used until the wearer picks one. The list is Google's
+   `GET /v1beta/models`, asked by the voice itself with the key in `x-goog-api-key`, on its own
+   route (`geminiSpeechModelCatalog`). The picker shows **speech models only**. The same list
+   carries chat, image (`…-image`, Imagen), embedding and Live (`native-audio`) models, so an entry
+   is offered only when its id names `tts` as a word of its own and it answers `generateContent`. A
+   saved id is also checked before it goes into the request's URL path (letters, digits, `.`, `-`,
+   `_`, and it must name `tts`), and anything else reads as the default. This is where the speech
+   models PR 885 keeps out of the chat picker can be chosen.
+2. **Voices: the 30 prebuilt names, default `Kore`**, names only. The descriptions wait for a
+   catalog pass. The larger voice library stays later work.
+3. **Auto uses it, last of the cloud voices**: ElevenLabs, then OpenAI, then xAI, then Gemini, each
+   only when its key is saved. A Gemini key saved with a Gemini model turns the Gemini voice on.
+   With no Gemini key it is never offered or tried. On Auto, a wearer with only a Gemini key now
+   hears the Gemini voice, paid from that key's quota, so the Auto footer and the privacy page name
+   it.
+4. **Cost wording:** no answer yet; the default stands. The footer reads "Spoken replies use that
+   key's quota, separately from chat", with no prices or free-tier figures.
 
 ## Phases
 
 ### P0 — the engine, headless-tested (one PR)
 
-- `CloudVoiceRequests`: `geminiSpeechURL(model:)`, `geminiSpeechModel`, `geminiVoices`,
-  `defaultGeminiVoice`, `geminiSpeech(text:apiKey:voice:)`.
+- `CloudVoiceRequests`: `geminiSpeechURL(model:)`, `defaultGeminiSpeechModel`, `geminiVoices`,
+  `defaultGeminiVoice`, `geminiSpeech(text:apiKey:model:voice:)`, `isGeminiSpeechModelID(_:)`, and
+  the speech-model list (`geminiSpeechModelCatalog(apiKey:)`, `parseGeminiSpeechModels(_:)`).
 - `GeminiSpeechAudio`: the answer parser and the L16 → WAV wrap (rate from the MIME type).
 - `CloudVoiceCredentials.geminiKey(savedModels:)`.
 - `TTSEngine.gemini` (vendor "Gemini", route `.geminiSpeechSynthesis`), `TTSEnginePreference.gemini`
   (display name, detail), `TTSEngineSelector.Availability.geminiReady`, and the chain placement by
-  decision 3. `cloudVoices` lists all four cloud voices; `autoCloudVoices` is what Auto tries.
+  decision 3: `cloudVoices` lists all four cloud voices, in the order Auto tries them.
 - `NetworkRoute.geminiSpeechSynthesis`: purpose, data classes (reply text + credential, like the
   other speech routes), vendor endpoint class, blocked when local-only, owner `TextToSpeechService`.
+  `NetworkRoute.geminiSpeechModelCatalog` (credential only) for the picker's list.
 - `CloudVoiceRejection`: `api_key_invalid` counts as refused.
-- `Config.geminiTTSVoice` / `setGeminiTTSVoice` (unknown names fall back to the default).
+- `Config.geminiTTSVoice` / `geminiTTSModel` and their setters (an unknown voice or an unsafe
+  model id falls back to the default).
 - `TextToSpeechService`: `speakWithGemini` / `fetchGeminiAudio` (medical check, empty-key refusal,
   request, `cloudVoiceAudio`, parse), wired into the whole-reply chain and the streamed queue.
   `ProcessingFacts` availability.
-- Settings › Connections › Services & Integrations: the engine option, a "Gemini Voice" picker
-  shown when a Gemini key is saved, and the no-key footer.
+- Settings › Connections › Services & Integrations: the engine option, a "Gemini Voice" section
+  shown when a Gemini key is saved (the speech-model picker, loaded from the key's list, and the
+  voice picker), and the no-key footer.
 - Disclosure (Design 8).
 - **Tests:** the request (URL, method, header key, no key in the URL, body shape, an unknown voice
   falls back, the model is in the path); the parser (RIFF passthrough, L16 wrapped with a correct
   44-byte header at 24 kHz and at a named rate, no audio part, bad base64, error JSON); the key
   (Google host, empty base URL, a foreign base URL ignored, Vertex ignored, the first with a key
-  wins); the selector (Gemini chain, Auto order pinned by decision 3, high urgency promotes Kokoro,
+  wins); the speech-model filter (only `tts` models that answer `generateContent`, never an image,
+  embedding, Live or chat model, never an id that is unsafe in a path) and the list request (key
+  in a header); the selector (Gemini chain, Auto order pinned by decision 3, high urgency promotes Kokoro,
   every cloud voice's route is blocked in local-only); the medical canary at `fetchGeminiAudio`;
   the rejection classes; the processing summary names Gemini. Full unit suite and a Release
   build before the PR.
@@ -162,14 +165,15 @@ The OpenAI and xAI voices set the pattern, and every rule they follow applies he
 - **429 bodies.** Capture a per-minute and a daily-quota refusal from a free-tier key. If the daily
   one can be told apart (Google's quota id names the period), add that marker so a spent day
   latches the voice off for the session with the out-of-credit notice. Otherwise leave it as it is.
-- **Model access.** Confirm the fixed model answers for a free-tier key and a paid one; if it
-  doesn't for one of them, decide between falling back to the other current model and refusing.
+- **Model access.** Confirm the default model and the picker's list on a free-tier key and a paid
+  one. If a chosen model is refused for a key, decide between falling back to the default and
+  refusing.
 - **Locked phone / background.** Confirm the request and playback work with the phone locked
   during an always-on session, as the other cloud voices do.
 
 ### Later (only if wanted, not scheduled)
 
-- The voice library (`GET /v1beta/voices`, filtered to the phone's language) as a second route.
+- The voice library (`GET /v1beta/voices`, filtered to the phone's language) as another route.
 - Gemini's own streaming (`audio/l16` chunks) instead of a request per sentence.
 - The Vertex sign-in as a credential (`aiplatform` host, bearer token).
 

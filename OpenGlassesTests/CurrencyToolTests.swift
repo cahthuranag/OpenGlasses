@@ -60,4 +60,29 @@ final class CurrencyToolTests: XCTestCase {
         XCTAssertEqual(result, "Currency conversion service is temporarily unavailable. Check that USD and XXX are valid currency codes.")
         XCTAssertEqual(RecordingQueueProtocol.requests.count, 2)
     }
+
+    func testWholeNumberRateIsRead() async throws {
+        RecordingQueueProtocol.queue = [(200, #"{"base":"GBP","date":"2026-10-29","rates":{"JPY":195}}"#)]
+        let result = try await tool.execute(args: ["amount": 2, "from": "GBP", "to": "JPY"])
+        XCTAssertEqual(result, "2 GBP = 390 JPY (rate: 195.0000)")
+    }
+
+    func testCodesAreTrimmedAndUppercased() async throws {
+        RecordingQueueProtocol.queue = [(200, #"{"base":"USD","date":"2026-10-29","rates":{"EUR":0.5}}"#)]
+        let result = try await tool.execute(args: ["amount": 100, "from": " usd ", "to": "eur\n"])
+        XCTAssertEqual(result, "100 USD = 50 EUR (rate: 0.5000)")
+        XCTAssertEqual(RecordingQueueProtocol.requests.first?.url,
+                       "https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR")
+    }
+
+    /// A malformed code is refused before any request, so it never reaches either host.
+    func testMalformedCodeSendsNothing() async throws {
+        for bad in ["USD/../x", "US", "EURO", "U$D", "ÉUR"] {
+            let result = try await tool.execute(args: ["amount": 1, "from": bad, "to": "EUR"])
+            XCTAssertEqual(result, "\"\(bad)\" isn't a currency code. Use a three-letter code such as USD, EUR or GBP.")
+        }
+        let result = try await tool.execute(args: ["amount": 1, "from": "USD", "to": "EUR&x=1"])
+        XCTAssertTrue(result.hasPrefix("\"EUR&x=1\" isn't a currency code."))
+        XCTAssertTrue(RecordingQueueProtocol.requests.isEmpty)
+    }
 }

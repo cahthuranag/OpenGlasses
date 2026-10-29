@@ -1,12 +1,15 @@
 import Foundation
 
-/// Converts between currencies using the free Frankfurter API, falling back to the free keyless
-/// AllRatesToday ECB table (https://allratestoday.com/api/open/latest/{BASE}) when Frankfurter is
-/// unreachable, answers non-200 or returns a body without the requested rate. Both are public ECB
-/// mirrors that need no API key, so the wearer sees the same answer whichever one replied.
+/// Converts between currencies using the free Frankfurter API, falling back to AllRatesToday's
+/// keyless ECB table when Frankfurter is unreachable, answers non-200 or returns a body without the
+/// requested rate. Only a well-formed three-letter code ever leaves the device, and each source gets
+/// `perSourceTimeout`, so the wearer waits no longer than the single-source tool did.
 struct CurrencyTool: NativeTool {
     /// Session the rate requests go through. Tests inject a stubbed one.
     var session: URLSession? = nil
+
+    /// Two sources in turn share the 10 s the single source used to have.
+    static let perSourceTimeout: TimeInterval = 5
 
     let name = "convert_currency"
     let description = "Convert an amount between currencies using live exchange rates. No API key needed."
@@ -40,12 +43,14 @@ struct CurrencyTool: NativeTool {
             return "Missing or invalid amount."
         }
 
-        guard let from = (args["from"] as? String)?.uppercased(), !from.isEmpty else {
+        guard let rawFrom = args["from"] as? String, !rawFrom.isEmpty else {
             return "Missing source currency code."
         }
-        guard let to = (args["to"] as? String)?.uppercased(), !to.isEmpty else {
+        guard let rawTo = args["to"] as? String, !rawTo.isEmpty else {
             return "Missing target currency code."
         }
+        guard let from = Self.currencyCode(rawFrom) else { return Self.notACode(rawFrom) }
+        guard let to = Self.currencyCode(rawTo) else { return Self.notACode(rawTo) }
 
         if from == to {
             return "\(formatAmount(amount)) \(from) = \(formatAmount(amount)) \(to) (same currency)"
@@ -74,22 +79,27 @@ struct CurrencyTool: NativeTool {
         return nil
     }
 
-    private func fetchRate(url: URL, code: String) async -> Double? {
-        let session = self.session ?? {
-            let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 10
-            return URLSession(configuration: config)
-        }()
+    /// A three-letter ISO 4217-shaped code, uppercased, or nil. The code goes into a query string
+    /// and a URL path, so anything else is refused before a request is built.
+    static func currencyCode(_ raw: String) -> String? {
+        let code = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard code.count == 3, code.allSatisfy({ $0.isASCII && $0.isLetter }) else { return nil }
+        return code
+    }
 
-        guard let (data, response) = try? await session.data(from: url),
+    private static func notACode(_ raw: String) -> String {
+        "\"\(raw)\" isn't a currency code. Use a three-letter code such as USD, EUR or GBP."
+    }
+
+    private func fetchRate(url: URL, code: String) async -> Double? {
+        let request = URLRequest(url: url, timeoutInterval: Self.perSourceTimeout)
+        guard let (data, response) = try? await (session ?? .shared).data(for: request),
               let http = response as? HTTPURLResponse, http.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let rates = json["rates"] as? [String: Any] else {
             return nil
         }
-        if let rate = rates[code] as? Double { return rate }
-        if let rate = rates[code] as? Int { return Double(rate) }
-        return nil
+        return rates[code] as? Double
     }
 
     private func formatAmount(_ value: Double) -> String {

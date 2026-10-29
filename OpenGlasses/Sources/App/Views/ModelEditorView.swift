@@ -70,7 +70,7 @@ struct ModelEditorView: View {
                             name: name.isEmpty ? selectedProvider.displayName : name,
                             provider: selectedProvider.rawValue,
                             apiKey: apiKey,
-                            model: model,
+                            model: model.trimmingCharacters(in: .whitespacesAndNewlines),
                             baseURL: baseURL,
                             supportsVision: supportsVision,
                             smallContext: smallContext,
@@ -80,6 +80,8 @@ struct ModelEditorView: View {
                         onSave(updated)
                         dismiss()
                     }
+                    .disabled(!ModelFormValidation.canSave(provider: selectedProvider, model: model,
+                                                           baseURL: baseURL))
                 }
             }
         }

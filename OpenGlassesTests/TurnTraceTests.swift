@@ -56,6 +56,16 @@ final class TurnTraceTests: XCTestCase {
         XCTAssertEqual(trace.backend, "local")
     }
 
+    /// A service's `vendor/model` id is not a path: the report names Groq's `qwen/qwen3.8-27b` in
+    /// full (support report, 2026-10-29 read `qwen3.8-27b` as a model Groq does not serve).
+    func testAServicesVendorQualifiedModelIdIsKeptWhole() {
+        XCTAssertEqual(TurnTrace.modelName("qwen/qwen3.8-27b"), "qwen/qwen3.8-27b")
+        XCTAssertEqual(TurnTrace.modelName("anthropic/claude-sonnet-5"), "anthropic/claude-sonnet-5")
+        XCTAssertEqual(TurnTrace.modelName("gemini-3.5-flash-lite"), "gemini-3.5-flash-lite")
+        XCTAssertEqual(TurnTrace.modelName("/private/var/mobile/Models/gemma-2b.gguf"), "gemma-2b.gguf")
+        XCTAssertEqual(TurnTrace.modelName("file:///private/var/mobile/Models/gemma-2b.gguf"), "gemma-2b.gguf")
+    }
+
     func testATraceWithNoMarksIsDatedWhenItSealed() {
         XCTAssertEqual(TurnTrace(TurnTimeline(), sealedAt: at(5)).at, at(5))
     }

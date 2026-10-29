@@ -339,4 +339,18 @@ final class ModelFetcherTests: XCTestCase {
         XCTAssertEqual(unique.first?.name, "first")
         XCTAssertEqual(ModelFetcher.uniqueByID([]), [])
     }
+
+    /// Speech, image and embedding models answer `generateContent` too; only chat models reach
+    /// the picker (support report, 2026-10-29: `gemini-3.8-flash-tts` was chosen as the assistant).
+    func testTheGeminiPickerLeavesOutModelsThatCannotConverse() {
+        for id in ["gemini-3.8-flash-tts", "gemini-2.5-pro-preview-tts", "gemini-2.5-flash-image",
+                   "imagen-4.0-generate-001", "gemini-embedding-001", "gemini-2.5-flash-native-audio-latest",
+                   "aqa", "veo-3.0-generate-001", "gemini-2.5-computer-use-preview", "gemini-robotics-er-1.5-preview"] {
+            XCTAssertFalse(ModelFetcher.isGeminiChatModel(id), id)
+        }
+        for id in ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-2.5-pro", "gemma-3-27b-it",
+                   "gemini-flash-latest"] {
+            XCTAssertTrue(ModelFetcher.isGeminiChatModel(id), id)
+        }
+    }
 }

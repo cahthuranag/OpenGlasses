@@ -132,6 +132,12 @@ Deterministic, headless.
   whether the refusal's usage headers were at their limit. The ChatGPT send path also sends the
   account catalog's default in place of an unlisted saved model, and asks for a fresh catalog on
   every turn that does (`ChatGPTModelAvailability`).
+  *Added 2026-10-29:* `requestOverTokenRateLimit`, for a request larger than the account's
+  tokens-per-minute allowance (a 413 with code `rate_limit_exceeded` or type `tokens`, Groq's
+  shape). Waiting does not help, so it is not read as a busy service; it ends the candidate, and
+  the banner and spoken line point at the model's Small context setting. A support report's
+  free Groq key refused every ~11k-token turn as `other`, and the wearer heard "they're all
+  unavailable right now".
 - **`SafeErrorSummary`** gains an `LLMError` rung: `.apiError` maps through `http(status:)` with
   the provider's error type as the detail, so the line reads
   `clientError(invalid_request_error)#400`.

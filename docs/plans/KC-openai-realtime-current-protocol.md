@@ -1,6 +1,6 @@
 # Plan KC — OpenAI Realtime on the Current Protocol (the beta was removed on 2026-05-12)
 
-**Status:** 🚧 P0 built 2026-10-29 (PR pending) — the current protocol, checked live with the owner's
+**Status:** 🚧 P0 built 2026-10-29 (PR 892) — the current protocol, checked live with the owner's
 key the same day (see "What the probe found"). Decisions 1, 3, 4 and 5 taken at their defaults
 ("let's fix that then"); decision 2 (saved model IDs) stays with P1. P1 (model IDs before
 2027-01-20), P2 (dictation before 2027-02-26) and the P3 device pass not started. Drafted

@@ -4,7 +4,7 @@
 key the same day (see "What the probe found"). Decisions 1, 3, 4 and 5 taken at their defaults
 ("let's fix that then"). P1 built 2026-10-29 (PR 894; live check and catalog sync PR 895) — model
 IDs before 2027-01-20; decision 2 taken at its default after the price check (rewrite once, with
-one notice). P2 built 2026-10-30 (PR TBD) — dictation on `gpt-transcribe`, checked live; the new
+one notice). P2 built 2026-10-30 (PR 896) — dictation on `gpt-transcribe`, checked live; the new
 model drops hyphens from codes, so the vocabulary's spelling is restored. The P3 device pass not
 started. Drafted
 2026-10-29 (PR 890).

@@ -1,6 +1,11 @@
 # Plan KA — Model Kinds and Roles Across Providers (what a listed model is for, and which job uses it)
 
-**Status:** 📝 Drafted 2026-10-29 — nothing built. Owner decision the same day: chat pickers
+**Status:** 🚧 P0 built 2026-10-29 — `ModelKindClassifier` labels every provider's list, each chat
+picker shows a "Can't be your assistant" section, a typed non-chat id gets a warning (not a
+refusal: the classifier can't know every server's names), and a saved one is flagged in Settings.
+The xAI and Gemini name lists are the classifier's rows, and PR 887's no-thinking ids
+(`GeminiThinkingStyle.takesNoThinking`) are read from the classifier too. Owed: a catalog sync for
+the new strings; P1 and P2; device checks. Earlier: Owner decision the same day: chat pickers
 **label** non-chat models rather than hide them; PR 885 stays as it is (hiding Gemini's by name)
 until P0 replaces it. A second owner decision, also the same day, added **roles** (P1): one key can
 cover several jobs (assistant, vision, voice, live, dictation, later images), each with its own

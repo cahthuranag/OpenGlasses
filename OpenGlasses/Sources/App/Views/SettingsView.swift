@@ -565,8 +565,12 @@ private struct TierProviderSection: View {
                     modelRow(id: model.model, name: model.model, configId: model.id)
                 }
             } else {
-                ForEach(availableModels) { remote in
+                ForEach(availableModels.filter(\.kind.isChat)) { remote in
                     modelRow(id: remote.id, name: remote.name, configId: nil)
+                }
+                // Labelled, not offered: a speech or embedding model can't answer a turn.
+                ForEach(availableModels.filter { !$0.kind.isChat }) { remote in
+                    NotAnAssistantModelRow(model: remote)
                 }
             }
         } header: {

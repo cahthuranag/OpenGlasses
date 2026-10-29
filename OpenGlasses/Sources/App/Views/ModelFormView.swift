@@ -226,7 +226,7 @@ struct ModelFormView: View {
             // selection list, the same shape the credentials step offers.
             if !availableModels.isEmpty {
                 Section {
-                    ForEach(availableModels) { candidate in
+                    ForEach(availableModels.filter(\.kind.isChat)) { candidate in
                         OGSelectionRow(
                             title: candidate.name,
                             subtitle: candidate.id == candidate.name ? nil : candidate.id,
@@ -239,6 +239,7 @@ struct ModelFormView: View {
                 } header: {
                     Text("Select Model")
                 }
+                NotAnAssistantModelsSection(models: availableModels.filter { !$0.kind.isChat })
             }
 
             Section {
@@ -246,6 +247,12 @@ struct ModelFormView: View {
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .frame(minHeight: rowMinHeight)
+                // A speech, image or embedding id typed or saved here can't answer: say what it
+                // is for. A warning, not a refusal — the classifier can't know every server's names.
+                if let warning = ModelKindClassifier.kind(provider: selectedProvider, typedID: model,
+                                                          listed: availableModels)?.assistantWarning {
+                    OGStatusLabel(warning, kind: .warn)
+                }
 
                 Toggle("Vision (Image Input)", isOn: $supportsVision)
             } header: {
@@ -534,10 +541,7 @@ struct ModelFormView: View {
             availableModels = models
             keyValidated = true
             if !models.contains(where: { $0.id == model }) {
-                let fallback: String? = models.first(where: \.isDefault)?.id
-                    ?? models.first(where: { $0.id == selectedProvider.defaultModel })?.id
-                    ?? models.first?.id
-                model = fallback ?? model
+                model = ModelFetcher.initialChoice(in: models, preferring: [selectedProvider.defaultModel]) ?? model
             }
         }
     }

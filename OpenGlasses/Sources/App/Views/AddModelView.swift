@@ -151,8 +151,7 @@ struct AddModelView: View {
             availableModels = models
             keyValidated = true
             if !models.contains(where: { $0.id == model }) {
-                model = models.first(where: { $0.id == selectedProvider.defaultModel })?.id
-                    ?? models.first?.id ?? model
+                model = ModelFetcher.initialChoice(in: models, preferring: [selectedProvider.defaultModel]) ?? model
             }
         }
     }

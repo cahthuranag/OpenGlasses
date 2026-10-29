@@ -1,8 +1,11 @@
-# Plan KA — Model Kinds Across Providers (one rule for what a listed model is for)
+# Plan KA — Model Kinds and Roles Across Providers (what a listed model is for, and which job uses it)
 
 **Status:** 📝 Drafted 2026-10-29 — nothing built. Owner decision the same day: chat pickers
 **label** non-chat models rather than hide them; PR 885 stays as it is (hiding Gemini's by name)
-until P0 replaces it.
+until P0 replaces it. A second owner decision, also the same day, added **roles** (P1): one key can
+cover several jobs (assistant, vision, voice, live, dictation, later images), each with its own
+picker, offered in onboarding and in Settings. The owner is also content for the main picker to
+hide non-chat models once roles give them a home.
 **Origin:** the 2026-10-29 support report on build 581. A speech-only Gemini model was chosen as the
 chat assistant, so every turn was refused. PR 885 fixes it for Gemini by name. The owner asked for
 one approach across every provider, because the same thing can happen elsewhere, and Plan
@@ -86,6 +89,58 @@ Gemini's methods come close. For the rest, the id is all there is.
    shape, with invented ids where real ones aren't needed. Each family above gets its expected
    kind, plus one test that unknown ids stay chat.
 
+## Roles (owner decision, 2026-10-29)
+
+The classifier says what a model is; a role says which job in the app uses it. Most providers' keys
+now reach models of several kinds, and live speech is becoming the default way people use them, so
+one key should be able to serve several jobs without the wearer hunting through settings.
+
+| Role | Kind it takes | Today |
+|---|---|---|
+| **Assistant** | chat | one model, any provider (unchanged) |
+| **Vision** | chat that accepts images | implicit: a photo turn falls to the first vision-capable model in the fallback order |
+| **Voice** (spoken replies) | speech | the voice-engine setting (ElevenLabs, OpenAI, xAI, Gemini per Plan JZ) |
+| **Live** | realtime | OpenAI Realtime, Gemini Live, Qwen Omni, Qwen Audio, Doubao (`RealtimeProviderCatalog`) |
+| **Dictation** | transcription | Deepgram, OpenAI transcription (`ASREnginePreference`) |
+| **Images** (later) | image | no cloud image tool exists; Plan AL (on-device) is unbuilt |
+
+8. **A role picker per job.** Settings › Intelligence gets a Roles section under the assistant model,
+   with one picker per role. Each picker lists models of the role's kind from every provider with a
+   saved key, plus the role's on-device or built-in option where it has one (Kokoro and the iOS
+   voice for Voice, the on-device recogniser for Dictation). Each provider has a default model per
+   role, the one its docs recommend for that use (e.g. `gemini-3.8-flash-lite-tts` for voice, Gemini's
+   `native-audio` model for Live). The default is filled in so choosing a role is one tap. Roles
+   that exist as settings today (voice engine, Live provider, dictation engine) become those
+   pickers; they don't gain a second copy.
+9. **A new key suggests its roles; it never switches them on.** When a key is added, in onboarding or
+   in Settings, one short card names what else that key can do: "This Gemini key can also speak
+   replies and run Live mode". The card has a tap for each role and a "Use all" button. Nothing is
+   switched on silently, because each role spends that key's quota and is a new destination for the
+   wearer's data. That follows the house rule that a new egress is off until chosen and disclosed.
+   Onboarding shows the card once, after the key step, and keeps it short. A role already set is
+   not offered again.
+10. **Vision is a choice, not a fallback order.** A text-only assistant gets a chosen model for its
+    photo turns. The ChatGPT subscription model is marked text-only here, because image input on
+    that backend was never confirmed; a cheap, fast model such as Claude Haiku would then look at
+    the photos. A photo turn tries the Vision model first, ahead of the fallback order, and the
+    rest of the conversation stays on the assistant. The picker lists only models that accept
+    images (`supportsVision`). With no Vision model set, today's fallback order still applies.
+    *Handoff:* the Vision model answers the photo turn itself, which is today's mechanism, keeps
+    full detail and is the default. Describing the photo for the assistant to answer is a later
+    option (decision 5).
+11. **Live follows the key.** Live is where providers are heading: OpenAI names a realtime model as
+    its speech replacement (Plan [KB](KB-openai-voice-after-speech-models.md)), and Gemini, Qwen
+    and xAI have speech-to-speech models. The Live role offers every saved key's realtime models,
+    so adding a Gemini key can mean Gemini Live with no other setup.
+12. **Images wait for a tool.** OpenAI (`gpt-image-*`), Gemini (`…-image`, Imagen), xAI
+    (`grok-imagine-image`) and Qwen all have image models, so the role is only a provider choice.
+    The tool itself, with its camera, privacy and cost wording, is its own plan. Until then the
+    Images role isn't shown.
+13. **What roles never do.** Roles respect Medical local-only and an organisation profile's limits:
+    a role whose only options leave the phone is off under local-only, and a role an organisation
+    pins can't be changed. Embeddings are not a role: manual search and memory embed on the phone,
+    and sending them to a cloud model would be a privacy step backwards for little gain.
+
 ## Phases
 
 - **P0 — the classifier and labelled chat pickers (one PR, after PR 885 merges).** This is the
@@ -99,17 +154,35 @@ Gemini's methods come close. For the rest, the id is all there is.
   **Cleanup:** PR 887's `GeminiThinkingStyle.none` marker list (tts, native-audio, embedding,
   imagen, veo, aqa ids get no `thinkingConfig`) comes from the classifier instead of being a second
   list. Full unit suite and Release build.
-- **P1 — voice pickers.** Plan JZ's Gemini speech-model picker reads `.speech`, replacing its own
-  filter; its URL-safety check on the id stays. The OpenAI voice's model follows from decision 3.
+- **P1 — roles (one PR, after P0).** Covers Design 8–13:
+  - the Roles section in Settings › Intelligence, with the Assistant, Vision, Voice, Live and
+    Dictation pickers;
+  - each provider's per-role defaults;
+  - the "this key can also…" card in onboarding and in Settings;
+  - the Vision model tried first for photo turns;
+  - folding the voice-engine, Live-provider and dictation settings into their role pickers;
+  - Plan JZ's Gemini speech-model picker reading `.speech`, replacing its own filter (its URL-safety
+    check on the id stays).
+
+  The core is deterministic and tested headless: which roles a key offers, each role's candidate
+  list, the default per provider, and the photo-turn order with and without a Vision model. Full
+  unit suite and Release build.
 - **P2 — live lists.** Fetch the real list with a key for every provider, above all Z.ai, Qwen and
   MiniMax, whose list shapes are undocumented. Correct the rows, and record each provider's shape
-  in this plan.
+  in this plan. On the device, check each role's default model per provider and one photo turn
+  through a chosen Vision model.
+- **Later — Images.** A cloud image tool, as its own plan, then the Images role (Design 12).
 
 ## Decisions
 
-Taken (owner, 2026-10-29): chat pickers label non-chat models, don't hide them; a typed non-chat id
-gets the same warning; a saved one that can't answer is flagged in Settings; PR 885 stays as it is
-and the labelling is P0, a separate PR after it.
+Taken (owner, 2026-10-29):
+- Chat pickers label non-chat models, and a typed non-chat id gets the same warning. A saved one
+  that can't answer is flagged in Settings.
+- PR 885 stays as it is, and the labelling is P0, a separate PR after it. Hiding in the main picker
+  is also acceptable to the owner once roles give the models a home.
+- Roles: Assistant, Vision, Voice, Live and Dictation, with Images later. They are offered when a
+  key is added, in onboarding and in Settings, and never switched on silently. Vision is a chosen
+  model for a text-only assistant's photo turns.
 
 Open:
 
@@ -119,8 +192,17 @@ Open:
 2. **The OpenAI voice after 2027-01-06.** OpenAI removes every model its speech endpoint takes, and
    names a realtime model as the replacement. That is a different transport (a session, not a POST
    per sentence). *Options:* move the OpenAI voice to the realtime model; or retire it, saying so
-   to anyone who chose it, and offer OpenRouter's or another provider's voice instead. This needs
-   its own plan before the end of 2026.
+   to anyone who chose it, and offer OpenRouter's or another provider's voice instead. Planned in
+   Plan [KB](KB-openai-voice-after-speech-models.md) (PR 889).
 3. **More voices.** Mistral (Voxtral, multilingual, a voice list), MiniMax, Qwen and OpenRouter (one
    key for several vendors' voices) all have speech. Groq's is English and Saudi Arabic only.
-   *Default: none scheduled;* each would be its own plan in the shape of Plan JZ.
+   *Default: none scheduled;* each would be its own plan in the shape of Plan JZ. Once roles exist,
+   each new voice is just another option in the Voice picker.
+4. **"Use all" in onboarding.** *Default: offered, with each role's cost and destination named on
+   the card.* *Alternative:* one role at a time only, so nothing is accepted in bulk.
+5. **Vision handoff for tools.** *Default: the Vision model answers the photo turn.* *Later option:*
+   it describes the photo and the assistant answers. That keeps the assistant's tools and manuals in
+   play (useful for "what's this part number") at the cost of detail and a second request.
+6. **Live default per provider.** *Default: the provider's documented realtime model.* Where a
+   provider has more than one (OpenAI's mini and full realtime models), the cheaper one is the
+   default for a role switched on from a suggestion.

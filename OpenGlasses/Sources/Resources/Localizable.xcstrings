@@ -226410,6 +226410,88 @@
         }
       }
     },
+    "OpenAI is retiring older realtime models, so your saved OpenAI live models now use newer ones: %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقف OpenAI نماذج الوقت الفعلي الأقدم، لذا تستخدم نماذجك المباشرة المحفوظة من OpenAI الآن نماذج أحدث: %@."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI está retirando modelos en tiempo real anteriores, así que tus modelos en vivo de OpenAI guardados ahora usan otros más nuevos: %@."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI retire d’anciens modèles en temps réel; vos modèles en direct OpenAI enregistrés utilisent donc maintenant des modèles plus récents : %@."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az OpenAI kivezeti a régebbi valós idejű modelleket, ezért a mentett OpenAI élő modelljei mostantól újabbakat használnak: %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI sta ritirando i modelli in tempo reale meno recenti, quindi i tuoi modelli live OpenAI salvati ora usano modelli più nuovi: %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI は以前のリアルタイムモデルを廃止するため、保存済みの OpenAI ライブモデルは新しいモデルを使うようになりました: %@。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI가 이전 실시간 모델을 종료하므로, 저장된 OpenAI 라이브 모델이 이제 더 새로운 모델을 사용합니다: %@."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI stopt met oudere realtime modellen, dus je opgeslagen OpenAI-livemodellen gebruiken nu nieuwere: %@."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A OpenAI está desativando modelos em tempo real mais antigos, então seus modelos ao vivo da OpenAI salvos agora usam modelos mais novos: %@."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI выводит из эксплуатации старые модели реального времени, поэтому ваши сохранённые живые модели OpenAI теперь используют более новые: %@."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI پرانے ریئل ٹائم ماڈلز ختم کر رہا ہے، اس لیے آپ کے محفوظ کردہ OpenAI لائیو ماڈلز اب نئے ماڈلز استعمال کرتے ہیں: %@۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 正在停用较旧的实时模型，因此您保存的 OpenAI 实时模型现在使用较新的模型：%@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 正在停用較舊的即時模型，因此您儲存的 OpenAI 即時模型現在使用較新的模型：%@。"
+          }
+        }
+      }
+    },
     "OpenAI keys start with sk-" : {
       "localizations" : {
         "ar" : {
@@ -226492,6 +226574,94 @@
         }
       }
     },
+    "OpenAI no longer offers the realtime model %@, so your saved OpenAI live model now uses %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تعد OpenAI تقدم نموذج الوقت الفعلي %1$@، لذا يستخدم نموذجك المباشر المحفوظ من OpenAI الآن %2$@."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OpenAI no longer offers the realtime model %1$@, so your saved OpenAI live model now uses %2$@."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI ya no ofrece el modelo en tiempo real %1$@, así que tu modelo en vivo de OpenAI guardado ahora usa %2$@."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI n’offre plus le modèle en temps réel %1$@; votre modèle en direct OpenAI enregistré utilise donc maintenant %2$@."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az OpenAI már nem kínálja a(z) %1$@ valós idejű modellt, ezért a mentett OpenAI élő modellje mostantól a(z) %2$@ modellt használja."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI non offre più il modello in tempo reale %1$@, quindi il tuo modello live OpenAI salvato ora usa %2$@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI はリアルタイムモデル %1$@ の提供を終了したため、保存済みの OpenAI ライブモデルは %2$@ を使うようになりました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI가 더 이상 실시간 모델 %1$@을(를) 제공하지 않아, 저장된 OpenAI 라이브 모델이 이제 %2$@을(를) 사용합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI biedt het realtime model %1$@ niet meer aan, dus je opgeslagen OpenAI-livemodel gebruikt nu %2$@."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A OpenAI não oferece mais o modelo em tempo real %1$@, então seu modelo ao vivo da OpenAI salvo agora usa %2$@."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI больше не предоставляет модель реального времени %1$@, поэтому ваша сохранённая живая модель OpenAI теперь использует %2$@."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI اب ریئل ٹائم ماڈل %1$@ پیش نہیں کرتا، اس لیے آپ کا محفوظ کردہ OpenAI لائیو ماڈل اب %2$@ استعمال کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 已不再提供实时模型 %1$@，因此您保存的 OpenAI 实时模型现在使用 %2$@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 已不再提供即時模型 %1$@，因此您儲存的 OpenAI 即時模型現在使用 %2$@。"
+          }
+        }
+      }
+    },
     "OpenAI Realtime" : {
       "localizations" : {
         "ar" : {
@@ -226570,6 +226740,176 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OpenAI Realtime"
+          }
+        }
+      }
+    },
+    "OpenAI Realtime beta (older compatible servers)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime التجريبي (خوادم متوافقة أقدم)"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime beta (servidores compatibles anteriores)"
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime bêta (anciens serveurs compatibles)"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime béta (régebbi kompatibilis kiszolgálók)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime beta (server compatibili meno recenti)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime ベータ（以前の互換サーバー）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime 베타(이전 호환 서버)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime bèta (oudere compatibele servers)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime beta (servidores compatíveis mais antigos)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime бета (старые совместимые серверы)"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime بیٹا (پرانے مطابقت پذیر سرورز)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime 测试版（较旧的兼容服务器）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI Realtime 測試版（較舊的相容伺服器）"
+          }
+        }
+      }
+    },
+    "OpenAI retires the realtime model %@ on %@, so your saved OpenAI live model now uses %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقف OpenAI نموذج الوقت الفعلي %1$@ في %2$@، لذا يستخدم نموذجك المباشر المحفوظ من OpenAI الآن %3$@."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OpenAI retires the realtime model %1$@ on %2$@, so your saved OpenAI live model now uses %3$@."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI retirará el modelo en tiempo real %1$@ el %2$@, así que tu modelo en vivo de OpenAI guardado ahora usa %3$@."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI retire le modèle en temps réel %1$@ le %2$@; votre modèle en direct OpenAI enregistré utilise donc maintenant %3$@."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az OpenAI kivezeti a(z) %1$@ valós idejű modellt (dátum: %2$@), ezért a mentett OpenAI élő modellje mostantól a(z) %3$@ modellt használja."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI ritira il modello in tempo reale %1$@ il %2$@, quindi il tuo modello live OpenAI salvato ora usa %3$@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI はリアルタイムモデル %1$@ を %2$@ に廃止するため、保存済みの OpenAI ライブモデルは %3$@ を使うようになりました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI가 %2$@에 실시간 모델 %1$@을(를) 종료하므로, 저장된 OpenAI 라이브 모델이 이제 %3$@을(를) 사용합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI stopt op %2$@ met het realtime model %1$@, dus je opgeslagen OpenAI-livemodel gebruikt nu %3$@."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A OpenAI vai desativar o modelo em tempo real %1$@ em %2$@, então seu modelo ao vivo da OpenAI salvo agora usa %3$@."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI выводит модель реального времени %1$@ из эксплуатации %2$@, поэтому ваша сохранённая живая модель OpenAI теперь использует %3$@."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI ریئل ٹائم ماڈل %1$@ کو %2$@ کو ختم کر رہا ہے، اس لیے آپ کا محفوظ کردہ OpenAI لائیو ماڈل اب %3$@ استعمال کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 将于 %2$@ 停用实时模型 %1$@，因此您保存的 OpenAI 实时模型现在使用 %3$@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 將於 %2$@ 停用即時模型 %1$@，因此您儲存的 OpenAI 即時模型現在使用 %3$@。"
           }
         }
       }
@@ -354438,6 +354778,252 @@
         }
       }
     },
+    "The realtime service did not accept this API key. Check the key in the model editor." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تقبل خدمة الوقت الفعلي مفتاح API هذا. تحقق من المفتاح في محرر النماذج."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio en tiempo real no aceptó esta clave de API. Revisa la clave en el editor de modelos."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service en temps réel n’a pas accepté cette clé API. Vérifiez la clé dans l’éditeur de modèle."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A valós idejű szolgáltatás nem fogadta el ezt az API-kulcsot. Ellenőrizze a kulcsot a modellszerkesztőben."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il servizio in tempo reale non ha accettato questa chiave API. Controlla la chiave nell’editor del modello."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リアルタイムサービスがこのAPIキーを受け付けませんでした。モデル編集画面でキーを確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실시간 서비스가 이 API 키를 받아들이지 않았습니다. 모델 편집기에서 키를 확인하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De realtime dienst heeft deze API-sleutel niet geaccepteerd. Controleer de sleutel in de modeleditor."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O serviço em tempo real não aceitou esta chave de API. Verifique a chave no editor de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервис реального времени не принял этот ключ API. Проверьте ключ в редакторе модели."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ریئل ٹائم سروس نے یہ API کلید قبول نہیں کی۔ ماڈل ایڈیٹر میں کلید چیک کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时服务未接受此 API 密钥。请在模型编辑器中检查密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時服務未接受此 API 金鑰。請在模型編輯器中檢查金鑰。"
+          }
+        }
+      }
+    },
+    "The realtime service did not accept this app's session settings." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تقبل خدمة الوقت الفعلي إعدادات الجلسة لهذا التطبيق."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio en tiempo real no aceptó la configuración de sesión de esta app."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service en temps réel n’a pas accepté les réglages de session de cette app."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A valós idejű szolgáltatás nem fogadta el az alkalmazás munkamenet-beállításait."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il servizio in tempo reale non ha accettato le impostazioni di sessione di questa app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リアルタイムサービスがこのアプリのセッション設定を受け付けませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실시간 서비스가 이 앱의 세션 설정을 받아들이지 않았습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De realtime dienst heeft de sessie-instellingen van deze app niet geaccepteerd."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O serviço em tempo real não aceitou os ajustes de sessão deste app."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервис реального времени не принял настройки сеанса этого приложения."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ریئل ٹائم سروس نے اس ایپ کی سیشن ترتیبات قبول نہیں کیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时服务未接受此应用的会话设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時服務未接受此 App 的工作階段設定。"
+          }
+        }
+      }
+    },
+    "The realtime service does not offer this model to this key. Choose another model in the model editor." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا تقدم خدمة الوقت الفعلي هذا النموذج لهذا المفتاح. اختر نموذجًا آخر في محرر النماذج."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio en tiempo real no ofrece este modelo a esta clave. Elige otro modelo en el editor de modelos."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service en temps réel n’offre pas ce modèle à cette clé. Choisissez un autre modèle dans l’éditeur de modèle."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A valós idejű szolgáltatás nem kínálja ezt a modellt ehhez a kulcshoz. Válasszon másik modellt a modellszerkesztőben."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il servizio in tempo reale non offre questo modello a questa chiave. Scegli un altro modello nell’editor del modello."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リアルタイムサービスはこのキーにこのモデルを提供していません。モデル編集画面で別のモデルを選んでください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실시간 서비스가 이 키에 이 모델을 제공하지 않습니다. 모델 편집기에서 다른 모델을 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De realtime dienst biedt dit model niet aan voor deze sleutel. Kies een ander model in de modeleditor."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O serviço em tempo real não oferece este modelo para esta chave. Escolha outro modelo no editor de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервис реального времени не предоставляет эту модель для этого ключа. Выберите другую модель в редакторе модели."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ریئل ٹائم سروس اس کلید کے لیے یہ ماڈل پیش نہیں کرتی۔ ماڈل ایڈیٹر میں کوئی اور ماڈل منتخب کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时服务未向此密钥提供该模型。请在模型编辑器中选择其他模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時服務未向此金鑰提供該模型。請在模型編輯器中選擇其他模型。"
+          }
+        }
+      }
+    },
     "The realtime service ended the connection." : {
       "localizations" : {
         "ar" : {
@@ -367054,6 +367640,88 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不支援此已儲存的即時通訊協定版本。請在模型編輯器中選擇支援的通訊協定。"
+          }
+        }
+      }
+    },
+    "This server does not accept the selected realtime protocol. Choose the other OpenAI Realtime protocol in the model editor." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يقبل هذا الخادم بروتوكول الوقت الفعلي المحدد. اختر بروتوكول OpenAI Realtime الآخر في محرر النماذج."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este servidor no acepta el protocolo en tiempo real seleccionado. Elige el otro protocolo OpenAI Realtime en el editor de modelos."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce serveur n’accepte pas le protocole en temps réel sélectionné. Choisissez l’autre protocole OpenAI Realtime dans l’éditeur de modèle."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ez a kiszolgáló nem fogadja el a kiválasztott valós idejű protokollt. Válassza a másik OpenAI Realtime protokollt a modellszerkesztőben."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo server non accetta il protocollo in tempo reale selezionato. Scegli l’altro protocollo OpenAI Realtime nell’editor del modello."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このサーバーは選択したリアルタイムプロトコルに対応していません。モデル編集画面でもう一方の OpenAI Realtime プロトコルを選んでください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 서버는 선택한 실시간 프로토콜을 받아들이지 않습니다. 모델 편집기에서 다른 OpenAI Realtime 프로토콜을 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze server accepteert het gekozen realtime protocol niet. Kies het andere OpenAI Realtime-protocol in de modeleditor."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este servidor não aceita o protocolo em tempo real selecionado. Escolha o outro protocolo OpenAI Realtime no editor de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот сервер не принимает выбранный протокол реального времени. Выберите другой протокол OpenAI Realtime в редакторе модели."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "یہ سرور منتخب ریئل ٹائم پروٹوکول قبول نہیں کرتا۔ ماڈل ایڈیٹر میں دوسرا OpenAI Realtime پروٹوکول منتخب کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此服务器不接受所选的实时协议。请在模型编辑器中选择另一个 OpenAI Realtime 协议。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此伺服器不接受所選的即時通訊協定。請在模型編輯器中選擇另一個 OpenAI Realtime 通訊協定。"
           }
         }
       }

@@ -197,7 +197,9 @@ final class ManualLookupTool: NativeTool {
                 result += "\n\n" + Self.missGuidance(misses: misses)
             }
             let sections = misses > 1 ? [] : session.closestSections(for: lookupWords, store: store,
-                                                                     documentIds: documentIds, editionRequest: editionRequest)
+                                                                     documentIds: documentIds, editionRequest: editionRequest,
+                                                                     asked: [query, ocrText].compactMap { $0 }.joined(separator: " "),
+                                                                     rewrites: rewrites)
             if !sections.isEmpty { result += "\n\n" + Self.sectionsHint(sections) }
         }
         if outcome.answers, let languageHint {

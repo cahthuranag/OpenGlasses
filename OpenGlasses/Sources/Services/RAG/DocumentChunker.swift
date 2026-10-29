@@ -50,9 +50,15 @@ struct DocumentChunker {
     /// A rule's text then sits in chunks of its own, cited by its number. Never applied to a prose
     /// manual: splitting at every heading of every manual was measured and lowered one.
     var chunksAtClauseHeadings: Bool
+    /// Cite a chunk at the page that holds most of its characters, not its first sentence's (Plan
+    /// JY P5a). A chunk packed across a page break opened on the earlier page — often with the
+    /// sentences it carries over from the chunk before — and cited it, though most of what it says
+    /// is on the next. Off here; a document's language turns it on (`sized(for:text:)`), for the
+    /// groups where it was measured not to cost.
+    var creditsMajorityPage: Bool
 
     init(targetChars: Int = 700, maxChars: Int = 900, overlapChars: Int = 100,
-         keepsLineBreaks: Bool = true, chunksAtClauseHeadings: Bool = true) {
+         keepsLineBreaks: Bool = true, chunksAtClauseHeadings: Bool = true, creditsMajorityPage: Bool = false) {
         // Keep the invariants the packing logic relies on.
         precondition(maxChars >= targetChars, "maxChars must be >= targetChars")
         precondition(overlapChars < targetChars, "overlapChars must be < targetChars to guarantee progress")
@@ -61,6 +67,7 @@ struct DocumentChunker {
         self.overlapChars = overlapChars
         self.keepsLineBreaks = keepsLineBreaks
         self.chunksAtClauseHeadings = chunksAtClauseHeadings
+        self.creditsMajorityPage = creditsMajorityPage
     }
 
     /// What kind of page a chunk came off. A drawing's text is a bag of terminal labels: it embeds
@@ -154,6 +161,27 @@ struct DocumentChunker {
             }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
             guard !joined.isEmpty, let first = current.first else { return }
             let place = Self.location(of: current)
+            var majority = creditsMajorityPage
+            var share = 0.0
+            #if RETRIEVAL_EVAL
+            if RetrievalEvalTuning.p5.contains("majority") { majority = true; share = RetrievalEvalTuning.majorityShare }
+            if RetrievalEvalTuning.p5.contains("nomajority") { majority = false }
+            #endif
+            // The page moves only within one section: a chunk that runs from one section's tail
+            // into the next section on the next page keeps its first sentence's page, so the page
+            // and section it is cited at are always a pair the book prints together.
+            if majority, let page = Self.majorityPage(of: current, share: share), page != first.page,
+               current.first(where: { $0.page == page })?.section == first.section {
+                // The place is said on the page the chunk is cited at: its first sentence there to
+                // the end of its last.
+                let onPage = current.filter { $0.page == page }
+                let start = onPage.first?.pageOffset
+                let end = onPage.compactMap { s in s.pageOffset.map { $0 + s.text.count } }.max()
+                chunks.append(Chunk(index: 0, text: joined, page: page, section: first.section,
+                                    kind: first.kind, figure: first.figure,
+                                    pageStart: start, pageEnd: end, sentenceStarts: place.sentenceStarts))
+                return
+            }
             chunks.append(Chunk(index: 0, text: joined, page: first.page, section: first.section,
                                 kind: first.kind, figure: first.figure,
                                 pageStart: place.start, pageEnd: place.end, sentenceStarts: place.sentenceStarts))
@@ -171,6 +199,17 @@ struct DocumentChunker {
                 currentLen = 0
                 overlapOnly = false
             }
+
+            #if RETRIEVAL_EVAL
+            // Plan JY P5a's measured alternative: a chunk never crosses a page break.
+            if RetrievalEvalTuning.p5.contains("split"), let open = current.last, let page = sentence.page,
+               let openPage = open.page, page != openPage {
+                if !overlapOnly { flush() }
+                current = []
+                currentLen = 0
+                overlapOnly = false
+            }
+            #endif
 
             // Prose and a drawing never share a chunk. A chunk takes its kind and figure from its
             // first sentence, so the tail of a page of prose running into a wiring diagram would
@@ -218,6 +257,22 @@ struct DocumentChunker {
                   kind: chunk.kind, figure: chunk.figure, pageStart: chunk.pageStart,
                   pageEnd: chunk.pageEnd, sentenceStarts: chunk.sentenceStarts)
         }
+    }
+
+    /// The page holding most of a run of sentences' characters, the earliest on a tie; nil when
+    /// none is paginated, or when that page holds less than `share` of them.
+    private static func majorityPage(of sentences: [Sentence], share: Double = 0) -> Int? {
+        var counts: [Int: Int] = [:]
+        var order: [Int] = []
+        for sentence in sentences {
+            guard let page = sentence.page else { continue }
+            if counts[page] == nil { order.append(page) }
+            counts[page, default: 0] += sentence.text.count
+        }
+        let total = counts.values.reduce(0, +)
+        guard let best = order.max(by: { a, b in counts[a]! != counts[b]! ? counts[a]! < counts[b]! : order.firstIndex(of: a)! > order.firstIndex(of: b)! }),
+              total > 0, Double(counts[best]!) / Double(total) >= share else { return nil }
+        return best
     }
 
     /// Where a run of packed sentences sits: its sentence starts within the joined text, and its

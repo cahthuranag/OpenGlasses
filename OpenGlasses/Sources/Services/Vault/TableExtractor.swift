@@ -546,7 +546,13 @@ enum TableExtractor {
     /// space) is not part of the label. Several tables share a number and differ by the letter, so
     /// a label read as its digits alone would merge them, and "(Continued)" would join the wrong
     /// pages.
-    static let labelPattern = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:[A-Za-z](?![\p{L}\p{N}]))?"#
+    ///
+    /// **Dotted labels (Plan JY P5a).** A regulation numbers its tables by clause ("Table 2.7.2.2.1"):
+    /// read to its first dot, every table in a chapter shared one label and the rest of the number
+    /// became the title (12 of 12 captions in one regulation's English edition, 7 of 7 in its
+    /// Russian). The dotted parts are the label's now. A full stop before the title ("Table 12.
+    /// Clearances") is not one — a dotted part is digits.
+    static let labelPattern = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:\.\d{1,4}){0,6}(?:[A-Za-z](?![\p{L}\p{N}]))?"#
     private static let captionPattern = #"^(?i:TABLE)\s+("# + labelPattern + ")"
     private static let figurePattern = #"^(?i:FIGURE)\s+"# + labelPattern
     /// "(Continued)", and "(Concluded)" on a table's last page (Plan JW P0): either way the caption

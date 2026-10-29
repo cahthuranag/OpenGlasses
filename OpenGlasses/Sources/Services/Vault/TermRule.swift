@@ -71,11 +71,13 @@ enum TermRule: Hashable, Codable, Sendable {
 
         /// The group's search values were not measured on both a parallel baseline and a
         /// technical document (Plan JY P3), so the Developer panel and the support report mark
-        /// its documents "less tested". Set from the P3 tables in the plan.
+        /// its documents "less tested". Set from the P3 tables in the plan. Urdu cleared it in P5a
+        /// (a government technical document with a text layer, measured); Arabic's technical
+        /// document has a text layer only half readable, so it stays marked.
         var isLessTested: Bool {
             switch self {
-            case .english, .latinLight, .latinHeavy, .cyrillic, .cjk: return false
-            case .arabic, .urdu: return true
+            case .english, .latinLight, .latinHeavy, .cyrillic, .cjk, .urdu: return false
+            case .arabic: return true
             }
         }
     }

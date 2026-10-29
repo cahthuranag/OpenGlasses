@@ -203,8 +203,9 @@ func isStructuralHeading(_ line: TypedLine, bodySize: Int) -> Bool {
 func captionLabel(_ line: TypedLine) -> (label: String, inlineTitle: String)? {
     guard line.bold else { return nil }
     let text = droppingMarginMarks(line.text)
-    // The label as printed, a letter beside the number included (the app's `TableExtractor.labelPattern`).
-    let labelPattern = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:[A-Za-z](?![\p{L}\p{N}]))?"#
+    // The label as printed, a letter beside the number and its dotted parts included (the app's
+    // `TableExtractor.labelPattern`, Plan JY P5a).
+    let labelPattern = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:\.\d{1,4}){0,6}(?:[A-Za-z](?![\p{L}\p{N}]))?"#
     guard let match = text.range(of: #"^(?i:FIGURE|TABLE)\s+"# + labelPattern, options: .regularExpression) else {
         return CaptionWords.match(text).map { ($0.label, $0.title) }
     }
@@ -378,7 +379,7 @@ enum CaptionWords {
         let continues: Bool
     }
 
-    private static let label = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:[A-Za-z](?![\p{L}\p{N}]))?"#
+    private static let label = #"(?:[A-Z]{1,2}\d{1,4}|\d{1,4})(?:\.\d{1,4}){0,6}(?:[A-Za-z](?![\p{L}\p{N}]))?"#
     /// After a CJK caption's label: not a Han, kana or Hangul letter.
     private static let notIntoCJK = #"(?![\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}])"#
 
@@ -470,7 +471,11 @@ func isCJKPunctuation(_ character: Character) -> Bool {
 /// pairs whose letters are all CJK when it has at least three pairs over three different characters,
 /// or a doubled CJK punctuation mark beside a doubled letter. Returns the line and how many
 /// characters were overprinted; Latin, Cyrillic and Arabic text is never touched.
-func collapsingOverprint(_ line: String) -> (text: String, overprinted: Int) {
+///
+/// Where the page says where each glyph is drawn (`advance`, ems from a character to the next; the
+/// app's `OverprintedText.overprintAdvance`, Plan JY P5a), a run the text rule leaves is decided
+/// pair by pair: a CJK pair whose copies start under 0.7 em apart is one glyph printed twice.
+func collapsingOverprint(_ line: String, advance: ((Int) -> Double?)? = nil) -> (text: String, overprinted: Int) {
     let c = Array(line)
     guard c.count >= 4 else { return (line, 0) }
     var out: [Character] = []
@@ -488,12 +493,27 @@ func collapsingOverprint(_ line: String) -> (text: String, overprinted: Int) {
         if pairs.count >= 3, distinct >= 3 { return true }
         return distinct >= 2 && pairs.contains(where: isCJKPunctuation)
     }
+    func printedTwice(_ from: Int, _ to: Int, _ advance: (Int) -> Double?) -> [Bool]? {
+        var verdicts: [Bool] = []
+        for p in stride(from: from, to: to, by: 2) {
+            guard isCJKLetter(c[p]) || isCJKPunctuation(c[p]) else { verdicts.append(false); continue }
+            guard let em = advance(p) else { return nil }
+            verdicts.append(em < 0.7)
+        }
+        return verdicts.isEmpty ? nil : verdicts
+    }
     while i < c.count {
         var end = i
         while end + 1 < c.count, c[end] == c[end + 1], !c[end].isWhitespace { end += 2 }
         if end > i {
             let pairs = stride(from: i, to: end, by: 2).map { c[$0] }
-            if qualifies(pairs) { out.append(contentsOf: pairs); overprinted += pairs.count } else { out.append(contentsOf: c[i..<end]) }
+            if qualifies(pairs) { out.append(contentsOf: pairs); overprinted += pairs.count }
+            else if let advance, let twice = printedTwice(i, end, advance) {
+                for (k, p) in stride(from: i, to: end, by: 2).enumerated() {
+                    out.append(c[p]); if twice[k] { overprinted += 1 } else { out.append(c[p + 1]) }
+                }
+            }
+            else { out.append(contentsOf: c[i..<end]) }
             i = end
         } else {
             out.append(c[i]); i += 1
@@ -529,7 +549,7 @@ func isBoldFont(_ font: NSFont) -> Bool {
 ///
 /// A line's size and weight are its *dominant* run by non-whitespace character count, so a heading
 /// with one italic word is still a heading and a body line with a bold lead-in is still body.
-func typedPage(from attributed: NSAttributedString) -> TypedPage {
+func typedPage(from attributed: NSAttributedString, glyphs: ((NSRange) -> CGRect?)? = nil) -> TypedPage {
     let ns = attributed.string as NSString
     var runs: [(range: NSRange, size: Double, bold: Bool)] = []
     attributed.enumerateAttribute(.font, in: NSRange(location: 0, length: ns.length)) { value, range, _ in
@@ -564,9 +584,26 @@ func typedPage(from attributed: NSAttributedString) -> TypedPage {
             }
             scan += 1
         }
-        let dominant = weights.values.max { ($0.count, $0.size) < ($1.count, $1.size) }
+        // A tie between a bold and a regular run of one size and count is decided the same way every
+        // time (Plan JY P5a): `weights` is a dictionary, whose order is seeded per process, so the
+        // tie went either way from one run to the next and a line such as a clause number in bold
+        // beside its title in a substituted regular font was a heading in one extraction and not in
+        // the next.
+        let dominant = weights.values.max { ($0.count, $0.size, $0.bold ? 1 : 0) < ($1.count, $1.size, $1.bold ? 1 : 0) }
         // Fake bold: collapse the doubling, and a line mostly set that way is bold.
-        let overprint = collapsingOverprint(raw)
+        let overprint = collapsingOverprint(raw, advance: glyphs.map { glyphs in
+            let offsets = raw.indices.map { range.location + raw.utf16.distance(from: raw.startIndex, to: $0) }
+            let lengths = raw.map { $0.utf16.count }
+            return { k in
+                guard k + 1 < offsets.count else { return nil }
+                let first = NSRange(location: offsets[k], length: lengths[k]), second = NSRange(location: offsets[k + 1], length: lengths[k + 1])
+                guard NSMaxRange(second) <= attributed.length,
+                      let font = attributed.attribute(.font, at: first.location, effectiveRange: nil) as? NSFont, font.pointSize > 0,
+                      let a = glyphs(first), let b = glyphs(second), a.width > 0, b.width > 0,
+                      abs(a.midY - b.midY) < font.pointSize / 2 else { return nil }
+                return Double(b.minX - a.minX) / Double(font.pointSize)
+            }
+        })
         lines.append(TypedLine(raw: overprint.text,
                                text: overprint.text.trimmingCharacters(in: .whitespacesAndNewlines),
                                size: dominant?.size ?? 0,
@@ -767,6 +804,13 @@ func runSelfCheck() -> Never {
     check("caseless body line", isStructuralHeading(line("\u{7B2C}3\u{7AE0} \u{5B89}\u{88C5}", 10, false), bodySize: 10) ? "yes" : "no", "no")
     check("caseless sentence", isStructuralHeading(line("\u{5B89}\u{88C5}\u{524D}\u{65AD}\u{7535}\u{3002}", 10, true), bodySize: 10) ? "yes" : "no", "no")
     check("latin larger not bold", isStructuralHeading(line("Installation", 13, false), bodySize: 10) ? "yes" : "no", "no")
+    // Plan JY P5a: a two-pair fake bold by the glyphs; dotted caption labels; furniture-only pages.
+    check("two-pair overprint", collapsingOverprint("\u{6E29}\u{6E29}\u{5EA6}\u{5EA6}", advance: { _ in 0.5 }).text, "\u{6E29}\u{5EA6}")
+    check("reduplicated word", collapsingOverprint("\u{9AD8}\u{9AD8}\u{5174}\u{5174}", advance: { _ in 1.0 }).text, "\u{9AD8}\u{9AD8}\u{5174}\u{5174}")
+    check("dotted table label", caption("TABLE 2.7.2.2.1 Invented limits"), "Table 2.7.2.2.1/Invented limits")
+    check("code book label", caption("TABLE 4B Invented ratings"), "Table 4B/Invented ratings")
+    check("furniture-only pages", furnitureOnlyPages(["Invented Rev A\nThe valve opens at the set pressure and closes below it.\n- 1 -",
+                                                      "Invented Rev A\n- 2 -", "Invented Rev A\n- 3 -", ""]).sorted().map(String.init).joined(separator: ","), "1,2")
 
     check("title hyphens", titleSuggestion(forFileName: "SLP99UHVK-service-manual"), "SLP99UHVK service manual")
     check("title underscores", titleSuggestion(forFileName: "RTU_500__wiring"), "RTU 500 wiring")
@@ -828,9 +872,18 @@ func recognise(_ image: CGImage) -> (text: String, confidence: Float) {
     request.usesLanguageCorrection = true
     request.recognitionLanguages = languages
     let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
-    do { try handler.perform([request]) } catch {
-        if officeWorker { fail("Text recognition could not finish: \(error.localizedDescription). The original and any previously saved text have been kept.") }
-        return ("", 0)
+    // The recogniser can fail to start its model while another process holds the Neural Engine
+    // (Plan JY P5a: 16 of 223 pages of one extraction); a second try a moment later reads the page.
+    var attempt = 0
+    while true {
+        do { try handler.perform([request]); break } catch where attempt < 2 {
+            attempt += 1
+            Thread.sleep(forTimeInterval: 0.5 * Double(attempt))
+            continue
+        } catch {
+            if officeWorker { fail("Text recognition could not finish: \(error.localizedDescription). The original and any previously saved text have been kept.") }
+            return ("", 0)
+        }
     }
     guard let observations = request.results, !observations.isEmpty else { return ("", 0) }
     var blocks: [(text: String, confidence: Float, box: CGRect)] = []
@@ -874,10 +927,46 @@ if !forceOCR {
             layerBytes += attributed.string.utf8.count
             guard attributed.length <= 500_000, layerBytes <= officeOutputLimit else { fail("Extracted text exceeds this build’s 2 MB limit.") }
         }
-        typedPages[index] = typedPage(from: attributed)
+        typedPages[index] = typedPage(from: attributed, glyphs: { page.selection(for: $0)?.bounds(for: page) })
     }
 }
 let body = bodySize(of: typedPages.keys.sorted().compactMap { typedPages[$0] })
+
+// Pages whose text layer is only their furniture while their body is drawn (the app's
+// `VaultDocumentExtractor.pagesNeedingRecognition`, Plan JY P5a): an edition printed as outlined
+// glyphs keeps its running header and folio as text. Under 20 non-space characters off lines that
+// carry no letters or repeat (digits aside) on 3+ pages, and 2% of the body band inked at 36 dpi.
+func furnitureOnlyPages(_ pages: [String]) -> Set<Int> {
+    let lines = pages.map { $0.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+    func key(_ line: String) -> String { line.filter { !$0.isNumber } }
+    var pagesWith: [String: Int] = [:]
+    for page in lines { for line in Set(page.map(key)) { pagesWith[line, default: 0] += 1 } }
+    return Set(lines.indices.filter { i in
+        guard !lines[i].isEmpty else { return false }
+        let body = lines[i].filter { $0.contains(where: \.isLetter) && (pagesWith[key($0)] ?? 0) < 3 }
+        return body.joined().filter { !$0.isWhitespace }.count < 20
+    })
+}
+func bodyInk(_ page: PDFPage) -> Double {
+    let bounds = page.bounds(for: .mediaBox)
+    let image = page.thumbnail(of: CGSize(width: bounds.width / 2, height: bounds.height / 2), for: .mediaBox)
+    var rect = CGRect(origin: .zero, size: image.size)
+    guard let cg = image.cgImage(forProposedRect: &rect, context: nil, hints: nil), cg.width > 0, cg.height > 0,
+          let context = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width,
+                                  space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue),
+          let data = context.data else { return 0 }
+    context.setFillColor(gray: 1, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+    context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+    let pixels = data.bindMemory(to: UInt8.self, capacity: cg.width * cg.height)
+    let top = Int(Double(cg.height) * 0.09), bottom = Int(Double(cg.height) * 0.91)
+    guard bottom > top else { return 0 }
+    var dark = 0
+    for row in top..<bottom { for column in 0..<cg.width where pixels[row * cg.width + column] < 200 { dark += 1 } }
+    return Double(dark) / Double(cg.width * (bottom - top))
+}
+let furnitureOnly = officeWorker || forceOCR ? Set<Int>()
+    : furnitureOnlyPages((0..<document.pageCount).map { document.page(at: $0)?.string ?? "" })
 
 var output = "# \(inputURL.deletingPathExtension().lastPathComponent)\n"
 var recognisedPages = 0
@@ -906,9 +995,12 @@ for index in 0..<document.pageCount {
     let sparse = layer.filter { !$0.isWhitespace }.count < 160
     let hasObject = layer.contains("\u{fffc}") || layer.contains("\u{fffd}")
     let supplement = officeWorker && !forceOCR && !layer.isEmpty && (sparse || hasObject)
-    if forceOCR || layer.isEmpty {
-        if let image = render(page) {
-            let result = recognise(image)
+    let drawnBody = furnitureOnly.contains(index) && autoreleasepool { bodyInk(page) } >= 0.02
+    if forceOCR || layer.isEmpty || drawnBody {
+        // Each page's render and its Vision request drain before the next (Plan JY P5a): held for
+        // the whole loop, they grew until the recogniser could no longer start, and every later
+        // page of a long scan came back empty.
+        if let result = autoreleasepool(invoking: { render(page).map(recognise) }) {
             text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
             recognisedPages += 1
             ocrPageNumbers.append(index + 1)
@@ -926,8 +1018,9 @@ for index in 0..<document.pageCount {
         if diagram { diagramPages += 1 }
     }
     if supplement {
-        guard let image = render(page) else { fail("A potentially incomplete page could not be rendered. Previously saved text has been kept.") }
-        let result = recognise(image)
+        guard let result = autoreleasepool(invoking: { render(page).map(recognise) }) else {
+            fail("A potentially incomplete page could not be rendered. Previously saved text has been kept.")
+        }
         // Keep the digital text unchanged; OCR is visibly separate and cannot silently
         // overwrite a readable number, part identifier or warning in the text layer.
         text += "\n\n### OCR supplement — review against original\n" + (result.text.isEmpty ? "(No additional text recognised.)" : result.text)

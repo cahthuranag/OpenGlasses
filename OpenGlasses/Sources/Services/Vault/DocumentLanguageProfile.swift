@@ -72,8 +72,9 @@ enum TextScript: String, Codable, Equatable, Hashable, Sendable {
 struct DocumentLanguageProfile: Codable, Equatable, Sendable {
     /// Bumped when detection changes, so a stored profile is recomputed from the document's text.
     /// 2 (Plan JY P2): a Latin language other than English needs `minimumLatinLettersForOther`
-    /// letters and `minimumLatinConfidenceForOther`.
-    static let currentVersion = 2
+    /// letters and `minimumLatinConfidenceForOther`. 3 (Plan JY P5a): a navigation-like line's
+    /// letters count a quarter (`letterCounts`).
+    static let currentVersion = 3
 
     var version: Int
     /// The script most of the document's letters are in. Han for Chinese and Japanese (kana counts
@@ -148,10 +149,7 @@ struct DocumentLanguageProfile: Codable, Equatable, Sendable {
 
     /// The profile of `text`.
     static func detect(_ text: String) -> DocumentLanguageProfile {
-        var counts: [TextScript: Int] = [:]
-        for scalar in text.unicodeScalars {
-            if let script = TextScript.of(scalar) { counts[script, default: 0] += 1 }
-        }
+        let counts = letterCounts(text)
         let han = counts[.han, default: 0], kana = counts[.kana, default: 0], hangul = counts[.hangul, default: 0]
         // Han and kana are one script here: Japanese is written in both.
         let weighted: [(TextScript, Int)] = [
@@ -195,6 +193,41 @@ struct DocumentLanguageProfile: Codable, Equatable, Sendable {
         case .kana, .other:
             return DocumentLanguageProfile(script: .other, language: nil, confidence: 0, scriptShare: share)
         }
+    }
+
+    // MARK: - Navigation (Plan JY P5a)
+
+    /// A line with fewer weighted letters than this (about four English words, eight Chinese
+    /// characters) is navigation-like — a menu entry, a breadcrumb, a contents line, a table cell —
+    /// and its letters count `navigationWeight` of a body line's.
+    static let navigationLineLetters = 24
+    static let navigationWeight = 4
+
+    /// Each script's letters in `text`, a navigation-like line's counting a quarter (Plan JY P5a).
+    ///
+    /// A page converted from HTML carries its site's menus, breadcrumbs and contents list beside its
+    /// body, often in another language than the body (a translated tutorial keeps English
+    /// navigation): counted letter for letter, three quarters Latin navigation outweighed a quarter
+    /// of Cyrillic body and the page read as English. A line of body text is long; navigation is a
+    /// column of short lines. A document whose short and long lines are in one script (every
+    /// manual measured) keeps its main script: only the shares move.
+    ///
+    /// Returned in letters of a body line, so `minimumLetters` and the shares read as before for a
+    /// document of long lines (each is counted `navigationWeight` times, then divided back).
+    static func letterCounts(_ text: String) -> [TextScript: Int] {
+        var counts: [TextScript: Int] = [:]
+        for line in text.split(omittingEmptySubsequences: true, whereSeparator: \.isNewline) {
+            var lineCounts: [TextScript: Int] = [:]
+            var weighted = 0
+            for scalar in line.unicodeScalars {
+                guard let script = TextScript.of(scalar) else { continue }
+                lineCounts[script, default: 0] += 1
+                weighted += script.isCJK ? ideographWeight : 1
+            }
+            let weight = weighted < navigationLineLetters ? 1 : navigationWeight
+            for (script, count) in lineCounts { counts[script, default: 0] += count * weight }
+        }
+        return counts.mapValues { ($0 + navigationWeight - 1) / navigationWeight }
     }
 
     /// The recogniser's language for the main script's own letters, when it is sure enough.

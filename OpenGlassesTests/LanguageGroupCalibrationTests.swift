@@ -136,8 +136,9 @@ final class LanguageGroupCalibrationTests: XCTestCase {
 
     // MARK: - Less tested
 
-    func testOnlyArabicAndUrduAreLessTested() {
-        XCTAssertEqual(TermRule.Group.allCases.filter(\.isLessTested), [.arabic, .urdu])
+    func testOnlyArabicIsLessTested() {
+        // Urdu cleared it in Plan JY P5a: a technical document with a text layer was measured.
+        XCTAssertEqual(TermRule.Group.allCases.filter(\.isLessTested), [.arabic])
     }
 
     func testTheReportMarksLessTestedDocuments() {
@@ -148,11 +149,13 @@ final class LanguageGroupCalibrationTests: XCTestCase {
                 script: script, modelClass: "contextual", chunksWithVectors: 3, chunks: 3)
         }
         let urdu = diagnostic(.urdu, .arabic, "ur")
-        XCTAssertTrue(urdu.line.hasSuffix(" · less tested"))
+        XCTAssertFalse(urdu.line.contains("less tested"))
+        let arabic = diagnostic(.arabic, .arabic, "ar")
+        XCTAssertTrue(arabic.line.hasSuffix(" · less tested"))
         let chinese = diagnostic(.cjk, .han, "zh-Hans")
         XCTAssertFalse(chinese.line.contains("less tested"))
-        let lines = ManualLanguageReport.lines([urdu, chinese, diagnostic(.arabic, .arabic, "ar")], models: [])
-        XCTAssertEqual(lines[1], "Less tested: arabic 1, urdu 1")
+        let lines = ManualLanguageReport.lines([urdu, chinese, arabic], models: [])
+        XCTAssertEqual(lines[1], "Less tested: arabic 1")
         XCTAssertFalse(ManualLanguageReport.lines([chinese], models: []).contains { $0.hasPrefix("Less tested") })
     }
 }

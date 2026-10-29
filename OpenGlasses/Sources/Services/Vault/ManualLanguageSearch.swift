@@ -268,7 +268,12 @@ enum ManualLanguageSearch {
     /// `query` when there is none. More than one: `scoped` once per group with that group's
     /// question, then `merge`. `query` may be nil (a nameplate lookup), in which case a group
     /// without a rewrite searches on the label alone, as today.
+    ///
+    /// `shape` cuts the merged outcome to what is sent (`ManualPassageLimit.shaped`): `limit` is the
+    /// larger budget, so a group whose best passage takes six keeps six when it ranks first (Plan
+    /// JY P5a), and a merge led by a prose passage is cut to four as before.
     static func search(groups: [Group], query: String?, rewrites: Rewrites, limit: Int,
+                       shape: (RetrievalOutcome) -> RetrievalOutcome = { $0 },
                        whole: (_ query: String?) -> RetrievalOutcome,
                        scoped: (_ group: Group, _ query: String?) -> RetrievalOutcome) -> Result {
         guard groups.count > 1 else {
@@ -285,7 +290,7 @@ enum ManualLanguageSearch {
             return GroupResult(language: group.language, documentCount: group.documentIds.count,
                                rewritten: rewrite != nil, outcome: scoped(group, rewrite ?? query))
         }
-        return Result(outcome: merge(results, limit: limit), groups: results)
+        return Result(outcome: shape(merge(results, limit: limit)), groups: results)
     }
 
     /// The reciprocal-rank-fusion constant: a passage's share is 1 / (k + rank).

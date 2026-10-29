@@ -127,6 +127,7 @@ enum VaultDocumentExtractor {
                         policy: ScanRenderPolicy = ScanRenderPolicy(),
                         thermal: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState,
                         checkpoint: (load: () -> OCRCheckpoint, save: (OCRCheckpoint) throws -> Void)? = nil,
+                        bodyInk: ((PDFPage) -> Double)? = nil,
                         progress: ((Int, Int) -> Void)? = nil) async throws -> Extracted {
         let name = url.lastPathComponent
         guard url.pathExtension.lowercased() == "pdf" else { return try extractNonPDF(from: url) }
@@ -134,7 +135,11 @@ enum VaultDocumentExtractor {
 
         let layer = structuredPages(of: document)
         var pages = layer.pages
-        let blank = pages.indices.filter { pages[$0].isEmpty }
+        // A page with no text layer, and one whose text layer is only its furniture while its body
+        // is drawn (Plan JY P5a: an edition printed as outlined glyphs keeps its running header and
+        // folio as text). Asked only when there is a reader to send them to.
+        let blank = reader == nil ? pages.indices.filter { pages[$0].isEmpty }
+            : pagesNeedingRecognition(document: document, layerPages: pages, bodyInk: bodyInk ?? Self.bodyInk(of:))
         guard let reader, !blank.isEmpty else {
             guard pages.contains(where: { !$0.isEmpty }) else { throw ExtractionError.noTextLayer(name) }
             return Extracted(text: pages.joined(separator: pageSeparator), pageCount: pages.count,
@@ -172,6 +177,83 @@ enum VaultDocumentExtractor {
                          ocrPages: blank.count, lowConfidencePages: low,
                          structuredHeadings: layer.headings, diagramPages: layer.diagramPages,
                          pageLabels: pageLabels(of: document))
+    }
+
+    // MARK: - Pages printed as drawings (Plan JY P5a)
+
+    /// A page whose text layer, its furniture set aside, has fewer non-space characters than this
+    /// carries no body in its text layer.
+    static let furnitureBodyCharacters = 20
+    /// A line repeated on at least this many pages (its digits set aside) is a running header or
+    /// footer: furniture.
+    static let furnitureRepeatPages = 3
+    /// The share of a page's body band (between the header and footer bands) that must be inked
+    /// for a furniture-only page to be sent to recognition. Measured at 36 dpi, a pixel darker than
+    /// 200 of 255 counting: a regulation's Arabic edition printed as outlined glyphs inks 2–16% of
+    /// its body band on 225 of its 247 furniture-only pages (the rest are blank); every
+    /// furniture-only page of its English, Russian and Chinese editions — blank pages carrying only
+    /// the copyright line — inks under 2%, most under 0.2%.
+    static let minimumBodyInk = 0.02
+    /// The resolution the body band is rendered at to measure its ink: enough to see a line of
+    /// type, cheap enough to ask of every furniture-only page.
+    static let inkDPI = 36
+
+    /// The pages recognition should read: those with no text layer, and those whose text layer is
+    /// furniture only (`furnitureOnlyPages`) while the page's body band is inked (`bodyInk`). A
+    /// blank page with only its copyright line, and a manual's short pages (a part title, a figure
+    /// with its caption — a caption is not furniture), are left to their text layer, so no
+    /// recognition is spent on them.
+    static func pagesNeedingRecognition(document: PDFDocument, layerPages: [String],
+                                        bodyInk: (PDFPage) -> Double) -> [Int] {
+        let empty = Set(layerPages.indices.filter { layerPages[$0].isEmpty })
+        let candidates = furnitureOnlyPages(textLayerPages(of: document)).filter { !empty.contains($0) }
+        let inked = candidates.filter { index in
+            autoreleasepool { document.page(at: index).map { bodyInk($0) >= minimumBodyInk } ?? false }
+        }
+        return (Array(empty) + inked).sorted()
+    }
+
+    /// The pages whose text, its furniture set aside, has fewer than `furnitureBodyCharacters`
+    /// non-space characters. Furniture is a line with no letters (a folio, "- 397 -") and a line
+    /// that, with its digits set aside, stands on `furnitureRepeatPages` pages or more (a running
+    /// header, a copyright footer). An empty page is not counted here. Pure.
+    static func furnitureOnlyPages(_ pages: [String]) -> [Int] {
+        let lines = pages.map { page in
+            page.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        func key(_ line: String) -> String { line.filter { !$0.isNumber } }
+        var pagesWith: [String: Int] = [:]
+        for page in lines { for line in Set(page.map(key)) { pagesWith[line, default: 0] += 1 } }
+        return lines.indices.filter { index in
+            guard !lines[index].isEmpty else { return false }
+            let body = lines[index].filter { line in
+                line.contains(where: \.isLetter) && (pagesWith[key(line)] ?? 0) < furnitureRepeatPages
+            }
+            return body.joined().filter { !$0.isWhitespace }.count < furnitureBodyCharacters
+        }
+    }
+
+    /// The share of a page's body band — below the header band and above the footer band
+    /// (`pageNumberBand`) — drawn darker than 200 of 255, rendered at `inkDPI`. Zero when the page
+    /// cannot be rendered.
+    static func bodyInk(of page: PDFPage) -> Double {
+        guard let image = PDFPageRasterizer.image(for: page, dpi: inkDPI) else { return 0 }
+        let width = image.width, height = image.height
+        guard width > 0, height > 0,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
+                                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue),
+              let data = context.data else { return 0 }
+        context.setFillColor(gray: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height)
+        let top = Int(Double(height) * Double(pageNumberBand)), bottom = Int(Double(height) * Double(1 - pageNumberBand))
+        guard bottom > top else { return 0 }
+        var dark = 0
+        for row in top..<bottom {
+            for column in 0..<width where pixels[row * width + column] < 200 { dark += 1 }
+        }
+        return Double(dark) / Double(width * (bottom - top))
     }
 
     // MARK: - Printed page numbers (Plan IN P0)

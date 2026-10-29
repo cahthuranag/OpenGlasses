@@ -323,7 +323,12 @@ enum ManualStructure {
     ///
     /// A line's size and weight are its *dominant* run by printable character count, so a heading
     /// with one italic word is still a heading and a body line with a bold lead-in is still body.
-    static func typedPage(from attributed: NSAttributedString) -> TypedPage {
+    ///
+    /// `glyphs` (Plan JY P5a) reads where a character of the page's string is drawn, so a doubled
+    /// CJK pair the text can't decide is decided by its type (`OverprintedText.collapsed`): the
+    /// page's own selection bounds in the app (`typedPages(of:)`), nil in a test of text alone.
+    static func typedPage(from attributed: NSAttributedString,
+                          glyphs: ((NSRange) -> CGRect?)? = nil) -> TypedPage {
         let ns = attributed.string as NSString
         var runs: [(range: NSRange, size: Double, bold: Bool)] = []
         attributed.enumerateAttribute(.font, in: NSRange(location: 0, length: ns.length)) { value, range, _ in
@@ -355,11 +360,18 @@ enum ManualStructure {
                 }
                 scan += 1
             }
-            let dominant = weights.values.max { ($0.count, $0.size) < ($1.count, $1.size) }
+            // A tie between a bold and a regular run of one size and count is decided the same way every
+            // time (Plan JY P5a): `weights` is a dictionary, whose order is seeded per process, so the
+            // tie went either way from one run to the next and a line such as a clause number in bold
+            // beside its title in a substituted regular font was a heading in one extraction and not in
+            // the next.
+            let dominant = weights.values.max { ($0.count, $0.size, $0.bold ? 1 : 0) < ($1.count, $1.size, $1.bold ? 1 : 0) }
             // Fake bold (Plan JY P4): a CJK line printed twice over reads each character twice and
             // carries no bold font. The doubling is collapsed, and a line mostly set that way is
             // bold, which is what the overprinting was for.
-            let overprint = OverprintedText.collapsed(raw)
+            let overprint = OverprintedText.collapsed(raw, advance: glyphs.map { glyphs in
+                overprintAdvance(in: raw, at: range.location, attributed: attributed, glyphs: glyphs)
+            })
             let bold = (dominant?.bold ?? false) || OverprintedText.isMostlyOverprinted(raw, collapsed: overprint)
             lines.append(TypedLine(raw: overprint.text, size: dominant?.size ?? 0, bold: bold))
         }
@@ -380,6 +392,27 @@ enum ManualStructure {
         return TypedPage(lines: lines, sizes: sizes)
     }
 
+    /// For a line read from `attributed` at `location`, the advance from the character at an index
+    /// of the line to the next one, in ems of its font: where the next character's box starts after
+    /// this one's, over the point size, when both sit on one horizontal line (Plan JY P5a). Nil
+    /// when the page gives no box or no size. Asked only for a doubled pair, so a page with none
+    /// costs nothing.
+    static func overprintAdvance(in line: String, at location: Int, attributed: NSAttributedString,
+                                 glyphs: @escaping (NSRange) -> CGRect?) -> (Int) -> Double? {
+        let offsets = line.indices.map { location + line.utf16.distance(from: line.startIndex, to: $0) }
+        let lengths = line.map { $0.utf16.count }
+        return { index in
+            guard index + 1 < offsets.count else { return nil }
+            let first = NSRange(location: offsets[index], length: lengths[index])
+            let second = NSRange(location: offsets[index + 1], length: lengths[index + 1])
+            guard NSMaxRange(second) <= attributed.length,
+                  let font = attributed.attribute(.font, at: first.location, effectiveRange: nil) as? UIFont,
+                  font.pointSize > 0, let a = glyphs(first), let b = glyphs(second),
+                  a.width > 0, b.width > 0, abs(a.midY - b.midY) < font.pointSize / 2 else { return nil }
+            return Double(b.minX - a.minX) / Double(font.pointSize)
+        }
+    }
+
     /// The typed pages of a document, indexed by page, for pages that carry an attributed string.
     static func typedPages(of document: PDFDocument) -> [Int: TypedPage] {
         var pages: [Int: TypedPage] = [:]
@@ -387,7 +420,7 @@ enum ManualStructure {
             pages[index] = autoreleasepool {
                 guard let page = document.page(at: index),
                       let attributed = page.attributedString, attributed.length > 0 else { return nil }
-                return typedPage(from: attributed)
+                return typedPage(from: attributed, glyphs: { range in page.selection(for: range)?.bounds(for: page) })
             }
         }
         return pages

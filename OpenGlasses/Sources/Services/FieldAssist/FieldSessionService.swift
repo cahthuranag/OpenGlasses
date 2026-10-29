@@ -1943,15 +1943,39 @@ final class FieldSessionService: ObservableObject {
     /// The headings of the sections nearest a lookup's words, ungated — what a lookup that found
     /// nothing it would stand behind offers, so the one retry uses the book's own terms.
     func closestSections(for query: String, store: VaultStore, documentIds: [String]?,
-                         editionRequest: EditionRequest, limit: Int = 3) -> [String] {
-        let open = makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds,
-                                 editionRequest: editionRequest, policy: RetrievalEvidencePolicy(similarityFloor: 0))
+                         editionRequest: EditionRequest, limit: Int = 3,
+                         asked: String? = nil, rewrites: ManualLanguageSearch.Rewrites = .none) -> [String] {
+        func sections(_ text: String, scope: Set<String>?) -> [String] {
+            let open = makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds,
+                                     editionRequest: editionRequest, policy: RetrievalEvidencePolicy(similarityFloor: 0),
+                                     scope: scope)
+            return open.retrieve(.init(turn: text, limit: 8)).passages
+                .filter { $0.source.isReference }
+                .compactMap { $0.section?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
         var seen = Set<String>()
-        return open.retrieve(.init(turn: query, limit: 8)).passages
-            .filter { $0.source.isReference }
-            .compactMap { $0.section?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
-            .prefix(limit).map { $0 }
+        // Manuals in more than one language (Plan JY P5a): each group's nearest headings for its
+        // own question — its rewrite, else the question as asked — taken in turn, first of each
+        // group before the second of any, so two script models' cosines are never ranked in one
+        // list and no language's headings bury another's. One language: as before.
+        let groups = manualLanguageGroups(store: store, documentIds: documentIds, editionRequest: editionRequest)
+        guard groups.count > 1 else {
+            return sections(query, scope: nil).filter { seen.insert($0.lowercased()).inserted }.prefix(limit).map { $0 }
+        }
+        let lists = groups.map { group in
+            sections(rewrites.query(for: group.language) ?? asked ?? query, scope: Set(group.documentIds))
+                .filter { !$0.isEmpty }
+        }
+        var out: [String] = []
+        var rank = 0
+        while out.count < limit, lists.contains(where: { rank < $0.count }) {
+            for list in lists where rank < list.count && out.count < limit {
+                if seen.insert(list[rank].lowercased()).inserted { out.append(list[rank]) }
+            }
+            rank += 1
+        }
+        return out
     }
 
     // MARK: - Editions (Plan IV P2)
@@ -2103,16 +2127,35 @@ final class FieldSessionService: ObservableObject {
     /// rewrite for it, else `request.turn` — through a retriever scoped to it, the results merged
     /// by rank. A library in one language is `retrieveManualPassages` with `retriever`, exactly as
     /// before (with the rewrite for that language, when the model passed one).
+    ///
+    /// `fixedLimit` (Plan JY P5a) is a caller's own passage count — `equipment_lookup`'s
+    /// fall-through asks for three — used as given for each group and for the merge, with no
+    /// shape-dependent budget; one group is then `retriever.retrieve` exactly as before.
     func retrieveByLanguage(_ request: VaultRetriever.Request, with retriever: VaultRetriever, store: VaultStore,
                             documentIds: [String]? = nil, editionRequest: EditionRequest = .newest,
-                            rewrites: ManualLanguageSearch.Rewrites = .none) -> ManualLanguageSearch.Result {
+                            rewrites: ManualLanguageSearch.Rewrites = .none,
+                            fixedLimit: Int? = nil) -> ManualLanguageSearch.Result {
         let groups = manualLanguageGroups(store: store, documentIds: documentIds, editionRequest: editionRequest)
+        func retrieve(_ asked: VaultRetriever.Request, with retriever: VaultRetriever, documentIds: [String]?) -> RetrievalOutcome {
+            guard let fixedLimit else { return retrieveManualPassages(asked, with: retriever, store: store, documentIds: documentIds) }
+            var limited = asked
+            limited.limit = fixedLimit
+            return retriever.retrieve(limited)
+        }
+        // A merge keeps the larger budget and is then shaped by its best passage (Plan JY P5a):
+        // merged at the prose number, a Chinese manual's first passage — which alone takes six —
+        // was cut to four as soon as a second language was searched.
         let result = ManualLanguageSearch.search(
-            groups: groups, query: request.turn, rewrites: rewrites, limit: passageLimit.prose,
+            groups: groups, query: request.turn, rewrites: rewrites,
+            limit: fixedLimit ?? max(passageLimit.prose, passageLimit.clauseNumbered),
+            shape: { merged in
+                guard fixedLimit == nil else { return merged }
+                return passageLimit.shaped(merged, isClauseNumbered: { documentStore?.usesClausePassageBudget(documentId: $0) ?? false })
+            },
             whole: { query in
                 var asked = request
                 asked.turn = query
-                return retrieveManualPassages(asked, with: retriever, store: store, documentIds: documentIds)
+                return retrieve(asked, with: retriever, documentIds: documentIds)
             },
             scoped: { group, query in
                 var asked = request
@@ -2120,7 +2163,7 @@ final class FieldSessionService: ObservableObject {
                 let scoped = makeRetriever(store: store, documentStore: documentStore, documentIds: documentIds,
                                            editionRequest: editionRequest, policy: retriever.policy,
                                            scope: Set(group.documentIds))
-                return retrieveManualPassages(asked, with: scoped, store: store, documentIds: group.documentIds)
+                return retrieve(asked, with: scoped, documentIds: group.documentIds)
             })
         if result.searchedByLanguage {
             // Counts only: how many languages, how many rewrites, whether anything answered.

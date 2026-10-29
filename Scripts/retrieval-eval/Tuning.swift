@@ -91,6 +91,14 @@ enum RetrievalEvalTuning {
     /// RETRIEVAL_EVAL_P4_OFF="captions,split,clauses": a P4 rule switched off, to measure it.
     static let p4Off = Set((env["RETRIEVAL_EVAL_P4_OFF"] ?? "").split(separator: ",").map(String.init))
 
+    /// RETRIEVAL_EVAL_P5="majority" | "nomajority" | "split", joined with ",": a Plan JY P5a
+    /// candidate switched on, to measure it — every language's chunks credited to the page that
+    /// holds most of them (or none's), a chunk split at every page break.
+    static let p5 = Set((env["RETRIEVAL_EVAL_P5"] ?? "").split(separator: ",").map(String.init))
+    /// RETRIEVAL_EVAL_MAJORITY="0.67": the share of a chunk's characters its page must hold for
+    /// `majority` to credit it there (0, the default: the page holding the most).
+    static let majorityShare = Double(env["RETRIEVAL_EVAL_MAJORITY"] ?? "") ?? 0
+
     // MARK: - CJK words (decision 2's alternative, measured, not shipped)
 
     private static let wordsWanted = env["RETRIEVAL_EVAL_CJK"] == "words"

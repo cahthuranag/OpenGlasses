@@ -24,9 +24,24 @@ enum OverprintedText {
     static let minimumPairs = 3
     static let minimumDistinct = 3
 
+    /// A doubled pair whose second copy starts less than this many ems after the first is one
+    /// glyph printed twice (Plan JY P5a). Measured on a regulation's Chinese edition: the copies
+    /// of every overprinted pair sit 0.4–0.6 em apart (PDFKit splits the glyph's box between
+    /// them), and a CJK character's advance to the next is 0.7–1.3 em (0.9–1.1 for all but 0.6%).
+    static let overprintAdvance = 0.7
+
     /// The line with its overprinted runs collapsed, and how many characters were overprinted (as
     /// read once). Zero when nothing qualified, and then `text` is `line` unchanged.
-    static func collapsed(_ line: String) -> (text: String, overprinted: Int) {
+    ///
+    /// **By the type, where it is known (Plan JY P5a).** `advance` gives, for the character at an
+    /// index of `line`, how far the next character starts after it, in ems (nil when the page
+    /// doesn't say). Text alone cannot tell a two-character heading printed twice (温温度度) from a
+    /// reduplicated word (高高兴兴), so a run the text rule leaves is decided pair by pair from the
+    /// glyphs: a CJK pair whose copies are less than `overprintAdvance` apart is one glyph printed
+    /// twice and collapses, one drawn a full glyph apart is two characters and stays. A run whose
+    /// geometry isn't known for every pair keeps the text rule. A run the text rule collapses is
+    /// collapsed as before.
+    static func collapsed(_ line: String, advance: ((Int) -> Double?)? = nil) -> (text: String, overprinted: Int) {
         let characters = Array(line)
         guard characters.count >= 4 else { return (line, 0) }
         var out: [Character] = []
@@ -41,6 +56,12 @@ enum OverprintedText {
             if end > index, qualifies(characters[index..<end]) {
                 for pair in stride(from: index, to: end, by: 2) { out.append(characters[pair]) }
                 overprinted += (end - index) / 2
+                index = end
+            } else if end > index, let advance, let printedTwice = printedTwice(characters, index..<end, advance: advance) {
+                for (offset, pair) in stride(from: index, to: end, by: 2).enumerated() {
+                    out.append(characters[pair])
+                    if printedTwice[offset] { overprinted += 1 } else { out.append(characters[pair + 1]) }
+                }
                 index = end
             } else if end > index {
                 out.append(contentsOf: characters[index..<end])
@@ -66,6 +87,22 @@ enum OverprintedText {
         return text.split(separator: "\n", omittingEmptySubsequences: false)
             .map { collapsed(String($0)).text }
             .joined(separator: "\n")
+    }
+
+    /// For each doubled pair in `range` (both copies of each), whether its glyph was printed twice,
+    /// read off `advance`; nil when a CJK pair's geometry is unknown. A pair of any other character
+    /// is never collapsed.
+    private static func printedTwice(_ characters: [Character], _ range: Range<Int>,
+                                     advance: (Int) -> Double?) -> [Bool]? {
+        var verdicts: [Bool] = []
+        for pair in stride(from: range.lowerBound, to: range.upperBound, by: 2) {
+            let character = characters[pair]
+            let isCJK = TextScript.of(character)?.isCJK == true || isCJKPunctuation(character)
+            guard isCJK else { verdicts.append(false); continue }
+            guard let em = advance(pair) else { return nil }
+            verdicts.append(em < overprintAdvance)
+        }
+        return verdicts.isEmpty ? nil : verdicts
     }
 
     /// A run of doubled pairs (`run` holds both copies of each) that is overprinting, not text.

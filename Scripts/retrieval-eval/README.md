@@ -127,6 +127,14 @@ Scripts/retrieval-eval/run.sh
   `RETRIEVAL_EVAL_EXTRACTOR`. `RETRIEVAL_EVAL_PROSE_PASSAGES` sets the prose passage budget the "as
   sent" line uses (4 as shipped).
 
+- **Remaining defects (Plan JY P5a).** `RETRIEVAL_EVAL_P5` switches on a measured candidate:
+  `majority` (every language's chunks cite the page that holds most of them; `nomajority` none's),
+  `split` (a chunk never crosses a page break), joined with `,`; `RETRIEVAL_EVAL_MAJORITY="0.67"`
+  asks the page for that share of the chunk. `RETRIEVAL_EVAL_RELOCATE=1` re-chunks each indexed document and, where its text chunks as
+  stored, rewrites only its pages, sections and figures (the app's location migration), so a change
+  that moves only citations or sections is measured on the same index and vectors; the summary
+  counts the documents whose text no longer chunks the same.
+
 Every run prints in-scope refusals beside the hits, because a gate that refuses more out-of-scope
 questions usually refuses some in-scope ones too, and both numbers decide a gate.
 

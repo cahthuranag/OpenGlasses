@@ -327,8 +327,11 @@ final class EquipmentLookupTool: NativeTool {
             return nil
         }
         // The shared factory (Plan FP P2): manuals and published team learnings, each tagged.
+        // Manuals in more than one language are searched once per language and merged by rank
+        // (Plan JY P5a), as `manual_lookup` is; one language is the same single search as before.
         let retriever = session.makeRetriever(store: store, documentStore: documentStore)
-        let outcome = retriever.retrieve(.init(turn: query, ocrText: ocrText, limit: 3))
+        let outcome = session.retrieveByLanguage(.init(turn: query, ocrText: ocrText, limit: 3),
+                                                 with: retriever, store: store, fixedLimit: 3).outcome
         // A learning-only outcome answers too, disclosed as the crew's finding; only a refusal
         // leaves the caller's own miss message to speak.
         guard outcome.answers else { return nil }

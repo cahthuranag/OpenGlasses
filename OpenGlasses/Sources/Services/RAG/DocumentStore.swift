@@ -1447,10 +1447,14 @@ final class DocumentStore: ObservableObject {
     /// A document whose text chunks the same row for row keeps its rows, its ids and its vectors,
     /// and only has its page, section and figure rewritten (which is all an English document can
     /// get: none of its rules changed); one whose text changed is re-chunked under its own id.
-    nonisolated static let locationVersion = 8
+    /// 9 (Plan JY P5a): the text is read again once more — a chunk cites the page holding most of
+    /// it (`DocumentChunker.creditsMajorityPage`), dotted caption labels are whole, a two-pair
+    /// fake bold is read off the glyphs, and a recognised manual is read from the pages its import
+    /// kept. Text that chunks as stored keeps its rows and vectors; only its places move.
+    nonisolated static let locationVersion = 9
     /// The location version at which a document's text was last read again, below which the
     /// migration re-reads it rather than only its tables.
-    nonisolated static let textReadVersion = 8
+    nonisolated static let textReadVersion = 9
 
     /// The oldest location version among a document's own text chunks (its table rows left out),
     /// or nil when it has none. A never-located row counts as 0.
@@ -1630,6 +1634,87 @@ final class DocumentStore: ObservableObject {
                                     source: PageLabel.Source(rawValue: String(cString: sqlite3_column_text(stmt, 2))) ?? .printed))
         }
         return PageLabelMap(labels)
+    }
+
+    // MARK: - The Documents library's structure (Plan JY P5a)
+
+    /// The personal documents (`personalDocuments()`) stored before the current location version,
+    /// with their profiles. The Documents library has no file to read again; its text is rebuilt
+    /// from its chunks (`reconstructedText`).
+    func libraryDocumentsNeedingLocation() -> [(id: String, profile: DocumentLanguageProfile)] {
+        personalDocuments().filter { needsLocation(documentId: $0.id) }
+            .map { (id: $0.id, profile: languageProfile(documentId: $0.id)) }
+    }
+
+    /// A document's own text rebuilt from its stored chunks, its table rows left out: each chunk's
+    /// sentences (`sentences`, the offsets the chunker recorded) in order, with the line break or
+    /// space that stood before each, the sentences a chunk repeats from the one before
+    /// (`DocumentChunker.overlapChars`) dropped, and a page break written where a chunk's page moves
+    /// on. Nil when the document has no chunks. What the chunker read is not stored, so this is its
+    /// text as the chunks hold it: a row's page markers and grammar lines were never in a chunk.
+    func reconstructedText(documentId: String, overlapCharacters: Int = 200) -> String? {
+        struct Row { let text: String; let page: Int?; let starts: [Int] }
+        let stored: [Row] = rows("""
+            SELECT text, page, sentences FROM doc_chunks WHERE document_id = '\(escapedSQL(documentId))'
+            AND \(Self.notTableRow) ORDER BY chunk_index ASC
+            """) { stmt in
+            let page = sqlite3_column_type(stmt, 1) == SQLITE_NULL ? nil : Int(sqlite3_column_int(stmt, 1))
+            let sentences = sqlite3_column_text(stmt, 2).map { String(cString: $0) }
+            return Row(text: String(cString: sqlite3_column_text(stmt, 0)), page: page,
+                       starts: PassageAnchor.decode(sentences))
+        }
+        guard !stored.isEmpty else { return nil }
+        var sentences: [(text: String, separator: String)] = []
+        var page = stored.first?.page
+        var out = ""
+        for row in stored {
+            var characters = Array(row.text)
+            if row.starts.isEmpty, !out.isEmpty {
+                // A row stored before its sentences were recorded: its overlap is cut by characters,
+                // the longest start of it that ends what is already rebuilt.
+                let tail = Array(out.suffix(overlapCharacters))
+                var cut = 0
+                for length in stride(from: min(tail.count, characters.count), through: 1, by: -1)
+                    where Array(tail.suffix(length)) == Array(characters.prefix(length)) {
+                    cut = length
+                    break
+                }
+                characters = Array(characters.dropFirst(cut)).drop(while: \.isWhitespace).map { $0 }
+                guard !characters.isEmpty else { continue }
+            }
+            let starts = (row.starts.isEmpty ? [0] : row.starts).filter { $0 < characters.count }
+            var pieces: [(text: String, separator: String)] = []
+            for (k, start) in starts.enumerated() {
+                let end = k + 1 < starts.count ? max(start, starts[k + 1] - 1) : characters.count
+                let text = String(characters[start..<min(end, characters.count)])
+                // A chunk's first sentence has nothing before it to say: a line break, which every
+                // whitespace rule reads as one and CJK text, which has no spaces, needs.
+                let separator = start == 0 || characters[start - 1] == "\n" ? "\n" : " "
+                pieces.append((text, separator))
+            }
+            // The longest run of this chunk's first sentences that ends what is already rebuilt,
+            // within the overlap a chunk carries.
+            var overlap = 0
+            var k = min(pieces.count, sentences.count)
+            while k > 0 {
+                let carried = pieces.prefix(k).reduce(0) { $0 + $1.text.count + 1 }
+                if carried <= overlapCharacters,
+                   zip(sentences.suffix(k), pieces.prefix(k)).allSatisfy({ $0.text == $1.text }) { overlap = k; break }
+                k -= 1
+            }
+            let fresh = pieces.dropFirst(overlap)
+            guard !fresh.isEmpty else { continue }
+            if let rowPage = row.page, let open = page, rowPage > open {
+                out += String(repeating: "\u{0C}", count: rowPage - open)
+                page = rowPage
+            }
+            for piece in fresh {
+                if !out.isEmpty, !out.hasSuffix("\u{0C}") { out += piece.separator }
+                out += piece.text
+                sentences.append(piece)
+            }
+        }
+        return out
     }
 
     // MARK: - Tables (Plan JJ P0)

@@ -36,7 +36,12 @@ enum CodeTokenizer {
 
     /// The text's words: runs of letters and digits, with a decimal number ("0.28", "1,5") kept as
     /// one word. Separators are everything else, as before.
+    ///
+    /// Full-width letters and digits (ＡＢＣ１２３, which CJK text often sets) and Arabic-Indic digits
+    /// are read as their ASCII forms first (Plan JY P5a), so a model number printed full-width in a Chinese manual is the
+    /// same token as the one a question types. Text without them is read exactly as before.
     static func words(in text: String) -> [String] {
+        let text = foldedForms(text)
         let ns = text as NSString
         return wordPattern.matches(in: text, range: NSRange(location: 0, length: ns.length))
             .map { ns.substring(with: $0.range) }
@@ -61,6 +66,34 @@ enum CodeTokenizer {
     /// not among them, so "10μF" and "10Ω" stay whole as they always have.
     private static let separatingScripts =
         #"\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}\p{Cyrillic}\p{Arabic}\x{30FC}\x{FF70}"#
+
+    /// `text` with the full-width ASCII forms (U+FF01–U+FF5E: ＡＢＣ, １２３, ．, －) as their ASCII
+    /// characters, the ideographic space as a space, and Arabic-Indic and Extended Arabic-Indic
+    /// digits (٣, ۳) as ASCII digits (Plan JY P5a) — the forms a CJK or Arabic-script manual prints
+    /// a model or clause number in, which a question rarely types. One character for one, so
+    /// offsets in characters are kept; everything else is untouched, and a text without them is
+    /// returned as it is.
+    static func foldedForms(_ text: String) -> String {
+        guard text.unicodeScalars.contains(where: isFoldedForm) else { return text }
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x3000: scalars.append(" ")
+            case 0xFF01...0xFF5E: scalars.append(Unicode.Scalar(scalar.value - 0xFEE0) ?? scalar)
+            case 0x0660...0x0669: scalars.append(Unicode.Scalar(scalar.value - 0x0660 + 0x30) ?? scalar)
+            case 0x06F0...0x06F9: scalars.append(Unicode.Scalar(scalar.value - 0x06F0 + 0x30) ?? scalar)
+            default: scalars.append(scalar)
+            }
+        }
+        return String(scalars)
+    }
+
+    private static func isFoldedForm(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x3000, 0xFF01...0xFF5E, 0x0660...0x0669, 0x06F0...0x06F9: return true
+        default: return false
+        }
+    }
 
     /// "0.28", "1,5", "12.0" — digits either side of a decimal mark.
     static func isDecimal(_ token: String) -> Bool {
@@ -119,8 +152,9 @@ enum CodeTokenizer {
     /// Case-insensitive whole-token containment: "E5" matches "code E5 means" but not "E50".
     static func contains(_ haystack: String, token: String) -> Bool {
         guard !token.isEmpty else { return false }
-        let lowerHay = haystack.lowercased()
-        let lowerToken = token.lowercased()
+        // Both sides read full-width forms as ASCII (Plan JY P5a).
+        let lowerHay = foldedForms(haystack).lowercased()
+        let lowerToken = foldedForms(token).lowercased()
         var searchStart = lowerHay.startIndex
         while let range = lowerHay.range(of: lowerToken, range: searchStart..<lowerHay.endIndex) {
             let leadingOK = range.lowerBound == lowerHay.startIndex

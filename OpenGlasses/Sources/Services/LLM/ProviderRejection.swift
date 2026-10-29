@@ -42,6 +42,11 @@ struct ProviderRejection: Equatable, Sendable {
         /// The service does not offer the requested model to this key, account or plan: the id
         /// is unknown to it, retired, or not part of what the sign-in may use.
         case modelNotAvailable
+        /// One request is larger than the account's tokens-per-minute allowance for this model.
+        /// Groq answers it with 413 `rate_limit_exceeded`; unlike a rate limit, waiting does not
+        /// help — every turn of that size is refused until the request shrinks or the plan grows
+        /// (support report, 2026-10-29: a free Groq key refused each 11k-token turn).
+        case requestOverTokenRateLimit
         case other
 
         /// The reason belongs to one model's request contract: another model may accept the very
@@ -60,7 +65,7 @@ struct ProviderRejection: Equatable, Sendable {
         /// be sent. The fallback chain reads this.
         var endsOnlyThisCandidate: Bool {
             isModelContract || self == .betaHeaderUnknown || self == .credentialNotAccepted
-                || self == .modelNotAvailable
+                || self == .modelNotAvailable || self == .requestOverTokenRateLimit
         }
     }
 
@@ -160,6 +165,11 @@ struct ProviderRejection: Equatable, Sendable {
         default: break
         }
         if code?.lowercased() == "model_not_found" { return .modelNotAvailable }
+        // A 413 under a rate-limit code is a size refusal, not a busy service: the request alone
+        // is over the per-minute allowance. A 429 never reaches here.
+        if status == 413, code?.lowercased() == "rate_limit_exceeded" || type == "tokens" {
+            return .requestOverTokenRateLimit
+        }
         if let parameter = parameter?.lowercased(), samplingParameters.contains(parameter) {
             return .samplingUnsupported
         }

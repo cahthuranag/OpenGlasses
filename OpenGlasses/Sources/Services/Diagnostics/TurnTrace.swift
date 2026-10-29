@@ -109,9 +109,14 @@ struct TurnTrace: Codable, Equatable, Identifiable {
     }
 
     /// A local model is tagged with its file path; the file name is what identifies it, and the
-    /// rest of the path is the phone's own layout.
+    /// rest of the path is the phone's own layout. A service's model id keeps its slash: Groq and
+    /// OpenRouter name models `vendor/model`, and a report that showed `qwen3.8-27b` for Groq's
+    /// `qwen/qwen3.8-27b` read as a model Groq does not serve (support report, 2026-10-29).
     static func modelName(_ raw: String) -> String {
-        raw.contains("/") ? URL(fileURLWithPath: raw).lastPathComponent : raw
+        let isPath = raw.hasPrefix("/") || raw.hasPrefix("~") || raw.lowercased().hasPrefix("file:")
+        guard isPath else { return raw }
+        let path = raw.lowercased().hasPrefix("file:") ? (URL(string: raw)?.path ?? raw) : raw
+        return URL(fileURLWithPath: path).lastPathComponent
     }
 
     var promptCharacters: Int { promptBlocks.reduce(0) { $0 + $1.characters } }

@@ -8,12 +8,17 @@ enum ModelFetcher {
         let name: String    // display-friendly label
         let isDefault: Bool
         let inputModalities: Set<String>
+        /// What the model is for (`ModelKindClassifier`). Pickers offer only `.chat` as the
+        /// assistant and show the rest labelled, where they can't be chosen.
+        let kind: ModelKind
 
-        init(id: String, name: String, isDefault: Bool = false, inputModalities: Set<String> = []) {
+        init(id: String, name: String, isDefault: Bool = false, inputModalities: Set<String> = [],
+             kind: ModelKind = .chat) {
             self.id = id
             self.name = name
             self.isDefault = isDefault
             self.inputModalities = inputModalities
+            self.kind = kind
         }
     }
 
@@ -67,6 +72,16 @@ enum ModelFetcher {
         return 0
     }
 
+    /// The model a picker starts on after a list loads: the list's own default, then the first of
+    /// `preferred` the list offers, then the first — chat models only, so a list that leads with a
+    /// speech or embedding model never starts the wearer on it. Pure.
+    static func initialChoice(in models: [RemoteModel], preferring preferred: [String]) -> String? {
+        let chat = models.filter(\.kind.isChat)
+        if let listDefault = chat.first(where: \.isDefault) { return listDefault.id }
+        for id in preferred where chat.contains(where: { $0.id == id }) { return id }
+        return chat.first?.id
+    }
+
     /// Fetch models for a provider. Returns an empty array on failure.
     static func fetchModels(provider: LLMProvider, apiKey: String, baseURL: String) async -> [RemoteModel] {
         uniqueByID(await fetchListing(provider: provider, apiKey: apiKey, baseURL: baseURL))
@@ -103,13 +118,10 @@ enum ModelFetcher {
             return await fetchQwen(apiKey: apiKey, baseURL: baseURL)
         case .minimax:
             return await fetchMiniMax(apiKey: apiKey, baseURL: baseURL)
-        case .xai:
-            // The list also carries image/video generators, voice and build models; only chat
-            // models answer the requests this app sends.
-            return await fetchOpenAICompatible(apiKey: apiKey, baseURL: baseURL)
-                .filter { XAIOAuth.isChatModel($0.id) }
-        case .openai, .groq, .deepseek, .mistral, .zai, .openrouter, .custom:
-            return await fetchOpenAICompatible(apiKey: apiKey, baseURL: baseURL)
+        case .xai, .openai, .groq, .deepseek, .mistral, .zai, .openrouter, .custom:
+            // Lists that also carry speech, image, embedding and other models are labelled by
+            // `ModelKindClassifier`, not filtered: the pickers show them where they can't be chosen.
+            return await fetchOpenAICompatible(provider: provider, apiKey: apiKey, baseURL: baseURL)
         case .geminiVertex:
             return []  // OAuth-only; no key-based listing endpoint (type the model ID)
         case .local, .appleOnDevice:
@@ -240,7 +252,8 @@ enum ModelFetcher {
         }
     }
 
-    private static func fetchOpenAICompatible(apiKey: String, baseURL: String) async -> [RemoteModel] {
+    private static func fetchOpenAICompatible(provider: LLMProvider, apiKey: String,
+                                              baseURL: String) async -> [RemoteModel] {
         let modelsURL = modelsEndpoint(from: baseURL)
         guard let url = URL(string: modelsURL) else { return [] }
         var request = URLRequest(url: url)
@@ -257,14 +270,20 @@ enum ModelFetcher {
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let models = json["data"] as? [[String: Any]] else { return [] }
 
-            return models.compactMap { dict -> RemoteModel? in
-                guard let id = dict["id"] as? String else { return nil }
-                return RemoteModel(id: id, name: id)
-            }
-            .sorted { $0.id < $1.id }
+            return openAICompatibleModels(models, provider: provider)
         } catch {
             return []
         }
+    }
+
+    /// The rows of an OpenAI-shaped `data[]` list, each labelled with its kind. Pure.
+    static func openAICompatibleModels(_ rows: [[String: Any]], provider: LLMProvider) -> [RemoteModel] {
+        rows.compactMap { dict -> RemoteModel? in
+            guard let id = dict["id"] as? String else { return nil }
+            return RemoteModel(id: id, name: id, kind: ModelKindClassifier.kind(
+                provider: provider, id: id, metadata: ModelListMetadata(row: dict)))
+        }
+        .sorted { $0.id < $1.id }
     }
 
     // MARK: - Qwen (Coding Plan)
@@ -291,7 +310,7 @@ enum ModelFetcher {
 
     private static func fetchQwen(apiKey: String, baseURL: String) async -> [RemoteModel] {
         // First try the standard OpenAI-compatible /models endpoint
-        let openAIResult = await fetchOpenAICompatible(apiKey: apiKey, baseURL: baseURL)
+        let openAIResult = await fetchOpenAICompatible(provider: .qwen, apiKey: apiKey, baseURL: baseURL)
         if !openAIResult.isEmpty { return openAIResult }
 
         // Coding Plan API doesn't expose /models — validate the key with a
@@ -333,7 +352,7 @@ enum ModelFetcher {
 
     private static func fetchMiniMax(apiKey: String, baseURL: String) async -> [RemoteModel] {
         // First try the standard OpenAI-compatible /models endpoint
-        let openAIResult = await fetchOpenAICompatible(apiKey: apiKey, baseURL: baseURL)
+        let openAIResult = await fetchOpenAICompatible(provider: .minimax, apiKey: apiKey, baseURL: baseURL)
         if !openAIResult.isEmpty { return openAIResult }
 
         // MiniMax Coding Plan may not expose /models — validate the key with a
@@ -373,7 +392,8 @@ enum ModelFetcher {
                 guard let http = response as? HTTPURLResponse else { continue }
 
                 if (200...299).contains(http.statusCode) {
-                    available.append(RemoteModel(id: modelId, name: displayName))
+                    available.append(RemoteModel(id: modelId, name: displayName,
+                                                 kind: ModelKindClassifier.kind(provider: .minimax, id: modelId)))
                 } else if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let error = json["error"] as? [String: Any],
                           let msg = error["message"] as? String,
@@ -431,31 +451,30 @@ enum ModelFetcher {
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let models = json["models"] as? [[String: Any]] else { return [] }
 
-            return models.compactMap { dict -> RemoteModel? in
-                // Gemini returns "models/gemini-2.0-flash" — strip prefix for the model ID
-                guard let fullName = dict["name"] as? String else { return nil }
-                let id = fullName.replacingOccurrences(of: "models/", with: "")
-                let displayName = (dict["displayName"] as? String) ?? id
-                // Filter to generateContent-capable models only
-                let methods = dict["supportedGenerationMethods"] as? [String] ?? []
-                guard methods.contains("generateContent"), isGeminiChatModel(id) else { return nil }
-                return RemoteModel(id: id, name: displayName)
-            }
-            .sorted { $0.id < $1.id }
+            return geminiModels(models)
         } catch {
             return []
         }
     }
 
-    /// Whether a Gemini id that answers `generateContent` is a model a conversation can use.
-    /// The method alone is not enough: speech, image and embedding models list it too, and a
-    /// wearer who picked `gemini-3.8-flash-tts` as their assistant had every turn refused
-    /// (support report, 2026-10-29). Those families are named by their ids, so they are left out
-    /// of the picker by name.
+    /// The rows of Gemini's `models` list, each labelled with its kind. Speech, live-audio,
+    /// embedding, image and video models are kept and labelled (`ModelKindClassifier`); the
+    /// pickers show them where they can't be chosen as the assistant. Pure.
+    static func geminiModels(_ rows: [[String: Any]]) -> [RemoteModel] {
+        rows.compactMap { dict -> RemoteModel? in
+            // Gemini returns "models/gemini-2.0-flash" — strip prefix for the model ID
+            guard let fullName = dict["name"] as? String else { return nil }
+            let id = fullName.replacingOccurrences(of: "models/", with: "")
+            let displayName = (dict["displayName"] as? String) ?? id
+            return RemoteModel(id: id, name: displayName, kind: ModelKindClassifier.kind(
+                provider: .gemini, id: id, metadata: ModelListMetadata(row: dict)))
+        }
+        .sorted { $0.id < $1.id }
+    }
+
+    /// Whether a Gemini id is a model a conversation can use. Kept for its callers and tests;
+    /// the rule is `ModelKindClassifier`'s.
     static func isGeminiChatModel(_ id: String) -> Bool {
-        let lowered = id.lowercased()
-        let excluded = ["tts", "image", "imagen", "embedding", "native-audio", "aqa", "veo",
-                        "computer-use", "robotics"]
-        return !excluded.contains { lowered.contains($0) }
+        ModelKindClassifier.kind(provider: .gemini, id: id).isChat
     }
 }

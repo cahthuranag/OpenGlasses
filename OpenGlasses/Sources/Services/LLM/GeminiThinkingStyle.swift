@@ -37,7 +37,7 @@ import Foundation
 /// `generateContent` (or sit in the same list) but take no `thinkingConfig` at all, and a prefix
 /// match would send one: `gemini-3.8-flash-tts` reads as `gemini-3.8-flash` and was sent a level,
 /// which it refused with a 400, "Thinking level is not supported for this model" (support
-/// report, 2026-10-29). Those are named by their ids and sent nothing.
+/// report, 2026-10-29). `ModelKindClassifier` says what each id is for, and those are sent nothing.
 ///
 /// Pure and table-tested.
 enum GeminiThinkingStyle: Equatable {
@@ -51,9 +51,23 @@ enum GeminiThinkingStyle: Equatable {
     /// No thinking control at all: speech, live-audio, embedding and generation-only ids.
     case none
 
-    /// Id fragments of the families that take no thinking control. `-image` is not one: Gemini 3
-    /// image models take a level (3.1 Flash-Lite Image, above).
-    static let noThinkingMarkers = ["tts", "native-audio", "embedding", "imagen", "veo", "aqa"]
+    /// Whether a Gemini id takes no thinking control, read from what the model is for
+    /// (`ModelKindClassifier`) rather than a second list of names. Image is not such a kind:
+    /// Gemini 3 image models take a level (3.1 Flash-Lite Image, above); Imagen does not, and
+    /// neither does `aqa`, so those two are read by id.
+    static func takesNoThinking(_ id: String) -> Bool {
+        let words = ModelKindClassifier.words(in: id)
+        switch ModelKindClassifier.kind(provider: .gemini, id: id) {
+        case .speech, .transcription, .realtime, .embedding, .video, .music, .rerank, .moderation, .ocr:
+            return true
+        case .image:
+            return words.contains("imagen")
+        case .other:
+            return words.contains("aqa")
+        case .chat:
+            return false
+        }
+    }
 
     /// The levels every listed Gemini 3 chat model takes.
     static let commonLevels: [ReasoningEffort] = [.low, .high]
@@ -78,7 +92,7 @@ enum GeminiThinkingStyle: Equatable {
         var id = model.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         // The models list returns ids as `models/<id>`.
         if id.hasPrefix("models/") { id.removeFirst("models/".count) }
-        if noThinkingMarkers.contains(where: { id.contains($0) }) { return .none }
+        if takesNoThinking(id) { return .none }
 
         guard let major = majorVersion(of: id) else {
             if id.hasPrefix("gemini-"), id.hasSuffix("-latest") {

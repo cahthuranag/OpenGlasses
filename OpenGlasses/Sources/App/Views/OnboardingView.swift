@@ -799,9 +799,10 @@ struct OnboardingView: View {
 
     /// The model list a validated credential unlocks — a native grouped
     /// selection list, the same shape the Settings model editor offers.
+    @ViewBuilder
     private var modelSection: some View {
         Section {
-            ForEach(availableModels) { model in
+            ForEach(availableModels.filter(\.kind.isChat)) { model in
                 Button {
                     selectedModelId = model.id
                 } label: {
@@ -825,6 +826,7 @@ struct OnboardingView: View {
         } header: {
             Text("Select Model")
         }
+        NotAnAssistantModelsSection(models: availableModels.filter { !$0.kind.isChat })
     }
 
     // MARK: - Account sign-in sections (shared OnboardingAccountSignInSection, BW P4)
@@ -1902,12 +1904,9 @@ struct OnboardingView: View {
                 } else {
                     keyValid = true
                     availableModels = models
-                    // Pre-select the provider's default model if it's in the list
-                    if models.contains(where: { $0.id == defaultModel }) {
-                        selectedModelId = defaultModel
-                    } else {
-                        selectedModelId = models.first?.id
-                    }
+                    // Pre-select the provider's default model if it's in the list, else its first
+                    // chat model: a list can lead with a speech or embedding model.
+                    selectedModelId = ModelFetcher.initialChoice(in: models, preferring: [defaultModel])
                 }
                 // The button goes back from "Validating…" to "Continue" and a model list appears
                 // further down the page — neither of which reaches a user whose focus is still on
@@ -1938,9 +1937,7 @@ struct OnboardingView: View {
                 isValidating = false
                 keyValid = true
                 availableModels = models
-                selectedModelId = models.first(where: \.isDefault)?.id
-                    ?? models.first(where: { $0.id == ChatGPTOAuth.defaultModel })?.id
-                    ?? models.first?.id
+                selectedModelId = ModelFetcher.initialChoice(in: models, preferring: [ChatGPTOAuth.defaultModel])
                     ?? ChatGPTOAuth.defaultModel
                 if models.isEmpty {
                     validationError = String(localized: "ChatGPT is connected, but its model list couldn't be loaded. You can continue with the current default and refresh models later in Settings.")

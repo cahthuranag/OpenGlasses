@@ -192,12 +192,10 @@ enum XAIOAuth {
 
     /// Whether a `GET /v1/models` id is a chat model this app can talk to. xAI's list also carries
     /// image and video generators, voice models and build models, none of which answer Chat
-    /// Completions; those are left out of the picker.
+    /// Completions. The rule is `ModelKindClassifier`'s; the pickers label those models rather than
+    /// offer them as the assistant.
     static func isChatModel(_ id: String) -> Bool {
-        let lowered = id.lowercased()
-        let excluded = ["image", "imagine", "video", "voice", "audio", "tts", "realtime",
-                        "embed", "build"]
-        return !excluded.contains { lowered.contains($0) }
+        ModelKindClassifier.kind(provider: .xai, id: id).isChat
     }
 
     // MARK: - Internals

@@ -365,7 +365,9 @@ struct AIPersonalitySettingsScreen: View {
                             chatgptConnected: ChatGPTOAuthService.shared.isConnected,
                             googleConnected: GoogleOAuthService.shared.isConnected,
                             xaiConnected: XAIOAuthService.shared.isConnected),
-                        vision: model.visionEnabled
+                        vision: model.visionEnabled,
+                        kindWarning: ModelKindClassifier.kind(provider: model.llmProvider,
+                                                              typedID: model.model)?.savedModelWarning
                     ))
                     .accessibilityAddTraits(.isButton)
                     .accessibilityHint("Double-tap to edit")
@@ -607,6 +609,12 @@ struct AIPersonalitySettingsScreen: View {
                     googleConnected: GoogleOAuthService.shared.isConnected,
                     xaiConnected: XAIOAuthService.shared.isConnected)
                 OGStatusLabel(badge.label, kind: badge.isReady ? .ok : .warn)
+                // A model saved before the pickers labelled non-chat models — a speech model,
+                // say — fails every turn; say so where the wearer looks for it.
+                if let warning = ModelKindClassifier.kind(provider: model.llmProvider,
+                                                          typedID: model.model)?.savedModelWarning {
+                    OGStatusLabel(warning, kind: .warn)
+                }
             }
             Spacer(minLength: 8)
             Image(systemName: "chevron.forward")
@@ -665,11 +673,12 @@ struct AIPersonalitySettingsScreen: View {
 
     /// Pure, so the spoken wording is covered headlessly.
     static func spokenModelRow(name: String, provider: String, badge: ModelAuthBadge,
-                               vision: Bool) -> String {
+                               vision: Bool, kindWarning: String? = nil) -> String {
         var parts = [name, provider]
         if vision { parts.append(String(localized: "vision enabled")) }
         let badgeLabel = badge.label
         parts.append(badge.isReady ? badgeLabel : String(localized: "needs setup: \(badgeLabel)"))
+        if let kindWarning { parts.append(kindWarning) }
         return parts.joined(separator: ", ")
     }
 

@@ -215,6 +215,19 @@ final class CameraServiceCoordinatorTests: XCTestCase {
         XCTAssertNotNil(service.activeCapabilities)
     }
 
+    func testTheConnectedDeviceReaderReachesTheBackendLive() {
+        let backend = MockCameraBackend(isReady: true)
+        let service = CameraService(backend: backend, phoneCamera: MockPhoneCamera())
+        XCTAssertNil(backend.connectedDeviceReader, "no owner wired, no reader handed over")
+
+        var connected: String? = "worn"
+        service.connectedGlassesDeviceId = { connected }
+
+        XCTAssertEqual(backend.connectedDeviceReader?(), "worn")
+        connected = nil
+        XCTAssertNil(backend.connectedDeviceReader?(), "read at bind time, not copied once")
+    }
+
     // MARK: - Streaming gate
 
     func testStreamingIsRefusedWithAReadableReasonWhenThereIsNoLiveFeed() async {

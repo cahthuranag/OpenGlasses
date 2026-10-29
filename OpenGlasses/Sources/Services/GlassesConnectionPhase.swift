@@ -102,8 +102,9 @@ enum GlassesConnectionPhase: Equatable, Sendable {
 /// **Multi-device rule.** Connected when *any* listed device's link is connected; connecting when
 /// none is connected and any is connecting. The device the app describes (name, battery) is the
 /// first connected device in the SDK's list order, else the first connecting one, else the first
-/// listed. The camera session picks its device with `AutoDeviceSelector`, which also chooses among
-/// the SDK's devices, so "connected" here does not name a pair the camera could not reach.
+/// listed. The camera session binds to `connectedDeviceId` — the same connected pair — so
+/// "connected" here does not name a pair the camera then fails to reach. (It used to bind to the
+/// first listed device: with two pairs listed and the second one worn, every start failed.)
 ///
 /// **Registration.** Registration (or a listed device) makes glasses *added*; it never makes them
 /// connected. With devices listed, the phase follows their links even if the registration flag
@@ -178,6 +179,13 @@ struct GlassesConnectionSnapshot: Equatable, Sendable {
         deviceIds.first { state(of: $0).link == .connected }
             ?? deviceIds.first { state(of: $0).link == .connecting }
             ?? deviceIds.first
+    }
+
+    /// The first listed device whose link is connected, else nil — never a pair that is away.
+    /// The camera binds its session to this one (`CameraDeviceBinding`): the SDK's list order
+    /// says nothing about which pair is on the wearer's face.
+    var connectedDeviceId: String? {
+        deviceIds.first { state(of: $0).link == .connected }
     }
 
     var activeDeviceName: String? {

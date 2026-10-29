@@ -240,6 +240,13 @@ class CameraService: ObservableObject, FilteredStillProviding {
     /// backend alone.
     var isGlassesLinkUp: () -> Bool = { true }
 
+    /// The listed device whose link is connected, from the same owner (wired by `AppState`), handed
+    /// to the backend so its session binds to the pair being worn rather than the first listed.
+    /// Defaults to "none", which leaves the backend's own choice — tests, previews.
+    var connectedGlassesDeviceId: () -> String? = { nil } {
+        didSet { backend.readConnectedDevice(from: connectedGlassesDeviceId) }
+    }
+
     /// The glasses camera can serve this request: the link is up and the backend is ready.
     /// The link is asked first, so a pair that is away never configures the SDK to find out.
     private func glassesCameraReachable(configuringIfNeeded: Bool) -> Bool {

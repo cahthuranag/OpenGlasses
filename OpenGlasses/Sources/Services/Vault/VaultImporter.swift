@@ -430,7 +430,10 @@ enum VaultImporter {
                 try? ledger.save(to: ledgerDir)
                 throw ImportError.documentFailed("\(want.file) produced no chunks")
             }
-            OCRCheckpoint.remove(from: ledgerDir, contentHash: want.contentHash)
+            // The recognised pages are kept (Plan JY P5a): they are the only copy of those pages'
+            // text, and a later re-read of the manual's structure takes them from here rather than
+            // recognising the scan again. Removed with the manual (`VaultManualRemoval`).
+            if !extracted.usedRecognition { OCRCheckpoint.remove(from: ledgerDir, contentHash: want.contentHash) }
             PictureTableCheckpoint.remove(from: ledgerDir, contentHash: tablesHash)
             entries.append(.init(file: want.file, title: want.title, documentId: ref.id,
                                  contentHash: want.contentHash, chunkCount: ref.chunkCount,

@@ -46,8 +46,25 @@ struct RetrievalEvalMain {
         case "words": pictures = .init(reader: VisionTableReader(), reading: .words)
         default: fail("RETRIEVAL_EVAL_RECOGNISE is off, grid or words")
         }
+        // Plan JY P5a: RETRIEVAL_EVAL_RELOCATE=1 re-chunks an indexed document's text and, where it
+        // chunks as stored, rewrites only its pages, sections and figures (`writeLocations`, the
+        // app's location migration), so a change that moves only citations is measured on the
+        // same index and vectors. A document whose text no longer chunks the same is reported.
+        let relocate = env["RETRIEVAL_EVAL_RELOCATE"] == "1"
+        var relocated = 0, notRelocated = 0
         for document in manifestDocuments(in: vault) {
-            if store.document(named: document.title) != nil { continue }
+            if let existing = store.document(named: document.title) {
+                if relocate {
+                    let isPDF = document.url.pathExtension.lowercased() == "pdf"
+                    let file = isPDF ? extractedText(of: document.url, into: work) : document.url
+                    let raw = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+                    let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let chunks = RetrievalEval.chunker(named: env["RETRIEVAL_EVAL_CHUNKER"])
+                        .sized(for: DocumentLanguageProfile.detect(text), text: text).chunk(text)
+                    if store.writeLocations(documentId: existing.id, chunks: chunks) { relocated += 1 } else { notRelocated += 1 }
+                }
+                continue
+            }
             let file = document.url
             // A PDF is indexed as the phone indexes it: its text, here as the Mac extractor writes
             // it (into the work folder, once), and its tables, read by the app's own table reader
@@ -139,6 +156,7 @@ struct RetrievalEvalMain {
                       + (outcome.isSufficient ? "answered" : "refused") + (hit ? " hit" : ""))
             }
         }
+        if relocate { print("[EVAL]   relocated \(relocated), not relocated (text changed) \(notRelocated)") }
         print("[EVAL]   documents: " + profiles.sorted { $0.key < $1.key }.map { "\($0.key) ×\($0.value)" }.joined(separator: ", "))
     }
 

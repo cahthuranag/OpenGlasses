@@ -12,9 +12,10 @@ import PDFKit
 /// page-evidence label that names them still does. When the text no longer chunks the same way
 /// (an extractor change since import), the document is re-chunked under the same id.
 ///
-/// A manual any page of which was read by recognition is left as it is: reading it again would
-/// mean recognising every scanned page a second time, and a recognised page has no text layer to
-/// mark anyway. Its rows keep working; the locator splits their sentences itself.
+/// A manual any page of which was read by recognition is read again from the pages its import
+/// recognised, which the vault keeps beside its ledger (Plan JY P5a): never by recognising them a
+/// second time. One imported before those pages were kept is left as it is; its rows keep working,
+/// and the locator splits their sentences itself.
 ///
 /// **Tables (Plan JJ P0, location version 3; pictures, Plan JN P1, version 6; marked captions and
 /// in-step folios, Plan JW P0, version 7).** The same pass reads each document's tables from
@@ -29,6 +30,12 @@ import PDFKit
 /// chunk size. Where the text chunks as stored — every English document, whose rules did not
 /// change — the rows keep their ids, text and vectors and only their page, section and figure are
 /// rewritten; a document whose text changed is re-chunked, and re-embedded, under its own id.
+///
+/// **Remaining defects (Plan JY P5a, location version 9).** Read again once more: a chunk is cited
+/// at the page that holds most of it in the languages measured to gain, and a caption's dotted
+/// label is whole. A manual read by recognition is read from the pages its import kept, and the
+/// Documents library outside vaults gets the version-8 re-read from its own chunks
+/// (`migrateLibrary`).
 @MainActor
 enum PassageLocationMigration {
 
@@ -70,11 +77,48 @@ enum PassageLocationMigration {
                 }
             }
         }
+        let library = await migrateLibrary(store: store)
+        report.located += library.located
+        report.rechunked += library.rechunked
         if report.located + report.rechunked > 0 {
             PrivacyLog.store(.ragDocuments, .migrated, count: report.located,
                              total: report.located + report.rechunked)
         }
         return report
+    }
+
+    /// The Documents library outside vaults (Plan JY P5a), which the vault pass never sees. Its
+    /// documents are text with no file kept, so a document's text is rebuilt from its own chunks
+    /// (`DocumentStore.reconstructedText`) and chunked again under its own id — only for a
+    /// document in a script whose rules location version 8 changed (CJK: chunk size, splitting and
+    /// clause numbers without case; Arabic script: clause numbers without case). Every other
+    /// document — Latin and Cyrillic text, whose chunking did not change — keeps its rows, ids and
+    /// vectors and is only stamped located, so it is not looked at again.
+    static func migrateLibrary(store: DocumentStore) async -> Report {
+        var report = Report()
+        for document in store.libraryDocumentsNeedingLocation() {
+            guard rulesChanged(for: document.profile.script),
+                  let text = store.reconstructedText(documentId: document.id)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else {
+                store.markLocated(documentId: document.id)
+                continue
+            }
+            let chunks = DocumentChunker().sized(for: document.profile, text: text).chunk(text)
+            guard !chunks.isEmpty else { report.skipped += 1; continue }
+            if store.writeLocations(documentId: document.id, chunks: chunks) {
+                report.located += 1
+            } else if await store.rechunk(documentId: document.id, chunks: chunks) {
+                report.rechunked += 1
+            } else {
+                report.skipped += 1
+            }
+        }
+        return report
+    }
+
+    /// Whether location version 8's text rules differ for a library document in `script`.
+    static func rulesChanged(for script: TextScript) -> Bool {
+        script.isCJK || script == .arabic
     }
 
     /// One document. Extraction and chunking run off the main actor; the store is written on it.
@@ -86,7 +130,19 @@ enum PassageLocationMigration {
                         pictureReader: PictureTableReader? = VaultImporter.defaultPictureReader,
                         checkpointDirectory: URL? = nil) async -> Outcome {
         guard store.needsLocation(documentId: entry.documentId) else { return .current }
-        guard !entry.usedRecognition else { return .recognisedSkipped }
+        // A recognised manual is read again from the pages its import recognised, kept with the
+        // vault (Plan JY P5a), never by recognising them a second time. One imported before they
+        // were kept, a photographed manual's review, or one whose pages the record no longer
+        // covers is left as it is.
+        var recognised: OCRCheckpoint?
+        if entry.usedRecognition {
+            guard entry.capturedManual == nil, let checkpointDirectory, fileURL.pathExtension.lowercased() == "pdf" else {
+                return .recognisedSkipped
+            }
+            let kept = OCRCheckpoint.load(from: checkpointDirectory, contentHash: entry.contentHash)
+            guard !kept.pages.isEmpty else { return .recognisedSkipped }
+            recognised = kept
+        }
         let tablesPDF = VaultDocumentExtractor.tablesSource(document: fileURL, original: originalURL)
         let tablesHash = tablesPDF == fileURL ? entry.contentHash : (entry.sourceContentHash ?? entry.contentHash)
         let pictures = pictureReader.map { reader in
@@ -111,7 +167,8 @@ enum PassageLocationMigration {
         // the same labels, and `manual_figure`'s printed page and `show_source` read them back.
         // Version 8 (Plan JY P4) reads the text again, so a document below it takes the full
         // path below; the tables-only path is for a later bump that changes the tables alone.
-        if let floor = store.textLocationVersion(documentId: entry.documentId), floor >= DocumentStore.textReadVersion {
+        if recognised == nil, let floor = store.textLocationVersion(documentId: entry.documentId),
+           floor >= DocumentStore.textReadVersion {
             if fileURL.pathExtension.lowercased() == "pdf" {
                 let labels = await Task.detached(priority: .utility) {
                     PDFDocument(url: fileURL).map(VaultDocumentExtractor.pageLabels(of:))
@@ -127,11 +184,26 @@ enum PassageLocationMigration {
             VaultDocumentExtractor.logTables(tables, rowsDropped: dropped)
             return .located
         }
+        let record = recognised
         let text: (chunks: [DocumentChunker.Chunk], labels: [PageLabel])? = await Task.detached(priority: .utility) {
-            guard let extracted = try? VaultDocumentExtractor.extract(from: fileURL) else { return nil }
-            let text = extracted.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let extracted: VaultDocumentExtractor.Extracted?
+            if let record {
+                // Every page the import recognised comes from the record; a page it never saw is
+                // a page this read would have to recognise, so the read is abandoned instead.
+                let reader = RecordedPagesOnlyReader()
+                extracted = try? await VaultDocumentExtractor.extract(
+                    from: fileURL, reader: reader, checkpoint: (load: { record }, save: { _ in }))
+                guard !reader.wasAsked else { return nil }
+            } else {
+                extracted = try? VaultDocumentExtractor.extract(from: fileURL)
+            }
+            guard let extracted else { return nil }
+            // As the import indexed it: a one-page PDF opens with its page marker.
+            let joined = extracted.pageCount == 1 && record != nil ? "Page 1\n" + extracted.text : extracted.text
+            let text = joined.trimmingCharacters(in: .whitespacesAndNewlines)
             return (DocumentChunker().sized(for: DocumentLanguageProfile.detect(text), text: text).chunk(text), extracted.pageLabels)
         }.value
+        if recognised != nil, text == nil { return .recognisedSkipped }
         guard let text, !text.chunks.isEmpty else { return .unreadable }
         let read = (chunks: text.chunks, labels: text.labels, tables: await readTables())
         store.setPageLabels(read.labels, documentId: entry.documentId)
@@ -149,5 +221,17 @@ enum PassageLocationMigration {
         }
         VaultDocumentExtractor.logTables(read.tables, rowsDropped: dropped)
         return outcome
+    }
+}
+
+/// The reader a recognised manual is read again with (Plan JY P5a): every page it is asked for was
+/// not in the record of what the import recognised, so it recognises nothing and says it was asked.
+final class RecordedPagesOnlyReader: ScannedPageReader, @unchecked Sendable {
+    private let lock = NSLock()
+    private var asked = false
+    var wasAsked: Bool { lock.withLock { asked } }
+    func recognise(_ image: CGImage) async -> ScannedPageText {
+        lock.withLock { asked = true }
+        return .empty
     }
 }

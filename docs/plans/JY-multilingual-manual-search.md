@@ -33,7 +33,7 @@ Latin, 6 heavy Latin, 4 Arabic script); heavy Latin's gate asks 0.75 of the ques
 0.5; question words added for eight languages. hit@4 holds for CJK (230 of 322, out-of-scope refusals
 52 → 64 of 135) and rises in every other group (Arabic 7 → 21 of 38, Cyrillic 79 → 92 of 163), with
 out-of-scope refusals held or raised except Arabic and Urdu (−2, −1 of 15). Arabic and Urdu stay "less tested". The pending-vector increase stays 0.15 by decision 6, though
-measured it only costs (decision owed). **P4 built 2026-10-29 (PR pending):** a folio printed alone
+measured it only costs (decision owed). **P4 merged 2026-10-29 (PR 881):** a folio printed alone
 on a line no longer renumbers an extracted page (the transport regulation's ru and zh-Hans answer
 keys are back on the PDF's own pages); fake-bold doubled CJK characters are collapsed at extraction
 and the line read as bold; caption and carrying-on words for every interface language; a heading
@@ -43,7 +43,18 @@ characters) except in a clause-numbered document; an oversized CJK sentence brea
 punctuation; a CJK or Arabic-script manual takes the six-passage budget. CJK S 333 → 376
 (transport regulation zh-Hans hit@4 8 → 27 of 34 on true pages, en 24), Cyrillic 145 → 168, every
 other group and all four English sets identical. Stored documents heal at location version 8.
-P5a (every remaining defect, headless) and P5b (device and tester pass) not started.
+**P5a merged 2026-10-29 (PR 883):** every remaining defect fixed or measured (results below):
+a page whose text layer is only its furniture while its body is drawn goes to recognition (the
+Arabic transport edition's 223 such pages; no page of any other set); a profile counts a
+navigation-like line's letters at a quarter; `equipment_lookup`'s fall-through and the nearest
+headings search by language group; a merge across languages keeps a six-passage best; dotted
+caption labels are whole; full-width forms and Arabic-Indic digits fold to ASCII on both sides; a
+two-pair fake bold is read off the glyphs; a recognised manual is re-read from the pages its import
+kept and the Documents library gets the re-read from its own chunks; a chunk cites the page holding
+most of it in every group but Cyrillic and heavy Latin; a bold/regular tie no longer makes extraction
+differ from run to run. CJK S 376 → 386, light Latin 472 → 479, English 155 → 157, Cyrillic and heavy
+Latin identical; Urdu clears "less tested" on a government technical document, Arabic stays marked.
+Stored documents heal at location version 9. P5b (device and tester pass) owed.
 **Drafted:** 2026-10-28. A tester in China asked about using My Manuals
 with research papers. A check of build 581 found that a Chinese PDF indexes but can't be searched,
 and a check of the other interface languages found the same problem in different strengths. The
@@ -726,6 +737,193 @@ Each item: evidence (counts only), and the test that proves the fix.
     page's 第3章 line sets the section, once a variant measures above a tie.
 11. **No Arabic or Urdu technical document with a text layer**, so their clause rule, captions and
     budget are measured on the literary baseline only; both stay "less tested".
+
+**Built (2026-10-29).** Measured on the P3 and P4 sets with the P3 rule (S = hit@4 + 2 ×
+out-of-scope refused − in-scope refused, one change at a time) on the Mac runner with every
+language's contextual model, plus two new technical sets (below). Before is P4 as merged. Counts
+only.
+
+1. **Furniture-only pages go to recognition — fixed.** A page is sent to the reader when its text
+   layer is empty, as before, or when it is only its furniture — under 20 non-space characters once
+   lines with no letters (a folio) and lines repeated on three or more pages (a running header or
+   copyright line) are set aside — **and** its body band is inked: at least 2% of the band between
+   the header and footer bands darker than 200 of 255 at 36 dpi
+   (`VaultDocumentExtractor.pagesNeedingRecognition`, the Mac extractor alike). The Arabic transport
+   edition's 247 furniture-only pages ink 2–16% on 223 (outlined glyphs) and under 0.2% on the rest
+   (blank); every furniture-only page of the English, Russian and Chinese editions (18, 21, 26: blank
+   pages with the copyright line) inks under 2%, and the machinery and Ukrainian regulations have
+   none, so **no page of any other set is recognised** and their extractions are byte-identical.
+   The Arabic edition, re-extracted on the Mac with Vision's Arabic recogniser (223 pages, mean
+   confidence 0.89 on a checked page), got a machine-written answer key built as P3's were (31 of
+   the 34 in-scope items resolved by clause number, 15 out of scope; native check owed): hit@4 7 → 6
+   of 31, in-scope refused 9 → 2, out-of-scope refused 14 → 7 of 15 (S 26 → 18). The other 241 pages
+   carry a text layer whose letters are mis-mapped (a broken font encoding: the words do not read
+   as Arabic), which no page rule can see, so the edition is half readable either way and Arabic
+   stays "less tested"; a check of a text layer against recognition is new work for P5b or later.
+   The fall in S is fewer refusals of out-of-scope questions once half the book is readable; the
+   fix is kept because the pages it reads were missing from the index. On the way, the Mac
+   extractor's recognition stopped answering after a few hundred pages (175 of 223 pages empty in
+   one run): its renders and Vision requests now drain page by page, and a request that cannot start
+   is tried twice more.
+2. **Navigation outweighs the body — fixed.** `DocumentLanguageProfile.letterCounts` counts a line
+   with under 24 weighted letters (a menu entry, a breadcrumb, a contents line) at a quarter. No
+   document in any set changes script or language (every share holds or rises: the HTML-derived
+   Ukrainian tutorial 0.52 → 0.55); an invented page of three quarters Latin navigation and a
+   quarter Cyrillic body is now Cyrillic. Profiles are recomputed (`currentVersion` 3).
+3. **Ungrouped searches — fixed.** `equipment_lookup`'s manual fall-through goes through
+   `retrieveByLanguage` with its own three passages (`fixedLimit`), and the nearest-headings search
+   takes each group's headings for its own question (its rewrite, else the question), first of each
+   before the second of any. One language: as before.
+4. **A merged result cut to four — fixed.** The groups merge at the larger budget and the merge is
+   shaped by its best passage (`ManualPassageLimit.shaped`), so a Chinese manual's first passage
+   keeps six beside an English manual. Every set is one language, so no number moves.
+5. **Dotted caption labels — fixed.** `TableExtractor.labelPattern` keeps up to six dotted parts
+   ("Table 2.7.2.2.1"); a full stop before a title is not one. Distinct table labels in the transport
+   regulation's English edition 2 → 12 of 12 captions, Russian 2 → 7 of 7; figure labels 3 → 13,
+   3 → 8, Chinese 2 → 4. `TableReference` reads the dotted number in a question. A code book's
+   labels ("Table 2", "Table 4B", "Table 12." before a title) do not move (tested on invented
+   captions shaped like them). English results identical: a verified correction (the PDF prints the
+   dotted numbers) at no cost.
+6. **Full-width forms — fixed.** `CodeTokenizer.foldedForms` reads ＡＢＣ１２３, the ideographic space
+   and Arabic-Indic digits as ASCII in code tokens, token containment and the English term rule (the
+   other rules fold by NFKC already), on both sides. No set's numbers move.
+7. **Two-pair fake bold — fixed, by the glyphs.** PDFKit's selection bounds give each character's
+   box: an overprinted pair's copies start 0.4–0.6 em apart, a CJK character's advance to the next
+   is 0.9–1.1 em (0.6% outside), so a doubled CJK pair under 0.7 em is one glyph printed twice
+   (`OverprintedText.collapsed(_:advance:)`, fed by `ManualStructure.typedPage`). In the zh-Hans
+   regulation the two-pair runs left 18 → 1 and lone doubled pairs 190 → 62 (the rest drawn a full
+   glyph apart); headings 196 → 203; results identical. **Found on the way:** a line whose bold and
+   regular runs tie (a bold clause number beside a title in a substituted regular font) took the
+   dictionary's order, which changes per process, so P4's extraction of one PDF differed from run
+   to run (three extractions of the zh regulation, three texts; English one line). A tie now reads
+   bold every time (bold and regular measured alike: every set identical).
+8. **Recognised and library documents — fixed.** The import keeps a recognised manual's pages
+   (the OCR record it already wrote, now removed only with the manual), and location version 9
+   reads such a manual again from them, never recognising it twice; one imported before they were
+   kept is still left as it is, and needs a re-import for P4's pages. The Documents library outside
+   vaults is read again from its own chunks (`DocumentStore.reconstructedText`: each chunk's
+   recorded sentences, the overlap dropped, a page break where a chunk's page moves on) for CJK and
+   Arabic-script documents, whose chunking P4 changed; every other library document is only
+   stamped, its rows untouched. Text that chunks as stored keeps its rows and vectors.
+9. **Page credit — majority, by group.** Measured on one index, only the pages rewritten
+   (`RETRIEVAL_EVAL_RELOCATE`): crediting a chunk to the page holding most of its characters gave
+   CJK 376 → 386, light Latin 472 → 479, English 155 → 157, Urdu up, Arabic tied, but Cyrillic
+   168 → 167 and heavy Latin 219 → 218. It ships for every group but those two
+   (`DocumentChunker.creditsMajorityPage`). English is a verified correction: of 40 re-credited
+   chunks of the English transport regulation sampled against the PDF, more of the chunk's text is
+   on the new page for 27, on the old for 4, equal for 9; its PDF sets' numbers do not move, and
+   the tutorial's rise (24 → 27) outweighs the baseline's 25 → 24. **Lost:** a share threshold
+   (two thirds: Cyrillic 166, heavy 217; four fifths: 166, 218) and splitting at every page break
+   (re-indexed: Cyrillic 168 → 158, light 472 → 469, heavy 219 → 205, Arabic down; CJK +1, Urdu up).
+   **Within one section only** (found by CI, `ShowSourceTests`): a chunk running from one section's
+   tail into the next section on the next page was cited at the next page under the first section,
+   so "show me clause 3.9.4" opened two pages. The page now moves only when the majority page's
+   first sentence is in the chunk's own section; re-measured, every set in every group with the
+   credit is identical. Test: `testAChunkRunningIntoTheNextSectionOnTheNextPageKeepsItsFirstPage`.
+10. **Caseless headings from their shape — not kept.** Chapter and section words with numbers
+    (第3章, 第二节, 제3장, الفصل), counted items (一、, （二）) and a clause number run into a caseless
+    letter, as sections in a document without type: every group's S tied (no set moved), so the
+    patterns are not in the app.
+11. **Less tested — Urdu cleared, Arabic not.** No Urdu law P3 found has a usable text layer; a
+    government ministry's published Urdu report does (an environmental and social impact
+    assessment for a hospital, 102 pages; a machine translation with some digits mis-encoded;
+    source and provenance off-repo). A machine-written key of 29 in-scope and 15 out-of-scope questions
+    (native check owed) answers hit@4 24 of 29 (25 with the majority credit), so Urdu has a
+    baseline and a technical document and its "less tested" mark goes. Arabic's technical document
+    is half readable (item 1), so Arabic keeps it.
+
+**Before → after, per group** (before: P4 as merged; after: P5a as built, every change in; the
+Arabic transport regulation's before is the same edition read from its text layer alone; the Urdu
+ESIA has no before). Every set but those two is identical with P5a's changes and the P4 page credit
+(the extraction, label and fold changes moved no number); the movement is the page credit.
+
+#### CJK
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | zh-Hans | 38 | 24 → 25 | 31 → 33 | 32 → 33 | 4 → 4 | 12 → 12 of 15 |
+| transport reg. | zh-Hans | 34 | 15 → 14 | 27 → 26 | 26 → 25 | 1 → 1 | 4 → 4 of 15 |
+| tutorial | zh-Hans | 34 | 14 → 20 | 25 → 26 | 25 → 26 | 3 → 3 | 10 → 10 of 15 |
+| baseline | zh-Hant | 38 | 23 → 24 | 30 → 32 | 30 → 32 | 3 → 3 | 12 → 12 of 15 |
+| tutorial | zh-Hant | 34 | 14 → 18 | 27 → 28 | 29 → 30 | 3 → 3 | 11 → 11 of 15 |
+| baseline | ja | 38 | 21 → 21 | 30 → 31 | 31 → 31 | 1 → 1 | 6 → 6 of 15 |
+| tutorial | ja | 34 | 15 → 25 | 28 → 32 | 28 → 32 | 0 → 0 | 2 → 2 of 15 |
+| baseline | ko | 38 | 24 → 24 | 32 → 31 | 33 → 32 | 3 → 3 | 8 → 8 of 15 |
+| tutorial | ko | 34 | 17 → 17 | 26 → 27 | 26 → 28 | 2 → 2 | 5 → 5 of 15 |
+
+**S** 376 → 386
+
+#### Cyrillic
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | ru | 38 | 23 → 23 | 27 → 27 | 27 → 27 | 8 → 8 | 13 → 13 of 15 |
+| transport reg. | ru | 34 | 17 → 17 | 27 → 27 | 29 → 29 | 1 → 1 | 6 → 6 of 15 |
+| baseline | uk | 38 | 9 → 9 | 11 → 11 | 11 → 11 | 24 → 24 | 13 → 13 of 15 |
+| tutorial | uk | 34 | 14 → 14 | 17 → 17 | 17 → 17 | 7 → 7 | 15 → 15 of 15 |
+| national reg. | uk | 19 | 8 → 8 | 11 → 11 | 11 → 11 | 3 → 3 | 12 → 12 of 15 |
+
+**S** 168 → 168
+
+#### Latin light
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | es | 38 | 17 → 18 | 22 → 21 | 22 → 21 | 14 → 14 | 13 → 13 of 15 |
+| machinery reg. | es | 33 | 16 → 17 | 23 → 24 | 23 → 24 | 2 → 2 | 12 → 12 of 15 |
+| baseline | fr | 38 | 23 → 23 | 28 → 29 | 28 → 29 | 6 → 6 | 11 → 11 of 15 |
+| machinery reg. | fr | 33 | 17 → 18 | 24 → 23 | 24 → 23 | 2 → 2 | 8 → 8 of 15 |
+| baseline | it | 38 | 22 → 21 | 25 → 26 | 25 → 26 | 10 → 10 | 11 → 11 of 15 |
+| machinery reg. | it | 33 | 20 → 22 | 25 → 26 | 25 → 26 | 0 → 0 | 12 → 12 of 15 |
+| baseline | nl | 38 | 22 → 21 | 25 → 25 | 25 → 25 | 10 → 10 | 11 → 11 of 15 |
+| machinery reg. | nl | 33 | 12 → 12 | 16 → 16 | 16 → 16 | 7 → 7 | 12 → 12 of 15 |
+| baseline | pt-BR | 38 | 26 → 26 | 33 → 33 | 33 → 33 | 2 → 2 | 13 → 13 of 15 |
+| tutorial | pt-BR | 34 | 17 → 26 | 24 → 28 | 24 → 28 | 0 → 0 | 15 → 15 of 15 |
+| machinery reg. | pt | 33 | 17 → 18 | 23 → 24 | 23 → 24 | 1 → 1 | 11 → 11 of 15 |
+
+**S** 472 → 479
+
+#### Latin heavy
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | de | 38 | 17 → 17 | 25 → 25 | 25 → 25 | 12 → 12 | 14 → 14 of 15 |
+| machinery reg. | de | 33 | 15 → 15 | 18 → 18 | 18 → 18 | 7 → 7 | 13 → 13 of 15 |
+| baseline | hu | 18 | 7 → 7 | 8 → 8 | 8 → 8 | 8 → 8 | 15 → 15 of 15 |
+| machinery reg. | hu | 33 | 15 → 15 | 16 → 16 | 16 → 16 | 4 → 4 | 11 → 11 of 15 |
+| baseline | pl | 18 | 10 → 10 | 11 → 11 | 11 → 11 | 4 → 4 | 13 → 13 of 15 |
+| machinery reg. | pl | 33 | 20 → 20 | 26 → 26 | 26 → 26 | 4 → 4 | 11 → 11 of 15 |
+
+**S** 219 → 219
+
+#### Arabic
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | ar | 38 | 17 → 19 | 21 → 21 | 21 → 21 | 12 → 12 | 11 → 11 of 15 |
+| transport reg. | ar | 31 | 3 → 4 | 7 → 6 | 7 → 8 | 9 → 2 | 14 → 7 of 15 |
+
+**S** 57 → 49 (baseline 31 → 31; transport regulation, new in P5a, before = its text layer alone: 26 → 18)
+
+#### Urdu
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | ur | 38 | 18 → 19 | 20 → 22 | 23 → 24 | 9 → 9 | 13 → 13 of 15 |
+| health ESIA | ur | 29 | 18 | 25 | 26 | 1 | 11 of 15 |
+
+**S** 37 → 39 on the baseline; the ESIA, new in P5a, S 46
+
+#### English
+
+| Set | Lang | Q | hit@1 | hit@4 | as sent | in-scope refused | out-of-scope refused |
+|---|---|---|---|---|---|---|---|
+| baseline | en | 38 | 20 → 19 | 25 → 24 | 25 → 24 | 9 → 9 | 11 → 11 of 15 |
+| machinery reg. | en | 33 | 12 → 12 | 18 → 18 | 18 → 18 | 7 → 7 | 12 → 12 of 15 |
+| transport reg. | en | 34 | 20 → 20 | 24 → 24 | 25 → 25 | 1 → 1 | 7 → 7 of 15 |
+| tutorial | en | 34 | 15 → 23 | 24 → 27 | 24 → 27 | 3 → 3 | 12 → 12 of 15 |
+
+**S** 155 → 157
 
 ### P5b — Device and tester pass
 

@@ -29,14 +29,32 @@ extension DocumentChunker {
     /// This chunker with its character targets scaled for a document's language; itself, unchanged,
     /// at a scale of 1. A clause-numbered document keeps today's targets: it is chunked at each
     /// clause already, and scaling it as well cost the CJK transport regulation 27 → 23 hit@4.
+    ///
+    /// Its page credit is the language's too (`creditsMajorityPage(for:)`).
     func sized(for profile: DocumentLanguageProfile, text: String) -> DocumentChunker {
-        if chunksAtClauseHeadings, Self.isClauseNumbered(text) { return self }
+        var chunker = self
+        chunker.creditsMajorityPage = Self.creditsMajorityPage(for: profile)
+        if chunksAtClauseHeadings, Self.isClauseNumbered(text) { return chunker }
         let scale = Self.sizeScale(for: profile)
-        guard scale != 1, scale > 0 else { return self }
+        guard scale != 1, scale > 0 else { return chunker }
         func scaled(_ value: Int) -> Int { max(1, Int((Double(value) * scale).rounded())) }
         let target = scaled(targetChars)
         return DocumentChunker(targetChars: target, maxChars: max(target, scaled(maxChars)),
                                overlapChars: min(scaled(overlapChars), target - 1),
-                               keepsLineBreaks: keepsLineBreaks, chunksAtClauseHeadings: chunksAtClauseHeadings)
+                               keepsLineBreaks: keepsLineBreaks, chunksAtClauseHeadings: chunksAtClauseHeadings,
+                               creditsMajorityPage: chunker.creditsMajorityPage)
+    }
+
+    /// Whether a document's chunks cite the page holding most of them (Plan JY P5a). Measured on
+    /// the P3 and P4 sets with the page credit as the only change (one index, its pages rewritten):
+    /// S (hit@4 + 2 × out-of-scope refused − in-scope refused) CJK 376 → 386, light Latin 472 →
+    /// 479, English 155 → 157, Arabic 49 → 49, Urdu up, but Cyrillic 168 → 167 and heavy Latin
+    /// 219 → 218, so those two keep the first sentence's page. A share threshold (two thirds, four
+    /// fifths) did no better; splitting chunks at every page break lost in four groups.
+    static func creditsMajorityPage(for profile: DocumentLanguageProfile) -> Bool {
+        switch profile.termRule.group {
+        case .english, .latinLight, .cjk, .arabic, .urdu: return true
+        case .cyrillic, .latinHeavy: return false
+        }
     }
 }

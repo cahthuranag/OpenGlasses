@@ -55,7 +55,10 @@ enum LexicalSupport {
     /// The content terms of `text` in reading order, repeats kept, under the English rule — today's
     /// rule, which [[TermRule]] `.english` is.
     static func englishTermSequence(_ text: String) -> [String] {
-        text.lowercased().components(separatedBy: CharacterSet.letters.inverted).compactMap { run in
+        // Full-width letters read as ASCII (Plan JY P5a); a text without them is unchanged, so an
+        // English document's terms are byte for byte what they were. The other rules fold them
+        // already (NFKC).
+        CodeTokenizer.foldedForms(text).lowercased().components(separatedBy: CharacterSet.letters.inverted).compactMap { run in
             guard run.count >= minimumLength, !stopwords.contains(run) else { return nil }
             let stem = trimSuffix(run)
             return stem.count >= minimumLength ? stem : nil

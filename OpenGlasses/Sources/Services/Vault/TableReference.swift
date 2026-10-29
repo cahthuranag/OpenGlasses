@@ -54,7 +54,13 @@ enum TableReference {
 
     /// "Table 95A", "Table Q7": a number with the letters printed before or after it.
     static func label(number: Int, prefix: String, suffix: String) -> String {
-        "Table \(prefix.uppercased())\(number)\(suffix.uppercased())"
+        label(number: number, prefix: prefix, dotted: "", suffix: suffix)
+    }
+
+    /// "Table 2.7.2.2.1": a number with the dotted parts printed after it (Plan JY P5a), as
+    /// `TableExtractor.labelPattern` keeps them.
+    static func label(number: Int, prefix: String, dotted: String, suffix: String) -> String {
+        "Table \(prefix.uppercased())\(number)\(dotted)\(suffix.uppercased())"
     }
 
     // MARK: - By number
@@ -155,10 +161,11 @@ enum TableReference {
     /// What may stand between the keyword and its number: "no.", "number", "#".
     private static let filler = try! NSRegularExpression(
         pattern: #"^\s*(?:(?:no\.?|number|#)\s*)?"#, options: [.caseInsensitive])
-    /// A printed number, whole, with the letters a label may carry against it ("95A", "Q7"): not
-    /// followed by another letter, a digit or a decimal part.
+    /// A printed number, whole, with the letters a label may carry against it ("95A", "Q7") and
+    /// its dotted parts ("2.7.2.2.1", Plan JY P5a): not followed by another letter, a digit or a
+    /// decimal part.
     private static let digits = try! NSRegularExpression(
-        pattern: #"^([A-Za-z]{1,2})?(\d{1,4})([A-Za-z])?(?![\p{L}\p{N}]|[.,]\d)"#)
+        pattern: #"^([A-Za-z]{1,2})?(\d{1,4})((?:\.\d{1,4}){1,6})?([A-Za-z])?(?![\p{L}\p{N}]|[.,]\d)"#)
     /// One letter standing as a word after the number ("95 B", "five A").
     private static let letterAfter = try! NSRegularExpression(pattern: #"^[ \t]+([A-Za-z])(?![\p{L}\p{N}])"#)
     /// One letter standing as a word before the number ("Q seven", "Q 7").
@@ -177,11 +184,13 @@ enum TableReference {
             var number: Int?
             var prefix = ""
             var suffix = ""
+            var dotted = ""
             var end = cursor
             if let printed = digits.firstMatch(in: text, options: [.anchored], range: tail(cursor)) {
                 number = Int(group(printed, 2))
                 prefix = group(printed, 1)
-                suffix = group(printed, 3)
+                dotted = group(printed, 3)
+                suffix = group(printed, 4)
                 end = NSMaxRange(printed.range)
             } else if let spoken = spokenNumber(in: ns, from: cursor) {
                 number = spoken.value
@@ -193,7 +202,8 @@ enum TableReference {
                 if let printed = digits.firstMatch(in: text, options: [.anchored], range: tail(after)),
                    group(printed, 1).isEmpty {
                     number = Int(group(printed, 2))
-                    suffix = group(printed, 3)
+                    dotted = group(printed, 3)
+                    suffix = group(printed, 4)
                     end = NSMaxRange(printed.range)
                 } else if let spoken = spokenNumber(in: ns, from: after) {
                     number = spoken.value
@@ -211,12 +221,12 @@ enum TableReference {
                     suffix = word
                     end = NSMaxRange(letter.range)
                 } else {
-                    lettered = label(number: number, prefix: prefix, suffix: word)
+                    lettered = label(number: number, prefix: prefix, dotted: dotted, suffix: word)
                 }
             }
             guard let range = Range(NSRange(location: match.range.location, length: end - match.range.location), in: text)
             else { continue }
-            found.append(Span(range: range, label: label(number: number, prefix: prefix, suffix: suffix),
+            found.append(Span(range: range, label: label(number: number, prefix: prefix, dotted: dotted, suffix: suffix),
                               lettered: lettered))
         }
         return found

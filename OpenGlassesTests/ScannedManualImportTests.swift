@@ -213,7 +213,7 @@ final class ScannedManualImportTests: XCTestCase {
 
     // MARK: - Importer end to end
 
-    func testSyncRecognisesRecordsProvenanceAndCleansUpTheCheckpoint() async throws {
+    func testSyncRecognisesRecordsProvenanceAndKeepsTheRecognisedPages() async throws {
         let dir = tempRoot.appendingPathComponent("vault", isDirectory: true)
         let docs = dir.appendingPathComponent("documents", isDirectory: true)
         try FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
@@ -244,9 +244,11 @@ final class ScannedManualImportTests: XCTestCase {
 
         let namespace = DocumentStore.vaultNamespace("scan_test")
         XCTAssertEqual(store.list(namespace: namespace).first?.sourceType, VaultImporter.recognisedSourceType)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: OCRCheckpoint.url(in: VaultImporter.overlayDirectory(for: "scan_test"),
-                                                                                  contentHash: ledger.entries[0].contentHash).path),
-                       "checkpoint removed once the document is ingested")
+        // Kept once the document is ingested (Plan JY P5a): the recognised pages are the record a
+        // later re-read of the manual's structure takes them from, instead of recognising again.
+        let kept = OCRCheckpoint.load(from: VaultImporter.overlayDirectory(for: "scan_test"),
+                                      contentHash: ledger.entries[0].contentHash)
+        XCTAssertEqual(kept.pages.count, 2, "the recognised pages are kept with the vault")
 
         // Retrieval marks the provenance of a recognised passage.
         VaultRegistry.shared.reloadUserManifests()

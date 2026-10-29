@@ -267,8 +267,16 @@ is no longer offered to the live mode. The transcription model was already `gpt-
 (P0); unchanged. Tests: `OpenAIRealtimeModelRetirementTests` (table, dates, rewrite, idempotence,
 notice wording, template default) and `OpenAIRealtimeModelIDMigrationTests` (the stored migration,
 the rejected write, the one-time notice, the legacy shortcut). Owed: the catalog sync for the three
-notice strings, a live probe of the rewritten IDs (the probe already confirmed `gpt-realtime-2.1`
-on P0's day; `gpt-realtime-2.1-mini` has not been probed), and P3.
+notice strings, and P3.
+
+**Live check of the rewrite targets** (2026-10-29, after the merge, the owner's single-use key,
+`Scripts/openai-realtime-probe.mjs`, which gained a `gpt-realtime-2.1-mini` session case and runs
+the whole turn on both models): both `gpt-realtime-2.1` and `gpt-realtime-2.1-mini` accepted the
+current-protocol session with `gpt-live-transcribe`, and on each a whole turn — tools in the
+session, a photo as an `image_url` data URI, synthesised speech — produced a live transcription, a
+`get_torque({"bolt":"A"})` call and, after its result, a spoken answer. P0's six cases repeated
+unchanged (the beta still refused with `beta_api_shape_disabled`, `gpt-realtime` still answering
+until its date).
 
 **Price check for decision 2** (OpenAI's pricing page, 2026-10-29, per 1M tokens):
 `gpt-realtime-2.1` matches `gpt-realtime` on audio (32 in, 64 out, 0.40 cached), text input (4)

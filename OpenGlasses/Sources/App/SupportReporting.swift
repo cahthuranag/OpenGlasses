@@ -267,6 +267,10 @@ extension AppState {
         if reason == .modelNotAvailable {
             return "the AI service didn't offer this model right now — it may have reached its usage limit; try again later, or choose another model"
         }
+        // Waiting does not help: the request alone is over what the account takes in a minute.
+        if reason == .requestOverTokenRateLimit {
+            return "the AI service allows this account fewer tokens per minute than the request needs — turn on Small context for this model, or choose another model"
+        }
         switch SafeErrorSummary.Category(rawValue: category) {
         case .clientError, .unauthorized, .forbidden:
             if reason?.isModelContract == true {

@@ -66,6 +66,11 @@ enum ModelSwitchNarrator {
                 ? "the chosen model isn't available on your ChatGPT account right now — it may have reached its usage limit, so try again later or pick another model"
                 : "the chosen model isn't available on this account, so pick another in Settings"
         }
+        // "Unavailable" would send the wearer to wait it out; the same request fails every time.
+        if case LLMError.apiError(_, _, _, let rejection?) = lastError,
+           rejection.reason == .requestOverTokenRateLimit {
+            return "the request is bigger than that AI account allows per minute, so turn on Small context for that model in Settings, or pick another"
+        }
         let reason: String
         switch ModelFallbackChain.classify(lastError) {
         case .visionUnavailable:

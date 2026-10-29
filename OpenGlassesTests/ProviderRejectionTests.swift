@@ -86,7 +86,10 @@ final class ProviderRejectionTests: XCTestCase {
     }
 
     func testEveryReasonHasAFixture() {
+        // One reason is only ever a 413 from an OpenAI-compatible service, so its fixture is not
+        // an Anthropic sentence.
         let covered = Set(Self.anthropicMessages.map(\.0))
+            .union([ProviderRejection(status: 413, body: Self.groqOverLimitBody, provider: .groq).reason])
         XCTAssertEqual(covered, Set(ProviderRejection.Reason.allCases),
                        "a reason nothing can produce is a reason nobody tested")
     }
@@ -301,6 +304,31 @@ final class ProviderRejectionTests: XCTestCase {
         XCTAssertEqual(ProviderRejection(status: 404, body: gemini, provider: .gemini).reason, .modelNotAvailable)
     }
 
+    // MARK: - A request over the account's per-minute allowance
+
+    static let groqOverLimitBody = openAIBody(
+        message: "Request too large for model `qwen/qwen3.8-27b` on tokens per minute (TPM): Limit 8000, Requested 11234.",
+        type: "tokens", code: "rate_limit_exceeded")
+
+    /// Groq's shape for a request larger than the key's tokens-per-minute limit (support report,
+    /// 2026-10-29): 413, `rate_limit_exceeded`, type `tokens`. Waiting does not help, so it is not
+    /// read as a busy service.
+    func testA413UnderARateLimitCodeIsARequestOverTheAccountsAllowance() {
+        let groq = Self.groqOverLimitBody
+        let rejection = ProviderRejection(status: 413, body: groq, provider: .groq)
+        XCTAssertEqual(rejection.reason, .requestOverTokenRateLimit)
+        XCTAssertEqual(rejection.summary.description, "clientError(rate_limit_exceeded)#413")
+        // The type alone is enough; the code alone is enough.
+        XCTAssertEqual(ProviderRejection(status: 413, body: Self.openAIBody(message: "x", type: "tokens"),
+                                         provider: .groq).reason, .requestOverTokenRateLimit)
+        XCTAssertEqual(ProviderRejection(status: 413, body: Self.openAIBody(message: "x", type: nil, code: "rate_limit_exceeded"),
+                                         provider: .custom).reason, .requestOverTokenRateLimit)
+        // A 429 with the same code is a busy service, and a bare 413 is not matched.
+        XCTAssertEqual(ProviderRejection(status: 429, body: groq, provider: .groq).reason, .other)
+        XCTAssertEqual(ProviderRejection(status: 413, body: Self.openAIBody(message: "Payload too large"),
+                                         provider: .groq).reason, .other)
+    }
+
     func testARefusedParameterIsNotAnUnofferedModel() {
         // Each says "model" and "not supported", and each refuses a parameter of the request.
         XCTAssertEqual(Self.anthropic("`temperature` is not supported for this model.").reason, .samplingUnsupported)
@@ -328,7 +356,7 @@ final class ProviderRejectionTests: XCTestCase {
     func testTheReasonsThatBelongToOneModelOrOneCredential() {
         let candidateOnly: Set<ProviderRejection.Reason> = [
             .toolChoiceUnsupported, .thinkingConfigUnsupported, .samplingUnsupported,
-            .betaHeaderUnknown, .credentialNotAccepted, .modelNotAvailable,
+            .betaHeaderUnknown, .credentialNotAccepted, .modelNotAvailable, .requestOverTokenRateLimit,
         ]
         for reason in ProviderRejection.Reason.allCases {
             XCTAssertEqual(reason.endsOnlyThisCandidate, candidateOnly.contains(reason), reason.rawValue)

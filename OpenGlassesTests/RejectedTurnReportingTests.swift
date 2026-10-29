@@ -301,6 +301,25 @@ final class RejectedTurnReportingTests: XCTestCase {
         }
     }
 
+    func testTheBannerPointsARequestOverTheAccountsAllowanceAtSmallContext() {
+        let words = AppState.plainReason("clientError(rate_limit_exceeded)#413", rejection: "requestOverTokenRateLimit")
+        XCTAssertTrue(words.contains("per minute"), words)
+        XCTAssertTrue(words.contains("Small context"), words)
+        XCTAssertFalse(words.contains("busy"), words)
+    }
+
+    func testTheSpokenReasonForARequestOverTheAccountsAllowanceIsNotUnavailable() {
+        let body = ProviderRejectionTests.openAIBody(message: "Request too large on tokens per minute (TPM).",
+                                                     type: "tokens", code: "rate_limit_exceeded")
+        let phrase = ModelSwitchNarrator.exhaustionPhrase(lastError: LLMError.apiError(
+            provider: "Groq", statusCode: 413, message: nil,
+            rejection: ProviderRejection(status: 413, body: body, provider: .groq)))
+        XCTAssertTrue(phrase.contains("allows per minute"), phrase)
+        XCTAssertTrue(phrase.contains("Small context"), phrase)
+        XCTAssertFalse(phrase.contains("unavailable"), phrase)
+        XCTAssertFalse(phrase.contains("TPM"), "the provider's sentence is never spoken")
+    }
+
     func testEveryReasonGivesTheBannerAPlainSentence() {
         for reason in ProviderRejection.Reason.allCases {
             let words = AppState.plainReason("clientError(invalid_request_error)#400", rejection: reason.rawValue)
@@ -312,7 +331,8 @@ final class RejectedTurnReportingTests: XCTestCase {
     // MARK: - The fallback chain
 
     func testAReasonThatBelongsToTheCandidateEndsOnlyTheCandidate() throws {
-        for reason in ProviderRejection.Reason.allCases {
+        // A request over the per-minute allowance is only ever a 413; it has its own test below.
+        for reason in ProviderRejection.Reason.allCases where reason != .requestOverTokenRateLimit {
             let message = try XCTUnwrap(messageByReason[reason], reason.rawValue)
             let error = refused(message)
             guard case .apiError(_, _, _, let carried?) = error else { return XCTFail("no rejection") }
@@ -321,6 +341,13 @@ final class RejectedTurnReportingTests: XCTestCase {
                            reason.endsOnlyThisCandidate ? .terminalForCandidate : .terminalForTurn,
                            reason.rawValue)
         }
+    }
+
+    func testARequestOverTheAccountsAllowanceHopsToAnotherModel() {
+        let error = LLMError.apiError(
+            provider: "Groq", statusCode: 413, message: nil,
+            rejection: ProviderRejection(status: 413, body: ProviderRejectionTests.groqOverLimitBody, provider: .groq))
+        XCTAssertNotEqual(ModelFallbackChain.classify(error), .terminalForTurn)
     }
 
     func testTheSameHoldsForA422() {

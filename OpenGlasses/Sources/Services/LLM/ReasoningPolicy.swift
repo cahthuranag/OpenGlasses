@@ -318,6 +318,11 @@ enum ReasoningPolicy {
         /// answer's allowance on top of it, or `GeminiBudgetPolicy`'s shipped behaviour for
         /// Automatic on a model that takes a budget.
         func geminiBudget(includesTools: Bool, configuredMaxTokens: Int) -> GeminiBudgetPolicy.Budget {
+            // A model that takes no thinking control is sent none — not even the tool turn's
+            // shipped budget, which such a model refuses like a level.
+            if effective == .notApplicable, case .omit = wire {
+                return GeminiBudgetPolicy.budget(includesTools: false, configuredMaxTokens: configuredMaxTokens)
+            }
             switch wire {
             case .geminiThinkingLevel(let level):
                 return GeminiBudgetPolicy.budget(thinkingLevel: level, includesTools: includesTools,
@@ -470,8 +475,12 @@ enum ReasoningPolicy {
     /// - Automatic without tools → the model's lowest level. A spoken reply wants the answer.
     /// - An explicit level → that level, or the nearest the model takes. `none` becomes the lowest
     ///   level, `xhigh` becomes `high`, and `minimal` becomes `low` on a model that refuses it.
+    ///
+    /// A model that takes no thinking control (a speech or embedding id) is sent nothing.
     private static func resolveGemini(model: String, toolsAttached: Bool, explicit: ReasoningEffort?) -> Resolution {
         switch GeminiThinkingStyle.style(for: model) {
+        case .none:
+            return Resolution(wire: .omit, effective: .notApplicable, reason: .noEffortSetting)
         case .budget:
             guard let explicit else {
                 return toolsAttached

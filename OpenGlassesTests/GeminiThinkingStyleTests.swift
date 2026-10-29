@@ -127,4 +127,21 @@ final class GeminiThinkingStyleTests: XCTestCase {
         XCTAssertNotNil(invocation.arguments, "nil would be reported as unparseable arguments")
         XCTAssertEqual(invocation.arguments?.count, 0)
     }
+
+    /// Speech, live-audio, embedding and generation-only ids take no thinking control, whatever
+    /// their version prefix says (support report, 2026-10-29: `gemini-3.8-flash-tts` was sent a
+    /// level and refused it).
+    func testIdsThatTakeNoThinkingControlAreSentNone() {
+        for model in ["gemini-3.8-flash-tts", "models/gemini-3.8-flash-tts", "gemini-2.5-pro-preview-tts",
+                      "gemini-2.5-flash-native-audio-latest", "gemini-embedding-001",
+                      "imagen-4.0-generate-001", "veo-3.0-generate-001", "aqa"] {
+            XCTAssertEqual(GeminiThinkingStyle.style(for: model), .none, model)
+        }
+        // The chat model the speech id is named after still takes its levels, and a Gemini 3
+        // image model still takes a level.
+        XCTAssertEqual(GeminiThinkingStyle.style(for: "gemini-3.8-flash"),
+                       .level(accepted: noMinimal, providerDefault: .medium))
+        XCTAssertEqual(GeminiThinkingStyle.style(for: "gemini-3.1-flash-lite-image"),
+                       .level(accepted: [.minimal, .high], providerDefault: .minimal))
+    }
 }

@@ -31,6 +31,14 @@ import Foundation
 /// every current model accepts. The `-latest` aliases only ever point at current models, so they
 /// are treated as an unlisted Gemini 3 id.
 ///
+/// # Ids that take no thinking control
+///
+/// Speech, live-audio, embedding and image- or video-generation models answer
+/// `generateContent` (or sit in the same list) but take no `thinkingConfig` at all, and a prefix
+/// match would send one: `gemini-3.8-flash-tts` reads as `gemini-3.8-flash` and was sent a level,
+/// which it refused with a 400, "Thinking level is not supported for this model" (support
+/// report, 2026-10-29). Those are named by their ids and sent nothing.
+///
 /// Pure and table-tested.
 enum GeminiThinkingStyle: Equatable {
     /// `thinkingConfig.thinkingBudget`: Gemini 2.x and ids with no readable version.
@@ -40,6 +48,12 @@ enum GeminiThinkingStyle: Equatable {
     /// `thinkingConfig.thinkingLevel`: Gemini 3 and later. `accepted` is lowest first;
     /// `providerDefault` is nil when the id is not one the docs list.
     case level(accepted: [ReasoningEffort], providerDefault: ReasoningEffort?)
+    /// No thinking control at all: speech, live-audio, embedding and generation-only ids.
+    case none
+
+    /// Id fragments of the families that take no thinking control. `-image` is not one: Gemini 3
+    /// image models take a level (3.1 Flash-Lite Image, above).
+    static let noThinkingMarkers = ["tts", "native-audio", "embedding", "imagen", "veo", "aqa"]
 
     /// The levels every listed Gemini 3 chat model takes.
     static let commonLevels: [ReasoningEffort] = [.low, .high]
@@ -64,6 +78,7 @@ enum GeminiThinkingStyle: Equatable {
         var id = model.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         // The models list returns ids as `models/<id>`.
         if id.hasPrefix("models/") { id.removeFirst("models/".count) }
+        if noThinkingMarkers.contains(where: { id.contains($0) }) { return .none }
 
         guard let major = majorVersion(of: id) else {
             if id.hasPrefix("gemini-"), id.hasSuffix("-latest") {

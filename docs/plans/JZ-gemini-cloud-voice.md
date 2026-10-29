@@ -1,6 +1,9 @@
 # Plan JZ — Gemini as a Cloud Voice (spoken replies through the Gemini key)
 
-**Status:** 📝 Drafted 2026-10-29 — nothing built. Owner decisions 1–3 taken the same day (below); 4 keeps its default.
+**Status:** 🚧 P0 built 2026-10-29: the engine, headless-tested and disclosed, with the speech-model
+picker, the 30 voices and Gemini last in Auto. Full unit suite (13,171 tests, 0 failures) and a
+Release build green. P1 (the device listening check and live measurements) is owed. Owner decisions
+1–3 were taken the same day (below); 4 keeps its default.
 **Origin:** the 2026-10-29 support report on build 581. A tester had picked `gemini-3.8-flash-tts`,
 a speech-only Gemini model, as their chat assistant, so every turn was refused. The model-setup fix
 (PR 885) keeps such models away from the chat picker. That leaves them with no use anywhere in the
@@ -125,7 +128,7 @@ The OpenAI and xAI voices set the pattern, and every rule they follow applies he
 
 ## Phases
 
-### P0 — the engine, headless-tested (one PR)
+### P0 — the engine, headless-tested (one PR) — ✅ built 2026-10-29
 
 - `CloudVoiceRequests`: `geminiSpeechURL(model:)`, `defaultGeminiSpeechModel`, `geminiVoices`,
   `defaultGeminiVoice`, `geminiSpeech(text:apiKey:model:voice:)`, `isGeminiSpeechModelID(_:)`, and
@@ -159,7 +162,10 @@ The OpenAI and xAI voices set the pattern, and every rule they follow applies he
   the rejection classes; the processing summary names Gemini. Full unit suite and a Release
   build before the PR.
 
-### P1 — the live edge (device)
+### P1 — the live edge (device) — owed
+
+Not yet heard on a device: which format comes back (WAV or L16) is handled both ways in code, but
+only a real key shows which one Google sends to `generateContent` for the 3.8 models.
 
 - **Listening check on the phone and the glasses**, in English and in one language other than
   English (Russian, for the report that prompted this). Check that it speaks, which format came

@@ -126,6 +126,10 @@ enum NetworkRoute: String, CaseIterable, Sendable {
     case openAISpeechSynthesis
     case xaiSpeechSynthesis
     case xaiVoiceCatalog
+    /// Plan JZ: the Gemini voice, with the saved Gemini model's key. Its voices are a fixed list;
+    /// its speech models come from the key's own model list.
+    case geminiSpeechSynthesis
+    case geminiSpeechModelCatalog
 
     // MARK: Realtime and translation
     case openAIRealtimeSession
@@ -221,6 +225,8 @@ extension NetworkRoute {
         case .openAISpeechSynthesis: return "Send the assistant's reply text to OpenAI's speech endpoint with the OpenAI key and play back the returned audio."
         case .xaiSpeechSynthesis: return "Send the assistant's reply text to xAI's speech endpoint with the xAI key or sign-in and play back the returned audio."
         case .xaiVoiceCatalog: return "List the voices the xAI key or sign-in may use, for the voice picker."
+        case .geminiSpeechSynthesis: return "Send the assistant's reply text to Google's Gemini speech model with the Gemini key and play back the returned audio."
+        case .geminiSpeechModelCatalog: return "List the models the Gemini key may use, to offer its speech models in the voice picker."
         case .openAIRealtimeSession: return "Hold a live speech-to-speech session, streaming audio and optional frames both ways."
         case .openAICompatibleRealtimeSession: return "Hold a live session with the OpenAI-compatible server explicitly configured by the wearer."
         case .geminiLiveSession: return "Hold a live multimodal session, streaming audio and optional frames both ways."
@@ -285,9 +291,11 @@ extension NetworkRoute {
             return [.audio, .transcript]
         case .openAIDictation:
             return [.audio, .transcript, .credential]
-        case .elevenLabsSpeechSynthesis, .openAISpeechSynthesis, .xaiSpeechSynthesis:
+        case .elevenLabsSpeechSynthesis, .openAISpeechSynthesis, .xaiSpeechSynthesis,
+             .geminiSpeechSynthesis:
             return [.transcript, .credential]
-        case .elevenLabsVoiceCatalog, .xaiVoiceCatalog, .geminiLiveModelCatalog, .providerModelCatalog,
+        case .elevenLabsVoiceCatalog, .xaiVoiceCatalog, .geminiSpeechModelCatalog,
+             .geminiLiveModelCatalog, .providerModelCatalog,
              .gatewayConnectionTest, .fhirConnectionTest:
             return [.credential]
         case .openAIRealtimeSession, .openAICompatibleRealtimeSession, .geminiLiveSession:
@@ -356,6 +364,7 @@ extension NetworkRoute {
              .deepgramDictation, .openAIDictation,
              .elevenLabsSpeechSynthesis, .elevenLabsVoiceCatalog,
              .openAISpeechSynthesis, .xaiSpeechSynthesis, .xaiVoiceCatalog,
+             .geminiSpeechSynthesis, .geminiSpeechModelCatalog,
              .openAIRealtimeSession, .geminiLiveSession, .geminiLiveModelCatalog,
              .cloudTranslationCaptions, .llmCompletion, .intentClassification,
              .providerModelCatalog, .conversationRecallSummary, .connectivityProbe,
@@ -441,7 +450,8 @@ extension NetworkRoute {
         case .deepgramDictation: return ["DeepgramDictationService"]
         case .openAIDictation: return ["OpenAIDictationService"]
         case .elevenLabsSpeechSynthesis, .elevenLabsVoiceCatalog,
-             .openAISpeechSynthesis, .xaiSpeechSynthesis, .xaiVoiceCatalog: return ["TextToSpeechService"]
+             .openAISpeechSynthesis, .xaiSpeechSynthesis, .xaiVoiceCatalog,
+             .geminiSpeechSynthesis, .geminiSpeechModelCatalog: return ["TextToSpeechService"]
         case .openAIRealtimeSession: return ["RealtimeJSONSessionService"]
         case .openAICompatibleRealtimeSession: return []
         case .geminiLiveSession: return ["GeminiLiveService"]

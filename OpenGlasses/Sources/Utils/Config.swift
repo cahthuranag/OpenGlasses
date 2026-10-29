@@ -1968,7 +1968,7 @@ struct Config {
         UserDefaults.standard.set(voiceId, forKey: "elevenLabsVoiceId")
     }
 
-    // MARK: - OpenAI and xAI voices (Plan ID item 5)
+    // MARK: - OpenAI, xAI and Gemini voices (Plan ID item 5, Plan JZ)
 
     /// The OpenAI speech voice, from its fixed list. The key is the OpenAI model's own
     /// (`CloudVoiceCredentials.openAIKey`); there is no separate voice key.
@@ -1996,6 +1996,34 @@ struct Config {
 
     static func setXAITTSVoice(_ voice: String) {
         UserDefaults.standard.set(voice.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "xaiTTSVoice")
+    }
+
+    /// The Gemini speech voice, from its fixed list (Plan JZ). The key is the Gemini model's own
+    /// (`CloudVoiceCredentials.geminiKey`); there is no separate voice key.
+    static var geminiTTSVoice: String {
+        if let voice = UserDefaults.standard.string(forKey: "geminiTTSVoice"),
+           CloudVoiceRequests.geminiVoices.contains(voice) {
+            return voice
+        }
+        return CloudVoiceRequests.defaultGeminiVoice
+    }
+
+    static func setGeminiTTSVoice(_ voice: String) {
+        UserDefaults.standard.set(voice, forKey: "geminiTTSVoice")
+    }
+
+    /// The Gemini speech model, picked from the key's own list. A saved id that is not a safe
+    /// speech-model id reads as the default (`CloudVoiceRequests.isGeminiSpeechModelID`).
+    static var geminiTTSModel: String {
+        if let model = UserDefaults.standard.string(forKey: "geminiTTSModel"),
+           CloudVoiceRequests.isGeminiSpeechModelID(model) {
+            return model
+        }
+        return CloudVoiceRequests.defaultGeminiSpeechModel
+    }
+
+    static func setGeminiTTSModel(_ model: String) {
+        UserDefaults.standard.set(model, forKey: "geminiTTSModel")
     }
 
     /// Preferred iOS TTS voice identifier (used when no cloud voice is available).

@@ -212,7 +212,8 @@ enum ProcessingFactsProvider {
                     savedModels: Config.savedModels, legacyKey: Config.openAIAPIKey).isEmpty,
                 xaiReady: CloudVoiceCredentials.xaiSource(
                     savedModels: Config.savedModels,
-                    accountConnected: XAIOAuthService.shared.isConnected) != .none))
+                    accountConnected: XAIOAuthService.shared.isConnected) != .none,
+                geminiReady: !CloudVoiceCredentials.geminiKey(savedModels: Config.savedModels).isEmpty))
 
         // Tools on other machines. Gated by Agent Mode like every other autonomous capability, so
         // a configured gateway with Agent Mode off reads as switched off — which is what it is.

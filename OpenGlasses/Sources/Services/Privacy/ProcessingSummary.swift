@@ -226,7 +226,7 @@ enum ProcessingSummary {
                 // speak. The missing download is named in the offline line instead, where it is
                 // advice rather than a contradiction of the voice the wearer is about to hear.
                 return .onDevice
-            case .elevenLabs, .openAI, .xai:
+            case .elevenLabs, .openAI, .xai, .gemini:
                 return .cloud(provider: facts.voiceEngine.vendorName ?? "ElevenLabs")
             }
         case .remoteTools:

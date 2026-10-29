@@ -112,6 +112,13 @@ struct ServicesSettingsView: View {
     // each voice is offered is read when the screen appears rather than on every render.
     @State private var openAIVoiceAvailable = false
     @State private var xaiVoiceAvailable = false
+    /// Plan JZ: the Gemini voice, offered when a Gemini model on Google's own host carries a key.
+    @State private var geminiVoiceAvailable = false
+    @State private var geminiVoice: String = Config.geminiTTSVoice
+    @State private var geminiModel: String = Config.geminiTTSModel
+    @State private var geminiModels: [CloudVoiceRequests.GeminiSpeechModel] = []
+    @State private var geminiModelsLoading = false
+    @State private var geminiModelsError: String?
     @State private var openAIVoice: String = Config.openAITTSVoice
     @State private var xaiVoice: String = Config.xaiTTSVoice
     @State private var xaiVoices: [CloudVoiceRequests.XAIVoice] = []
@@ -173,6 +180,9 @@ struct ServicesSettingsView: View {
                     }
                     if ttsEnginePreference == .xai, !xaiVoiceAvailable {
                         Text("No xAI key or sign-in is saved. Add an xAI model under \(SettingsCatalog.category(.intelligence).title) to use this voice.")
+                    }
+                    if ttsEnginePreference == .gemini, !geminiVoiceAvailable {
+                        Text("No Gemini API key is saved. Add a Gemini model with an API key under \(SettingsCatalog.category(.intelligence).title) to use this voice.")
                     }
                 }
             }
@@ -309,6 +319,52 @@ struct ServicesSettingsView: View {
                     Text("OpenAI and xAI Voices")
                 } footer: {
                     Text("These voices use the keys saved with your OpenAI and xAI models. The OpenAI voice is paid from your OpenAI API credit; a ChatGPT sign-in is not enough. The xAI voice uses your xAI key, or your xAI sign-in.")
+                }
+            }
+
+            // MARK: Gemini voice (Plan JZ)
+            if geminiVoiceAvailable {
+                Section {
+                    if geminiModels.isEmpty {
+                        LabeledContent("Speech Model", value: geminiModel)
+                        Button {
+                            loadGeminiSpeechModels()
+                        } label: {
+                            Label(geminiModelsLoading ? "Loading Models…" : "Fetch Gemini Speech Models",
+                                  systemImage: "waveform")
+                        }
+                        .disabled(geminiModelsLoading)
+                    } else {
+                        Picker("Speech Model", selection: $geminiModel) {
+                            ForEach(geminiModels) { model in
+                                Text(model.displayName).tag(model.id)
+                            }
+                        }
+                        .onChange(of: geminiModel) { _, newValue in
+                            Config.setGeminiTTSModel(newValue)
+                            appState.speechService.resetCloudVoiceQuota(.gemini)
+                        }
+                    }
+
+                    if let geminiModelsError {
+                        Text(geminiModelsError)
+                            .font(.caption)
+                            .foregroundStyle(OGTheme.errorLabel)
+                    }
+
+                    Picker("Gemini Voice", selection: $geminiVoice) {
+                        ForEach(CloudVoiceRequests.geminiVoices, id: \.self) { voice in
+                            Text(voice).tag(voice)
+                        }
+                    }
+                    .onChange(of: geminiVoice) { _, newValue in
+                        Config.setGeminiTTSVoice(newValue)
+                        appState.speechService.resetCloudVoiceQuota(.gemini)
+                    }
+                } header: {
+                    Text("Gemini Voice")
+                } footer: {
+                    Text("This voice uses the API key saved with your Gemini model. Spoken replies use that key's quota, separately from chat. Only Gemini's speech models are listed. A Google sign-in for Vertex AI is not enough.")
                 }
             }
 
@@ -1038,6 +1094,35 @@ struct ServicesSettingsView: View {
             savedModels: models, legacyKey: Config.openAIAPIKey).isEmpty
         xaiVoiceAvailable = CloudVoiceCredentials.xaiSource(
             savedModels: models, accountConnected: XAIOAuthService.shared.isConnected) != .none
+        geminiVoiceAvailable = !CloudVoiceCredentials.geminiKey(savedModels: models).isEmpty
+    }
+
+    private func loadGeminiSpeechModels() {
+        guard !geminiModelsLoading else { return }
+        let apiKey = CloudVoiceCredentials.geminiKey(savedModels: Config.savedModels)
+        guard !apiKey.isEmpty else { return }
+        geminiModelsLoading = true
+        geminiModelsError = nil
+        Task { @MainActor in
+            do {
+                let models = try await TextToSpeechService.fetchGeminiSpeechModels(apiKey: apiKey)
+                geminiModels = models
+                geminiModelsLoading = false
+                geminiModelsError = models.isEmpty ? String(localized: "This Gemini key lists no speech models.") : nil
+                // If the saved model isn't in the list, keep the default when it is listed, else
+                // the first.
+                if !models.isEmpty, !models.contains(where: { $0.id == geminiModel }) {
+                    let fallback = models.first(where: { $0.id == CloudVoiceRequests.defaultGeminiSpeechModel })
+                        ?? models[0]
+                    geminiModel = fallback.id
+                    Config.setGeminiTTSModel(fallback.id)
+                    appState.speechService.resetCloudVoiceQuota(.gemini)
+                }
+            } catch {
+                geminiModelsLoading = false
+                geminiModelsError = String(localized: "Could not load models: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func loadXAIVoices() {
